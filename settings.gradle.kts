@@ -3,6 +3,8 @@
 rootProject.name = "klap"
 
 pluginManagement {
+    includeBuild("build-logic")
+
     repositories {
         google {
             mavenContent {
@@ -17,7 +19,6 @@ pluginManagement {
 }
 
 dependencyResolutionManagement {
-    // One source of truth for repositories; a subproject declaring its own fails the build.
     repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS
     repositories {
         google {
@@ -36,3 +37,20 @@ plugins {
 }
 
 include(":klap")
+include(":example:task-manager")
+include(":example:parity")
+include(":example:mkdir")
+include(":example:cp")
+include(":example:dd")
+include(":example:curl")
+include(":example:ssh")
+include(":example:git")
+include(":example:find")
+include(":example:ls")
+include(":example:head")
+include(":example:mv")
+include(":example:pacman")
+include(":example:chmod")
+include(":example:rm")
+include(":example:tar")
+include(":example:rsync")

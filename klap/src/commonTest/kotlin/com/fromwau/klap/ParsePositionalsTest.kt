@@ -1,8 +1,13 @@
 package com.fromwau.klap
 
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import com.fromwau.klap.internal.render.argSummary
+import com.fromwau.klap.internal.render.helpText
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 private fun posTree(): Cli = cli("todo") {
     command("add") {
@@ -15,6 +20,13 @@ private fun posTree(): Cli = cli("todo") {
         action { Ok("sum=${nums().sum()}") }
     }
     command("ping") { action { Ok("pong") } }
+}
+
+private fun validateTree(): Cli = cli("todo") {
+    command("add") {
+        val text = argument("text").validate("must not be blank") { it.isNotBlank() }
+        action { Ok(text()) }
+    }
 }
 
 private fun Cli.exec(argv: List<String>): String {
@@ -63,5 +75,241 @@ class ParsePositionalsTest {
     fun badPositionalValueIsRejected() {
         val err = assertIs<Result.Error<CliError>>(posTree().parse(listOf("sum", "abc"))).error
         assertEquals(CliError.BadValue("nums", "abc", "not an integer"), err)
+    }
+
+    @Test
+    fun validateFailureOnArgumentYieldsBadValue() {
+        val tree = validateTree()
+        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("add", " "))).error
+        assertEquals(CliError.BadValue("text", " ", "must not be blank"), err)
+    }
+
+    @Test
+    fun validatePassOnArgumentBindsValue() {
+        val tree = validateTree()
+        assertEquals("buy\n", tree.exec(listOf("add", "buy")))
+    }
+
+    @Test
+    fun rangeAcceptsAndRejectsOnArgument() {
+        val tree = cli("todo") {
+            command("age") {
+                val n = argument("n").int().range(0..120)
+                action { Ok(n().toString()) }
+            }
+        }
+        assertEquals("30\n", tree.exec(listOf("age", "30")))
+        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("age", "200"))).error
+        assertEquals(CliError.BadValue("n", "200", "must be in 0..120"), err)
+    }
+
+    @Test
+    fun defaultBypassesValidationOnArgument() {
+        // A .default value is trusted: it binds directly and is never routed through validate.
+        val tree = cli("todo") {
+            command("age") {
+                val n = argument("n").int().range(0..120).default(999)
+                action { Ok(n().toString()) }
+            }
+        }
+        assertEquals("999\n", tree.exec(listOf("age")))
+    }
+
+    // --- "?: default" substitution semantics on positionals ---
+
+    @Test
+    fun argumentDefaultNonNull_absentUsesDefault_presentUsesValue() {
+        val tree = cli("todo") {
+            command("add") {
+                val tag = argument("tag").default("d")
+                action { Ok(tag()) }
+            }
+        }
+        assertEquals("d\n", tree.exec(listOf("add")))
+        assertEquals("urgent\n", tree.exec(listOf("add", "urgent")))
+    }
+
+    @Test
+    fun argumentMapToNullDefault_substitutesDefaultInsteadOfNpeOnBadInput() {
+        val tree = cli("todo") {
+            command("age") {
+                val n = argument("n").map { it.toIntOrNull() }.default(0)
+                action { Ok(n().toString()) }
+            }
+        }
+        assertEquals("30\n", tree.exec(listOf("age", "30")))
+        assertEquals("0\n", tree.exec(listOf("age", "abc")))
+        assertEquals("0\n", tree.exec(listOf("age")))
+    }
+
+    // --- converter/validate chains must never throw at parse (never-throw contract) ---
+
+    @Test
+    fun reusingAnArgHandleForTwoTypeConvertersYieldsBadValueNotACrash() {
+        // Both .int() and .long() mutate the one shared spec: after int() succeeds with an Int, the long()
+        // stage casts that Int to String and throws. The never-throw contract turns it into BadValue.
+        val tree = cli("app") {
+            val a = argument("n")
+            a.int()
+            a.long()
+            action { Ok("ok") }
+        }
+        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("42"))).error
+        // reason is the platform-dependent cast exception message, so only the type and name are pinned.
+        assertIs<CliError.BadValue>(err)
+        assertEquals("n", err.name)
+    }
+
+    @Test
+    fun validateAfterMultipleYieldsBadValueInsteadOfCrashing() {
+        // validate runs per element (each a String), but the predicate expects the List; casting the
+        // String element to List throws at parse, which the never-throw contract turns into BadValue.
+        val tree = cli("app") {
+            val files = argument("files").multiple().validate("need at least two") { it.size >= 2 }
+            action { Ok(files().joinToString(",")) }
+        }
+        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("a"))).error
+        // reason is the platform-dependent cast exception message, so only the type and name are pinned.
+        assertIs<CliError.BadValue>(err)
+        assertEquals("files", err.name)
+    }
+}
+
+private fun variadicTree(): Cli = cli("tar") {
+    // `tar -tf a.tar` lists the whole archive: the FILE operands are genuinely optional, which is what
+    // multiple()'s own `min = 0` default is supposed to mean.
+    command("list") {
+        val files = argument("file", "files").multiple()
+        action { Ok("files=${files()}") }
+    }
+    command("strict") {
+        val files = argument("file", "files").multiple(min = 1)
+        action { Ok("files=${files()}") }
+    }
+}
+
+class VariadicPositionalArityTest {
+
+    @Test
+    fun multipleWithMinZeroAcceptsZeroOperands() {
+        val outcome = variadicTree().parse(listOf("list"))
+        assertIs<Result.Success<Invocation>>(outcome)
+    }
+
+    @Test
+    fun multipleWithMinZeroBindsAnEmptyList() {
+        assertEquals("files=[]\n", variadicTree().exec(listOf("list")))
+        assertEquals("files=[a, b]\n", variadicTree().exec(listOf("list", "a", "b")))
+    }
+
+    @Test
+    fun multipleWithMinOneStillRejectsZeroOperands() {
+        // The guard must key on min, not on emptiness: a declared minimum is still enforced.
+        val outcome = variadicTree().parse(listOf("strict"))
+        val error = assertIs<Result.Error<CliError>>(outcome).error
+        assertIs<CliError.MissingArgument>(error)
+        assertEquals("file", error.argument)
+    }
+
+    @Test
+    fun helpRowAgreesWithTheUsageLineAboutOptionality() {
+        // The usage line says arity in brackets, the Arguments row says it in words. They must not
+        // disagree: a bare "(repeatable)" beside a "[file...]" usage leaves zero-allowed unstated.
+        val help = variadicTree().subcommand("list")!!.helpText("tar list")
+        assertContains(help, "[file...]")
+        assertContains(help, "optional; repeatable")
+
+        val strict = variadicTree().subcommand("strict")!!.helpText("tar strict")
+        assertContains(strict, "<file>...")
+        assertContains(strict, "repeatable, min 1")
+    }
+
+    @Test
+    fun helpDistinguishesAnOptionalVariadicFromAMandatoryOne() {
+        // The usage line has to advertise which of the two it is, or it documents a shape it cannot parse.
+        val tree = variadicTree()
+        assertEquals("[file...]", tree.subcommand("list")!!.argSummary())
+        assertEquals("<file>...", tree.subcommand("strict")!!.argSummary())
+    }
+}
+
+/** `cp SOURCE... DEST` — a variadic may be followed by required slots, which bind from the end. */
+class NonLastVariadicTest {
+
+    private fun cpTree(): Cli = cli("cp") {
+        val sources = argument("source").multiple(min = 1)
+        val dest = argument("dest")
+        action { Ok("${sources()} -> ${dest()}") }
+    }
+
+    private fun run(tree: Cli, vararg argv: String): String = RecordingTerminal().let { term ->
+        tree.run(argv.toList().toTypedArray(), term)
+        term.out.toString().trim()
+    }
+
+    @Test
+    fun aVariadicFollowedByARequiredPositionalSplitsFromTheEnd() {
+        assertEquals("[a] -> b", run(cpTree(), "a", "b"))
+        assertEquals("[a, b] -> c", run(cpTree(), "a", "b", "c"))
+    }
+
+    @Test
+    fun theTrailingSlotIsFilledBeforeTheVariadicTakesAnything() {
+        // One token cannot satisfy both, and the fixed slot is the one that must hold: the variadic is
+        // left short and reports its own minimum rather than swallowing the destination.
+        assertIs<Result.Error<CliError>>(cpTree().parse(listOf("a")))
+    }
+
+    @Test
+    fun twoTrailingRequiredSlotsBothBindFromTheEnd() {
+        val tree = cli("app") {
+            val mid = argument("mid").multiple(min = 0)
+            val a = argument("a")
+            val b = argument("b")
+            action { Ok("${mid()} ${a()} ${b()}") }
+        }
+        assertEquals("[] x y", run(tree, "x", "y"))
+        assertEquals("[1, 2] x y", run(tree, "1", "2", "x", "y"))
+    }
+
+    @Test
+    fun aLeadingRequiredSlotStillBindsFromTheFront() {
+        val tree = cli("app") {
+            val first = argument("first")
+            val rest = argument("rest").multiple(min = 0)
+            val last = argument("last")
+            action { Ok("${first()} ${rest()} ${last()}") }
+        }
+        assertEquals("a [] b", run(tree, "a", "b"))
+        assertEquals("a [x, y] b", run(tree, "a", "x", "y", "b"))
+    }
+
+    @Test
+    fun aVariadicThatIsStillLastIsUnchanged() {
+        val tree = cli("app") {
+            val files = argument("file").multiple(min = 0)
+            action { Ok(files().toString()) }
+        }
+        assertEquals("[]", run(tree))
+        assertEquals("[a, b]", run(tree, "a", "b"))
+    }
+
+    @Test
+    fun anOptionalSlotAfterAVariadicIsRejectedAtBuild() {
+        // Genuinely ambiguous: with one token left there is no rule saying whether it feeds the greedy
+        // slot or the optional one.
+        val ex = assertFailsWith<IllegalArgumentException> {
+            cli("app") {
+                argument("rest").multiple(min = 0)
+                argument("tail").optional()
+                action { Ok("") }
+            }
+        }
+        assertTrue("ambiguous" in ex.message.orEmpty(), ex.message)
+    }
+
+    @Test
+    fun theUsageLineRendersTheVariadicWhereItWasDeclared() {
+        assertEquals("<source>... <dest>", cpTree().argSummary())
     }
 }
