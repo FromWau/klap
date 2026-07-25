@@ -1,17 +1,22 @@
 [versions]
-klapVersion = "1.0.0"
-kotlin = "2.4.10"
+klapVersion = "0.1.0"
 agp = "9.3.1"
 android-compileSdk = "37"
 android-minSdk = "24"
+kotlin = "2.4.10"
 kotlinx-serialization = "1.11.0"
+kotlinx-io = "0.9.1"
+dotenv = "4.0.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+kotlin-gradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }
 
 [plugins]
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 androidKotlinMultiplatformLibrary = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
 kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+dotenv = { id = "co.uzzu.dotenv.gradle", version.ref = "dotenv" }

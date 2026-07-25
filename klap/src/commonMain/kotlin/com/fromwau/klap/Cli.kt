@@ -1,22 +1,131 @@
 package com.fromwau.klap
 
-/** A resolved, immutable node in the command tree. Leaves carry an [action]; pure groups do not. */
-class Cli internal constructor(
-    val name: String,
-    val aliases: List<String>,
-    val description: String,
-    val version: String?,
+import com.fromwau.klap.internal.render.HelpExample
+import com.fromwau.klap.internal.spec.Action
+import com.fromwau.klap.internal.spec.ArgumentSpec
+import com.fromwau.klap.internal.spec.Builtin
+import com.fromwau.klap.internal.spec.Display
+import com.fromwau.klap.internal.spec.FlagSpec
+import com.fromwau.klap.internal.spec.HolderSpec
+import com.fromwau.klap.internal.spec.InputConstraint
+import com.fromwau.klap.internal.spec.NamedSpec
+import com.fromwau.klap.internal.spec.OptionSpec
+import com.fromwau.klap.internal.spec.longs
+import com.fromwau.klap.internal.spec.negativeLongs
+
+/** A resolved, immutable node in the command tree. Leaves carry an [action]; pure groups do not. Presentation lives in [display]. */
+public open class Command internal constructor(
+    public val name: String,
+    public val aliases: List<String>,
     internal val specs: List<HolderSpec>,
-    val subcommands: List<Cli>,
-    internal val action: ActionSpec?,
+    // Cross-input rules over [specs], in declaration order; the parse-time source of truth for them (the
+    // `(one of ...)` note help shows is derived onto each member spec at build time).
+    internal val constraints: List<InputConstraint> = emptyList(),
+    public val subcommands: List<Command>,
+    internal val action: Action?,
+    // The option `-<NUM>` is shorthand for, if `numericAlias(...)` declared one; null is the default, and
+    // then a dash-led number is simply an unknown option.
+    internal val numericAlias: OptionSpec? = null,
+    internal val display: Display = Display(),
+    // Non-null only for the completion/docs/__complete nodes cli() injects: names the builtin so parse()
+    // routes it to the matching render invocation, since the node carries no action. A user command is null.
+    internal val builtinKind: Builtin? = null,
+    // Whether THIS node's own sift stops at its first operand rather than permuting past it; see
+    // CommandBuilder.optionsEndAtFirstOperand for what that trades away and why it is per-node.
+    internal val optionsEndAtFirstOperand: Boolean = false,
 ) {
-    internal val arguments: List<HolderSpec> get() = specs.filter { it.kind == InputKind.ARGUMENT }
-    internal val options: List<HolderSpec> get() = specs.filter { it.kind == InputKind.OPTION }
-    internal val flags: List<HolderSpec> get() = specs.filter { it.kind == InputKind.FLAG }
+    internal val arguments: List<ArgumentSpec> get() = specs.filterIsInstance<ArgumentSpec>()
+    internal val options: List<OptionSpec> get() = specs.filterIsInstance<OptionSpec>()
+    internal val flags: List<FlagSpec> get() = specs.filterIsInstance<FlagSpec>()
+
+    // Options and flags interleaved in DECLARATION order, which `options + flags` discards by grouping all
+    // options ahead of all flags. Help renders from this so a related --verbose/--quiet pair the author
+    // wrote together stays together.
+    internal val namedInputs: List<NamedSpec> get() = specs.filterIsInstance<NamedSpec>()
+
+    // Presentation, read straight off [display]; description/epilogue stay public, the rest is the
+    // render walk's concern. section/hidden mirror HolderSpec's own, so a subcommand and an input read
+    // the same way in that walk.
+    public val description: String get() = display.description
+    public val epilogue: String get() = display.epilogue
+    internal val examples: List<HelpExample> get() = display.examples
+    internal val section: String? get() = display.section
+    internal val hidden: Boolean get() = display.hidden
 
     /** A group prints subcommand help when invoked: it has children and no own action. */
     internal val isGroup: Boolean get() = subcommands.isNotEmpty() && action == null
 
-    fun subcommand(token: String): Cli? =
+    public fun subcommand(token: String): Command? =
         subcommands.firstOrNull { it.name == token || token in it.aliases }
 }
+
+/**
+ * The resolved root of the tree: a [Command] plus the root-only concerns, mirroring the
+ * [CliBuilder] : [CommandBuilder] split. A root has no aliases (it is invoked by its binary name, never
+ * resolved by token) and no parent-facing listing. [author]/[version] are its own display/meta.
+ */
+public class Cli internal constructor(
+    name: String,
+    public val author: String?,
+    public val version: String?,
+    specs: List<HolderSpec>,
+    constraints: List<InputConstraint>,
+    subcommands: List<Command>,
+    action: Action?,
+    numericAlias: OptionSpec? = null,
+    internal val globalSpecs: List<NamedSpec> = emptyList(),
+    display: Display = Display(),
+    // Which built-ins this tree offers, resolved once from the root's `builtins { }` block. Threaded from
+    // here into parse and every renderer, since a subcommand node carries no root-only facts of its own.
+    internal val builtins: Builtins = Builtins.DEFAULT,
+    optionsEndAtFirstOperand: Boolean = false,
+) : Command(
+    name = name,
+    aliases = emptyList(),
+    specs = specs,
+    constraints = constraints,
+    subcommands = subcommands,
+    action = action,
+    numericAlias = numericAlias,
+    display = display,
+    optionsEndAtFirstOperand = optionsEndAtFirstOperand,
+) {
+    init {
+        val reserved = subcommands
+            .filter { it.builtinKind != null }
+            .map { it.name }
+            .toSet()
+        for (sub in subcommands.filter { it.builtinKind == null }) {
+            require(sub.name !in reserved) {
+                "cli '$name': subcommand '${sub.name}' uses a name reserved by a klap built-in"
+            }
+            for (alias in sub.aliases) {
+                require(alias !in reserved) {
+                    "cli '$name': subcommand '${sub.name}' alias '$alias' uses a name reserved by a klap built-in"
+                }
+            }
+        }
+    }
+
+    /**
+     * A single-command root (one carrying its own [action]) exposes completion/docs as `--completion` /
+     * `--docs` meta-options rather than injected subcommands; a dispatcher uses the subcommands. That is
+     * exactly "has its own action", so it is derived, not a stored flag.
+     */
+    internal val metaOptions: Boolean get() = action != null
+
+    /**
+     * Every long spelling declared anywhere in this tree, dashes stripped: each node's own options and
+     * flags, plus each negatable flag's negative half, folded over the whole subcommand walk.
+     *
+     * Held rather than derived per call, unlike the other spec views above: the scans that run before the
+     * subcommand walk resolve an abbreviation against it on every parse, and the tree is immutable once
+     * built, so the walk can only ever produce the same list.
+     */
+    internal val declaredLongs: List<String> by lazy { subtreeLongs() }
+}
+
+private fun Command.subtreeLongs(): List<String> =
+    namedInputs.flatMap { it.longs } +
+            flags.filter { it.negatable }.flatMap { it.negativeLongs } +
+            subcommands.flatMap { it.subtreeLongs() }

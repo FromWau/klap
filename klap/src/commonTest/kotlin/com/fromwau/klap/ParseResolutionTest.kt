@@ -1,5 +1,6 @@
 package com.fromwau.klap
 
+import com.fromwau.klap.internal.parse.suggest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -18,7 +19,7 @@ class ParseResolutionTest {
     fun resolvesLeafToExecute() {
         val out = tree().parse(listOf("ping"))
         val exec = assertIs<Result.Success<Invocation>>(out).value
-        assertEquals("ping", assertIs<Invocation.Execute>(exec).cli.name)
+        assertEquals("ping", assertIs<Invocation.Execute>(exec).command.name)
     }
 
     @Test
@@ -32,7 +33,7 @@ class ParseResolutionTest {
     fun helpFlagShowsResolvedCommandHelp() {
         val out = tree().parse(listOf("config", "-h"))
         val help = assertIs<Invocation.ShowHelp>(assertIs<Result.Success<Invocation>>(out).value)
-        assertEquals("config", help.cli.name)
+        assertEquals("config", help.command.name)
     }
 
     @Test
@@ -45,7 +46,7 @@ class ParseResolutionTest {
     fun groupWithoutSubcommandShowsGroupHelp() {
         val out = tree().parse(listOf("config"))
         val help = assertIs<Invocation.ShowHelp>(assertIs<Result.Success<Invocation>>(out).value)
-        assertEquals("config", help.cli.name)
+        assertEquals("config", help.command.name)
     }
 
     @Test
@@ -59,11 +60,70 @@ class ParseResolutionTest {
     fun mistypedSubcommandWithFlagsReportsSubcommandNotOption() {
         val app = cli("app") {
             command("temp") {
-                option("from")
+                option("--from")
                 action { Ok("") }
             }
         }
         val err = assertIs<Result.Error<CliError>>(app.parse(listOf("tempp", "5", "--from", "c"))).error
-        assertEquals(CliError.UnknownSubcommand("app", "tempp"), err)
+        // "tempp" is a one-edit near miss of the declared "temp" subcommand, so did-you-mean fires.
+        assertEquals(CliError.UnknownSubcommand("app", "tempp", "temp"), err)
+    }
+
+    @Test
+    fun unknownSubcommandSuggestsNearestName() {
+        val out = tree().parse(listOf("cofnig"))
+        val err = assertIs<Result.Error<CliError>>(out).error
+        assertEquals(CliError.UnknownSubcommand("todo", "cofnig", "config"), err)
+    }
+
+    @Test
+    fun suggestNeverReturnsAnExactMatch() {
+        // A token equal to a candidate is not really unknown; "did you mean <the same word>" must never happen.
+        assertEquals(null, suggest("config", listOf("config", "ping")))
+        assertEquals("config", suggest("cofnig", listOf("config", "ping")))
+    }
+
+    @Test
+    fun suggestRejectsAWhollyDifferentShortToken() {
+        // Regression: a short candidate must not be suggested for a token every character of which is an edit
+        // (a 2-char alias no longer matches an unrelated 2-char word); a single-typo near-miss still fires.
+        assertEquals(null, suggest("xy", listOf("ls", "rm")))
+        assertEquals("ls", suggest("lx", listOf("ls", "rm")))
+    }
+
+    @Test
+    fun unknownSubcommandNeverSuggestsAHiddenSubcommand() {
+        // A hidden subcommand is omitted from help/completion; a typo suggestion must not reveal its name either.
+        val tree = cli("app") {
+            command("secret") {
+                hidden = true
+                action { Ok("") }
+            }
+            command("status") { action { Ok("") } }
+        }
+        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("secrt"))).error
+        // "secrt" is edit-distance 1 from the hidden "secret" but must resolve to nothing (or a visible name), never "secret".
+        assertEquals(CliError.UnknownSubcommand("app", "secrt", null), err)
+    }
+
+    @Test
+    fun badOptionBeforeValidSubcommandBlamesTheOption() {
+        // Regression: a bad option ahead of a REAL subcommand must blame the option, not the subcommand.
+        val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("--wat", "ping"))).error
+        assertEquals(CliError.UnknownOption("--wat"), err)
+    }
+
+    @Test
+    fun leadingUnknownPositionalBlamesTheSubcommand() {
+        // First token is a non-flag: it is the leftmost offender, reported as an unknown subcommand.
+        val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("bogus", "--wat"))).error
+        assertEquals(CliError.UnknownSubcommand("todo", "bogus"), err)
+    }
+
+    @Test
+    fun postEndOfOptionsFlagShapedTokenIsAPositionalSubcommand() {
+        // After --, a flag-shaped token is positional, so it is an unknown subcommand, never an unknown option.
+        val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("--", "--x"))).error
+        assertEquals(CliError.UnknownSubcommand("todo", "--x"), err)
     }
 }

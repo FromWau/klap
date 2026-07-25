@@ -6,10 +6,12 @@ plugins {
 }
 
 group = "com.fromwau.klap"
-version = "0.1.0"
+version = libs.versions.klapVersion.get()
 
 kotlin {
-    jvmToolchain(21)
+    explicitApi()
+
+    jvmToolchain(25)
 
     android {
         compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -20,14 +22,18 @@ kotlin {
     jvm()
     linuxX64()
     mingwX64()
-    // Apple targets: ARM only. The x86_64 Apple targets (macosX64, iosX64) are deprecated in Kotlin
-    // now that Apple has ended Intel-Mac support. macosArm64 is kept for native macOS CLIs.
-    macosArm64()
-    iosArm64()
-    iosSimulatorArm64()
 
-    // A custom jvmAndroidMain intermediate (manual dependsOn) disables the auto-applied default
-    // hierarchy template and would orphan the native/apple leaves. Reapply it explicitly first.
+    listOf(
+        macosArm64(),
+        iosArm64(),
+        iosSimulatorArm64(),
+    ).forEach { appleTarget ->
+        appleTarget.binaries.framework {
+            baseName = "klap"
+            isStatic = true
+        }
+    }
+
     applyDefaultHierarchyTemplate()
 
     sourceSets {
@@ -38,12 +44,38 @@ kotlin {
         androidMain.get().dependsOn(jvmAndroidMain)
 
         commonMain.dependencies {
-            // api: consumers return @Serializable types from action{}, so the JSON runtime is part of klap's public surface, not an internal detail.
             api(libs.kotlinx.serialization.json)
         }
 
         commonTest.dependencies {
             implementation(libs.kotlin.test)
         }
+    }
+}
+
+val mavenUser = env.fetchOrNull("MAVEN_USERNAME")
+val mavenToken = env.fetchOrNull("MAVEN_TOKEN")
+
+publishing {
+    repositories {
+        maven {
+            name = "vps"
+            url = uri("https://maven.frommhund.xyz/releases")
+            credentials {
+                username = mavenUser.orEmpty()
+                password = mavenToken.orEmpty()
+            }
+            authentication { create<BasicAuthentication>("basic") }
+        }
+    }
+}
+
+val hasMavenUser = !mavenUser.isNullOrBlank()
+val hasMavenToken = !mavenToken.isNullOrBlank()
+
+tasks.withType<PublishToMavenRepository>().configureEach {
+    doFirst {
+        require(hasMavenUser) { "MAVEN_USERNAME is not set. Copy .env.example to .env and fill it in." }
+        require(hasMavenToken) { "MAVEN_TOKEN is not set. Copy .env.example to .env and fill it in." }
     }
 }

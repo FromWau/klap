@@ -1,169 +1,570 @@
 package com.fromwau.klap
 
+import com.fromwau.klap.internal.spec.Cardinality
+import com.fromwau.klap.internal.spec.OptionSpec
+import com.fromwau.klap.internal.spec.requireValidSpelling
+import com.fromwau.klap.internal.spec.token
+import com.fromwau.klap.internal.spec.ValueSpec
+import kotlin.jvm.JvmName
+
 private fun numeric(reason: String, parse: (String) -> Any?): (String) -> Result<Any?, String> =
     { raw -> parse(raw)?.let { Result.Success(it) } ?: Result.Error(reason) }
 
-// --- Arg type converters ---
-
-fun Arg<String>.int(): Arg<Int> {
-    spec.convert = numeric("not an integer") { it.toIntOrNull() }
-    return Arg(spec)
+/**
+ * Composes [next] after whatever converter is already on this spec, instead of overwriting it, so
+ * chained String-input converters (`.choice().map { }`, `.map { }.map { }`, `.choice().int()`, ...)
+ * stack. Every converter that calls this is only reachable on `Arg<String>`/`Opt<String?>`, so any
+ * prior stage's success value is always a `String` (the spec starts out with the identity passthrough,
+ * which trivially satisfies this too): the cast is safe by construction, not by luck.
+ */
+private fun ValueSpec.andThenConvert(next: (String) -> Result<Any?, String>) {
+    val prior = convert
+    convert = { raw ->
+        when (val p = prior(raw)) {
+            is Result.Success -> next(p.value as String)
+            is Result.Error -> p
+        }
+    }
 }
 
-fun Arg<String>.long(): Arg<Long> {
-    spec.convert = numeric("not a long") { it.toLongOrNull() }
-    return Arg(spec)
+/**
+ * Matching is case-insensitive, so two choices equal ignoring case (including exact duplicates)
+ * would leave the later one permanently unreachable while `--help` still advertises both. Fail
+ * loudly at construction instead.
+ */
+private fun requireNoCaseInsensitiveDuplicateChoices(choices: List<String>) {
+    val seen = mutableSetOf<String>()
+    for (choice in choices) {
+        require(seen.add(choice.lowercase())) {
+            "duplicate choice '$choice' (choices must be distinct, ignoring case)"
+        }
+    }
 }
 
-fun Arg<String>.double(): Arg<Double> {
-    spec.convert = numeric("not a number") { it.toDoubleOrNull() }
-    return Arg(spec)
+/**
+ * `.enum<E>()` matches names case-insensitively, so two constants equal ignoring case would leave
+ * the later one permanently unreachable while `--help` still advertises both. Fail loudly at
+ * construction instead, naming the enum and both colliding constants.
+ */
+private fun requireNoCaseInsensitiveDuplicateEnumNames(enumName: String?, names: List<String>) {
+    val seen = mutableMapOf<String, String>()
+    for (name in names) {
+        val key = name.lowercase()
+        val previous = seen[key]
+        require(previous == null) {
+            "enum $enumName has case-colliding constant names '$previous' and '$name' (constant names " +
+                "must be distinct, ignoring case)"
+        }
+        seen[key] = name
+    }
 }
 
-fun Arg<String>.boolean(): Arg<Boolean> {
-    spec.convert = numeric("not a boolean (true/false)") { it.toBooleanStrictOrNull() }
-    return Arg(spec)
+/**
+ * A declared [bareValue] runs through the option's own converter at parse time exactly like a typed value,
+ * so a choice set that excludes it would only fail once a user typed the bare form — blaming them for a
+ * value the AUTHOR wrote on a line `--help` renders as legal. Checked at construction instead, in both
+ * declaration orders (`applyChoice`/`applyEnum` call this too), matching [choices] case-insensitively so a
+ * value the parser would accept is never rejected here.
+ */
+private fun requireBareValueInChoices(name: String, bareValue: String, choices: List<String>) {
+    require(choices.any { it.equals(bareValue, ignoreCase = true) }) {
+        "option '$name': the bare value '$bareValue' from .optionalValue() is not one of ${choices.joinToString(", ")}"
+    }
 }
 
-inline fun <reified E : Enum<E>> Arg<String>.enum(): Arg<E> {
-    val values = enumValues<E>()
-    // Display choices CLI-style (lowercase); matching stays case-insensitive. Use .choice() for exact casing.
-    spec.choices = values.map { it.name.lowercase() }
-    spec.convert = { raw ->
+// Shared bodies behind the mirrored Arg/Opt converter pairs (which differ only in their typed wrapper).
+
+private fun ValueSpec.applyChoice(choices: List<String>) {
+    require(choices.isNotEmpty()) { "choice() requires at least one choice" }
+    requireNoCaseInsensitiveDuplicateChoices(choices)
+    (this as? OptionSpec)?.bareValue?.let { requireBareValueInChoices(name, it, choices) }
+    this.choices = choices
+    andThenConvert { raw ->
+        choices.firstOrNull { it.equals(raw, ignoreCase = true) }
+            ?.let { Result.Success(it) }
+            ?: Result.Error("not one of ${choices.joinToString(", ")}")
+    }
+}
+
+private fun ValueSpec.applyMap(transform: (String) -> Any?) {
+    andThenConvert { raw ->
+        try {
+            Result.Success(transform(raw))
+        } catch (e: Exception) {
+            // A non-duplicating fallback: the BadValue render already prefixes "invalid value '<v>' for <name>: ",
+            // so a null/blank platform message (e.g. Kotlin/Native's toInt() NumberFormatException) must not add
+            // another literal "invalid value" here or the two collide into a redundant doubled phrase.
+            Result.Error(e.message?.takeIf { it.isNotBlank() } ?: "conversion failed")
+        }
+    }
+}
+
+private fun <T> ValueSpec.applyValidate(message: String, predicate: (T) -> Boolean) {
+    val prior = validate
+    validate = { value ->
+        @Suppress("UNCHECKED_CAST")
+        prior?.invoke(value) ?: if (predicate(value as T)) null else message
+    }
+}
+
+/**
+ * The enum body behind both `.enum<E>()` overloads. `@PublishedApi` (not `private`) because those are
+ * `inline`/`reified` and must call it; keeping the reified `enumValues<E>()` in the wrappers and passing
+ * [values] in means the inline sites touch only this one member, so [andThenConvert] and
+ * [requireNoCaseInsensitiveDuplicateEnumNames] can both stay `private`.
+ */
+@PublishedApi
+internal fun <E : Enum<E>> ValueSpec.applyEnum(enumName: String?, values: Array<out E>) {
+    require(values.isNotEmpty()) { "enum $enumName has no constants to choose from" }
+    requireNoCaseInsensitiveDuplicateEnumNames(enumName, values.map { it.name })
+    // Display choices CLI-style (lowercase); matching stays case-insensitive, same as .choice().
+    val displayNames = values.map { it.name.lowercase() }
+    (this as? OptionSpec)?.bareValue?.let { requireBareValueInChoices(name, it, displayNames) }
+    choices = displayNames
+    andThenConvert { raw ->
         values.firstOrNull { it.name.equals(raw, ignoreCase = true) }
             ?.let { Result.Success(it) }
             ?: Result.Error("not one of ${values.joinToString(", ") { it.name.lowercase() }}")
     }
-    return Arg(spec)
-}
-
-fun Arg<String>.choice(vararg choices: String): Arg<String> {
-    val allowed = choices.toList()
-    spec.choices = allowed
-    spec.convert = { raw ->
-        if (raw in allowed) Result.Success(raw) else Result.Error("not one of ${allowed.joinToString(", ")}")
-    }
-    return Arg(spec)
-}
-
-fun <T> Arg<String>.convert(transform: (String) -> Result<T, String>): Arg<T> {
-    spec.convert = transform
-    return Arg(spec)
 }
 
 /**
- * Generic input adapter: reads the raw string and returns a domain type. A thrown exception becomes a
- * clean parse error (`invalid value …`). e.g. `argument("timeout").map { it.toInt().seconds }`.
- * Use [convert] instead when you want to control the error message yourself.
+ * Build-time scope of every holder transformer: converters, cardinality, validation, and help hints,
+ * as member-extensions so they only compile inside a builder block ([CommandBuilder] extends this).
+ * They mutate the shared [com.fromwau.klap.internal.spec.HolderSpec] in place, which is only
+ * legitimate while the tree is still being built — scoping them here makes a post-build mutation
+ * (through a leaked [Arg]/[Opt]/[Flag] handle) a compile error instead of a data race, mirroring how
+ * [ActionScope] scopes the read side.
+ *
+ * The internal constructor means consumers can never conjure a scope of their own.
  */
-fun <T> Arg<String>.map(transform: (String) -> T): Arg<T> {
-    spec.convert = { raw ->
-        try {
-            Result.Success(transform(raw))
-        } catch (e: Exception) {
-            Result.Error(e.message ?: "invalid value")
+@KlapDsl
+public abstract class ConverterScope internal constructor() {
+
+    // --- Arg type converters ---
+
+    public fun Arg<String>.int(): Arg<Int> {
+        spec.andThenConvert(numeric("not an integer") { it.toIntOrNull() })
+        return Arg(spec)
+    }
+
+    public fun Arg<String>.long(): Arg<Long> {
+        spec.andThenConvert(numeric("not a long") { it.toLongOrNull() })
+        return Arg(spec)
+    }
+
+    public fun Arg<String>.double(): Arg<Double> {
+        spec.andThenConvert(numeric("not a number") { it.toDoubleOrNull() })
+        return Arg(spec)
+    }
+
+    public fun Arg<String>.boolean(): Arg<Boolean> {
+        spec.andThenConvert(numeric("not a boolean (true/false)") { it.toBooleanStrictOrNull() })
+        return Arg(spec)
+    }
+
+    public inline fun <reified E : Enum<E>> Arg<String>.enum(): Arg<E> {
+        spec.applyEnum(E::class.simpleName, enumValues<E>())
+        return Arg(spec)
+    }
+
+    /** Matches [choices] case-insensitively; the converted value is always the declared (canonical) spelling. */
+    public fun Arg<String>.choice(vararg choices: String): Arg<String> {
+        spec.applyChoice(choices.toList())
+        return Arg(spec)
+    }
+
+    public fun <T> Arg<String>.convert(transform: (String) -> Result<T, String>): Arg<T> {
+        spec.andThenConvert(transform)
+        return Arg(spec)
+    }
+
+    /**
+     * Generic input adapter: reads the raw string and returns a domain type. A thrown exception becomes a
+     * clean parse error (`invalid value …`). e.g. `argument("timeout").map { it.toInt().seconds }`.
+     * Use [convert] instead when you want to control the error message yourself.
+     */
+    public fun <T> Arg<String>.map(transform: (String) -> T): Arg<T> {
+        spec.applyMap(transform)
+        return Arg(spec)
+    }
+
+    // --- Arg cardinality / hints ---
+
+    public fun <T> Arg<T>.optional(): Arg<T?> {
+        // Enforces at build time the no-combine invariant the type system cannot express for Arg (unlike Opt).
+        require(spec.cardinality !is Cardinality.Multiple) {
+            "argument '${spec.name}': .optional() cannot be combined with .multiple()"
         }
+        spec.cardinality = Cardinality.Optional
+        return Arg(spec)
     }
-    return Arg(spec)
-}
 
-// --- Arg cardinality / hints ---
-
-fun <T> Arg<T>.optional(): Arg<T?> {
-    spec.cardinality = Cardinality.Optional
-    return Arg(spec)
-}
-
-fun <T> Arg<T>.default(value: T): Arg<T> {
-    spec.cardinality = Cardinality.Default(value)
-    return Arg(spec)
-}
-
-fun <T> Arg<T>.multiple(min: Int = 0): Arg<List<T>> {
-    spec.cardinality = Cardinality.Multiple(min)
-    return Arg(spec)
-}
-
-fun <T> Arg<T>.file(): Arg<T> {
-    spec.isPath = true
-    return Arg(spec)
-}
-
-// --- Opt converters ---
-
-fun Opt<String?>.int(): Opt<Int?> {
-    spec.convert = numeric("not an integer") { it.toIntOrNull() }
-    return Opt(spec)
-}
-
-fun Opt<String?>.long(): Opt<Long?> {
-    spec.convert = numeric("not a long") { it.toLongOrNull() }
-    return Opt(spec)
-}
-
-fun Opt<String?>.double(): Opt<Double?> {
-    spec.convert = numeric("not a number") { it.toDoubleOrNull() }
-    return Opt(spec)
-}
-
-fun Opt<String?>.choice(vararg choices: String): Opt<String?> {
-    val allowed = choices.toList()
-    spec.choices = allowed
-    spec.convert = { raw ->
-        if (raw in allowed) Result.Success(raw) else Result.Error("not one of ${allowed.joinToString(", ")}")
-    }
-    return Opt(spec)
-}
-
-fun Opt<String?>.boolean(): Opt<Boolean?> {
-    spec.convert = numeric("not a boolean (true/false)") { it.toBooleanStrictOrNull() }
-    return Opt(spec)
-}
-
-inline fun <reified E : Enum<E>> Opt<String?>.enum(): Opt<E?> {
-    val values = enumValues<E>()
-    // Display choices CLI-style (lowercase); matching stays case-insensitive. Use .choice() for exact casing.
-    spec.choices = values.map { it.name.lowercase() }
-    spec.convert = { raw ->
-        values.firstOrNull { it.name.equals(raw, ignoreCase = true) }
-            ?.let { Result.Success(it) }
-            ?: Result.Error("not one of ${values.joinToString(", ") { it.name.lowercase() }}")
-    }
-    return Opt(spec)
-}
-
-fun <T> Opt<String?>.convert(transform: (String) -> Result<T, String>): Opt<T?> {
-    spec.convert = transform
-    return Opt(spec)
-}
-
-/**
- * Generic input adapter for an option: reads the raw string and returns a domain type; a thrown
- * exception becomes a clean parse error. e.g. `option("timeout", "t").map { it.toInt().seconds }`.
- */
-fun <T> Opt<String?>.map(transform: (String) -> T): Opt<T?> {
-    spec.convert = { raw ->
-        try {
-            Result.Success(transform(raw))
-        } catch (e: Exception) {
-            Result.Error(e.message ?: "invalid value")
+    /**
+     * Common case: [Arg] is already non-null (straight from [CommandBuilder.argument]/a non-nullable
+     * converter); switches Required to a default without changing nullability.
+     */
+    public fun <T : Any> Arg<T>.default(value: T): Arg<T> {
+        // Enforces at build time the no-combine invariant the type system cannot express for Arg (unlike Opt).
+        require(spec.cardinality !is Cardinality.Multiple) {
+            "argument '${spec.name}': .default() cannot be combined with .multiple()"
         }
+        spec.cardinality = Cardinality.Default(value)
+        return Arg(spec)
     }
-    return Opt(spec)
-}
 
-fun <T> Opt<T?>.required(): Opt<T> {
-    spec.cardinality = Cardinality.Required
-    return Opt(spec)
-}
+    /**
+     * Optional/nullable [Arg] (e.g. after [optional], or a nullable [map]) plus a non-null default: narrows
+     * the accessor to non-null, same as [Opt]'s narrowing overload. Absence AND a converter that resolves to
+     * null both fall back to [value]. `@JvmName` because generics erase on the JVM, so this and the non-null
+     * overload above would compile to the same descriptor (a platform-declaration clash); it is inert on
+     * other targets.
+     */
+    @JvmName("defaultOptionalNarrowing")
+    public fun <T : Any> Arg<T?>.default(value: T): Arg<T> {
+        // Enforces at build time the no-combine invariant the type system cannot express for Arg (unlike Opt).
+        require(spec.cardinality !is Cardinality.Multiple) {
+            "argument '${spec.name}': .default() cannot be combined with .multiple()"
+        }
+        spec.cardinality = Cardinality.Default(value)
+        return Arg(spec)
+    }
 
-fun <T> Opt<T?>.default(value: T): Opt<T> {
-    spec.cardinality = Cardinality.Default(value)
-    return Opt(spec)
-}
+    public fun <T> Arg<T>.multiple(min: Int = 0): Arg<List<T>> {
+        // Enforces at build time the no-combine invariant the type system cannot express for Arg (unlike Opt).
+        require(spec.cardinality !is Cardinality.Default && spec.cardinality !is Cardinality.Optional) {
+            "argument '${spec.name}': .multiple() cannot be combined with .default()/.optional()"
+        }
+        spec.cardinality = Cardinality.Multiple(min)
+        return Arg(spec)
+    }
 
-/** Collects every occurrence into a list. Options are zero-or-more; enforce a minimum in your `action {}` if you need one. */
-fun <T> Opt<T?>.multiple(): Opt<List<T>> {
-    spec.cardinality = Cardinality.Multiple(0)
-    return Opt(spec)
+    /** This argument's value completes filesystem paths in shell completion; the mirror of [Opt.file]. */
+    public fun <T> Arg<T>.file(): Arg<T> {
+        spec.isPath = true
+        return Arg(spec)
+    }
+
+    /**
+     * Removes this operand slot entirely when [input] is supplied, so the operands after it keep their own
+     * positions: `chmod --reference=RFILE FILE...` has no MODE operand at all, and the first FILE must not
+     * slide into it.
+     *
+     * Not the same as `.optional()`, which is the trap this exists to close: an optional slot still EXISTS,
+     * so `chmod --reference=r notes.txt` binds `notes.txt` as the mode and silently loses the file. The
+     * accessor widens to nullable, since the slot genuinely binds nothing on the lines where it is gone.
+     */
+    public fun <T> Arg<T>.absentWhen(input: Input): Arg<T?> {
+        spec.absentWhen = input.holderSpec()
+        return Arg(spec)
+    }
+
+    /**
+     * Drops this operand's declared minimum to zero when [input] is supplied: `rm` errors with no operand
+     * and `rm -f` exits 0 with none. The slot itself stays, so nothing shifts position; only the count
+     * rule relaxes. Only a `.multiple()` slot carries a minimum to relax, so this pairs with that one
+     * cardinality and is rejected on any other.
+     */
+    public fun <T> Arg<T>.requiredUnless(input: Input): Arg<T> {
+        spec.relaxedWhen = input.holderSpec()
+        return this
+    }
+
+    // --- Arg validation ---
+
+    /**
+     * Checks [predicate] on each converted value; call before `.multiple()`. Failure renders as
+     * CliError.BadValue, never InvalidChoice.
+     */
+    public fun <T> Arg<T>.validate(message: String, predicate: (T) -> Boolean): Arg<T> {
+        spec.applyValidate(message, predicate)
+        return Arg(spec)
+    }
+
+    /** Sugar over [validate] for a bounded value; also adds a "1..65535"-style hint to the help row. */
+    public fun <T : Comparable<T>> Arg<T>.range(range: ClosedRange<T>): Arg<T> {
+        require(!range.isEmpty()) { "range must not be empty: ${range.start}..${range.endInclusive}" }
+        spec.valueHint = "${range.start}..${range.endInclusive}"
+        return validate("must be in ${range.start}..${range.endInclusive}") { it in range }
+    }
+
+    /**
+     * Names this argument's value in help and usage, e.g. `<FILE>` instead of the generic
+     * placeholder. Display-only.
+     */
+    public fun <T> Arg<T>.placeholder(name: String): Arg<T> {
+        require(name.isNotBlank()) { "placeholder must not be blank" }
+        spec.placeholder = name
+        return Arg(spec)
+    }
+
+    /** Omit this argument from `--help`; it still parses and binds normally. Intended for optional/default args. */
+    public fun <T> Arg<T>.hidden(): Arg<T> {
+        spec.hidden = true
+        return Arg(spec)
+    }
+
+    /**
+     * Registers a runtime provider for tab-completion candidates (branch names, file lists, ...), served via
+     * the hidden `__complete` builtin since a static shell script cannot call back into Kotlin. The provider
+     * calls `candidate(value, description?)` (or `candidates(values)`) on its [CompletionScope] receiver.
+     * Candidates are prefix-filtered by the current word by default; pass `filterByPrefix = false` for fuzzy
+     * matching, doing your own filtering against `current`.
+     */
+    public fun <T> Arg<T>.completeWith(filterByPrefix: Boolean = true, provider: CompletionScope.() -> Unit): Arg<T> {
+        spec.complete = provider
+        spec.completePrefixFilter = filterByPrefix
+        return Arg(spec)
+    }
+
+    // --- Opt converters ---
+
+    public fun Opt<String?>.int(): Opt<Int?> {
+        spec.andThenConvert(numeric("not an integer") { it.toIntOrNull() })
+        return Opt(spec)
+    }
+
+    public fun Opt<String?>.long(): Opt<Long?> {
+        spec.andThenConvert(numeric("not a long") { it.toLongOrNull() })
+        return Opt(spec)
+    }
+
+    public fun Opt<String?>.double(): Opt<Double?> {
+        spec.andThenConvert(numeric("not a number") { it.toDoubleOrNull() })
+        return Opt(spec)
+    }
+
+    /** Matches [choices] case-insensitively; the converted value is always the declared (canonical) spelling. */
+    public fun Opt<String?>.choice(vararg choices: String): Opt<String?> {
+        spec.applyChoice(choices.toList())
+        return Opt(spec)
+    }
+
+    public fun Opt<String?>.boolean(): Opt<Boolean?> {
+        spec.andThenConvert(numeric("not a boolean (true/false)") { it.toBooleanStrictOrNull() })
+        return Opt(spec)
+    }
+
+    public inline fun <reified E : Enum<E>> Opt<String?>.enum(): Opt<E?> {
+        spec.applyEnum(E::class.simpleName, enumValues<E>())
+        return Opt(spec)
+    }
+
+    public fun <T> Opt<String?>.convert(transform: (String) -> Result<T, String>): Opt<T?> {
+        spec.andThenConvert(transform)
+        return Opt(spec)
+    }
+
+    /**
+     * Generic input adapter for an option: reads the raw string and returns a domain type; a thrown
+     * exception becomes a clean parse error. e.g. `option("--timeout", "-t").map { it.toInt().seconds }`.
+     */
+    public fun <T> Opt<String?>.map(transform: (String) -> T): Opt<T?> {
+        spec.applyMap(transform)
+        return Opt(spec)
+    }
+
+    public fun <T> Opt<T?>.required(): Opt<T> {
+        // Opt's narrowing return types normally block a bad chain (.multiple()/.default() are not declared
+        // on the Opt<T> this returns), but aliasing one pre-narrowed Opt<T?> into two cardinality calls
+        // bypasses that narrowing, since the original reference's static type never advances. Guard here
+        // too, closing the same shared-holder aliasing hole the Arg cardinality guards above close.
+        require(spec.cardinality !is Cardinality.Multiple && spec.cardinality !is Cardinality.Default) {
+            "option '${spec.name}': .required() cannot be combined with .multiple()/.default()"
+        }
+        spec.cardinality = Cardinality.Required
+        return Opt(spec)
+    }
+
+    /**
+     * Requires this option only when [flag] was given: `option("--token").requiredIf(remote)` is optional
+     * on its own and a usage error alongside `--remote`. Checked after binding, so the condition reads
+     * what the user actually supplied.
+     *
+     * Takes a [Flag] handle rather than a `() -> Boolean`, for the same reason [requireExactlyOne] takes
+     * handles: a handle is inspectable, so `--help` can render `(required when --remote)` and the reader
+     * learns the rule without running into it. A lambda could never say that.
+     *
+     * The accessor stays nullable — the option genuinely binds null whenever [flag] is absent, and
+     * narrowing it would be a lie in exactly the case the rule permits.
+     */
+    public fun <T> Opt<T>.requiredIf(flag: Flag): Opt<T> {
+        require(spec.cardinality !is Cardinality.Required) {
+            "option '${spec.name}': .requiredIf() is pointless on an option that is always .required()"
+        }
+        spec.requiredWhen = flag.spec
+        spec.valueHint = listOfNotNull(spec.valueHint, "required when ${flag.spec.token()}").joinToString("; ")
+        return this
+    }
+
+    /**
+     * Makes this option's value optional: `--color=never` binds `never`, and a bare `--color` binds
+     * [whenBare]. `git commit -S[<keyid>]` and `ls --color[=WHEN]` are the shape.
+     *
+     * **The space form never binds.** `--color auto` binds [whenBare] and leaves `auto` as an operand,
+     * which is what GNU does and the only unambiguous reading available — an optional-value option cannot
+     * tell its own value from the next operand, which is exactly why POSIX.1 XBD 12.2 guideline 7 says
+     * option-arguments should not be optional. Declaring one takes this option outside that guideline
+     * knowingly; every option that does not call this stays conforming. Reach for `.negatable()` first if
+     * the tool's real shape is a two-state switch — it costs no conformance.
+     *
+     * [whenBare] is a RAW value: it runs through this option's own converter and validation, so
+     * `.optionalValue("0").int()` binds the Int `0`. When a choice set is already declared (`.choice()` or
+     * `.enum<E>()`), [whenBare] must be one of it — checked here at construction, not at parse, matching
+     * case-insensitively like the choice set itself; the same check runs in the other declaration order,
+     * when `.choice()`/`.enum<E>()` follows an existing `.optionalValue()`.
+     */
+    public fun <T> Opt<T>.optionalValue(whenBare: String): Opt<T> {
+        require(whenBare.isNotBlank()) {
+            "option '${spec.name}': .optionalValue() needs a non-blank value to bind when the option is " +
+                    "given bare; a blank one is indistinguishable from the option being absent"
+        }
+        require(spec.cardinality !is Cardinality.Multiple) {
+            "option '${spec.name}': .optionalValue() cannot be combined with .multiple()"
+        }
+        spec.choices?.let { requireBareValueInChoices(spec.name, whenBare, it) }
+        spec.bareValue = whenBare
+        return this
+    }
+
+    /**
+     * Non-null default: the accessor stays narrowed to non-null. Absence AND a converter that resolves
+     * to null (e.g. a `.map { it.toIntOrNull() }` on bad input) both fall back to [value]; see
+     * [bindFlagsAndOptions]'s "?: default" bind.
+     */
+    public fun <T : Any> Opt<T?>.default(value: T): Opt<T> {
+        // Same aliasing hole as .required(): a sibling wrapper over the same shared spec may have already
+        // set an incompatible cardinality.
+        require(spec.cardinality !is Cardinality.Multiple && spec.cardinality !is Cardinality.Required) {
+            "option '${spec.name}': .default() cannot be combined with .multiple()/.required()"
+        }
+        spec.cardinality = Cardinality.Default(value)
+        return Opt(spec)
+    }
+
+    /**
+     * Collects every occurrence into a list. min = 0 (default) stays zero-or-more; min >= 1 is
+     * enforced in bind as TooFewOccurrences.
+     */
+    public fun <T> Opt<T?>.multiple(min: Int = 0): Opt<List<T>> {
+        // Same aliasing hole again: a sibling wrapper may have already set .required()/.default() on the
+        // shared spec before this call.
+        require(spec.cardinality !is Cardinality.Default && spec.cardinality !is Cardinality.Required) {
+            "option '${spec.name}': .multiple() cannot be combined with .default()/.required()"
+        }
+        require(spec.bareValue == null) {
+            "option '${spec.name}': .multiple() cannot be combined with .optionalValue()"
+        }
+        spec.cardinality = Cardinality.Multiple(min)
+        return Opt(spec)
+    }
+
+    // --- Opt validation ---
+
+    /** Checks [predicate] on the converted value; failure renders as CliError.BadValue, never InvalidChoice. */
+    public fun <T> Opt<T?>.validate(message: String, predicate: (T) -> Boolean): Opt<T?> {
+        spec.applyValidate(message, predicate)
+        return Opt(spec)
+    }
+
+    /** Sugar over [validate] for a bounded value; also adds a "1..65535"-style hint to the help row. */
+    public fun <T : Comparable<T>> Opt<T?>.range(range: ClosedRange<T>): Opt<T?> {
+        require(!range.isEmpty()) { "range must not be empty: ${range.start}..${range.endInclusive}" }
+        spec.valueHint = "${range.start}..${range.endInclusive}"
+        return validate("must be in ${range.start}..${range.endInclusive}") { it in range }
+    }
+
+    /** Names this option's value in help and usage, e.g. `--output <FILE>`. Display-only; overrides a choice list. */
+    public fun <T> Opt<T>.placeholder(name: String): Opt<T> {
+        require(name.isNotBlank()) { "placeholder must not be blank" }
+        spec.placeholder = name
+        return Opt(spec)
+    }
+
+    /** Omit this option from `--help`; it still parses and binds normally. */
+    public fun <T> Opt<T>.hidden(): Opt<T> {
+        spec.hidden = true
+        return Opt(spec)
+    }
+
+    /**
+     * The option's VALUE completes filesystem paths in shell completion, e.g. `--file <TAB>`; the
+     * mirror of [Arg.file].
+     */
+    public fun <T> Opt<T>.file(): Opt<T> {
+        spec.isPath = true
+        return Opt(spec)
+    }
+
+    /**
+     * Registers a runtime provider for tab-completion candidates (branch names, file lists, ...), served via
+     * the hidden `__complete` builtin since a static shell script cannot call back into Kotlin. The provider
+     * calls `candidate(value, description?)` (or `candidates(values)`) on its [CompletionScope] receiver.
+     * Candidates are prefix-filtered by the current word by default; pass `filterByPrefix = false` for fuzzy
+     * matching, doing your own filtering against `current`.
+     */
+    public fun <T> Opt<T>.completeWith(filterByPrefix: Boolean = true, provider: CompletionScope.() -> Unit): Opt<T> {
+        spec.complete = provider
+        spec.completePrefixFilter = filterByPrefix
+        return Opt(spec)
+    }
+
+    // --- Flag ---
+
+    /**
+     * Counts occurrences instead of collapsing to a boolean: `-vvv`, `-v -v -v`, and
+     * `--verbose --verbose` all yield 3.
+     */
+    public fun Flag.count(): CountFlag {
+        require(!spec.negatable) { "flag '${spec.name}': .count() and .negatable() are mutually exclusive" }
+        spec.isCount = true
+        return CountFlag(spec)
+    }
+
+    /**
+     * Recognizes an auto-generated `--no-<long>` counterpart, one per long spelling. Absent binds to
+     * [default]; last occurrence wins between the positive and negative forms.
+     */
+    public fun Flag.negatable(default: Boolean = true): Flag {
+        require(!spec.isCount) { "flag '${spec.name}': .count() and .negatable() are mutually exclusive" }
+        spec.negatable = true
+        spec.cardinality = Cardinality.Default(default)
+        return Flag(spec)
+    }
+
+    /**
+     * Recognizes [negativeSpellings] as the negative half instead of the generated `--no-<long>`, so a
+     * short can turn the flag off (`cp -L`/`-P`, `ssh -A`/`-a`) and an asymmetric pair keeps both real
+     * names (`git --paginate`/`--no-pager`).
+     *
+     * The explicit list REPLACES the generated form rather than adding to it: a tool that spells its
+     * negative half differently also rejects the generated one, and answering to both would make klap
+     * looser than the tool it models. Write the generated spelling out when you want it kept, as
+     * `.negatable("--no-dereference", "-P")` does.
+     *
+     * Each spelling carries its own dashes and is validated exactly like a positive one, and none of them
+     * may collide with a declared option/flag spelling or with another flag's negation.
+     */
+    public fun Flag.negatable(vararg negativeSpellings: String, default: Boolean = true): Flag {
+        require(!spec.isCount) { "flag '${spec.name}': .count() and .negatable() are mutually exclusive" }
+        require(negativeSpellings.isNotEmpty()) {
+            "flag '${spec.name}': .negatable() with an empty spelling list says nothing; call .negatable() " +
+                "with no arguments for the generated '--no-...' form"
+        }
+        negativeSpellings.forEach { requireValidSpelling("flag negation", it) }
+        require(negativeSpellings.none { it in spec.names }) {
+            "flag '${spec.name}': negative spelling '${negativeSpellings.first { it in spec.names }}' is " +
+                "already one of this flag's own spellings"
+        }
+        spec.negatable = true
+        spec.negativeNames = negativeSpellings.toList()
+        spec.cardinality = Cardinality.Default(default)
+        return Flag(spec)
+    }
+
+    /** Omit this flag from `--help`; it still parses and binds normally. */
+    public fun Flag.hidden(): Flag {
+        spec.hidden = true
+        return Flag(spec)
+    }
 }

@@ -1,0 +1,12 @@
+[
+    {
+        "id": 1,
+        "title": "Buy Beer",
+        "priority": "HIGH",
+        "due": "2026-07-30"
+    },
+    {
+        "id": 2,
+        "title": "Buy Milk"
+    }
+]
