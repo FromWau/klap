@@ -845,6 +845,29 @@ class LastWinsTest {
         }
         assertTrue("'--alpha', which is required" in failure.message.orEmpty(), failure.message)
     }
+
+    @Test
+    fun aCardinalityMutatedFromASiblingCommandIsRejectedJustTheSame() {
+        // Unlike the case above, "a"'s own build() already ran and passed (alpha/beta were both still
+        // Optional) the instant command("a") { } returned; "b" reaches alpha only through a captured
+        // handle, after "a" is already frozen into a Command, so the guard above alone would miss this.
+        lateinit var alpha: Opt<String?>
+        val failure = assertFailsWith<IllegalArgumentException> {
+            cli("app") {
+                command("a") {
+                    alpha = option("--alpha")
+                    val beta = option("--beta")
+                    lastWins(alpha, beta)
+                    action { Ok("") }
+                }
+                command("b") {
+                    alpha.required()
+                    action { Ok("") }
+                }
+            }
+        }
+        assertTrue("'--alpha', which is required" in failure.message.orEmpty(), failure.message)
+    }
 }
 
 /** `.requiredIf(flag)`: an option only the presence of another input makes mandatory. */
@@ -903,5 +926,62 @@ class RequiredIfTest {
             }
         }
         assertTrue("pointless" in ex.message.orEmpty(), ex.message)
+    }
+
+    @Test
+    fun aNegatableGlobalConditionFiresOnlyOnItsPositiveSpelling() {
+        // The one cell where the accumulator reads polarity rather than a hit count: a global condition and
+        // a negatable one at once. Both halves of that read are exercised here, since nothing else is.
+        val tree = cli("app") {
+            val remote = globalFlag("--remote").negatable()
+            command("c") {
+                val token = option("--token").requiredIf(remote)
+                action { Ok(token() ?: "local") }
+            }
+        }
+        assertIs<Result.Success<Invocation>>(tree.parse(listOf("c", "--no-remote")))
+        assertEquals(
+            CliError.MissingRequiredOption("--token"),
+            assertIs<Result.Error<CliError>>(tree.parse(listOf("c", "--remote"))).error,
+        )
+    }
+
+    @Test
+    fun aTriggerDeclaredOnAnotherCommandFailsAtBuild() {
+        // checkConditionalRequirements only ever asks THIS command's own sift plus globals whether the
+        // trigger fired, so a flag belonging to sibling "a" is invisible to "b"'s check and the rule could
+        // never fire, no matter what --help renders for it.
+        lateinit var otherFlag: Flag
+        val e = assertFailsWith<IllegalArgumentException> {
+            cli("app") {
+                command("a") {
+                    otherFlag = flag("--verbose")
+                    action { Ok("") }
+                }
+                command("b") {
+                    option("--token").requiredIf(otherFlag)
+                    action { Ok("") }
+                }
+            }
+        }
+        assertTrue(
+            e.message!!.startsWith(
+                "command 'b': option '--token' declares .requiredIf(--verbose), which is not declared on 'b'",
+            ),
+            e.message,
+        )
+    }
+
+    @Test
+    fun aTriggerDeclaredAsAGlobalStillBuildsAndFires() {
+        val tree = cli("app") {
+            val remote = globalFlag("--remote")
+            command("push") {
+                val token = option("--token").requiredIf(remote)
+                action { Ok(token() ?: "local") }
+            }
+        }
+        assertEquals("local\n", tree.out(listOf("push")))
+        assertEquals(CliError.MissingRequiredOption("--token"), tree.err(listOf("push", "--remote")))
     }
 }

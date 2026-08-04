@@ -142,23 +142,22 @@ class ParsePositionalsTest {
         assertEquals("0\n", tree.exec(listOf("age")))
     }
 
-    // --- converter/validate chains must never throw at parse (never-throw contract) ---
-
     @Test
-    fun reusingAnArgHandleForTwoTypeConvertersYieldsBadValueNotACrash() {
-        // Both .int() and .long() mutate the one shared spec: after int() succeeds with an Int, the long()
-        // stage casts that Int to String and throws. The never-throw contract turns it into BadValue.
-        val tree = cli("app") {
-            val a = argument("n")
-            a.int()
-            a.long()
-            action { Ok("ok") }
+    fun reusingAnArgHandleForTwoTypeConvertersIsRejectedAtConstruction() {
+        // Both .int() and .long() mutate the one shared spec, so the second stage would cast the first's
+        // Int back to String for every input the user could type, leaving the argument unbindable.
+        val thrown = assertFailsWith<IllegalArgumentException> {
+            cli("app") {
+                val a = argument("n")
+                a.int()
+                a.long()
+                action { Ok("ok") }
+            }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("42"))).error
-        // reason is the platform-dependent cast exception message, so only the type and name are pinned.
-        assertIs<CliError.BadValue>(err)
-        assertEquals("n", err.name)
+        assertContains(thrown.message.orEmpty(), "type-changing converter")
     }
+
+    // --- converter/validate chains must never throw at parse (never-throw contract) ---
 
     @Test
     fun validateAfterMultipleYieldsBadValueInsteadOfCrashing() {

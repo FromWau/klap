@@ -14,3 +14,5 @@ internal actual fun terminalWidth(): Int? = memScoped {
     }
     null
 }
+
+internal actual fun ansiSupported(): Boolean = true

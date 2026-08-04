@@ -10,16 +10,22 @@ no annotation processing.
 
 ## Add to your build
 
-klap publishes locally with `./gradlew publishToMavenLocal` as `com.fromwau.klap:klap:0.1.0`.
+klap publishes locally with `./gradlew publishToMavenLocal` as `com.fromwau:klap:0.1.0`.
 
 ```kotlin
 dependencies {
-    implementation("com.fromwau.klap:klap:0.1.0")
+    implementation("com.fromwau:klap:0.1.0")
 }
 ```
 
 Add `kotlin("plugin.serialization")` only if an action returns an `@Serializable` type. The JSON runtime
 is exposed as `api`, so it arrives transitively. KMP consumers put the dependency in `commonMain`.
+
+**Toolchain floor.** The JVM and Android artifacts are Java 25 bytecode. The JVM variant declares that as
+`org.gradle.jvm.version`, so Gradle reports an unmet requirement instead of letting it surface later as a
+`class file has wrong version` error from `javac`. The Android side has no equivalent attribute — what
+constrains it is the dexer, so consuming the AAR needs Android build-tools 36.1.0 or newer. The native
+targets have no floor.
 
 ## A whole program
 

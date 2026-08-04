@@ -34,7 +34,7 @@ internal fun Cli.captureWithFile(path: String, vararg argv: String): RunResult =
 
 /**
  * Runs [block] against a store path unique to this call, then deletes whatever `TaskStore` left behind
- * (the file itself and its atomic-move `.tmp` sibling), so tests never share mutable state on disk.
+ * (the file itself and its lock directory), so tests never share mutable state on disk.
  */
 internal fun withTempStore(block: (path: String) -> Unit) {
     val path = Path(SystemTemporaryDirectory, "klap-task-manager-test-${Random.nextInt(Int.MAX_VALUE)}.json")
@@ -42,6 +42,7 @@ internal fun withTempStore(block: (path: String) -> Unit) {
         block(path.toString())
     } finally {
         SystemFileSystem.delete(path, mustExist = false)
-        SystemFileSystem.delete(Path("$path.tmp"), mustExist = false)
+        SystemFileSystem.delete(Path("$path.lock", "owner"), mustExist = false)
+        SystemFileSystem.delete(Path("$path.lock"), mustExist = false)
     }
 }

@@ -62,9 +62,9 @@ private fun Invocation.render(style: HelpStyle, terminal: Terminal): Int = when 
 
     is Invocation.ShowCompleteCandidates -> {
         // No candidates prints nothing (not a blank line), matching a leaf action that returns "".
-        // Each candidate renders as one line, `value` or `value\tdescription` (the description sanitized by
-        // Candidate.toCompletionLine()); the per-shell scripts decode the tab.
-        val text = cli.completeCandidates(words).joinToString("\n") { it.toCompletionLine() }
+        // Each candidate renders as one line, `value` or `value\tdescription`, and the per-shell scripts
+        // decode the tab; a value that would break that format is dropped (Candidate.toCompletionLine()).
+        val text = cli.completeCandidates(words).mapNotNull { it.toCompletionLine() }.joinToString("\n")
         if (text.isNotEmpty()) terminal.out(text + "\n")
         0
     }
@@ -120,13 +120,14 @@ public fun Cli.main(argv: Array<String>) {
 }
 
 /**
- * Encode this candidate as one `__complete` wire line: bare [Candidate.value] when there is no usable
- * description, else `value\t<description>`. The description is sanitized first (every tab, newline, and
- * carriage return collapsed to a single space, then trimmed) so a multi-line `help` can never break the
- * one-candidate-per-line format; a blank description encodes as the bare value. The value is still all a
- * shell inserts, so this only ever adds display text a renderer can choose to show.
+ * Encode this candidate as one `__complete` wire line — bare [Candidate.value], or `value\t<description>`
+ * — or null to drop it. A value carrying a tab, newline, or carriage return is dropped rather than
+ * cleaned: a shell inserts the value back into the command line verbatim, so cleaning it would offer a
+ * candidate that no longer matches the data it came from. A description has no such contract, so it is
+ * cleaned (tab/newline/CR to a space, then trimmed) and a blank one encodes as the bare value.
  */
-internal fun Candidate.toCompletionLine(): String {
+internal fun Candidate.toCompletionLine(): String? {
+    if (value.any { it == '\t' || it == '\n' || it == '\r' }) return null
     val cleaned = description
         ?.replace('\t', ' ')
         ?.replace('\n', ' ')

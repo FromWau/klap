@@ -5,6 +5,7 @@ import com.fromwau.klap.internal.parse.END_OF_OPTIONS
 import com.fromwau.klap.internal.parse.accumulator
 import com.fromwau.klap.internal.parse.bind
 import com.fromwau.klap.internal.parse.bindGlobals
+import com.fromwau.klap.internal.parse.clusterTouchesGlobal
 import com.fromwau.klap.internal.parse.isFlagLike
 import com.fromwau.klap.internal.parse.optionValueSlots
 import com.fromwau.klap.internal.parse.resolveChoice
@@ -15,6 +16,7 @@ import com.fromwau.klap.internal.parse.suggest
 import com.fromwau.klap.internal.spec.Builtin
 import com.fromwau.klap.internal.spec.FlagSpec
 import com.fromwau.klap.internal.spec.HolderSpec
+import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.longs
 import com.fromwau.klap.internal.spec.negativeLongs
 
@@ -222,12 +224,12 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
     val withoutColor = if (builtins.color) {
         val colorRaw = withoutJson.value("color").getOrElse { return Result.Error(it) }
         colorRaw?.let { raw ->
-            val resolved = resolveBuiltinChoice("color", raw, COLOR_MODE_NAMES)
+            val resolved = resolveBuiltinChoice("--color", raw, COLOR_MODE_NAMES)
                 .getOrElse { return Result.Error(it) }
             if (ColorMode.fromOrNull(resolved) == null) {
                 return Result.Error(
                     CliError.InvalidChoice(
-                        "color", raw, COLOR_MODE_NAMES,
+                        "--color", raw, COLOR_MODE_NAMES,
                         suggest(raw, COLOR_MODE_NAMES)
                     )
                 )
@@ -249,12 +251,12 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
         if (builtins.completion) {
             withoutColor.value("completion").getOrElse { return Result.Error(it) }
                 ?.let { raw ->
-                    val resolved = resolveBuiltinChoice("completion", raw, COMPLETION_SHELL_NAMES)
+                    val resolved = resolveBuiltinChoice("--completion", raw, COMPLETION_SHELL_NAMES)
                         .getOrElse { return Result.Error(it) }
                     val shell = CompletionShell.fromOrNull(resolved)
                         ?: return Result.Error(
                             CliError.InvalidChoice(
-                                "completion", raw, COMPLETION_SHELL_NAMES,
+                                "--completion", raw, COMPLETION_SHELL_NAMES,
                                 suggest(raw, COMPLETION_SHELL_NAMES)
                             )
                         )
@@ -263,12 +265,12 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
         }
         if (builtins.docs) {
             withoutColor.value("docs").getOrElse { return Result.Error(it) }?.let { raw ->
-                val resolved = resolveBuiltinChoice("docs", raw, DOC_FORMAT_NAMES)
+                val resolved = resolveBuiltinChoice("--docs", raw, DOC_FORMAT_NAMES)
                     .getOrElse { return Result.Error(it) }
                 val format = DocFormat.fromOrNull(resolved)
                     ?: return Result.Error(
                         CliError.InvalidChoice(
-                            "docs", raw, DOC_FORMAT_NAMES,
+                            "--docs", raw, DOC_FORMAT_NAMES,
                             suggest(raw, DOC_FORMAT_NAMES)
                         )
                     )
@@ -282,27 +284,47 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
     val preStrip = globalSpecs.siftGlobals(withoutColor, builtinPool)
     val globalSift = preStrip.sift
 
+    // Read once for the routing walk below: a short cluster carries a global exactly when one of its chars
+    // resolves against these, the same question siftGlobals's own cluster branch already answers.
+    val globalFlagSpecs = globalSpecs.filterIsInstance<FlagSpec>()
+    val globalOptionSpecs = globalSpecs.filterIsInstance<OptionSpec>()
+
     var cmd: Command = this
-    var rest = preStrip.cleaned
-    // Dropped in lockstep with `rest`, so the leaf segment still knows where each of its tokens sat in the
-    // original argv: the strips above removed tokens outright, so no index into `rest` can say.
-    var restPositions = preStrip.positions
     val path = mutableListOf(name)
-    while (rest.isNotEmpty()) {
-        when (val match = cmd.resolveSubcommand(rest.first(), inference == Inference.All)) {
+    // Indices into `preStrip.cleaned` this walk consumes as subcommand-name tokens. Every other index
+    // survives into `rest` untouched and in argv order, including a deferred cluster the walk below skips
+    // over without ever removing — the reached leaf's own sift is the one place it actually binds.
+    val consumed = mutableSetOf<Int>()
+    var idx = 0
+    while (idx < preStrip.cleaned.size) {
+        val token = preStrip.cleaned[idx]
+        when (val match = cmd.resolveSubcommand(token, inference == Inference.All)) {
             is SubcommandMatch.One -> {
                 cmd = match.command
                 path += match.command.name
-                rest = rest.drop(1)
-                restPositions = restPositions.drop(1)
+                consumed += idx
+                idx += 1
             }
 
             is SubcommandMatch.Ambiguous ->
-                return Result.Error(CliError.AmbiguousSubcommand(cmd.name, rest.first(), match.candidates))
+                return Result.Error(CliError.AmbiguousSubcommand(cmd.name, token, match.candidates))
 
-            SubcommandMatch.None -> break
+            SubcommandMatch.None -> {
+                // A mixed short cluster is never a subcommand name, but siftGlobals left it whole rather
+                // than rejecting it, and the same cluster written after the subcommand still binds its
+                // global — so skip it here instead of stopping. Shares siftGlobals's own resolution rule,
+                // reused rather than restated, so this walk and ArityWalk cannot drift apart.
+                val deferred = token.isFlagLike() && !token.startsWith("--") &&
+                    clusterTouchesGlobal(token.removePrefix("-"), globalFlagSpecs, globalOptionSpecs)
+                if (!deferred) break
+                idx += 1
+            }
         }
     }
+    // Filtered together so a surviving token and its original argv index stay paired: the strips above
+    // removed some tokens outright, so no index into `rest` alone can say where a kept one sat.
+    val rest = preStrip.cleaned.filterIndexed { i, _ -> i !in consumed }
+    val restPositions = preStrip.positions.filterIndexed { i, _ -> i !in consumed }
     val qualifiedName = path.joinToString(" ")
 
     // A global buried in a mixed short cluster (`-fv`, where `f` is local) survives the pre-strip, since the

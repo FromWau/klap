@@ -1020,6 +1020,59 @@ class CompletionModifierRoutingTest {
     }
 }
 
+/** Unlike modifierTree, this sets `inference` explicitly, since the abbreviation these tests pin only fires above `Inference.None`. */
+private fun colorAbbreviationDispatcherTree(inferenceMode: Inference): Cli = cli("app") {
+    inference = inferenceMode
+    command("add") { action { Ok("") } }
+}
+
+class ColorAbbreviationCompletionTest {
+
+    @Test
+    fun anAbbreviatedColorOptionOffersColorModesUnderInferenceAll() {
+        // An unambiguous abbreviation binds --color at parse time, so completion has to offer its values
+        // rather than falling through to the first-positional branch and naming subcommands.
+        val tree = colorAbbreviationDispatcherTree(Inference.All)
+        assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--col", ""))
+    }
+
+    @Test
+    fun anAbbreviatedAttachedColorOptionOffersColorModesUnderInferenceAll() {
+        // The attached form resolves the same way. matchingValueOption cannot cover it: --color is a
+        // built-in, so there is no declared OptionSpec for it to find.
+        val tree = colorAbbreviationDispatcherTree(Inference.All)
+        assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--col="))
+        assertEquals(listOf("auto", "always"), tree.candidateValuesFor("--col=a"))
+    }
+
+    @Test
+    fun anAbbreviatedColorOptionDoesNotOfferColorModesUnderInferenceNone() {
+        // Same result with or without the fix: Inference.None turns off scan.matched's prefix half, so
+        // "--col" resolves to nothing here, exactly as the parser itself would refuse the abbreviation.
+        val tree = colorAbbreviationDispatcherTree(Inference.None)
+        assertEquals(listOf("add", "completion", "docs"), tree.candidateValuesFor("--col", ""))
+    }
+
+    @Test
+    fun anAbbreviationAmbiguousWithAnotherDeclaredOptionOffersNoColorModes() {
+        // Same result with or without the fix: the literal check never matched "--col" either way, so this
+        // guards against a broader fix that would resolve the abbreviation without checking ambiguity first.
+        val tree = cli("app") {
+            inference = Inference.Options
+            option("--collate")
+            action { Ok("") }
+        }
+        assertEquals(emptyList(), tree.candidateValuesFor("--col", ""))
+    }
+
+    @Test
+    fun theExactColorSpellingStillCompletesUnderEveryInferenceMode() {
+        val tree = colorAbbreviationDispatcherTree(Inference.All)
+        assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--color", ""))
+        assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--color="))
+    }
+}
+
 private fun siftTree(): Command = cli("t") {
     command("go") {
         flag("--verbose", "-v", help = "chatty")
