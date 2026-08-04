@@ -1,5 +1,6 @@
 package com.fromwau.klap.fixture.tar
 
+import com.fromwau.klap.Inference
 import com.fromwau.klap.Ok
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.cliOf
@@ -17,6 +18,8 @@ import com.fromwau.klap.projection
  * char takes a value (`-cvf out.tar`), and an optional trailing operand list.
  */
 public fun tarCli(): TypedCli<TarInputs> = cliOf("tar") {
+    // GNU tar takes any unambiguous prefix of a long option: `tar --cr --file a.tar` is --create.
+    inference = Inference.Options
     description = "Manipulate tape archives"
     version = "1.35"
     epilogue = "The mode flags -c, -x and -t are mutually exclusive; exactly one must be given."

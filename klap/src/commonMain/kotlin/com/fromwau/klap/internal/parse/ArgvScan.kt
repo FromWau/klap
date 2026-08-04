@@ -3,8 +3,11 @@ package com.fromwau.klap.internal.parse
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Command
+import com.fromwau.klap.Inference
 import com.fromwau.klap.Result
+import com.fromwau.klap.SubcommandMatch
 import com.fromwau.klap.internal.spec.OptionSpec
+import com.fromwau.klap.resolveSubcommand
 
 /**
  * argv as the position-independent built-in scans see it: the [tokens] still in play, the index each one
@@ -17,10 +20,12 @@ import com.fromwau.klap.internal.spec.OptionSpec
  * rule survives however many strips have already run over the line.
  *
  * [pool] is the long surface a spelling resolves against, which is the tree-wide one before the subcommand
- * walk and the reached command's own after it.
+ * walk and the reached command's own after it. [infer] is the root's own mode reduced to the one question a
+ * scan asks — may a long spelling resolve by prefix here.
  */
 internal class ArgvScan(
     private val pool: List<String>,
+    val infer: Boolean,
     val valueSlots: Set<Int>,
     val tokens: List<String>,
     val positions: List<Int> = tokens.indices.toList(),
@@ -37,7 +42,7 @@ internal class ArgvScan(
     val openTokens: List<String> get() = open.map { tokens[it] }
 
     /** The [pool] entry [token] names, exactly or as an unambiguous abbreviation; null when it names none. */
-    fun matched(token: String): String? = matchedLong(token, pool)
+    fun matched(token: String): String? = matchedLong(token, pool, infer)
 
     /**
      * Whether a bare (valueless) token names the built-in [long]. The `=value` shape is deliberately not a
@@ -101,7 +106,7 @@ internal class ArgvScan(
 
     private fun keeping(dropped: Set<Int>): ArgvScan {
         val kept = tokens.indices.filterNot { it in dropped }
-        return ArgvScan(pool, valueSlots, kept.map { tokens[it] }, kept.map { positions[it] })
+        return ArgvScan(pool, infer, valueSlots, kept.map { tokens[it] }, kept.map { positions[it] })
     }
 }
 
@@ -144,7 +149,14 @@ private class ArityWalk(private val cli: Cli) {
     // and taking them from here is what keeps this walk's reading of a token identical to [sift]'s.
     private val globals =
         GlobalSift(emptyMap(), emptyMap(), emptyMap())
-            .accumulator(cli.globalSpecs, cli.version, cli.builtins, cli.metaOptions, cli.declaredLongs)
+            .accumulator(
+                cli.globalSpecs,
+                cli.version,
+                cli.builtins,
+                cli.metaOptions,
+                cli.declaredLongs,
+                cli.inference,
+            )
 
     private var cmd: Command = cli
     private var pool: List<String> = cli.longMatchPool(globals)
@@ -160,7 +172,11 @@ private class ArityWalk(private val cli: Cli) {
         while (i < head.size) {
             val token = head[i]
             if (!token.isFlagLike()) {
-                val child = if (routing) cmd.subcommand(token) else null
+                val child = if (routing) {
+                    (cmd.resolveSubcommand(token, cli.inference == Inference.All) as? SubcommandMatch.One)?.command
+                } else {
+                    null
+                }
                 if (child == null) {
                     routing = false
                     // `optionsEndAtFirstOperand` deliberately does not reach klap's position-independent
@@ -189,10 +205,10 @@ private class ArityWalk(private val cli: Cli) {
     private fun longClaim(token: String, next: String?): Claim {
         val typed = token.removePrefix("--").substringBefore('=')
         val inline = '=' in token
-        val long = when (val resolved = resolveLong(typed, pool)) {
-            is LongMatch.Exact -> resolved.name
-            is LongMatch.Prefix -> resolved.name
-            is LongMatch.Ambiguous, LongMatch.None -> return CLAIMS_NOTHING
+        val long = when (val resolved = resolveLong(typed, pool, globals.inferNames)) {
+            is NameMatch.Exact -> resolved.name
+            is NameMatch.Prefix -> resolved.name
+            is NameMatch.Ambiguous, NameMatch.None -> return CLAIMS_NOTHING
         }
         // A declared spec always outranks a built-in of the same name: a reserved long is only free to be
         // declared once the tree has declined the built-in behind it (validateReservedNames).

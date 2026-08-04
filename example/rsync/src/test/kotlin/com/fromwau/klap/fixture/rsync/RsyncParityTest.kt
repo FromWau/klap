@@ -251,37 +251,20 @@ class RsyncParityTest {
         parity.rejects("--no-exclude", "src/", "dst/", because = "real rsync: --no-exclude: unknown option")
         // A trailing option with no value cannot borrow a token that is not there.
         parity.rejects("--exclude", because = "real rsync: --exclude with no value has nothing to bind")
+        // Real rsync's own long options never abbreviate (each verified below), and klap now agrees at
+        // Inference.None: neither tool resolves a prefix that is not a declared spelling.
+        parity.rejects("--exc=x", "src/", "dst/", because = "real rsync: --exc=x: unknown option")
+        parity.rejects("--dele", "src/", "dst/", because = "real rsync: --dele: unknown option")
+        parity.rejects("--compr", "src/", "dst/", because = "real rsync: --compr: unknown option")
+        parity.rejects("--no-part", "src/", "dst/", because = "real rsync: --no-part: unknown option")
+        parity.rejects("--co", "src/", "dst/", because = "real rsync: --co: unknown option")
+        parity.rejects("--com", "src/", "dst/", because = "real rsync: --com: unknown option")
+        parity.rejects("--comp", "src/", "dst/", because = "real rsync: --comp: unknown option")
+        parity.rejects("--p", "src/", "dst/", because = "real rsync: --p: unknown option")
     }
 
     @Test
     fun klapAcceptsWhatRealRsyncRejects() {
-        // Real rsync does NOT abbreviate long options — it matches the full spelling or a spelling it
-        // declares itself. `--exc=x`, `--dele` and `--com` are all "unknown option" there (each
-        // verified), while klap resolves any unambiguous prefix, GNU getopt_long style. This is klap's
-        // documented behaviour rather than a bug, and it is the single largest divergence in this file.
-        parity.bindsLoosely(
-            "--exc=x", "src/", "dst/",
-            because = "real rsync: --exc=x: unknown option",
-            expected = NOTHING_BOUND.copy(exclude = listOf("x"), paths = listOf("src/", "dst/")),
-        )
-        parity.bindsLoosely(
-            "--dele", "src/", "dst/",
-            because = "real rsync: --dele: unknown option",
-            expected = NOTHING_BOUND.copy(delete = true, paths = listOf("src/", "dst/")),
-        )
-        // `--compr`, not `--comp`: see the ambiguity note in knownDivergenceFromRealRsync below.
-        parity.bindsLoosely(
-            "--compr", "src/", "dst/",
-            because = "real rsync: --compr: unknown option",
-            expected = NOTHING_BOUND.copy(compress = true, paths = listOf("src/", "dst/")),
-        )
-        // The negative half abbreviates too.
-        parity.bindsLoosely(
-            "--no-part", "src/", "dst/",
-            because = "real rsync: --no-part: unknown option",
-            expected = NOTHING_BOUND.copy(paths = listOf("src/", "dst/")),
-        )
-
         // klap's own surface claims tokens real rsync has never heard of. rsync's operands are paths, so
         // each of these also shadows a file of that name.
         parity.bindsLoosely(
@@ -323,26 +306,11 @@ class RsyncParityTest {
         parity.rejects("--no-verbose", "src/", "dst/", because = "real rsync: --no-verbose is accepted")
         parity.rejects("--no-human-readable", "src/", "dst/", because = "real rsync: --no-human-readable is accepted")
 
-        // GAP 4 — `--no-p`. Real rsync resolves it (to --no-perms) and exits 0; here it reaches both
-        // `--no-partial` and `--no-progress`, so klap reports the ambiguity. Neither tool is wrong; they
-        // simply disagree about what a prefix may reach.
+        // GAP 4 — `--no-p`. Real rsync resolves it through its own much larger option set (to
+        // --no-perms, a flag this fixture never declares) and exits 0; klap has no inference to reach for
+        // at Inference.None, so the token simply names nothing here. Neither tool is wrong; they are
+        // reading the prefix against two different option sets.
         parity.rejects("--no-p", "src/", "dst/", because = "real rsync: --no-p resolves to --no-perms, exit 0")
-
-        // Real rsync also rejects this, but for the opposite reason: it does not abbreviate at all,
-        // where klap rejects it only because two spellings match. Recorded so the two are not confused.
-        parity.rejects("--p", "src/", "dst/", because = "real rsync: --p: unknown option (klap: ambiguous)")
-
-        // GAP 5 — klap's own injected built-ins share the abbreviation namespace with the tool's
-        // options, so `--completion` and `--color` between them kill every short abbreviation of
-        // `--compress`. `--com` reports
-        //     AmbiguousOption(token=--com, candidates=[--compress, --completion])
-        // and `--co` adds `--color` to that list. `--compr` is the shortest prefix that resolves.
-        // Nothing rsync declares is involved; a user typing `rsync --comp src/ dst/` is refused on
-        // account of a completion built-in they never asked for. Declining both built-ins would free
-        // the namespace, at the cost of the features.
-        parity.rejects("--com", "src/", "dst/", because = "klap: ambiguous against the --completion built-in")
-        parity.rejects("--comp", "src/", "dst/", because = "klap: ambiguous against the --completion built-in")
-        parity.rejects("--co", "src/", "dst/", because = "klap: ambiguous against --completion and --color")
     }
 
     @Test

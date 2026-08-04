@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.mv
 
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Err
+import com.fromwau.klap.Inference
 import com.fromwau.klap.Ok
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.cliOf
@@ -35,6 +36,8 @@ import com.fromwau.klap.projection
  *     --help / --version
  */
 public fun mvCli(): TypedCli<MvInputs> = cliOf("mv") {
+    // GNU mv takes any unambiguous prefix of a long option: `mv --strip` reaches --strip-trailing-slashes.
+    inference = Inference.Options
     description = "Rename SOURCE to DEST, or move SOURCE(s) to DIRECTORY."
     version = "9.11"
     epilogue = "The backup suffix is '~', unless set with --suffix or SIMPLE_BACKUP_SUFFIX. " +

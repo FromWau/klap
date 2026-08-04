@@ -8,6 +8,7 @@ how to add it; start at [`example/`](../example/README.md) for runnable programs
 | [Quick start](#quick-start) | the builder DSL, the three receivers, sharing a declaration |
 | [Inputs and converters](#inputs-and-converters) | spellings, dash-led values, numbers, dependent and optional-value operands |
 | [Flags](#flags-boolean-counted-negatable) | boolean, counted, negatable |
+| [Inference](#inference) | prefix abbreviation modes, git's rationale, choosing a mode |
 | [Cross-input constraints](#cross-input-constraints) | `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `requiredIf` |
 | [Global / persistent options](#global--persistent-options) | options shared by every subcommand, and declining a built-in |
 | [Typed results and errors](#typed-results-and-errors) | `Result`, `CliError`, exit codes, did-you-mean |
@@ -63,7 +64,7 @@ Those receivers have names, and you will want them the first time you factor a d
 | Receiver | Where it is the receiver | What it carries |
 |---|---|---|
 | `CommandBuilder` | `command(name) { }` | `argument`, `option`, `flag`, `command`, `group`, `example`, `action`; the cross-input rules `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `numericAlias`; the per-command settings `description`, `aliases`, `epilogue`, `hidden`, `optionsEndAtFirstOperand` |
-| `CliBuilder` | `cli(name) { }` | everything on `CommandBuilder`, plus the root-only `globalOption`, `globalFlag`, `version`, `author`, `builtins { }` |
+| `CliBuilder` | `cli(name) { }` | everything on `CommandBuilder`, plus the root-only `globalOption`, `globalFlag`, `version`, `author`, `inference`, `builtins { }` |
 | `ConverterScope` | the base of both | every converter: `.int()`, `.map()`, `.default()`, `.range()`, `.count()`, `.negatable()`, `.absentWhen()`, `.completeWith()`, ... |
 
 `CliBuilder` extends `CommandBuilder`, which extends `ConverterScope`, so a root block can call
@@ -414,11 +415,50 @@ as standalone tokens, not inside a cluster. `--` ends option parsing: every toke
 An option that takes a value takes the next token whatever it looks like, dash-led or not; see
 [Dash-led values](#dash-led-values) above.
 
-**A long option may be abbreviated to any unambiguous prefix**, the way GNU's `getopt_long` does:
-`mkdir --par d` reaches `--parents`, and `--no-der` reaches a negatable flag's negative half. An exact
-spelling always wins outright, so a pool holding both `--sort` and `--sort-by` keeps the shorter one
-reachable. A prefix that reaches more than one spelling is a usage error naming every possibility, in
-GNU's own wording:
+A single-value option can be given more than once; the last occurrence silently wins (reach for
+`.multiple()` if you want every occurrence collected instead). `--opt=` with nothing after the `=` binds
+an explicit empty string (`""`), which is distinct from omitting the option entirely, which leaves it at
+its default or `null`.
+
+## Inference
+
+**A partially typed name resolves only when you ask for it.** By default nothing infers: every long
+option, subcommand and choice value must be spelled in full, and a miss suggests the nearest spelling.
+One root-level switch turns inference on for the whole tree:
+
+```kotlin
+cli("tasks") {
+    inference = Inference.All
+    ...
+}
+```
+
+| Mode | Long options | `.choice()` / `.enum<E>()` values | Subcommands |
+|---|---|---|---|
+| `Inference.None` (default) | no | no | no |
+| `Inference.Options` | yes | yes | no |
+| `Inference.All` | yes | yes | yes |
+
+`Options` is the GNU shape, and a name and its value travel together there: `mkdir --par d` reaches
+`--parents`, `--no-der` reaches a negatable flag's negative half, and `ls --color=al` reaches `always`
+the same way. `All` adds what `ip` does (`ip a` for `ip address`).
+
+**`Options` is a superset of what klap had before this switch existed:** its long-option abbreviation is
+the direct replacement, but its `.choice()` / `.enum<E>()` value abbreviation is new behaviour, so an
+author reaching for `Options` purely to restore the old long-option handling gets the value inference too.
+
+`git` is the reason the middle mode exists. It abbreviates the options of a subcommand — `git branch --f`
+answers *ambiguous option: f (could be --force or --format)* — while refusing `git stat`, because its
+subcommand pool is not closed: aliases and third-party `git-*` binaries on `PATH` join it, so an
+abbreviation there could change meaning depending on what is installed. Any CLI with a large or
+extensible subcommand set wants that same shape.
+
+Root-only, with no per-command override: the ambiguity pool already spans siblings, so a per-command
+setting would give one token two meanings depending on which command you asked.
+
+**Wherever inference is on, an exact spelling always wins outright**, so a pool holding both `--sort` and
+`--sort-by` keeps the shorter one reachable, and `list` stays reachable beside `listen`. A prefix that
+reaches more than one spelling is a usage error naming every possibility, in GNU's own wording:
 
 ```
 $ chmod --re 700 d
@@ -432,13 +472,22 @@ silently choosing. Two consequences follow. `--help-all` is the one exception: i
 spelling only, because klap injects it rather than you declaring it, and letting it claim the space it
 shares with `--help` would cost every klap CLI its `--h`. And a sibling subcommand's `--sort-by` can make
 `sub1 --sor` ambiguous even where `sub1` alone is not, which is the price of that pool never being
-narrower than the one a rejected token is checked against. Shorts never abbreviate (a one-dash token is a
-cluster), and neither do subcommand names.
+narrower than the one a rejected token is checked against.
 
-A single-value option can be given more than once; the last occurrence silently wins (reach for
-`.multiple()` if you want every occurrence collected instead). `--opt=` with nothing after the `=` binds
-an explicit empty string (`""`), which is distinct from omitting the option entirely, which leaves it at
-its default or `null`.
+**Shorts never abbreviate, in any mode.** A one-dash token is a cluster of one-character options
+(`-jso` is `-j -s -o`), so there is nothing to abbreviate.
+
+**Inference and did-you-mean are complementary, and did-you-mean is always on.** Inference rescues
+prefixes; suggestion also rescues transpositions (`lsit` → `list`) that are no prefix of anything. A
+prefix that reaches exactly one spelling is always suggested even when it is far too short for the
+edit-distance rule, so `--h` on a strict CLI still answers *Did you mean --help?*.
+
+**Choosing a mode.** This is not a POSIX question: guideline 3 makes an option name one character, so
+`--`-led names lie outside the guidelines entirely and no mode here is more or less conformant. What a
+mode trades is **forward compatibility**. `--j` works today, but adding a `--jobs` option later breaks
+every script that used it. `None` is the default because a CLI whose invocations get committed to scripts
+or CI wants its names spelled out; reach for `Options` when you are modelling a GNU-shaped tool, and `All`
+when interactive typing speed is the point.
 
 ## Cross-input constraints
 
@@ -1326,8 +1375,10 @@ guideline, knowingly; every option that does not call it stays conforming, and `
 both halves. See [Options whose value is optional](#options-whose-value-is-optional).
 
 The rest of what klap adds is outside the guidelines' model rather than against it, so a conforming line
-has no token for any of it to reach: long options and their unambiguous prefixes and `--config=value`
-spellings (guideline 3 makes an option name one character, so `--`-led names lie outside it entirely),
+has no token for any of it to reach: long options, their `--config=value` spellings, and — where a tree
+opts in — their unambiguous prefixes (guideline 3 makes an option name one character, so `--`-led names
+lie outside it entirely, which is also why no [`inference`](#inference) mode is
+more or less conformant than another),
 reading an option after an operand, repeated occurrences, a non-alphanumeric or digit short, and a
 negatable flag's negative half however it is spelled: the guidelines describe no negation at all, so both
 halves are ordinary options to them.

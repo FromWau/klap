@@ -5,6 +5,7 @@ import com.fromwau.klap.internal.platform.resolveColumns
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 private fun envOf(vars: Map<String, String>): (String) -> String? = { vars[it] }
@@ -106,6 +107,19 @@ class TerminalPolicyTest {
     }
 
     @Test
+    fun colorModeValuePrefixResolvesOnlyUnderInference() {
+        // Unambiguous prefix, inference on: resolves through the same resolveChoice parse() uses.
+        assertEquals(ColorMode.ALWAYS, listOf("--color", "al").colorMode(infer = true))
+        // "a" reaches both "auto" and "always"; lenient, so ambiguity falls back to AUTO, never errors.
+        assertEquals(ColorMode.AUTO, listOf("--color", "a").colorMode(infer = true))
+        // Inference off: a prefix is just an unrecognized value, so it falls back to AUTO too.
+        assertEquals(ColorMode.AUTO, listOf("--color", "al").colorMode(infer = false))
+        // An exact spelling resolves regardless of the flag.
+        assertEquals(ColorMode.ALWAYS, listOf("--color", "always").colorMode(infer = true))
+        assertEquals(ColorMode.ALWAYS, listOf("--color", "always").colorMode(infer = false))
+    }
+
+    @Test
     fun colorAlwaysAndNeverBeatTheEnvLadder() {
         // RecordingTerminal always reports ansi=false, so --color=always proves the mode overrides the
         // terminal's own reading; --color=never confirms the off path is equally explicit, not incidental.
@@ -119,5 +133,22 @@ class TerminalPolicyTest {
         val always = RecordingTerminal()
         tree.run(arrayOf("--color=always", "--help"), always)
         assertTrue(esc in always.out.toString(), always.out.toString())
+    }
+
+    @Test
+    fun colorValuePrefixAgreesBetweenParseAndRun() {
+        // parse() binds "al" to always via resolveChoice; run() must render with that same mode rather than
+        // recompute AUTO from the still-abbreviated raw value, or the one line would bind one mode and paint
+        // another.
+        val tree = cli("app") {
+            inference = Inference.Options
+            command("go") { action { Ok("") } }
+        }
+        assertIs<Result.Success<Invocation>>(tree.parse(listOf("--color", "al", "--help")))
+
+        val esc = Char(27)
+        val recorder = RecordingTerminal()
+        tree.run(arrayOf("--color", "al", "--help"), recorder)
+        assertTrue(esc in recorder.out.toString(), recorder.out.toString())
     }
 }

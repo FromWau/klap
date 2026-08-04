@@ -167,18 +167,8 @@ class CurlParityTest {
             expected = NOTHING_BOUND.copy(urls = listOf("https://example.com")),
         )
 
-        // Prefix abbreviation is klap's rule for every tree, and curl is the tool that does not want it:
-        // it matches long options exactly and has always answered these two with "is unknown".
-        parity.bindsLoosely(
-            "--loc", "https://example.com",
-            because = "real curl: option --loc: is unknown",
-            expected = NOTHING_BOUND.copy(location = true, urls = listOf("https://example.com")),
-        )
-        parity.bindsLoosely(
-            "--sil", "https://example.com",
-            because = "real curl: option --sil: is unknown",
-            expected = NOTHING_BOUND.copy(silent = true, urls = listOf("https://example.com")),
-        )
+        parity.rejects("--loc", "https://example.com", because = "real curl: option --loc: is unknown")
+        parity.rejects("--sil", "https://example.com", because = "real curl: option --sil: is unknown")
 
         // curl's own help takes a category, and `--help` is the one built-in `builtins { }` cannot decline,
         // so klap answers the whole line with its own help and drops the subject.

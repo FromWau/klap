@@ -60,6 +60,10 @@ in place below. **Date:** 2026-08-02 (original observations), updated the same d
 > declarability rather than ergonomics, so it closed nothing here on its own: **F9** (`--version` has no
 > short) gained an abbreviation and nothing else, and F5 was already closed and got wider.
 >
+> **Checked again on 2026-08-04**, after the inference switch. F9's consolation shrank rather than grew:
+> the abbreviation it gained is now opt-in and off by default, so `--vers` reaches `--version` only on a
+> tree declaring `Inference.Options` or `Inference.All`. Nothing else here moved.
+>
 > **F18 was then fixed directly, and is the one finding this date closed.** It had been re-verified defect
 > by defect against the rewritten README first, which corrected its own citations and found four of its
 > five defects still holding. All five are now closed, and the two that were snippet defects are pinned by
@@ -593,8 +597,9 @@ type.
 > short and no way to declare one, and `version` is still reserved. Three fixtures pin the cost as a
 > `rejects` line whose `because` names klap rather than the tool: `example/curl` (`-V`), `example/ssh`
 > (`-V`), `example/git` (`-v`), plus `example/pacman`, which is a fourth instance the original corpus of
-> ten did not contain. Nothing here changed except that the failure is now reachable through an
-> abbreviation as well.
+> ten did not contain. Nothing here changed except that the failure became reachable through an
+> abbreviation as well — and since 2026-08-04 that extra route is opt-in, so it is back to the literal
+> spelling on a default tree.
 
 **Mechanism.** `Parser.kt:101` matches the whole literal token `"--version"` on the root only, with no short
 and no alias hook. `version` is in `RESERVED_LONG` (`BuilderValidation.kt:12`), so you cannot redeclare it.

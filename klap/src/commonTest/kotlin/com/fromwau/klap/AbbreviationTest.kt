@@ -1,6 +1,6 @@
 package com.fromwau.klap
 
-import com.fromwau.klap.internal.parse.LongMatch
+import com.fromwau.klap.internal.parse.NameMatch
 import com.fromwau.klap.internal.parse.resolveLong
 import com.fromwau.klap.internal.render.message
 import kotlin.test.Test
@@ -9,47 +9,49 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
+/** Prefix resolution itself, under the mode that enables it; [InferenceModeTest] owns the mode boundaries. */
 class AbbreviationTest {
 
     private val pool = listOf("recursive", "reference", "verbose", "sort", "sort-by")
 
     @Test
     fun anExactSpellingResolvesToItself() {
-        assertEquals(LongMatch.Exact("verbose"), resolveLong("verbose", pool))
+        assertEquals(NameMatch.Exact("verbose"), resolveLong("verbose", pool, infer = true))
     }
 
     @Test
     fun anUnambiguousPrefixResolves() {
-        assertEquals(LongMatch.Prefix("verbose"), resolveLong("verb", pool))
-        assertEquals(LongMatch.Prefix("recursive"), resolveLong("recu", pool))
+        assertEquals(NameMatch.Prefix("verbose"), resolveLong("verb", pool, infer = true))
+        assertEquals(NameMatch.Prefix("recursive"), resolveLong("recu", pool, infer = true))
     }
 
     @Test
     fun anAmbiguousPrefixNamesEveryPossibilityInDeclarationOrder() {
-        val match = assertIs<LongMatch.Ambiguous>(resolveLong("re", pool))
+        val match = assertIs<NameMatch.Ambiguous>(resolveLong("re", pool, infer = true))
         assertEquals(listOf("recursive", "reference"), match.candidates)
     }
 
     @Test
     fun anExactSpellingBeatsBeingAPrefixOfAnother() {
         // `sort` is a strict prefix of `sort-by`, so prefix matching alone would call it ambiguous.
-        assertEquals(LongMatch.Exact("sort"), resolveLong("sort", pool))
+        assertEquals(NameMatch.Exact("sort"), resolveLong("sort", pool, infer = true))
     }
 
     @Test
     fun anUnmatchedSpellingIsNone() {
-        assertEquals(LongMatch.None, resolveLong("nope", pool))
-        assertEquals(LongMatch.None, resolveLong("", pool))
+        assertEquals(NameMatch.None, resolveLong("nope", pool, infer = true))
+        assertEquals(NameMatch.None, resolveLong("", pool, infer = true))
     }
 
     @Test
     fun aDuplicatedCandidateDoesNotFakeAnAmbiguity() {
         // The same spelling can reach the pool twice (a local spec and the built-in list both offering it);
         // two entries naming ONE option are not two possibilities.
-        assertEquals(LongMatch.Prefix("verbose"), resolveLong("verb", listOf("verbose", "verbose")))
+        assertEquals(NameMatch.Prefix("verbose"), resolveLong("verb", listOf("verbose", "verbose"), infer = true))
     }
 
     private fun tree() = cli("t") {
+        inference = Inference.Options
         val recursive = flag("--recursive", "-r")
         val reference = option("--reference")
         val verbose = flag("--verbose", "-v").negatable(default = false)
@@ -84,6 +86,7 @@ class AbbreviationTest {
     @Test
     fun aBuiltinAbbreviates() {
         val versioned = cli("t") {
+            inference = Inference.Options
             version = "1.0"
             action<String>(human = { it }) { Ok("ran") }
         }
@@ -93,6 +96,7 @@ class AbbreviationTest {
     @Test
     fun aBuiltinTakesPartInAmbiguity() {
         val withHeader = cli("t") {
+            inference = Inference.Options
             option("--header")
             action<String>(human = { it }) { Ok("ran") }
         }
@@ -103,6 +107,7 @@ class AbbreviationTest {
     @Test
     fun theInjectedHelpAllAnswersToItsFullSpellingOnly() {
         val tree = cli("t") {
+            inference = Inference.Options
             command("build") { action<String>(human = { it }) { Ok("built") } }
         }
         // --help-all is klap's, not the author's, so it takes no part in prefix resolution: letting it claim
@@ -119,6 +124,7 @@ class AbbreviationTest {
     @Test
     fun aHiddenInputMatchesButIsStillNeverSuggested() {
         val tree = cli("t") {
+            inference = Inference.Options
             val secret = flag("--secret").hidden()
             val send = flag("--send")
             action<String>(human = { it }) { Ok("secret=${secret()} send=${send()}") }
@@ -141,6 +147,7 @@ class AbbreviationTest {
     @Test
     fun aGlobalAbbreviatesAndSharesOnePoolWithTheBuiltins() {
         val tree = cli("app") {
+            inference = Inference.Options
             val header = globalOption("--header")
             command("build") {
                 action<String>(human = { it }) { Ok("header=${header()}") }
@@ -158,6 +165,7 @@ class AbbreviationTest {
     @Test
     fun aGroupNodeReportsTheSameAmbiguityALeafWould() {
         val tree = cli("app") {
+            inference = Inference.Options
             globalOption("--header")
             command("build") { action<String>(human = { it }) { Ok("built") } }
         }
@@ -170,6 +178,7 @@ class AbbreviationTest {
     }
 
     private fun head() = cli("head") {
+        inference = Inference.Options
         version = "9.11"
         val verbose = flag("--verbose", "-v")
         argument("file").multiple()
@@ -201,6 +210,7 @@ class AbbreviationTest {
     }
 
     private fun dispatcher() = cli("app") {
+        inference = Inference.Options
         version = "1.0"
         command("fetch") {
             val header = option("--header")
@@ -230,6 +240,7 @@ class AbbreviationTest {
     @Test
     fun anAbbreviationThePreStripDeclinedIsNeverUnknownAtTheCommand() {
         val tree = cli("app") {
+            inference = Inference.Options
             command("fetch") {
                 val collate = option("--collate")
                 action<String>(human = { it }) { Ok("collate=${collate()}") }
@@ -245,9 +256,54 @@ class AbbreviationTest {
         assertEquals("collate=x", tree.bindText("fetch", "--colla", "x"))
     }
 
+    private fun addListDispatcher() = cli("app") {
+        inference = Inference.Options
+        command("list") {
+            val limit = option("--limit")
+            val long = flag("--long")
+            action<String>(human = { it }) { Ok("limit=${limit()} long=${long()}") }
+        }
+        command("show") {
+            val limit = option("--limit")
+            action<String>(human = { it }) { Ok("limit=${limit()}") }
+        }
+        command("add") {
+            val text = argument("text")
+            action<String>(human = { it }) { Ok("text=${text()}") }
+        }
+    }
+
+    @Test
+    fun anAmbiguousPrefixNeitherSiblingDeclaresIsUnknownThere() {
+        val tree = addListDispatcher()
+        // --limit/--long belong to `list` alone; unlike the pinned pre-strip case above, `add` reaches
+        // NEITHER spelling, so there is no remaining possibility left to report and the honest answer is
+        // that `--l` names nothing this command could ever bind.
+        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("add", "x", "--l"))).error
+        assertEquals(CliError.UnknownOption("--l", null), err)
+    }
+
+    @Test
+    fun theSamePrefixStaysAmbiguousWhereBothAreDeclared() {
+        val tree = addListDispatcher()
+        // At `list`, which declares both, the ambiguity is real and both spellings are reachable.
+        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("list", "--l"))).error
+        assertEquals(CliError.AmbiguousOption("--l", listOf("--limit", "--long")), err)
+    }
+
+    @Test
+    fun exactlyOneReachableCandidateKeepsTheFullUnfilteredList() {
+        val tree = addListDispatcher()
+        // `show` declares only --limit, so --long is unreachable there; the pinned decision above still
+        // reports the full, unfiltered list rather than silently collapsing to the one survivor.
+        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("show", "--l"))).error
+        assertEquals(CliError.AmbiguousOption("--l", listOf("--limit", "--long")), err)
+    }
+
     @Test
     fun aGlobalAndACommandLongShareOnePoolInThePreStrip() {
         val tree = cli("app") {
+            inference = Inference.Options
             val sort = globalOption("--sort")
             command("sub") {
                 val sortBy = option("--sort-by")
@@ -269,6 +325,7 @@ class AbbreviationTest {
     @Test
     fun aLocalLongIsNeverEatenByAnAbbreviatedMetaOption() {
         val tree = cli("app") {
+            inference = Inference.Options
             command("sub") {
                 val collate = option("--collate")
                 val files = argument("file").multiple()
@@ -294,6 +351,7 @@ class AbbreviationTest {
     @Test
     fun anAbbreviatedGlobalThatCollidesWithABuiltinIsAmbiguousInBothPositions() {
         val tree = cli("app") {
+            inference = Inference.Options
             val collate = globalOption("--collate")
             command("sub") {
                 action<String>(human = { it }) { Ok("collate=${collate()}") }
@@ -317,8 +375,10 @@ class AbbreviationTest {
     }
 
     @Test
-    fun subcommandNamesNeverAbbreviate() {
+    fun subcommandNamesDoNotAbbreviateUnderOptions() {
         val dispatcher = cli("t") {
+            // Only Inference.All infers a subcommand prefix; InferenceModeTest owns that mode boundary.
+            inference = Inference.Options
             command("status") { action<String>(human = { it }) { Ok("status") } }
         }
         val err = assertIs<Result.Error<CliError>>(dispatcher.parse(listOf("stat"))).error

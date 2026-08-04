@@ -20,6 +20,7 @@ internal class TaskStore(private val file: Path) {
         return try {
             if (!SystemFileSystem.exists(file)) return Ok(emptyList())
             val text = SystemFileSystem.source(file).buffered().use { it.readString() }
+            if (text.isBlank()) return Ok(emptyList())
             Ok(json.decodeFromString(text))
         } catch (e: IOException) {
             Err(storeIoError(file, e))

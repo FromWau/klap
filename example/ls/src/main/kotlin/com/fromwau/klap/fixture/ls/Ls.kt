@@ -1,5 +1,6 @@
 package com.fromwau.klap.fixture.ls
 
+import com.fromwau.klap.Inference
 import com.fromwau.klap.Ok
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.cliOf
@@ -23,6 +24,8 @@ import com.fromwau.klap.projection
  * why the suite never compares klap's exit code with a real tool's (mkdir answers the same mistake with 1).
  */
 public fun lsCli(): TypedCli<LsInputs> = cliOf("ls") {
+    // GNU ls takes any unambiguous prefix of a long option or a choice value: `ls --rec` is --recursive.
+    inference = Inference.Options
     description = "List information about the FILEs (the current directory by default)."
     version = "9.11"
     epilogue = "Sort entries alphabetically if none of -tSUX nor --sort is specified. " +

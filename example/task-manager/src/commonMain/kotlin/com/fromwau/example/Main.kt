@@ -6,6 +6,7 @@ import com.fromwau.klap.ColorScope
 import com.fromwau.klap.CompletionScope
 import com.fromwau.klap.Err
 import com.fromwau.klap.Flag
+import com.fromwau.klap.Inference
 import com.fromwau.klap.Ok
 import com.fromwau.klap.Opt
 import com.fromwau.klap.Style
@@ -31,6 +32,9 @@ fun main(args: Array<String>) {
  * `Cli.run(argv, terminal)`, which needs the built [Cli], not the process-exiting `.main(args)` call below.
  */
 internal fun taskManagerCli(): Cli = cli("klapExample") {
+    // The showcase opts all the way in: `klapExample lis` reaches `list`, `klapExample list --j` reaches
+    // `--json`, and `klapExample add --priority hi` reaches `high` (verified).
+    inference = Inference.All
     description = "A tiny file-backed task manager"
     version = "1.0.0"
     author = "The klap example"

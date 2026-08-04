@@ -5,6 +5,8 @@ import com.fromwau.klap.COMPLETE_FILES
 import com.fromwau.klap.Cli
 import com.fromwau.klap.Command
 import com.fromwau.klap.CompletionScope
+import com.fromwau.klap.Inference
+import com.fromwau.klap.SubcommandMatch
 import com.fromwau.klap.builtinScan
 import com.fromwau.klap.internal.parse.END_OF_OPTIONS
 import com.fromwau.klap.internal.parse.Sifted
@@ -26,6 +28,7 @@ import com.fromwau.klap.internal.spec.negativeLongs
 import com.fromwau.klap.internal.spec.negativeShorts
 import com.fromwau.klap.internal.spec.shorts
 import com.fromwau.klap.positionIndependentLongs
+import com.fromwau.klap.resolveSubcommand
 
 /**
  * A single completion candidate: [value] is the text offered on the wire (and to the shell, which is what
@@ -93,7 +96,7 @@ internal fun Cli.completeCandidates(words: List<String>): List<Candidate> {
 
     // Built via accumulator() to stay in lockstep with parse(), but only its spec lists are read here: they
     // are what lets the segment sift below recognize a global hiding in a mixed short cluster (`-fr`).
-    val globalAcc = globalSift.accumulator(globalSpecs, version, builtins, metaOptions, declaredLongs)
+    val globalAcc = globalSift.accumulator(globalSpecs, version, builtins, metaOptions, declaredLongs, inference)
     // One segment walk: the flag-name branch reads which constraint members are already on the line, the
     // positional branch the positional count. Lazy for the value-completion branches, which need it only
     // when the option under the cursor has a provider that reads an accessor. Forcing it on a Tab press is
@@ -221,7 +224,9 @@ private fun Cli.walkTo(argv: List<String>): Pair<Command, List<String>> {
     var cmd: Command = this
     var rest = argv
     while (rest.isNotEmpty()) {
-        val child = cmd.subcommand(rest.first()) ?: break
+        val child = (cmd.resolveSubcommand(rest.first(), inference == Inference.All) as? SubcommandMatch.One)
+            ?.command
+            ?: break
         cmd = child
         rest = rest.drop(1)
     }

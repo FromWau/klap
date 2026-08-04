@@ -122,6 +122,11 @@ class CpParityTest {
             "--parent", "a", "b",
             expected = NOTHING_BOUND.copy(parents = true, sources = listOf("a"), dest = "b"),
         )
+        // real cp: `--update=old` reaches `older` (the only value starting with "old") through argmatch.
+        parity.binds(
+            "--update=old", "a", "b",
+            expected = NOTHING_BOUND.copy(update = "older", sources = listOf("a"), dest = "b"),
+        )
         // -i and -n write real cp's one prompt policy, so the later of the two decides it.
         parity.binds(
             "-n", "-i", "a", "b",
@@ -179,6 +184,8 @@ class CpParityTest {
         parity.rejects("--reflink=bogus", "a", "b", because = "real cp: invalid argument 'bogus' for '--reflink'")
         // --sparse is the one required-value member of this family, so the space form is a value here too.
         parity.rejects("--sparse", "a", "b", because = "real cp: invalid argument 'a' for '--sparse'")
+        // real cp: 'n' matches both 'none' and 'none-fail', so argmatch calls it ambiguous.
+        parity.rejects("--update=n", "a", "b", because = "real cp: ambiguous argument 'n' for '--update'")
     }
 
     @Test

@@ -24,7 +24,7 @@ public fun Cli.run(argv: Collection<String>, terminal: Terminal): Int {
     val json = builtins.json && scan.names("json")
     // --color=always/never beats the whole env ladder below; auto (absent/bare/invalid) defers to the
     // terminal's own reading, unchanged. A bad/missing --color value is reported by parse() itself, not here.
-    val mode = argList.colorMode(builtins, builtinPool, scan.valueSlots)
+    val mode = argList.colorMode(builtins, builtinPool, scan.valueSlots, inference != Inference.None)
     val effectiveColor = when (mode) {
         ColorMode.ALWAYS -> true
         ColorMode.NEVER -> false

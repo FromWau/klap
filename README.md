@@ -1,9 +1,10 @@
 # klap
 
 A reflection-free Kotlin Multiplatform command-line framework. A builder DSL for commands and
-subcommands, typed and validated arguments/options/flags, global options, auto-generated help with
-sections and color, value-aware shell completion, generated man/markdown docs, structured `--json`
-output, and typed `Result` errors. No annotations, no reflection, no annotation processing.
+subcommands, typed and validated arguments/options/flags, global options, opt-in GNU-style prefix
+inference, auto-generated help with sections and color, value-aware shell completion, generated
+man/markdown docs, structured `--json` output, and typed `Result` errors. No annotations, no reflection,
+no annotation processing.
 
 **Targets:** JVM, Android, linuxX64, mingwX64, macosArm64, iosArm64, iosSimulatorArm64.
 
@@ -78,7 +79,7 @@ collection klap hands back is a `List`.
   constraints, global options, typed errors, `--json`, color, subcommand trees, help layout, completion,
   generated docs, and the escape hatch.
 - **[`example/`](example/README.md)** is runnable code to copy from: an installable task-manager CLI, and
-  fourteen real tools (`pacman`, `git`, `tar`, `find`, `dd`, ...) reproduced in klap. It is indexed by
+  fifteen real tools (`pacman`, `git`, `tar`, `find`, `dd`, ...) reproduced in klap. It is indexed by
   behaviour, so "how do I get an operation mode like pacman's `-S`" is a table lookup.
 
 ## POSIX conformance
