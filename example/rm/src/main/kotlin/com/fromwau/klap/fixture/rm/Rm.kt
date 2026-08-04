@@ -7,7 +7,7 @@ import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
 
 /**
- * GNU coreutils `rm`, reproduced as a command-line surface only.
+ * GNU coreutils 9.11 `rm`, reproduced as a command-line surface only.
  *
  * Real synopsis: `rm [OPTION]... [FILE]...`, i.e.
  * `rm [-f] [-i] [-I] [-r|-R] [-d] [-v] [--] FILE...`
@@ -18,7 +18,7 @@ public fun rmCli(): TypedCli<RmInputs> = cliOf("rm") {
     // GNU rm takes any unambiguous prefix of a long option or a choice value: `rm --recur d` is --recursive.
     inference = Inference.Options
     description = "Remove (unlink) the FILE(s)"
-    version = "rm (GNU coreutils) 9.7"
+    version = "9.11"
     epilogue = "By default, rm does not remove directories. Use --recursive (-r or -R) to remove each " +
             "listed directory too, along with all of its contents. To remove a file whose name starts " +
             "with a '-', for example '-foo', use 'rm -- -foo' or 'rm ./-foo'."

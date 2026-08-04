@@ -1,5 +1,6 @@
 package com.fromwau.klap
 
+import com.fromwau.klap.internal.render.Candidate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -233,5 +234,49 @@ class RunnerTest {
         val t = RecordingTerminal()
         vcs.run(arrayOf("remote", "add", "-h"), t)
         assertTrue("usage: vcs remote add <name> <url>" in t.out.toString(), t.out.toString())
+    }
+
+    @Test
+    fun candidateValueWithTabIsDroppedNotEmittedRaw() {
+        // A shell splits the wire line on its first tab, so a value carrying one would be offered as a
+        // truncated candidate matching nothing real. Dropping it is the only lossless answer.
+        assertEquals(null, Candidate("evil\ttab").toCompletionLine())
+        val joined = listOf(Candidate("evil\ttab"), Candidate("real")).mapNotNull { it.toCompletionLine() }
+            .joinToString("\n")
+        assertEquals("real", joined)
+    }
+
+    @Test
+    fun candidateValueWithNewlineDoesNotProduceTwoRecords() {
+        // Records are newline-separated, so a value carrying one would arrive as two bogus candidates.
+        assertEquals(null, Candidate("a\nb").toCompletionLine())
+        val joined = listOf(Candidate("first"), Candidate("a\nb"), Candidate("last")).mapNotNull {
+            it.toCompletionLine()
+        }.joinToString("\n")
+        assertEquals(2, joined.lines().size)
+        assertEquals("first\nlast", joined)
+    }
+
+    @Test
+    fun candidateValueWithCarriageReturnIsDropped() {
+        // Same unsanitized-value defect as the tab and newline cases, for \r.
+        assertEquals(null, Candidate("a\rb").toCompletionLine())
+        val joined = listOf(Candidate("a\rb"), Candidate("ok")).mapNotNull { it.toCompletionLine() }
+            .joinToString("\n")
+        assertEquals("ok", joined)
+    }
+
+    @Test
+    fun ordinaryCandidateLineIsUnchanged() {
+        assertEquals("tag1", Candidate("tag1").toCompletionLine())
+        assertEquals("tag1\tBuy milk", Candidate("tag1", "Buy milk").toCompletionLine())
+    }
+
+    @Test
+    fun descriptionWithTabOrNewlineStillCollapsesToSpaceRatherThanDropping() {
+        // The value fix leaves the description path untouched: a description is display-only, never fed
+        // back to the shell, so it keeps collapsing separators to a space instead of dropping the candidate.
+        assertEquals("tag1\ta b", Candidate("tag1", "a\tb").toCompletionLine())
+        assertEquals("tag1\ta b", Candidate("tag1", "a\nb").toCompletionLine())
     }
 }

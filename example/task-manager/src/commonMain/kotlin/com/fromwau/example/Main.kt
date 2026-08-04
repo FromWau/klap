@@ -96,17 +96,19 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
 
         action(human = { task -> "${green("added")} ${dim("#${task.id}:")} ${bold(task.title)}" }) {
             val store = taskStore()
-            val tasks = store.load().getOrElse { return@action Err(it) }
-            val task = Task(
-                id = store.nextId(tasks),
-                title = title(),
-                priority = priority(),
-                tags = tags().distinct(),
-                due = due(),
-                done = done(),
-            )
-            store.save(tasks + task).getOrElse { return@action Err(it) }
-            Ok(task)
+            store.withLock {
+                val tasks = store.load().getOrElse { return@withLock Err(it) }
+                val task = Task(
+                    id = store.nextId(tasks),
+                    title = title(),
+                    priority = priority(),
+                    tags = tags().distinct(),
+                    due = due(),
+                    done = done(),
+                )
+                store.save(tasks + task).getOrElse { return@withLock Err(it) }
+                Ok(task)
+            }
         }
     }
 
@@ -151,15 +153,16 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
 
         action(human = { task -> "${green("done")} ${dim("#${task.id}:")} ${bold(task.title)}" }) {
             val store = taskStore()
+            store.withLock {
+                val tasks = store.load().getOrElse { return@withLock Err(it) }
+                val task = tasks.find { it.id == id() } ?: return@withLock Err(notFound(id()))
+                if (task.done) return@withLock Err(alreadyDone(task.id))
 
-            val tasks = store.load().getOrElse { return@action Err(it) }
-            val task = tasks.find { it.id == id() } ?: return@action Err(notFound(id()))
-            if (task.done) return@action Err(alreadyDone(task.id))
-
-            val updated = task.copy(done = true)
-            store.save(tasks.map { if (it.id == task.id) updated else it })
-                .getOrElse { return@action Err(it) }
-            Ok(updated)
+                val updated = task.copy(done = true)
+                store.save(tasks.map { if (it.id == task.id) updated else it })
+                    .getOrElse { return@withLock Err(it) }
+                Ok(updated)
+            }
         }
     }
 
@@ -169,10 +172,12 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
 
         action(human = { task -> "${yellow("removed")} ${dim("#${task.id}:")} ${bold(task.title)}" }) {
             val store = taskStore()
-            val tasks = store.load().getOrElse { return@action Err(it) }
-            val task = tasks.find { it.id == id() } ?: return@action Err(notFound(id()))
-            store.save(tasks.filterNot { it.id == task.id }).getOrElse { return@action Err(it) }
-            Ok(task)
+            store.withLock {
+                val tasks = store.load().getOrElse { return@withLock Err(it) }
+                val task = tasks.find { it.id == id() } ?: return@withLock Err(notFound(id()))
+                store.save(tasks.filterNot { it.id == task.id }).getOrElse { return@withLock Err(it) }
+                Ok(task)
+            }
         }
     }
 
@@ -196,12 +201,14 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
                 },
             ) {
                 val store = taskStore()
-                val tasks = store.load().getOrElse { return@action Err(it) }
-                val task = tasks.find { it.id == id() } ?: return@action Err(notFound(id()))
-                val updated = task.copy(tags = (task.tags + tag()).distinct())
-                store.save(tasks.map { if (it.id == task.id) updated else it })
-                    .getOrElse { return@action Err(it) }
-                Ok(updated)
+                store.withLock {
+                    val tasks = store.load().getOrElse { return@withLock Err(it) }
+                    val task = tasks.find { it.id == id() } ?: return@withLock Err(notFound(id()))
+                    val updated = task.copy(tags = (task.tags + tag()).distinct())
+                    store.save(tasks.map { if (it.id == task.id) updated else it })
+                        .getOrElse { return@withLock Err(it) }
+                    Ok(updated)
+                }
             }
         }
 
@@ -227,12 +234,14 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
                 },
             ) {
                 val store = taskStore()
-                val tasks = store.load().getOrElse { return@action Err(it) }
-                val task = tasks.find { it.id == id() } ?: return@action Err(notFound(id()))
-                val updated = task.copy(tags = task.tags.filterNot { it == tag() })
-                store.save(tasks.map { if (it.id == task.id) updated else it })
-                    .getOrElse { return@action Err(it) }
-                Ok(updated)
+                store.withLock {
+                    val tasks = store.load().getOrElse { return@withLock Err(it) }
+                    val task = tasks.find { it.id == id() } ?: return@withLock Err(notFound(id()))
+                    val updated = task.copy(tags = task.tags.filterNot { it == tag() })
+                    store.save(tasks.map { if (it.id == task.id) updated else it })
+                        .getOrElse { return@withLock Err(it) }
+                    Ok(updated)
+                }
             }
         }
     }

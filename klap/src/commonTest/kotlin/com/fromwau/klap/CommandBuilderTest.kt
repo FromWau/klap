@@ -86,6 +86,31 @@ class CommandBuilderTest {
     }
 
     @Test
+    fun requiredPositionalTurnedOptionalBySiblingCommandFailsAtBuild() {
+        // "a"'s own build() ran (and passed: both were still Required) the instant command("a") { }
+        // returned; "b" reaches "a"'s first argument only through a captured handle, after "a" is already
+        // frozen into a Command, and relaxes it to Optional, stranding a Required argument after it.
+        lateinit var first: Arg<String>
+        val ex = assertFailsWith<IllegalArgumentException> {
+            cli("app") {
+                command("a") {
+                    first = argument("first")
+                    argument("second")
+                    action { Ok("") }
+                }
+                command("b") {
+                    first.optional()
+                    action { Ok("") }
+                }
+            }
+        }
+        assertTrue(
+            "required argument 'second' cannot follow an optional/default argument" in ex.message.orEmpty(),
+            ex.message,
+        )
+    }
+
+    @Test
     fun negatableFlagCollidingWithDeclaredNameFailsAtBuild() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {

@@ -4,7 +4,7 @@ plugins {
     alias(libs.plugins.kotlinSerialization)
 }
 
-group = "com.fromwau.klap"
+group = "com.fromwau"
 version = libs.versions.klapVersion.get()
 
 kotlin {

@@ -158,6 +158,34 @@ internal fun validateConditionalOperandTriggers(name: String, specs: List<Holder
 }
 
 /**
+ * A `.requiredIf(flag)` trigger must be one of this command's own inputs or a global: the parse-time check
+ * reads only those, so a flag from an unrelated command could never fire the rule `--help` advertises.
+ */
+internal fun validateRequiredIfTriggers(name: String, specs: List<HolderSpec>, globalSpecs: List<NamedSpec>) {
+    for (spec in specs.filterIsInstance<OptionSpec>()) {
+        val trigger = spec.requiredWhen ?: continue
+        require(specs.any { it === trigger } || globalSpecs.any { it === trigger }) {
+            "command '$name': option '${spec.token()}' declares .requiredIf(${trigger.token()}), which is " +
+                "not declared on '$name' or as a global; a trigger must be one of this command's own " +
+                "inputs or a global"
+        }
+    }
+}
+
+/**
+ * Re-runs the cardinality-sensitive rules over an already-built subtree. A [HolderSpec] is live and shared,
+ * so a command declared later can call `.required()`/`.multiple()` on a handle captured from an earlier one,
+ * after that command's own `build()` already checked it; only the root's `build()` runs late enough to see
+ * the final state.
+ */
+internal fun revalidateAgainstLaterMutation(command: Command) {
+    validatePositionals(command.name, command.specs)
+    validateLastWinsMembers(command.name, command.constraints)
+    validateConditionalOperandTriggers(command.name, command.specs)
+    command.subcommands.forEach(::revalidateAgainstLaterMutation)
+}
+
+/**
  * The one spelling the parser could never honour: a negatable flag relying on generation (no explicit
  * negative spellings given) with no long to generate `--no-...` from. Checked here rather than in
  * [FlagSpec]'s init because `.negatable()` is a post-construction transformer. A flag with explicit

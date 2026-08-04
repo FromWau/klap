@@ -37,7 +37,12 @@ private val passthrough: (String) -> Result<Any?, String> = { Result.Success(it)
  * then [build] turns them into an immutable [Command] after the well-formedness checks in
  * `BuilderValidation.kt` pass.
  */
-internal class BuilderImpl(private val name: String) : CliBuilder() {
+internal class BuilderImpl(
+    private val name: String,
+    // The root's own globalSpecs, threaded down so a nested `.requiredIf()` trigger can resolve against it.
+    // Null exactly for the root, which [build] reads as "this is the tree's outermost build()".
+    private val rootGlobalSpecs: List<NamedSpec>? = null,
+) : CliBuilder() {
     init {
         // Applies to every (sub)command AND the root `cli(name)`, since both construct a BuilderImpl
         // directly; same rules as input names — see DocsTest's roff-escaping test for a dotted name.
@@ -57,6 +62,10 @@ internal class BuilderImpl(private val name: String) : CliBuilder() {
     private val globalSpecs = mutableListOf<NamedSpec>()
     private val subs = mutableListOf<Command>()
     private val examples = mutableListOf<HelpExample>()
+
+    // Held by reference rather than copied: a global declared after a nested command was constructed must
+    // still be visible to that command's own checks.
+    private val reachableGlobalSpecs: List<NamedSpec> get() = rootGlobalSpecs ?: globalSpecs
 
     // The group heading in effect for declarations made right now; restore-previous, so nesting is harmless.
     override var currentSection: String? = null
@@ -175,7 +184,7 @@ internal class BuilderImpl(private val name: String) : CliBuilder() {
     override fun <R> command(name: String, help: String, block: CommandBuilder.() -> R): R {
         // The child renders under the group heading enclosing this `command(...)` call (currentSection),
         // if any; its own `hidden` comes from the child block. Both are read back off the built child.
-        val child = BuilderImpl(name)
+        val child = BuilderImpl(name, rootGlobalSpecs = reachableGlobalSpecs)
         child.description = help
         val result = child.block()
         val built = child.build(section = currentSection)
@@ -209,7 +218,8 @@ internal class BuilderImpl(private val name: String) : CliBuilder() {
         validateSectionTitles(name, specs)
         validateLastWinsMembers(name, constraints)
         validateConditionalOperandTriggers(name, specs)
-        return Command(
+        validateRequiredIfTriggers(name, specs, reachableGlobalSpecs)
+        val built = Command(
             name = name,
             aliases = aliases.toList(),
             specs = specs.toList(),
@@ -227,5 +237,9 @@ internal class BuilderImpl(private val name: String) : CliBuilder() {
             ),
             builtinKind = builtinKind,
         )
+        if (rootGlobalSpecs == null) {
+            subs.forEach(::revalidateAgainstLaterMutation)
+        }
+        return built
     }
 }

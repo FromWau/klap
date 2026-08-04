@@ -71,7 +71,8 @@ internal class ArgvScan(
         } else {
             tokens.getOrNull(at + 1)?.takeIf { at + 1 < headSize && !it.isFlagLike() }
         }
-        return value?.let { Result.Success(it) } ?: Result.Error(CliError.MissingOptionValue(long))
+        // [long] is the bare pool key; an error names an option the way every declared one is named, dashed.
+        return value?.let { Result.Success(it) } ?: Result.Error(CliError.MissingOptionValue("--$long"))
     }
 
     /**
@@ -131,13 +132,15 @@ internal fun Cli.optionValueSlots(argv: List<String>): Set<Int> {
 }
 
 /**
- * What a scanned token does: whether it claims the token after it as a value ([takesNext]), and whether it
- * is one of the tokens klap removes before the subcommand walk ([preStripped]), which is the only kind the
- * walk can continue past.
+ * What a scanned token does: whether it claims the token after it as a value ([takesNext]), whether it is
+ * one of the tokens klap removes before the subcommand walk ([preStripped]), and whether it is a mixed
+ * short cluster [siftGlobals] defers whole ([deferred]). The walk continues past either of the latter two:
+ * a deferred cluster is unresolved here but still binds at the reached command's own [sift].
  */
-private class Claim(val takesNext: Boolean, val preStripped: Boolean)
+private class Claim(val takesNext: Boolean, val preStripped: Boolean, val deferred: Boolean = false)
 
 private val CLAIMS_NOTHING = Claim(takesNext = false, preStripped = false)
+private val DEFERRED_CLUSTER = Claim(takesNext = false, preStripped = false, deferred = true)
 
 /**
  * The left-to-right walk behind [optionValueSlots]. It tracks the command the tokens belong to as it goes,
@@ -161,9 +164,9 @@ private class ArityWalk(private val cli: Cli) {
     private var cmd: Command = cli
     private var pool: List<String> = cli.longMatchPool(globals)
 
-    // The subcommand walk stops at the first token klap does not strip before it, and every token after
-    // that belongs to `cmd`'s own segment; descending past one would resolve later options against a
-    // command the parse never reaches.
+    // The subcommand walk stops at the first token klap can neither strip nor defer as a global before it,
+    // and every token after that belongs to `cmd`'s own segment; descending past one would resolve later
+    // options against a command the parse never reaches.
     private var routing = true
 
     fun slots(head: List<String>): Set<Int> {
@@ -191,7 +194,7 @@ private class ArityWalk(private val cli: Cli) {
             val next = head.getOrNull(i + 1)
             val claim = if (token.startsWith("--")) longClaim(token, next) else clusterClaim(token, next)
             if (claim.takesNext) slots += i + 1
-            routing = routing && claim.preStripped
+            routing = routing && (claim.preStripped || claim.deferred)
             i += if (claim.takesNext) 2 else 1
         }
         return slots
@@ -240,7 +243,7 @@ private class ArityWalk(private val cli: Cli) {
 
     private fun clusterClaim(token: String, next: String?): Claim {
         // `-<NUM>` under a numericAlias carries its own value in the digits, and no pass strips it.
-        if (cmd.numericAliasValue(token) != null) return CLAIMS_NOTHING
+        if (cmd.numericAliasValue(token, globals) != null) return CLAIMS_NOTHING
         val chars = token.removePrefix("-")
         // A cluster is pre-stripped only when EVERY char is a global; one local char leaves it whole for
         // the reached command's own sift, exactly as siftGlobals does.
@@ -258,7 +261,16 @@ private class ArityWalk(private val cli: Cli) {
                 continue
             }
             val local = cmd.options.findOption(null, ch)
-            val option = local ?: globals.optionSpecs.findOption(null, ch) ?: return CLAIMS_NOTHING
+            val option = local ?: globals.optionSpecs.findOption(null, ch)
+            if (option == null) {
+                // `cmd` is only the command reached so far, so a char resolving nowhere here may still sit
+                // in a cluster siftGlobals deferred; the reached leaf's own sift is where that binds.
+                return if (clusterTouchesGlobal(chars, globals.flagSpecs, globals.optionSpecs)) {
+                    DEFERRED_CLUSTER
+                } else {
+                    CLAIMS_NOTHING
+                }
+            }
             if (local != null) allGlobal = false
             val attached = chars.length > j + 1
             return Claim(takesValue(option, inline = attached, next = next), preStripped = allGlobal)

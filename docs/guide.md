@@ -156,9 +156,8 @@ $ convert 100 --from c --to f --json
 
 Declare an input, then chain converters. Each holder returned — an `Arg<T>` (argument), `Opt<T>`
 (option), or `Flag` / `CountFlag` — is captured as a `val` and read by invoking it (`name()`) inside
-`action { }`; each converter narrows its `T`. A holder declared inside a `group { }` block needs a
-different pattern, since a plain `val` there does not compile when read from the enclosing `action`;
-see [Help output](#help-output) for the `lateinit var` pattern that does.
+`action { }`; each converter narrows its `T`. A holder declared inside a `group { }` block is captured
+the same way, since `group` returns its block's value; see [Help output](#help-output).
 
 ### Spellings
 
@@ -249,11 +248,11 @@ val files   = argument("files").file().multiple(min = 1)           //  List<Stri
 | `.validate("msg") { it > 0 }` | argument, option | same type; fails with `BadValue` when the predicate is false |
 | `.range(1..65535)` | argument, option (`Comparable`) | same type, bounds-checked; shows the range in help |
 | `.optional()` | argument | makes a positional nullable (options are already nullable) |
-| `.default(v)` | argument, option | binds `v` whenever the value would be null (absent, or a converter that resolved to `null`); `v` itself may be `null`. A default is never re-validated. |
+| `.default(v)` | argument, option | binds `v` whenever the value would be null (absent, or a converter that resolved to `null`). Declared *before* a converter, it runs through that too, so `.default("0").int()` binds `0`; one the converter rejects fails at construction. A `.choice()` set is checked in either order, but `.validate()` / `.range()` predicates never run against a default. |
 | `.required()` | option | fails if the option is missing |
 | `.requiredIf(flag)` | option | fails if the option is missing *and* `flag` was given (see [Cross-input constraints](#cross-input-constraints)) |
 | `.optionalValue(whenBare)` | option | `--opt=V` binds `V`, a bare `--opt` binds `whenBare`, and the space form never binds (see [POSIX conformance](#posix-conformance)) |
-| `.multiple(min = 0)` | argument, option | collects every occurrence into a `List`; at most one per command, and `min` is enforced |
+| `.multiple(min = 0)` | argument, option | collects every occurrence into a `List`, and `min` is enforced. A command may declare **one** variadic argument, but any number of repeatable options |
 | `.absentWhen(input)` | argument | removes this operand slot entirely whenever `input` was supplied, so the operands after it keep their own positions (see [Operands that depend on an option](#operands-that-depend-on-an-option)) |
 | `.requiredUnless(input)` | argument | drops this operand's declared minimum to zero whenever `input` was supplied; the slot itself stays, so nothing shifts. Only a `.multiple()` operand carries a minimum to relax, so any other cardinality is rejected when the tree is constructed (reach for `.absentWhen()` to remove a slot instead) |
 | `.placeholder(name)` | argument, option | the word help and usage show in the value slot: `--out <FILE>` instead of `--out <value>`. On an option it also replaces the choice list, which keeps a long one from widening every other row |
@@ -285,7 +284,7 @@ val port = option("--port").int().validate("must be 1..65535") { it in 1..65535 
 ```
 ```
 $ app --port 70000
-error: invalid value '70000' for port: must be 1..65535     # exit 2
+error: invalid value '70000' for --port: must be 1..65535     # exit 2
 ```
 
 An invalid `.enum<E>()` / `.choice(...)` value uses a different shape, listing the valid choices instead
@@ -293,7 +292,7 @@ of a `: message` suffix:
 
 ```
 $ app --level bogus
-error: invalid value 'bogus' for level (choose from debug, info, warn, error)     # exit 2
+error: invalid value 'bogus' for --level (choose from debug, info, warn, error)     # exit 2
 ```
 
 `.range(a..b)` is sugar over `.validate` that also prints `(a..b)` in the help row. Keep single-input
@@ -313,6 +312,13 @@ already narrowed past it.
 
 Symmetrically, `.default(v)` narrows the accessor to non-null: it always reads back a value, since an
 absent input (or a converter that resolves to null) falls back to `v`. The default `v` must be non-null.
+
+`.validate(...)` and `.range(...)` capture the type they were declared on, so they belong *after* every
+type-changing converter. `.int().range(1..10)` is right; declaring the check against the raw string and
+converting afterwards — `.validate("must not be blank") { it.isNotBlank() }.int()` — is rejected when the
+tree is constructed, rather than failing on every value a user could type. A converter cannot be added
+twice through one handle either: `val n = argument("n"); n.int(); n.long()` is rejected for the same
+reason, since `n`'s static type never advances past `Arg<String>` for the compiler to catch it.
 
 A command may declare **one** variadic positional, and it need not be last: `cp SOURCE... DEST` is
 `argument("source").multiple(min = 1)` followed by `argument("dest")`. The fixed slots after it bind from
@@ -594,15 +600,23 @@ Checked after binding, against what was actually typed — a `.default()` on the
 not satisfy it. It takes a handle rather than a lambda so the help row can say `(required when --remote)`;
 the accessor stays nullable, since the option really does bind null whenever the condition is absent.
 
-Tab completion stops offering what the parse would reject: once one member of a set is on the line, the
-others leave the candidate list (`tar -c -<TAB>` offers neither `-x`/`--extract` nor `-t`/`--list`). The
-member you already typed stays on offer.
+The condition may be a `globalFlag` as well as one of this command's own flags, and nothing else: a flag
+declared on a *different* command is rejected when the tree is constructed, because the check that fires
+the rule only ever sees this command's own inputs plus globals, so such a condition could never fire.
+A negatable condition counts only in its positive form: `--no-remote` asks to turn the remote *off*, so it
+does not fire a requirement that `--remote` would.
 
-A constraint is scoped to **one command's own inputs**: a `globalOption` / `globalFlag` handle, or an
-input declared on another command, cannot join one. That, a set of fewer than two inputs, and a repeated
-member are all rejected when the command tree is constructed, as an `IllegalArgumentException` thrown at
-startup. Constraints are independent of `group(...)`, which is a help heading and nothing else; you can
-use either without the other.
+Tab completion stops offering what the parse would reject: once one member of an *exclusivity* set is on
+the line, the others leave the candidate list (`tar -c -<TAB>` offers neither `-x`/`--extract` nor
+`-t`/`--list`). The member you already typed stays on offer. A `lastWins` set is exempt, since a second
+member is legal there — `rm -i -<TAB>` still offers `-f`/`--force`.
+
+A *set* constraint — `requireExactlyOne`, `requireAtMostOne`, `lastWins` — is scoped to **one command's
+own inputs**: a `globalOption` / `globalFlag` handle, or an input declared on another command, cannot
+join one. That, a set of fewer than two inputs, and a repeated member are all rejected when the command
+tree is constructed, as an `IllegalArgumentException` thrown at startup. (`.requiredIf` is the exception,
+as above: its condition may be a global.) Constraints are independent of `group(...)`, which is a help
+heading and nothing else; you can use either without the other.
 
 ## Global / persistent options
 
@@ -939,10 +953,14 @@ Absent, it defaults to `auto`. Resolution:
 - `--color=always`: color on, even off a TTY.
 - `--color=never`: color off.
 - `--color=auto` (or omitted): defers to terminal detection, in order: `NO_COLOR` (present and
-  non-empty) disables it, `FORCE_COLOR` / `CLICOLOR_FORCE` force it on, `TERM=dumb` disables it, and
-  otherwise it follows whether stdout is a real TTY.
+  non-empty) disables it, `FORCE_COLOR` / `CLICOLOR_FORCE` force it on, `CLICOLOR=0` or `TERM=dumb`
+  disables it, and otherwise it follows whether stdout is a real TTY.
 
 An explicit `always`/`never` outranks the whole environment ladder; only `auto` consults it.
+
+Forcing color also bypasses whether the handle can render escapes at all, which is what makes it useful
+on Windows: a redirected stdout there cannot be put into virtual-terminal mode, so `--color=always` or
+`FORCE_COLOR` is the only way to get escapes into a captured log.
 
 On the JVM specifically, `auto` detection also depends on stdin being a terminal (a platform
 limitation of the JVM's TTY probe), so piping input into a JVM-run program while its stdout is still a
@@ -1023,8 +1041,9 @@ something out of help while it still parses. `author` (root-only, like `version`
 footer to the root's `--help` and an `AUTHOR` section to the generated man page and markdown docs. Descriptions wrap to the terminal width (`COLUMNS`, else the
 detected terminal width, else 80). Headings and usage follow the same color resolution as `action { }`'s
 own output (see [Color output](#color-output)): `NO_COLOR` (present and non-empty) disables color,
-`FORCE_COLOR` / `CLICOLOR_FORCE` force it on (even off a TTY), `TERM=dumb` disables it, and otherwise it
-follows whether stdout is a real TTY, all of which `--color=always` / `--color=never` override.
+`FORCE_COLOR` / `CLICOLOR_FORCE` force it on (even off a TTY), `CLICOLOR=0` or `TERM=dumb` disables it,
+and otherwise it follows whether stdout is a real TTY, all of which `--color=always` / `--color=never`
+override.
 
 `--help` is shallow: a command's own args/options plus its immediate subcommands, one line of description
 each, the standard drill-down shape. For a bird's-eye view, the built-in `--help-all` renders the current
@@ -1033,20 +1052,28 @@ command and every descendant recursively, each as its own help block, scoped to 
 advertised under Global options on any command that has subcommands, and `docs markdown` / `docs man`
 give the same full tree as a document.
 
-`group(title) { }` returns `Unit`, so you cannot capture a holder from its return value. Declare a
-`lateinit var` above the block and assign it inside; the block runs synchronously during construction,
-so it is already set by the time `action { }` runs:
+`group(title) { }` returns its block's value, so a holder declared inside is captured by a plain `val`
+with its type inferred — no `lateinit var`, no hand-written type. The block runs synchronously during
+construction (`callsInPlace(EXACTLY_ONCE)`), so the holder is already set by the time `action { }` runs:
 
 ```kotlin
-fun main(args: Array<String>) {
-    lateinit var host: Opt<String>
+fun main(args: Array<String>) = cli("deploy") {
+    val host = group("Networking") {
+        option("--host", "-H", help = "target host").required()
+    }
+    action { Ok("shipped to ${host()}") }
+}.main(args)
+```
 
-    cli("deploy") {
-        group("Networking") {
-            host = option("--host", "-H", help = "target host").required()
-        }
-        action { Ok("shipped to ${host()}") }
-    }.main(args)
+To capture several, declare them above the block and assign inside — the types are still inferred at the
+declaration, and definite assignment still holds:
+
+```kotlin
+val jobs: Opt<Int>
+val tags: Opt<List<String>>
+group("Tuning") {
+    jobs = option("--jobs", "-j", help = "parallelism").int().default(1)
+    tags = option("--tag", "-t", help = "labels").multiple()
 }
 ```
 
@@ -1082,6 +1109,11 @@ val branch = argument("branch").completeWith {
 The provider is a `CompletionScope.() -> Unit` block: call `candidate(value, description?)` (or
 `candidates(values)` for a plain list of description-less ones) to offer completion candidates.
 `current` and `words` are readable on the scope itself.
+
+A candidate's `value` is what the shell inserts back onto the command line, so it has to survive the wire
+format klap and the generated scripts share: one carrying a tab, newline, or carriage return is dropped
+rather than offered in a mangled form that would no longer match your data. A `description` is display
+text only, so it is collapsed onto one line instead.
 
 `completeFiles(nonPathPrefix = "")` is the third call: it hands the slot to the shell's own filesystem
 completion, the same thing `.file()` does for a whole input. Reach for it when only *part* of the word is
@@ -1185,10 +1217,11 @@ prints the same output, so a user can pipe it straight to a file.
 
 Your help text (a `description`, `epilogue`, or example note) is rendered as markdown in the markdown
 output: klap escapes a backslash and a backtick (and, in a table cell, a pipe `|` and newline) so a
-Windows path, stray backtick, or table-breaking pipe survives, but it
-does not neutralize other markdown, so a `#`, `[link](...)`, `*emphasis*`, or raw HTML in your help
-text renders as markdown. That is your own authored content, so treat generated docs as trusted: if you
-publish a tool's docs, keep in mind the help strings become live markup.
+Windows path, stray backtick, or table-breaking pipe survives, and it escapes `<` and `>` to `&lt;`/`&gt;`
+so nothing in your help text can open an HTML tag. It does not neutralize the rest of markdown, so a `#`,
+`[link](...)`, or `*emphasis*` in your help text renders as markdown. That is your own authored content,
+so treat generated docs as trusted: if you publish a tool's docs, keep in mind the help strings become
+live markup — but raw HTML is not one of the things that survives.
 
 ## Escape hatch
 
@@ -1229,8 +1262,6 @@ val term = RecordingTerminal()
 val code = cli.run(arrayOf("list", "--json"), term)
 // assert on code and term.out
 ```
-
-Note `run` takes an `Array<String>` while `parse` takes a `List<String>`.
 
 `cli.main(argv)` is the full drop-in: it calls `run` with the platform terminal and exits the process
 with the resulting code.

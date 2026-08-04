@@ -67,6 +67,29 @@ class TerminalPolicyTest {
     }
 
     @Test
+    fun ansi_cliColorZeroSuppressesOnRealTty() {
+        // Per the bixense CLICOLOR convention, plain CLICOLOR=0 suppresses color even on a real terminal.
+        assertFalse(ansiEnabled(isTty = true, env = envOf(mapOf("CLICOLOR" to "0"))))
+    }
+
+    @Test
+    fun ansi_cliColorForceOutranksCliColorZero() {
+        assertTrue(ansiEnabled(isTty = false, env = envOf(mapOf("CLICOLOR_FORCE" to "1", "CLICOLOR" to "0"))))
+    }
+
+    @Test
+    fun ansi_forcedBranchIgnoresUnsupportedHandle() {
+        // On mingw, GetConsoleMode fails whenever stdout is redirected; an explicit force must still win,
+        // since it bypasses the supported() check entirely rather than being gated by it.
+        assertTrue(ansiEnabled(isTty = false, env = envOf(mapOf("FORCE_COLOR" to "1")), supported = { false }))
+    }
+
+    @Test
+    fun ansi_autoDetectionRespectsUnsupportedHandle() {
+        assertFalse(ansiEnabled(isTty = true, env = envOf(emptyMap()), supported = { false }))
+    }
+
+    @Test
     fun columns_fromEnvWhenPositive() {
         assertEquals(120, resolveColumns(envOf(mapOf("COLUMNS" to "120"))))
     }
