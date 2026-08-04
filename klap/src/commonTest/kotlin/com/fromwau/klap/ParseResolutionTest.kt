@@ -84,6 +84,28 @@ class ParseResolutionTest {
     }
 
     @Test
+    fun suggestFoldsCaseBeforeExcludingTheSelfMatch() {
+        // Regression: the self-match check must compare against the folded needle, not the raw token, so an
+        // ignoreCase call never suggests a candidate that is the same word under the very fold it applies.
+        assertEquals(null, suggest("FAST", listOf("fast"), ignoreCase = true))
+        // Case-sensitively "Fast" is genuinely not "fast", so the same pair still suggests without folding.
+        assertEquals("fast", suggest("Fast", listOf("fast")))
+        // A folded prefix still resolves to the one reachable candidate.
+        assertEquals("fast", suggest("FA", listOf("fast"), ignoreCase = true))
+        // The suggestion carries the candidate's declared spelling, never the lowered needle.
+        assertEquals("FAST", suggest("fa", listOf("FAST"), ignoreCase = true))
+    }
+
+    @Test
+    fun aBlankTokenPrefixesEveryCandidateAndSoAnswersOnlyWhenThereIsOne() {
+        // Every string carries the empty prefix, so the prefix rule reaches a lone candidate and ties on
+        // any larger pool; the distance rule cannot rescue it either, since 0 is outside its 1..n bound.
+        assertEquals("only", suggest("", listOf("only")))
+        assertEquals(null, suggest("", listOf("one", "two")))
+        assertEquals(null, suggest("", emptyList()))
+    }
+
+    @Test
     fun suggestRejectsAWhollyDifferentShortToken() {
         // Regression: a short candidate must not be suggested for a token every character of which is an edit
         // (a 2-char alias no longer matches an unrelated 2-char word); a single-typo near-miss still fires.

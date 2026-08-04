@@ -13,6 +13,17 @@ public sealed interface CliError {
         val suggestion: String? = null,
     ) : CliError
 
+    /**
+     * An abbreviated subcommand naming more than one declared spelling. [candidates] are the full spellings
+     * it reached, in declaration order, and a command's aliases are among them: an alias is just another
+     * spelling in the pool.
+     */
+    public data class AmbiguousSubcommand(
+        val parent: String,
+        val token: String,
+        val candidates: List<String>,
+    ) : CliError
+
     public data class UnknownOption(val token: String, val suggestion: String? = null) : CliError
 
     /**
@@ -47,6 +58,17 @@ public sealed interface CliError {
         val value: String,
         val choices: List<String>,
         val suggestion: String? = null,
+    ) : CliError
+
+    /**
+     * An abbreviated choice value naming more than one of an input's declared choices. [name] carries its
+     * own `--`/`<>` form, like [InvalidChoice.name]; [candidates] are the full choices it reached, in
+     * declaration order.
+     */
+    public data class AmbiguousValue(
+        val name: String,
+        val value: String,
+        val candidates: List<String>,
     ) : CliError
 
     public data class TooManyArguments(

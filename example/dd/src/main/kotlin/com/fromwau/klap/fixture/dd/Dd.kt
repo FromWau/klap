@@ -1,6 +1,7 @@
 package com.fromwau.klap.fixture.dd
 
 import com.fromwau.klap.Err
+import com.fromwau.klap.Inference
 import com.fromwau.klap.Ok
 import com.fromwau.klap.Result
 import com.fromwau.klap.TypedCli
@@ -21,6 +22,8 @@ import com.fromwau.klap.projection
  *   obs=BYTES of=FILE oflag=FLAGS seek=N (oseek=N) skip=N (iseek=N) status=LEVEL
  */
 public fun ddCli(): TypedCli<DdInputs> = cliOf("dd") {
+    // dd declares no long option of its own, but real dd still abbreviates klap's injected --help/--version.
+    inference = Inference.Options
     description = "Copy a file, converting and formatting according to the operands"
     version = "9.11"
 

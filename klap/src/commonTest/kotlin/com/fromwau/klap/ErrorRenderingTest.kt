@@ -50,6 +50,14 @@ class ErrorRenderingTest {
     }
 
     @Test
+    fun anAmbiguousSubcommandReadsLikeAnAmbiguousOption() {
+        assertEquals(
+            "subcommand 'st' is ambiguous; possibilities: 'stash' 'status'",
+            CliError.AmbiguousSubcommand("app", "st", listOf("stash", "status")).message(),
+        )
+    }
+
+    @Test
     fun unknownSubcommand_messageWithSuggestion() {
         assertEquals(
             "unknown subcommand 'confi' for 'app'. Did you mean config?",
@@ -86,6 +94,14 @@ class ErrorRenderingTest {
         assertEquals(
             "invalid value 'x' for level (choose from low, high)",
             CliError.InvalidChoice("level", "x", listOf("low", "high")).message(),
+        )
+    }
+
+    @Test
+    fun anAmbiguousValueNamesTheOptionItBelongsTo() {
+        assertEquals(
+            "value 'h' for --priority is ambiguous; possibilities: 'high' 'highest'",
+            CliError.AmbiguousValue("--priority", "h", listOf("high", "highest")).message(),
         )
     }
 

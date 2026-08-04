@@ -5,9 +5,12 @@ import com.fromwau.klap.internal.parse.END_OF_OPTIONS
 import com.fromwau.klap.internal.parse.accumulator
 import com.fromwau.klap.internal.parse.bind
 import com.fromwau.klap.internal.parse.bindGlobals
+import com.fromwau.klap.internal.parse.isFlagLike
 import com.fromwau.klap.internal.parse.optionValueSlots
+import com.fromwau.klap.internal.parse.resolveChoice
 import com.fromwau.klap.internal.parse.resolvedLongPool
 import com.fromwau.klap.internal.parse.siftGlobals
+import com.fromwau.klap.internal.parse.subcommandCandidates
 import com.fromwau.klap.internal.parse.suggest
 import com.fromwau.klap.internal.spec.Builtin
 import com.fromwau.klap.internal.spec.FlagSpec
@@ -85,7 +88,7 @@ internal fun Cli.positionIndependentLongs(): List<String> {
 internal fun Cli.builtinScan(
     argv: List<String>,
     pool: List<String> = positionIndependentLongs(),
-): ArgvScan = ArgvScan(pool, optionValueSlots(argv), argv)
+): ArgvScan = ArgvScan(pool, inference != Inference.None, optionValueSlots(argv), argv)
 
 /** The built-ins that are boolean, so an inline `=value` on one is always a usage error. */
 private val VALUELESS_BUILTIN_LONGS = listOf("help", "help-all", "json", "version")
@@ -99,20 +102,26 @@ private val VALUELESS_BUILTIN_LONGS = listOf("help", "help-all", "json", "versio
  * mistaken for that value. A tree that declined either built-in reads neither token: `--color` is then
  * the app's own (or unknown), and AUTO is the only mode klap still has an opinion about.
  *
- * [pool] is the root's own [positionIndependentLongs] and [valueSlots] the root's own [optionValueSlots],
- * so `--col` abbreviates and `-e --color` stays `-e`'s value here exactly as they do in [parse]; the
- * defaults stand in for a caller with no root at hand, mirroring [Builtins.DEFAULT].
+ * [pool] is the root's own [positionIndependentLongs], [valueSlots] the root's own [optionValueSlots], and
+ * [infer] the root's own [Cli.inference] reduced to a boolean, so `--col` abbreviates, `-e --color` stays
+ * `-e`'s value, and `al` resolves to `always` here exactly as they do in [parse]; the defaults stand in for
+ * a caller with no root at hand, mirroring [Builtins.DEFAULT] and [Inference.None].
  */
 internal fun List<String>.colorMode(
     builtins: Builtins = Builtins.DEFAULT,
     pool: List<String> = builtinLongs(builtins, versioned = true, metaOptions = true),
     valueSlots: Set<Int> = emptySet(),
+    infer: Boolean = false,
 ): ColorMode {
     if (!builtins.color) return ColorMode.AUTO
-    val scan = ArgvScan(pool, valueSlots, this)
+    val scan = ArgvScan(pool, infer, valueSlots, this)
     val head = if (builtins.json) scan.strip("json") else scan
     val raw = head.value("color").getOrElse { null }
-    return raw?.let { ColorMode.fromOrNull(it) } ?: ColorMode.AUTO
+    // Same gate as parse(): an ambiguous prefix has no single mode to report here, so it falls back to AUTO.
+    val resolved = raw?.let {
+        if (infer) (resolveChoice("--color", it, COLOR_MODE_NAMES) as? Result.Success)?.value else it
+    }
+    return resolved?.let { ColorMode.fromOrNull(it) } ?: ColorMode.AUTO
 }
 
 /**
@@ -152,6 +161,34 @@ private fun Cli.builtinInlineValueError(scan: ArgvScan): CliError? {
 private fun Cli.hasHelpRequest(scan: ArgvScan): Boolean =
     scan.names("help") || scan.names("help-all") || (builtins.helpShort && scan.namesShort("-h"))
 
+/**
+ * The same [CliError.UnknownSubcommand] `Command.bind`'s group branch raises for a group handed a leading
+ * token it cannot resolve as a child, reached here too so `--help`/`--help-all` below never mask the miss:
+ * `app zzz --help` must read exactly like `app zzz` (a usage error), not silently render `app`'s help for a
+ * name the walk never actually matched.
+ *
+ * Only a GROUP's unresolved, non-flag leading token counts. A resolved LEAF's leftover is that leaf's own
+ * positional business, never an unknown-subcommand question, so `rm abc --help` (a real command, a bad
+ * value) still answers with help — which is what someone who mistyped a value wants.
+ */
+private fun Cli.unknownSubcommandBeforeHelp(cmd: Command, rest: List<String>): CliError.UnknownSubcommand? {
+    val leadingToken = rest.firstOrNull() ?: return null
+    if (!cmd.isGroup || leadingToken.isFlagLike()) return null
+    if (cmd.resolveSubcommand(leadingToken, inference == Inference.All) !is SubcommandMatch.None) return null
+    return CliError.UnknownSubcommand(cmd.name, leadingToken, suggest(leadingToken, cmd.subcommandCandidates()))
+}
+
+/**
+ * [raw] resolved through [resolveChoice] when this tree infers values, or [raw] itself otherwise: the same
+ * gate an app-declared `.choice()`/`.enum<E>()` value goes through, applied here to klap's own `--color`,
+ * `completion <shell>` and `docs <format>`, none of which reach a `ValueSpec` of their own. A user cannot
+ * tell a built-in from an option the app declared, so both must resolve by the same rule.
+ */
+// Reads this tree's own inference rather than globalAcc.inferNames: the meta-option checks that call this
+// run before the accumulator is constructed, so there is no globalAcc yet to read it from.
+private fun Cli.resolveBuiltinChoice(name: String, raw: String, choices: List<String>): Result<String, CliError> =
+    if (inference != Inference.None) resolveChoice(name, raw, choices) else Result.Success(raw)
+
 /** Parse [argv] against this root command. Pure: no output, no exit; the escape hatch. */
 public fun Cli.parse(argv: Collection<String>): Result<Invocation, CliError> = parseTokens(argv.toList())
 
@@ -185,7 +222,9 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
     val withoutColor = if (builtins.color) {
         val colorRaw = withoutJson.value("color").getOrElse { return Result.Error(it) }
         colorRaw?.let { raw ->
-            if (ColorMode.fromOrNull(raw) == null) {
+            val resolved = resolveBuiltinChoice("color", raw, COLOR_MODE_NAMES)
+                .getOrElse { return Result.Error(it) }
+            if (ColorMode.fromOrNull(resolved) == null) {
                 return Result.Error(
                     CliError.InvalidChoice(
                         "color", raw, COLOR_MODE_NAMES,
@@ -210,7 +249,9 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
         if (builtins.completion) {
             withoutColor.value("completion").getOrElse { return Result.Error(it) }
                 ?.let { raw ->
-                    val shell = CompletionShell.fromOrNull(raw)
+                    val resolved = resolveBuiltinChoice("completion", raw, COMPLETION_SHELL_NAMES)
+                        .getOrElse { return Result.Error(it) }
+                    val shell = CompletionShell.fromOrNull(resolved)
                         ?: return Result.Error(
                             CliError.InvalidChoice(
                                 "completion", raw, COMPLETION_SHELL_NAMES,
@@ -222,7 +263,9 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
         }
         if (builtins.docs) {
             withoutColor.value("docs").getOrElse { return Result.Error(it) }?.let { raw ->
-                val format = DocFormat.fromOrNull(raw)
+                val resolved = resolveBuiltinChoice("docs", raw, DOC_FORMAT_NAMES)
+                    .getOrElse { return Result.Error(it) }
+                val format = DocFormat.fromOrNull(resolved)
                     ?: return Result.Error(
                         CliError.InvalidChoice(
                             "docs", raw, DOC_FORMAT_NAMES,
@@ -246,11 +289,19 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
     var restPositions = preStrip.positions
     val path = mutableListOf(name)
     while (rest.isNotEmpty()) {
-        val child = cmd.subcommand(rest.first()) ?: break
-        cmd = child
-        path += child.name
-        rest = rest.drop(1)
-        restPositions = restPositions.drop(1)
+        when (val match = cmd.resolveSubcommand(rest.first(), inference == Inference.All)) {
+            is SubcommandMatch.One -> {
+                cmd = match.command
+                path += match.command.name
+                rest = rest.drop(1)
+                restPositions = restPositions.drop(1)
+            }
+
+            is SubcommandMatch.Ambiguous ->
+                return Result.Error(CliError.AmbiguousSubcommand(cmd.name, rest.first(), match.candidates))
+
+            SubcommandMatch.None -> break
+        }
     }
     val qualifiedName = path.joinToString(" ")
 
@@ -259,13 +310,25 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
     // accumulator, so globals are bound AFTER the command bind, over the pre-strip occurrences plus any the
     // segment added. A Required-but-absent global is deferred: whether it matters depends on where the walk
     // ended up (a bare group that only shows help doesn't need it; a leaf that executes does).
-    val globalAcc = globalSift.accumulator(globalSpecs, version, builtins, metaOptions, declaredLongs)
+    val globalAcc = globalSift.accumulator(globalSpecs, version, builtins, metaOptions, declaredLongs, inference)
 
     // --help and --help-all are the only built-ins resolved after the walk, so they resolve against the pool
     // of the command it reached rather than the tree-wide one every pre-walk scan must settle for: a
     // `--header` on one command would otherwise take `--h` away from every other command in the tree. The
     // value slots come along unchanged, keyed on the original argv, so `sub -e --help f` is still `-e`'s.
-    val segment = ArgvScan(cmd.resolvedLongPool(globalAcc), scan.valueSlots, rest, restPositions)
+    val segment = ArgvScan(
+        cmd.resolvedLongPool(globalAcc),
+        globalAcc.inferNames,
+        scan.valueSlots,
+        rest,
+        restPositions,
+    )
+    // Gated on the help request: without one the same error already comes from cmd.bind() below, where a
+    // global-sift error rightly outranks it. Firing unconditionally here would invert that precedence.
+    if (hasHelpRequest(segment)) {
+        unknownSubcommandBeforeHelp(cmd, rest)?.let { return Result.Error(it) }
+    }
+
     // --help-all outranks --help (a more specific request for the same node); both sit below --version.
     if (segment.names("help-all")) {
         return Result.Success(
@@ -304,7 +367,8 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
             val deferredGlobalErrors = bindGlobals(
                 globalSpecs,
                 globalAcc.toGlobalSift(),
-                sink
+                sink,
+                globalAcc.inferNames,
             ).getOrElse { return Result.Error(it) }
             when (val invocation = outcome.value) {
                 is Invocation.Execute -> {
@@ -351,7 +415,11 @@ private fun Cli.routeBuiltin(kind: Builtin, args: List<String>): Result<Invocati
     when (kind) {
         Builtin.Completion -> {
             val raw = args.firstOrNull() ?: return Result.Error(CliError.MissingArgument("completion", "shell"))
-            val shell = CompletionShell.fromOrNull(raw)
+            val resolved = when (val r = resolveBuiltinChoice("completion", raw, COMPLETION_SHELL_NAMES)) {
+                is Result.Error -> return r
+                is Result.Success -> r.value
+            }
+            val shell = CompletionShell.fromOrNull(resolved)
                 ?: return Result.Error(
                     CliError.InvalidChoice(
                         "completion", raw, COMPLETION_SHELL_NAMES,
@@ -366,7 +434,11 @@ private fun Cli.routeBuiltin(kind: Builtin, args: List<String>): Result<Invocati
 
         Builtin.Docs -> {
             val raw = args.firstOrNull() ?: return Result.Error(CliError.MissingArgument("docs", "format"))
-            val format = DocFormat.fromOrNull(raw)
+            val resolved = when (val r = resolveBuiltinChoice("docs", raw, DOC_FORMAT_NAMES)) {
+                is Result.Error -> return r
+                is Result.Success -> r.value
+            }
+            val format = DocFormat.fromOrNull(resolved)
                 ?: return Result.Error(
                     CliError.InvalidChoice(
                         "docs", raw, DOC_FORMAT_NAMES,

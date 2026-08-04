@@ -22,6 +22,20 @@ private fun greet(): Cli = cli("greet") {
     action { Ok("") }
 }
 
+/** A dispatcher with a leaf ("list"), a leaf that takes a value ("show"), and a nested group ("tag"). */
+private fun taggedDispatcher(infer: Inference = Inference.None): Cli = cli("app") {
+    inference = infer
+    command("list") { action { Ok("") } }
+    command("show") {
+        argument("id")
+        action { Ok("") }
+    }
+    command("tag") {
+        command("push") { action { Ok("") } }
+        command("rm") { action { Ok("") } }
+    }
+}
+
 class BuiltinsTest {
 
     @Test
@@ -399,6 +413,88 @@ class BuiltinsTest {
         // Guideline 10 already put these out of every scan's reach; the arity rule leaves that alone.
         assertEquals("e=null files=[--json, f.txt]", grep().bindText("--", "--json", "f.txt"))
         assertEquals(false, executeOf(grep(), "--", "--json", "f.txt").globals.json)
+    }
+
+    // --- --help/--help-all must not mask a mistyped subcommand ---
+    //
+    // Appending --help to a line that names no real subcommand used to print help and exit 0, hiding the
+    // typo. These pin the fix (an unresolved subcommand at a GROUP still errors) and the boundary around it
+    // (a resolved command's own leftover, or an abbreviation, is untouched).
+
+    @Test
+    fun unknownSubcommandWithHelpErrorsIdenticallyToWithoutHelp() {
+        val tree = app()
+        val bare = assertIs<Result.Error<CliError>>(tree.parse(listOf("zzz"))).error
+        val withHelp = assertIs<Result.Error<CliError>>(tree.parse(listOf("zzz", "--help"))).error
+        assertEquals(bare, withHelp)
+        assertEquals(CliError.UnknownSubcommand("todo", "zzz", null), bare)
+    }
+
+    @Test
+    fun unknownSubcommandWithHelpAllErrorsTheSameWayAsHelp() {
+        val tree = app()
+        val withHelp = assertIs<Result.Error<CliError>>(tree.parse(listOf("zzz", "--help"))).error
+        val withHelpAll = assertIs<Result.Error<CliError>>(tree.parse(listOf("zzz", "--help-all"))).error
+        assertEquals(withHelp, withHelpAll)
+    }
+
+    @Test
+    fun unknownSubcommandAtANestedGroupWithHelpErrorsTheSameWay() {
+        val tree = taggedDispatcher()
+        val bare = assertIs<Result.Error<CliError>>(tree.parse(listOf("tag", "zzz"))).error
+        val withHelp = assertIs<Result.Error<CliError>>(tree.parse(listOf("tag", "zzz", "--help"))).error
+        assertEquals(bare, withHelp)
+        assertEquals(CliError.UnknownSubcommand("tag", "zzz", null), bare)
+    }
+
+    @Test
+    fun groupReachedWithNoLeftoverStillShowsItsOwnHelp() {
+        // Must-keep-working: a group with nothing left over is a genuine help request, not a typo.
+        val tree = taggedDispatcher()
+        val inv = assertIs<Result.Success<Invocation>>(tree.parse(listOf("tag", "--help"))).value
+        assertEquals("tag", assertIs<Invocation.ShowHelp>(inv).command.name)
+    }
+
+    @Test
+    fun leafReachedWithNoLeftoverStillShowsItsOwnHelp() {
+        // Must-keep-working: the walk consumed every token reaching a leaf, so --help is that leaf's own.
+        val tree = taggedDispatcher()
+        val inv = assertIs<Result.Success<Invocation>>(tree.parse(listOf("list", "--help"))).value
+        assertEquals("list", assertIs<Invocation.ShowHelp>(inv).command.name)
+    }
+
+    @Test
+    fun anAbbreviatedSubcommandPlusHelpShowsThatCommandsHelp() {
+        // Must-keep-working: an inferred prefix resolves to a real child during the walk itself, so it never
+        // reaches the new unknown-subcommand check at all.
+        val tree = taggedDispatcher(Inference.All)
+        val inv = assertIs<Result.Success<Invocation>>(tree.parse(listOf("li", "--help"))).value
+        assertEquals("list", assertIs<Invocation.ShowHelp>(inv).command.name)
+    }
+
+    @Test
+    fun aBadValueOnARealCommandPlusHelpStillShowsThatCommandsHelp() {
+        // Scope boundary: "show" is a real command and "abc" is merely a value for it (its "id" argument),
+        // not an unknown subcommand, so --help must still win here. "show" has no children, so it is never a
+        // Command.isGroup and the new check never even looks at its leftover tokens.
+        val tree = taggedDispatcher()
+        val inv = assertIs<Result.Success<Invocation>>(tree.parse(listOf("show", "abc", "--help"))).value
+        assertEquals("show", assertIs<Invocation.ShowHelp>(inv).command.name)
+    }
+
+    @Test
+    fun unknownSubcommandWithHelpNeverSuggestsAHiddenChild() {
+        // Mirrors ParseResolutionTest's unknownSubcommandNeverSuggestsAHiddenSubcommand through the --help
+        // path: the fix's own candidate list must exclude hidden children too.
+        val tree = cli("app") {
+            command("secret") {
+                hidden = true
+                action { Ok("") }
+            }
+            command("status") { action { Ok("") } }
+        }
+        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("secrt", "--help"))).error
+        assertEquals(CliError.UnknownSubcommand("app", "secrt", null), err)
     }
 }
 
