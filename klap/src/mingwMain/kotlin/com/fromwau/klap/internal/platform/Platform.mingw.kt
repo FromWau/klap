@@ -12,9 +12,26 @@ internal actual fun terminalWidth(): Int? = memScoped {
         if (handle != null && handle != INVALID_HANDLE_VALUE &&
             GetConsoleScreenBufferInfo(handle, info.ptr) != 0
         ) {
+            // A real console is attached here; opt it into UTF-8 output too, so non-ASCII text isn't
+            // reinterpreted under the box's legacy code page and mojibaked on screen. Lives here rather
+            // than in ansiSupported(), which NO_COLOR/FORCE_COLOR can short-circuit away before it's ever
+            // called, whereas terminalWidth() always runs once per Terminal construction.
+            SetConsoleOutputCP(CP_UTF8.convert())
             val width = info.srWindow.Right - info.srWindow.Left + 1
             if (width > 0) return@memScoped width
         }
     }
     null
+}
+
+// The classic console host renders escape bytes literally until VT processing is opted into per-handle.
+@OptIn(ExperimentalForeignApi::class)
+internal actual fun ansiSupported(): Boolean = memScoped {
+    val handle = GetStdHandle(STD_OUTPUT_HANDLE)
+    if (handle == null || handle == INVALID_HANDLE_VALUE) return@memScoped false
+    val mode = alloc<DWORDVar>()
+    if (GetConsoleMode(handle, mode.ptr) == 0) return@memScoped false
+    val vtFlag: UInt = ENABLE_VIRTUAL_TERMINAL_PROCESSING.convert()
+    if ((mode.value and vtFlag) != 0u) return@memScoped true
+    SetConsoleMode(handle, mode.value or vtFlag) != 0
 }

@@ -39,10 +39,9 @@ Find the behaviour, open the file. Every path below is `example/<tool>/src/main/
 | Tab completion that reads your CLI's own parsed inputs | [`task-manager`](task-manager/), [`chmod`](chmod/), [`dd`](dd/) | `completeWith { }` |
 | An option that may appear many times (`curl -H a -H b`) | [`git`](git/), [`ssh`](ssh/), [`curl`](curl/) | `.multiple()` |
 
-Every row above was checked against a real call, not a mention in a comment. Two constructs klap offers
-have **no example here yet**, so read the guide for them: [`requireAtMostOne`](../docs/guide.md#cross-input-constraints)
-(at most one of a set, none required) and [`requiredIf`](../docs/guide.md#cross-input-constraints)
-(required only when another input is present).
+Every row above was checked against a real call, not a mention in a comment. One construct klap offers
+has **no example here yet**, so read the guide for it:
+[`requiredIf`](../docs/guide.md#cross-input-constraints) (required only when another input is present).
 
 ## The tool fixtures
 
@@ -113,10 +112,12 @@ own `projection { }` and the root combines them with `dispatch(...)`, giving a s
 variants a caller matches exhaustively. `remote` both acts and nests, so its own block ends in
 `dispatch(remoteAdd, remoteRemove, projection { ... })`.
 
-Every fixture is measured against the real tool, at a pinned version named in its file header (GNU
-coreutils 9.11, git 2.55.0, curl 8.21.0, pacman 7.1.0, rsync 3.4.4). Where klap cannot reproduce
-something, the file says so in a `KLAP-GAP` comment rather than quietly working around it, so a gap stays
-visible.
+Every fixture is measured against the real tool, at a version pinned in its `version =` line: GNU
+coreutils 9.11, git 2.55.0, curl 8.21.0, pacman 7.1.0, rsync 3.4.4, GNU tar 1.35. Two stand apart. `ssh`
+declares no version at all, matching real ssh, which answers `-V` and has no `--version`. `find` carries
+`0.0-study`, since it transliterates find's expression grammar rather than reproducing it. Where klap
+cannot reproduce something, the file says so in a `KLAP-GAP` comment rather than quietly working around
+it, so a gap stays visible.
 
 Run them all, or one:
 
@@ -175,9 +176,13 @@ with custom exit codes, structured `--json`, and value-aware completion that res
 same accessor the action uses.
 
 Unlike the fixtures it stays on plain `cli(name) { }`. It is a program: its values are read inside
-`action { }` and nowhere else, so it needs no projection. Its 19 tests drive `run(argv, terminal)` and
+`action { }` and nowhere else, so it needs no projection. Its tests drive `run(argv, terminal)` and
 assert rendered output and exit codes, which is the other half of the same rule — `inputs` is for binding,
 `run` is for rendering.
+
+The JSON store is not a klap concern, but it is worth a look if you are copying this: every
+load-modify-save runs under a lock, so two invocations sharing one `--file` cannot silently drop each
+other's writes.
 
 It is also where to look for **clustered short options**, the most recognisable thing about a POSIX CLI:
 

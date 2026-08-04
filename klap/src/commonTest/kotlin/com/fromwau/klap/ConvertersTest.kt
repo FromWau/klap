@@ -462,6 +462,75 @@ class ConvertersTest : ConverterScope() {
         assertEquals(Result.Success(2), spec.convert("  hi  "))
     }
 
+    // --- Converter ordering: .validate()/.range() must be called after every type-changing converter,
+    // and a type-changing converter cannot be stacked on top of another one, even through a stale handle ---
+
+    @Test
+    fun validate_beforeATypeChangingConverter_isRejectedAtConstruction() {
+        val spec = argSpec()
+        Arg<String>(spec).validate("must not be blank") { it.isNotBlank() }
+        val ex = assertFailsWith<IllegalArgumentException> { Arg<String>(spec).int() }
+        assertEquals(
+            "argument 'x': call .validate()/.range() after every type-changing converter " +
+                "(.int()/.long()/.double()/.boolean()/.enum<E>()), not before",
+            ex.message,
+        )
+    }
+
+    @Test
+    fun range_beforeATypeChangingConverter_isRejectedAtConstruction() {
+        val spec = argSpec()
+        Arg<String>(spec).range("a".."z")
+        val ex = assertFailsWith<IllegalArgumentException> { Arg<String>(spec).int() }
+        assertEquals(
+            "argument 'x': call .validate()/.range() after every type-changing converter " +
+                "(.int()/.long()/.double()/.boolean()/.enum<E>()), not before",
+            ex.message,
+        )
+    }
+
+    @Test
+    fun aliasedHandle_secondTypeChangingConverter_isRejectedAtConstruction() {
+        // Keeping the Arg<String> handle alive past .int() and reusing it still statically offers .long(),
+        // since the handle's own type never advanced; the shared spec must reject the second call instead.
+        val spec = argSpec()
+        val a = Arg<String>(spec)
+        a.int()
+        val ex = assertFailsWith<IllegalArgumentException> { a.long() }
+        assertEquals(
+            "argument 'x': cannot add another converter after a type-changing converter " +
+                "(.int()/.long()/.double()/.boolean()/.enum<E>()) has already run; this usually means a " +
+                "converter was called through an Arg<String>/Opt<String?> handle kept alive past that point",
+            ex.message,
+        )
+    }
+
+    @Test
+    fun int_then_range_safeOrderStillWorksEndToEnd() {
+        val spec = argSpec()
+        val arg = Arg<String>(spec).int().range(1..100)
+        assertEquals(Result.Success(42), spec.convert("42"))
+        assertEquals(null, spec.validate?.invoke(50))
+        assertEquals("must be in 1..100", spec.validate?.invoke(200))
+        boundTo(spec, 50) { assertEquals(50, arg()) }
+    }
+
+    @Test
+    fun map_then_map_isNotTreatedAsATypeChangingStack() {
+        // Neither .map() call sets the type-changing marker, so the guard above must not fire here even
+        // though the two stack, proving it targets only .int()/.long()/.double()/.boolean()/.enum<E>().
+        val spec = argSpec()
+        Arg<String>(spec).map { it.trim() }.map { it.length }
+        assertEquals(Result.Success(2), spec.convert("  hi  "))
+    }
+
+    @Test
+    fun choice_then_map_isNotTreatedAsATypeChangingStack() {
+        val spec = argSpec()
+        Arg<String>(spec).choice("a", "b").map { it.uppercase() }
+        assertEquals(Result.Success("A"), spec.convert("a"))
+    }
+
     @Test
     fun opt_choice_then_map_composesInsteadOfOverwritingAndKeepsChoiceValidation() {
         val spec = optSpec()
@@ -559,5 +628,47 @@ class ConvertersTest : ConverterScope() {
         }
         assertTrue("blue" in ex.message.orEmpty(), ex.message)
         assertTrue("red, green" in ex.message.orEmpty(), ex.message)
+    }
+
+    // --- .default() validates against an already-declared choice set, matching the reverse declaration
+    // order (.default() then .choice()), which andThenConvert's own default re-validation already covers ---
+
+    @Test
+    fun choice_then_default_rejectsAnOutOfSetDefaultAtConstruction() {
+        val spec = argSpec()
+        val ex = assertFailsWith<IllegalArgumentException> {
+            Arg<String>(spec).choice("fast", "slow").default("bogus")
+        }
+        assertEquals("argument 'x': default value 'bogus' is invalid: not one of fast, slow", ex.message)
+    }
+
+    @Test
+    fun default_then_choice_rejectsAnOutOfSetDefaultAtConstruction_sameMessageShape() {
+        // The reverse declaration order already worked before this fix, via andThenConvert's own default
+        // re-validation; asserted here so both orders are pinned to the identical message shape.
+        val spec = argSpec()
+        val ex = assertFailsWith<IllegalArgumentException> {
+            Arg<String>(spec).default("bogus").choice("fast", "slow")
+        }
+        assertEquals("argument 'x': default value 'bogus' is invalid: not one of fast, slow", ex.message)
+    }
+
+    @Test
+    fun choice_then_default_canonicalizesACaseDifferingValidDefaultAtConstruction() {
+        val spec = argSpec()
+        Arg<String>(spec).choice("fast", "slow").default("FAST")
+        // The guard does not over-reject: the mismatched case is legal, same as the parser's own matching,
+        // and the stored default is canonicalized so an absent argument binds the same value a typed
+        // "FAST"/"fast"/"Fast" would have.
+        assertEquals(Cardinality.Default("fast"), spec.cardinality)
+    }
+
+    @Test
+    fun opt_choice_then_default_rejectsAnOutOfSetDefaultAtConstruction() {
+        val spec = optSpec()
+        val ex = assertFailsWith<IllegalArgumentException> {
+            Opt<String?>(spec).choice("fast", "slow").default("bogus")
+        }
+        assertEquals("option '--opt': default value 'bogus' is invalid: not one of fast, slow", ex.message)
     }
 }

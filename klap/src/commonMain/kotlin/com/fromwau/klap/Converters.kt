@@ -11,20 +11,51 @@ private fun numeric(reason: String, parse: (String) -> Any?): (String) -> Result
     { raw -> parse(raw)?.let { Result.Success(it) } ?: Result.Error(reason) }
 
 /**
+ * Wraps a composed [ValueSpec.convert] whose newest stage is type-changing (`.int()`, `.long()`,
+ * `.double()`, `.boolean()`, `.enum<E>()`): its success value is no longer a `String`, so
+ * [andThenConvert]'s inner cast would break if another converter composed on top of it. `.choice()`,
+ * `.map { }`, and `.convert { }` stay unmarked, since stacking those is legal however often they chain.
+ */
+private class TypeChangedConverter(private val delegate: (String) -> Result<Any?, String>) :
+    (String) -> Result<Any?, String> {
+    override fun invoke(raw: String): Result<Any?, String> = delegate(raw)
+}
+
+/**
  * Composes [next] after whatever converter is already on this spec, instead of overwriting it, so
  * chained String-input converters (`.choice().map { }`, `.map { }.map { }`, `.choice().int()`, ...)
- * stack. Every converter that calls this is only reachable on `Arg<String>`/`Opt<String?>`, so any
- * prior stage's success value is always a `String` (the spec starts out with the identity passthrough,
- * which trivially satisfies this too): the cast is safe by construction, not by luck.
+ * stack. The inner cast to `String` holds only while every prior stage still yields one, so a
+ * [typeChanging] stage closes the spec to further converters — which is what catches a second call made
+ * through a leaked `Arg<String>`/`Opt<String?>` handle, whose static type never advances to reveal it.
  */
-private fun ValueSpec.andThenConvert(next: (String) -> Result<Any?, String>) {
+private fun ValueSpec.andThenConvert(typeChanging: Boolean = false, next: (String) -> Result<Any?, String>) {
+    val label = if (this is OptionSpec) "option" else "argument"
+    require(convert !is TypeChangedConverter) {
+        "$label '$name': cannot add another converter after a type-changing converter " +
+            "(.int()/.long()/.double()/.boolean()/.enum<E>()) has already run; this usually means a " +
+            "converter was called through an Arg<String>/Opt<String?> handle kept alive past that point"
+    }
+    require(!(typeChanging && validate != null)) {
+        "$label '$name': call .validate()/.range() after every type-changing converter " +
+            "(.int()/.long()/.double()/.boolean()/.enum<E>()), not before"
+    }
     val prior = convert
-    convert = { raw ->
+    val composed: (String) -> Result<Any?, String> = { raw ->
         when (val p = prior(raw)) {
             is Result.Success -> next(p.value as String)
             is Result.Error -> p
         }
     }
+    convert = if (typeChanging) TypeChangedConverter(composed) else composed
+    val declaredDefault = cardinality as? Cardinality.Default ?: return
+    // Only a String-typed receiver reaches a converter, so a default already stored is the raw text the
+    // author wrote; without this the parser would write that text into an accessor now typed otherwise.
+    val converted = next(declaredDefault.value as String)
+    require(converted is Result.Success) {
+        "$label '$name': default value '${declaredDefault.value}' is invalid: " +
+            "${(converted as Result.Error).error}"
+    }
+    cardinality = Cardinality.Default(converted.value)
 }
 
 /**
@@ -72,6 +103,23 @@ private fun requireBareValueInChoices(name: String, bareValue: String, choices: 
     }
 }
 
+/**
+ * A `.default()` outside [ValueSpec.choices] would be a value `--help` advertises but no input can produce.
+ * [andThenConvert] already covers the `.default()`-then-`.choice()` order; this covers the reverse, matching
+ * case-insensitively and storing the declared spelling so an absent input binds what a matching one would.
+ * A default that is no longer a raw `String` never reached [choices], so it passes through unchecked.
+ */
+private fun ValueSpec.canonicalDefaultOrThrow(value: Any?): Any? {
+    val current = choices ?: return value
+    if (value !is String) return value
+    val label = if (this is OptionSpec) "option" else "argument"
+    val canonical = current.firstOrNull { it.equals(value, ignoreCase = true) }
+    require(canonical != null) {
+        "$label '$name': default value '$value' is invalid: not one of ${current.joinToString(", ")}"
+    }
+    return canonical
+}
+
 // Shared bodies behind the mirrored Arg/Opt converter pairs (which differ only in their typed wrapper).
 
 private fun ValueSpec.applyChoice(choices: List<String>) {
@@ -80,9 +128,11 @@ private fun ValueSpec.applyChoice(choices: List<String>) {
     (this as? OptionSpec)?.bareValue?.let { requireBareValueInChoices(name, it, choices) }
     this.choices = choices
     andThenConvert { raw ->
-        choices.firstOrNull { it.equals(raw, ignoreCase = true) }
+        // Reads the live field, not this call's [choices], so a later choice()/enum() overwrite retargets it too.
+        val current = this.choices!!
+        current.firstOrNull { it.equals(raw, ignoreCase = true) }
             ?.let { Result.Success(it) }
-            ?: Result.Error("not one of ${choices.joinToString(", ")}")
+            ?: Result.Error("not one of ${current.joinToString(", ")}")
     }
 }
 
@@ -121,7 +171,7 @@ internal fun <E : Enum<E>> ValueSpec.applyEnum(enumName: String?, values: Array<
     val displayNames = values.map { it.name.lowercase() }
     (this as? OptionSpec)?.bareValue?.let { requireBareValueInChoices(name, it, displayNames) }
     choices = displayNames
-    andThenConvert { raw ->
+    andThenConvert(true) { raw ->
         values.firstOrNull { it.name.equals(raw, ignoreCase = true) }
             ?.let { Result.Success(it) }
             ?: Result.Error("not one of ${values.joinToString(", ") { it.name.lowercase() }}")
@@ -144,22 +194,22 @@ public abstract class ConverterScope internal constructor() {
     // --- Arg type converters ---
 
     public fun Arg<String>.int(): Arg<Int> {
-        spec.andThenConvert(numeric("not an integer") { it.toIntOrNull() })
+        spec.andThenConvert(true, numeric("not an integer") { it.toIntOrNull() })
         return Arg(spec)
     }
 
     public fun Arg<String>.long(): Arg<Long> {
-        spec.andThenConvert(numeric("not a long") { it.toLongOrNull() })
+        spec.andThenConvert(true, numeric("not a long") { it.toLongOrNull() })
         return Arg(spec)
     }
 
     public fun Arg<String>.double(): Arg<Double> {
-        spec.andThenConvert(numeric("not a number") { it.toDoubleOrNull() })
+        spec.andThenConvert(true, numeric("not a number") { it.toDoubleOrNull() })
         return Arg(spec)
     }
 
     public fun Arg<String>.boolean(): Arg<Boolean> {
-        spec.andThenConvert(numeric("not a boolean (true/false)") { it.toBooleanStrictOrNull() })
+        spec.andThenConvert(true, numeric("not a boolean (true/false)") { it.toBooleanStrictOrNull() })
         return Arg(spec)
     }
 
@@ -175,7 +225,7 @@ public abstract class ConverterScope internal constructor() {
     }
 
     public fun <T> Arg<String>.convert(transform: (String) -> Result<T, String>): Arg<T> {
-        spec.andThenConvert(transform)
+        spec.andThenConvert(next = transform)
         return Arg(spec)
     }
 
@@ -209,7 +259,7 @@ public abstract class ConverterScope internal constructor() {
         require(spec.cardinality !is Cardinality.Multiple) {
             "argument '${spec.name}': .default() cannot be combined with .multiple()"
         }
-        spec.cardinality = Cardinality.Default(value)
+        spec.cardinality = Cardinality.Default(spec.canonicalDefaultOrThrow(value))
         return Arg(spec)
     }
 
@@ -226,7 +276,7 @@ public abstract class ConverterScope internal constructor() {
         require(spec.cardinality !is Cardinality.Multiple) {
             "argument '${spec.name}': .default() cannot be combined with .multiple()"
         }
-        spec.cardinality = Cardinality.Default(value)
+        spec.cardinality = Cardinality.Default(spec.canonicalDefaultOrThrow(value))
         return Arg(spec)
     }
 
@@ -320,17 +370,17 @@ public abstract class ConverterScope internal constructor() {
     // --- Opt converters ---
 
     public fun Opt<String?>.int(): Opt<Int?> {
-        spec.andThenConvert(numeric("not an integer") { it.toIntOrNull() })
+        spec.andThenConvert(true, numeric("not an integer") { it.toIntOrNull() })
         return Opt(spec)
     }
 
     public fun Opt<String?>.long(): Opt<Long?> {
-        spec.andThenConvert(numeric("not a long") { it.toLongOrNull() })
+        spec.andThenConvert(true, numeric("not a long") { it.toLongOrNull() })
         return Opt(spec)
     }
 
     public fun Opt<String?>.double(): Opt<Double?> {
-        spec.andThenConvert(numeric("not a number") { it.toDoubleOrNull() })
+        spec.andThenConvert(true, numeric("not a number") { it.toDoubleOrNull() })
         return Opt(spec)
     }
 
@@ -341,7 +391,7 @@ public abstract class ConverterScope internal constructor() {
     }
 
     public fun Opt<String?>.boolean(): Opt<Boolean?> {
-        spec.andThenConvert(numeric("not a boolean (true/false)") { it.toBooleanStrictOrNull() })
+        spec.andThenConvert(true, numeric("not a boolean (true/false)") { it.toBooleanStrictOrNull() })
         return Opt(spec)
     }
 
@@ -351,7 +401,7 @@ public abstract class ConverterScope internal constructor() {
     }
 
     public fun <T> Opt<String?>.convert(transform: (String) -> Result<T, String>): Opt<T?> {
-        spec.andThenConvert(transform)
+        spec.andThenConvert(next = transform)
         return Opt(spec)
     }
 
@@ -438,7 +488,7 @@ public abstract class ConverterScope internal constructor() {
         require(spec.cardinality !is Cardinality.Multiple && spec.cardinality !is Cardinality.Required) {
             "option '${spec.name}': .default() cannot be combined with .multiple()/.required()"
         }
-        spec.cardinality = Cardinality.Default(value)
+        spec.cardinality = Cardinality.Default(spec.canonicalDefaultOrThrow(value))
         return Opt(spec)
     }
 

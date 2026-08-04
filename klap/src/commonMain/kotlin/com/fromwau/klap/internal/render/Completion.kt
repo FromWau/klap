@@ -9,15 +9,21 @@ import com.fromwau.klap.Inference
 import com.fromwau.klap.SubcommandMatch
 import com.fromwau.klap.builtinScan
 import com.fromwau.klap.internal.parse.END_OF_OPTIONS
+import com.fromwau.klap.internal.parse.GlobalAccumulator
+import com.fromwau.klap.internal.parse.NameMatch
 import com.fromwau.klap.internal.parse.Sifted
 import com.fromwau.klap.internal.parse.accumulator
 import com.fromwau.klap.internal.parse.activeArguments
 import com.fromwau.klap.internal.parse.completionValues
 import com.fromwau.klap.internal.parse.isFlagLike
+import com.fromwau.klap.internal.parse.longMatchPool
+import com.fromwau.klap.internal.parse.resolveLong
 import com.fromwau.klap.internal.parse.sift
 import com.fromwau.klap.internal.parse.siftGlobals
 import com.fromwau.klap.internal.parse.supplied
+import com.fromwau.klap.internal.spec.ArgumentSpec
 import com.fromwau.klap.internal.spec.Cardinality
+import com.fromwau.klap.internal.spec.ConstraintArity
 import com.fromwau.klap.internal.spec.FlagSpec
 import com.fromwau.klap.internal.spec.HolderSpec
 import com.fromwau.klap.internal.spec.NamedSpec
@@ -71,9 +77,14 @@ internal fun Cli.completeCandidates(words: List<String>): List<Candidate> {
     // to preempt on a reserved name, but NOT when the token is standing in a value slot: `-e --color <cur>`
     // already gave "--color" to `-e`. Skipped entirely when the tree declined --color, since "color" may then
     // be the app's own option and answering here would shadow its value candidates.
+    //
+    // `scan.matched` resolves an abbreviation the same way `stripValued` two lines below does — gated on this
+    // tree's own inference mode and declining an ambiguous prefix — so `--col`/`--col=` bind here exactly when
+    // the parser would bind them, rather than only the one literal spelling a plain string comparison sees.
     if (builtins.color && !trailingIsConsumedValue) {
-        if (head.lastOrNull() == "--color") return colorModeCandidates(current)
-        if (current.startsWith("--color=")) return colorModeCandidates(current.removePrefix("--color="))
+        if (head.lastOrNull()?.let(scan::matched) == "color") return colorModeCandidates(current)
+        val eq = current.indexOf('=')
+        if (eq >= 0 && scan.matched(current.take(eq)) == "color") return colorModeCandidates(current.substring(eq + 1))
     }
 
     // Strip the position-independent modifiers exactly as parse() does before its own walk: --json first, so
@@ -112,12 +123,12 @@ internal fun Cli.completeCandidates(words: List<String>): List<Candidate> {
     // An option value under the cursor: `prev` names a known value-taking option (a whole `--long`/`-s`, or
     // the trailing option char of a short cluster like `-vp`), so complete only that value.
     val valueOption =
-        prev?.takeIf { it.isFlagLike() }?.let { cmd.trailingValueOption(it, globalSpecs) }
+        prev?.takeIf { it.isFlagLike() }?.let { cmd.trailingValueOption(it, globalAcc) }
     if (valueOption != null) return valueOption.candidatesFor(current, words, values)
 
     // An ATTACHED option value: the name and its (partial) value share ONE word (`--opt=partial` or glued
     // `-opartial`). Complete the value, filtered by the partial after the `=`/short char, not the whole word.
-    val attached = cmd.attachedValueOption(current, globalSpecs)
+    val attached = cmd.attachedValueOption(current, globalAcc)
     if (attached != null) {
         val (attachedOption, partial) = attached
         return attachedOption.candidatesFor(partial, words, values)
@@ -161,7 +172,7 @@ internal fun Cli.completeCandidates(words: List<String>): List<Candidate> {
         // option ends the cluster by consuming the remainder of the token, so nothing may follow it.
         val typedShorts = current.removePrefix("-")
         if (!current.startsWith("--") && typedShorts.isNotEmpty()) {
-            val flagSpecs = cmd.flagLookup(globalSpecs)
+            val flagSpecs = cmd.flagLookup(globalAcc)
             if (typedShorts.all { flagSpecs.byName("-$it") != null }) {
                 names += names
                     .filter { it.value.length == 2 && !it.value.startsWith("--") }
@@ -176,9 +187,7 @@ internal fun Cli.completeCandidates(words: List<String>): List<Candidate> {
     // The bind's own slot list, not cmd.arguments: a slot an .absentWhen() trigger removed is not on this
     // line at all, and offering its values would put completion at odds with both the parse and --help.
     val slots = cmd.activeArguments(sifted)
-    val positional = (slots.getOrNull(positionalIndex)
-        ?: slots.lastOrNull()?.takeIf { it.cardinality is Cardinality.Multiple })
-        ?.takeUnless { it.hidden }
+    val positional = slots.slotForOperand(positionalIndex)?.takeUnless { it.hidden }
 
     val positionalCandidates = positional?.candidatesFor(current, words, values).orEmpty()
     // A `.file()` slot or a completeFiles() provider must reach the shell as the LONE directive line, even at
@@ -205,14 +214,44 @@ internal fun Cli.completeCandidates(words: List<String>): List<Candidate> {
 }
 
 /**
- * The inputs a name completion must not offer: every OTHER member of a constraint set that already has one
- * supplied, under either arity, since a second member is a usage error in both. The supplied member itself
- * stays offered — some tools accept a repeat, and dropping it would change the list's shape mid-typing.
- * Supplied-ness comes from [supplied], the same predicate the parse enforces the constraint with.
+ * The inputs a name completion must not offer: every OTHER member of an [ConstraintArity.ExactlyOne] or
+ * [ConstraintArity.AtMostOne] set that already has one supplied, since a second member is a usage error
+ * under both. A [ConstraintArity.LastWins] set rules out nothing — it is an override rule where any number
+ * of members is legal (`rm -i -f`), which is why the parse's own constraint check skips it too. The
+ * supplied member itself stays offered — some tools accept a repeat, and dropping it would change the
+ * list's shape mid-typing. Supplied-ness comes from [supplied], the same predicate the parse enforces the
+ * constraint with.
  */
 private fun Command.membersRuledOutBy(sifted: Sifted): Set<HolderSpec> = constraints
+    .filterNot { constraint -> constraint.arity == ConstraintArity.LastWins }
     .filter { constraint -> constraint.members.any { supplied(it, sifted) } }
     .flatMapTo(mutableSetOf()) { constraint -> constraint.members.filterNot { supplied(it, sifted) } }
+
+/**
+ * The slot the operand at [index] would bind to, computed the way `bindPositionals` assigns one, on a line
+ * whose LAST operand is the word under the cursor. That assumption is what gives the `SRC... DEST` shape
+ * its destination back: a variadic hands the fixed slots after it what they still need, so `cp a b <TAB>`
+ * lands on DEST rather than on a third SOURCE, exactly where the parse would put that word. Null once no
+ * slot can hold it, which is where the parse reports too many arguments.
+ */
+private fun List<ArgumentSpec>.slotForOperand(index: Int): ArgumentSpec? {
+    val operands = index + 1
+    var filled = 0
+    for ((slotIndex, spec) in withIndex()) {
+        // Every fixed slot after a variadic is Required (BuilderValidation's rule), so what they claim is exact.
+        val take = when (val cardinality = spec.cardinality) {
+            // Floored at the variadic's own minimum: a line too short to meet it is one the parse rejects,
+            // so handing those operands to the slots behind it would complete toward a rejected reading.
+            is Cardinality.Multiple ->
+                (operands - filled - (size - slotIndex - 1)).coerceAtLeast(cardinality.min)
+
+            else -> 1
+        }
+        if (index < filled + take) return spec
+        filled += take
+    }
+    return null
+}
 
 /**
  * Walks [argv] down the subcommand tree as far as it routes, returning the deepest command reached and the
@@ -276,13 +315,32 @@ private fun ValueSpec.candidatesFor(
 
 /**
  * The long option/short whose value [token] (a whole `--long`/`-s` word) is being completed, if any;
- * globals included since they are position-independent. Hidden options are NOT filtered out here (unlike
- * the name-completion block above): hidden only suppresses a NAME from `--<TAB>` suggestions, but the
- * option itself is still fully parseable, so its value must still resolve and complete once its name has
- * been typed.
+ * globals included since they are position-independent.
+ *
+ * A long resolves through [resolveLong] against [longMatchPool], the same call and the same pool [sift]
+ * binds one with, so an abbreviation the parse accepts completes THAT option's values instead of falling
+ * through to the next operand slot. Prefix resolution is the long half alone: a short is one character,
+ * which is already its full spelling. Hidden options are NOT filtered out here (unlike the name-completion
+ * block above): hidden only suppresses a NAME from `--<TAB>` suggestions, but the option itself is still
+ * fully parseable, so its value must still resolve and complete once its name has been typed.
  */
-private fun Command.matchingValueOption(token: String, globalSpecs: List<NamedSpec>): OptionSpec? =
-    (options + globalSpecs.filterIsInstance<OptionSpec>()).byName(token)
+private fun Command.matchingValueOption(token: String, globalAcc: GlobalAccumulator): OptionSpec? {
+    val pool = options + globalAcc.optionSpecs
+    if (!token.startsWith("--")) return pool.byName(token)
+    val resolved = resolveLong(
+        token.removePrefix("--"),
+        longMatchPool(globalAcc),
+        globalAcc.inferNames,
+    )
+    // An ambiguous abbreviation binds nothing at all, so completing one possibility's values here would
+    // offer the very reading the parse refuses to pick.
+    val long = when (resolved) {
+        is NameMatch.Exact -> resolved.name
+        is NameMatch.Prefix -> resolved.name
+        is NameMatch.Ambiguous, NameMatch.None -> return null
+    }
+    return pool.byName("--$long")
+}
 
 /**
  * The value-taking option a completed [prev] token would consume the NEXT word for: a whole `--long`/`-s`
@@ -290,17 +348,17 @@ private fun Command.matchingValueOption(token: String, globalSpecs: List<NamedSp
  * peeling leading flag chars exactly like [sift]'s short-cluster walk. Globals are included since they are
  * position-independent. Null if [prev] is not such a token or if [prev] names an option with optional value.
  */
-private fun Command.trailingValueOption(prev: String, globalSpecs: List<NamedSpec>): OptionSpec? {
-    val resolved = matchingValueOption(prev, globalSpecs) ?: run {
+private fun Command.trailingValueOption(prev: String, globalAcc: GlobalAccumulator): OptionSpec? {
+    val resolved = matchingValueOption(prev, globalAcc) ?: run {
         // Short cluster only: a whole `--opt` is already resolved above, and `--`/`-` are not clusters.
         if (!prev.startsWith("-") || prev.startsWith("--")) return null
         val chars = prev.removePrefix("-")
-        val flagSpecs = flagLookup(globalSpecs)
+        val flagSpecs = flagLookup(globalAcc)
         val optIndex = chars.indexOfFirst { flagSpecs.byName("-$it") == null }
         // The option must be the cluster's LAST char: sift only lets a trailing bare option char take the
         // following token, since a glued value (`-vp8`) ends the option itself.
         if (optIndex < 0 || optIndex != chars.lastIndex) return null
-        matchingValueOption("-${chars[optIndex]}", globalSpecs)
+        matchingValueOption("-${chars[optIndex]}", globalAcc)
     }
     // A bare optional-value option consumes no following word (see Parser's consumption branch), so the
     // cursor after it is on an OPERAND. Offering the option's values here would advertise a binding the
@@ -312,8 +370,7 @@ private fun Command.trailingValueOption(prev: String, globalSpecs: List<NamedSpe
  * This command's flags plus position-independent globals, for peeling leading flag chars off a short
  * cluster in [trailingValueOption] and [attachedValueOption].
  */
-private fun Command.flagLookup(globalSpecs: List<NamedSpec>): List<FlagSpec> =
-    flags + globalSpecs.filterIsInstance<FlagSpec>()
+private fun Command.flagLookup(globalAcc: GlobalAccumulator): List<FlagSpec> = flags + globalAcc.flagSpecs
 
 /**
  * The (option, partial-value) an ATTACHED word under the cursor names, if any: `--opt=partial` glues the
@@ -326,7 +383,7 @@ private fun Command.flagLookup(globalSpecs: List<NamedSpec>): List<FlagSpec> =
  */
 private fun Command.attachedValueOption(
     current: String,
-    globalSpecs: List<NamedSpec>,
+    globalAcc: GlobalAccumulator,
 ): Pair<OptionSpec, String>? {
     if (!current.isFlagLike()) return null
 
@@ -337,12 +394,12 @@ private fun Command.attachedValueOption(
         if (eq < 0) return null
         return matchingValueOption(
             "--${body.take(eq)}",
-            globalSpecs,
+            globalAcc,
         )?.let { it to body.drop(eq + 1) }
     }
 
     // Short cluster: peel leading flag chars; the first non-flag char is the option, the rest its glued value.
-    val flagSpecs = flagLookup(globalSpecs)
+    val flagSpecs = flagLookup(globalAcc)
     val chars = current.removePrefix("-")
     val optIndex = chars.indexOfFirst { flagSpecs.byName("-$it") == null }
     if (optIndex < 0) return null
@@ -350,7 +407,7 @@ private fun Command.attachedValueOption(
     val partial = chars.substring(optIndex + 1)
     if (partial.isEmpty()) return null
 
-    return matchingValueOption("-${chars[optIndex]}", globalSpecs)?.let { it to partial }
+    return matchingValueOption("-${chars[optIndex]}", globalAcc)?.let { it to partial }
 }
 
 /** The spec answering to a whole `--long`/`-s` token, if any. */
