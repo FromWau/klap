@@ -71,7 +71,8 @@ internal class ArgvScan(
         } else {
             tokens.getOrNull(at + 1)?.takeIf { at + 1 < headSize && !it.isFlagLike() }
         }
-        return value?.let { Result.Success(it) } ?: Result.Error(CliError.MissingOptionValue(long))
+        // [long] is the bare pool key; an error names an option the way every declared one is named, dashed.
+        return value?.let { Result.Success(it) } ?: Result.Error(CliError.MissingOptionValue("--$long"))
     }
 
     /**
@@ -240,7 +241,7 @@ private class ArityWalk(private val cli: Cli) {
 
     private fun clusterClaim(token: String, next: String?): Claim {
         // `-<NUM>` under a numericAlias carries its own value in the digits, and no pass strips it.
-        if (cmd.numericAliasValue(token) != null) return CLAIMS_NOTHING
+        if (cmd.numericAliasValue(token, globals) != null) return CLAIMS_NOTHING
         val chars = token.removePrefix("-")
         // A cluster is pre-stripped only when EVERY char is a global; one local char leaves it whole for
         // the reached command's own sift, exactly as siftGlobals does.

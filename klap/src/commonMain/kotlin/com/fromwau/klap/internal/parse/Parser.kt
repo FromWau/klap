@@ -58,16 +58,19 @@ internal fun String.isFlagLike(): Boolean =
     startsWith("-") && this != END_OF_OPTIONS && this != "-"
 
 /** The `-<digits>` shorthand [Command.numericAlias] claims, if [token] is one; the digits are its value. */
-internal fun Command.numericAliasValue(token: String): Pair<OptionSpec, String>? {
+internal fun Command.numericAliasValue(
+    token: String,
+    globalAcc: GlobalAccumulator?,
+): Pair<OptionSpec, String>? {
     val alias = numericAlias ?: return null
     val digits = token.removePrefix("-")
     if (digits.isEmpty() || !digits.all { it.isDigit() }) return null
     // POSIX.1 XBD 12.2 guideline 14: a token identifiable as an option, OR as a group of options behind
     // one '-', must be treated as one — so the alias may only claim a number that no complete cluster
     // reading covers. `-4` where `flag("-4")` is declared is that flag; `-40` where only `-4` is declared
-    // is NOT a valid group (nothing declares `0`), so the alias takes it whole. This command's own shorts
-    // are the set to check — a global's token is pre-stripped before this ever runs.
-    val shorts = shortsOf(namedInputs)
+    // is NOT a valid group (nothing declares `0`), so the alias takes it whole. A global's shorts count as
+    // much as this command's own: a cluster mixing the two reaches this sift whole ([siftGlobals]).
+    val shorts = shortsOf(namedInputs + globalAcc?.flagSpecs.orEmpty() + globalAcc?.optionSpecs.orEmpty())
     if (digits.all { it.toString() in shorts }) return null
     return alias to digits
 }
@@ -149,7 +152,7 @@ internal fun Command.bind(
     resolveLastWins(sifted, sink)
     bindPositionals(sifted.positionals, sink, sifted, globalAcc?.inferNames ?: false)
         .getOrElse { return Result.Error(it) }
-    checkConditionalRequirements(sifted)?.let { return Result.Error(it) }
+    checkConditionalRequirements(sifted, globalAcc)?.let { return Result.Error(it) }
     // Placeholder scope: parse() attaches the completed snapshot (command inputs + globals) via copy().
     return Result.Success(Invocation.Execute(this, globals, ActionScope(emptyMap())))
 }
@@ -159,14 +162,18 @@ internal fun Command.bind(
  * declaration order, or null.
  *
  * Reads [sifted] rather than the bound values for the same reason [checkConstraints] does: a flag always
- * binds (false when absent), so only the sift can say whether the user actually wrote it. Runs after the
- * binds so an outright malformed segment still reports first, and before the action so the rule is a usage
- * error rather than something the action has to re-check.
+ * binds (false when absent), so only the sift can say whether the user actually wrote it. A global
+ * condition never lands in a leaf's own sift, so [globalAcc] is asked the same question. Runs after the
+ * binds so an outright malformed segment still reports first, and before the action so the rule is a
+ * usage error rather than something the action has to re-check.
  */
-private fun Command.checkConditionalRequirements(sifted: Sifted): CliError? {
+private fun Command.checkConditionalRequirements(
+    sifted: Sifted,
+    globalAcc: GlobalAccumulator?,
+): CliError? {
     for (opt in options) {
         val condition = opt.requiredWhen ?: continue
-        val triggered = (sifted.flags[condition] ?: 0) > 0
+        val triggered = supplied(condition, sifted) || globalAcc?.supplied(condition) == true
         if (triggered && opt !in sifted.options) return CliError.MissingRequiredOption(opt.token())
     }
     return null
@@ -221,10 +228,11 @@ private fun HolderSpec.lastPosition(sifted: Sifted): Int? = when (this) {
 }
 
 /**
- * What this input binds when it is absent, which is what a loser must bind: see [resolveLastWins]. Falling
- * to null for an option without a `.default()` is sound only because `validateLastWinsMembers` keeps
- * `.required()` and `.multiple()` options out of a set: their accessors are non-null, so a null here would
- * NPE inside the action.
+ * What this input binds when it is absent: what a loser must bind ([resolveLastWins]), and what an operand
+ * slot removed by its `.absentWhen()` trigger binds ([bindPositionals]). Falling to null for an option
+ * without a `.default()` is sound only because `validateLastWinsMembers` keeps `.required()` and
+ * `.multiple()` options out of a set: their accessors are non-null, so a null here would NPE inside the
+ * action.
  */
 private fun HolderSpec.absentValue(): Any? = when {
     this is FlagSpec && isCount -> 0
@@ -416,7 +424,7 @@ internal fun bindGlobals(
         globalSift.flags,
         // Every occurrence has been seen by now, so the winning polarity is fixed and its position spent.
         globalSift.negations.mapValues { (_, polarity) -> polarity.on },
-        globalSift.options,
+        globalSift.options.mapValues { (_, occurrences) -> occurrences.inArgvOrder() },
         sink,
         inferValues,
         policy,
@@ -452,8 +460,8 @@ internal fun Command.bindPositionals(
     val overridden = lastWinsLosers(sifted)
     val args = activeArguments(sifted, overridden)
     // A slot whose absentWhen trigger fired is not in [args] at all, so the operands after it keep their
-    // own positions; binding it to null here rather than in the loop keeps the accessor total.
-    arguments.filterNot { it in args }.forEach { sink[it] = null }
+    // own positions; binding it here rather than in the loop keeps the accessor total.
+    arguments.filterNot { it in args }.forEach { sink[it] = it.absentValue() }
     var i = 0
     for ((index, spec) in args.withIndex()) {
         val isLast = index == args.lastIndex
@@ -746,8 +754,8 @@ internal fun Command.subcommandCandidates(): List<String> =
  * the error instead, so a half-typed line still yields every input around the offending token.
  *
  * [positions] gives each [segment] token its index in the argv [siftGlobals] walked, so a global recorded
- * here can be ordered against one the pre-strip already resolved and removed (see [Polarity]). It is
- * optional: a caller with no interest in ordering (completion) may omit it, and the observations this
+ * here can be ordered against one the pre-strip already resolved and removed (see [Polarity], [Occurrence]).
+ * It is optional: a caller with no interest in ordering (completion) may omit it, and the observations this
  * records then simply win outright.
  */
 internal fun Command.sift(
@@ -784,7 +792,7 @@ internal fun Command.sift(
     var optionsEnded = false
     while (i < segment.size) {
         val token = segment[i]
-        val aliasHit = numericAliasValue(token)
+        val aliasHit = numericAliasValue(token, globalAcc)
         when {
             optionsEnded -> {
                 positionals += token
@@ -951,7 +959,7 @@ internal fun Command.sift(
                         optionValues.getOrPut(opt) { mutableListOf() } += value
                         optionPositions[opt] = clusterPosition(positions.getOrNull(i) ?: i, j)
                     } else {
-                        globalAcc!!.addOptionValue(opt, value)
+                        globalAcc!!.addOptionValue(opt, value, positions.getOrNull(i))
                     }
                     advance = if (attached != null || opt.bareValue != null) 1 else 2
                     j = chars.length
@@ -1105,7 +1113,7 @@ internal fun List<HolderSpec>.siftGlobals(
             reachableLongs
     val flagCounts = mutableMapOf<FlagSpec, Int>()
     val negations = mutableMapOf<FlagSpec, Polarity>()
-    val optionValues = mutableMapOf<OptionSpec, MutableList<String>>()
+    val optionValues = mutableMapOf<OptionSpec, MutableList<Occurrence>>()
     val cleaned = mutableListOf<String>()
     val keptPositions = mutableListOf<Int>()
     var error: CliError? = null
@@ -1188,7 +1196,7 @@ internal fun List<HolderSpec>.siftGlobals(
                             keep(token, at)
                             i += 1
                         } else {
-                            optionValues.getOrPut(opt) { mutableListOf() } += value
+                            optionValues.getOrPut(opt) { mutableListOf() } += Occurrence(value, at)
                             i += if (inlineValue != null || opt.bareValue != null) 1 else 2
                         }
                     }
@@ -1254,7 +1262,9 @@ internal fun List<HolderSpec>.siftGlobals(
                 if (fullyGlobal) {
                     pendingFlags.forEach { hit(it, true, at) }
                     pendingNegatedFlags.forEach { hit(it, false, at) }
-                    pendingOption?.let { (opt, value) -> optionValues.getOrPut(opt) { mutableListOf() } += value }
+                    pendingOption?.let { (opt, value) ->
+                        optionValues.getOrPut(opt) { mutableListOf() } += Occurrence(value, at)
+                    }
                     pendingDangling?.let { opt ->
                         // A recognized value-taking global with no value is a hard error, same as the long form.
                         if (error == null) error = CliError.MissingOptionValue(opt.token())
@@ -1319,7 +1329,7 @@ internal fun clusterPosition(tokenIndex: Int, charIndex: Int = 0): Int = tokenIn
 internal class GlobalSift(
     val flags: Map<FlagSpec, Int>,
     val negations: Map<FlagSpec, Polarity>,
-    val options: Map<OptionSpec, List<String>>,
+    val options: Map<OptionSpec, List<Occurrence>>,
     val error: CliError? = null,
 )
 
@@ -1359,6 +1369,22 @@ private fun MutableMap<FlagSpec, Polarity>.recordPolarity(flag: FlagSpec, on: Bo
 }
 
 /**
+ * One occurrence of a value-taking option: the raw [value] and the argv index it was written at
+ * ([position]). [Polarity]'s counterpart for a global's values, there for the same reason — a global's
+ * occurrences are resolved by two passes ([siftGlobals], then the command's own [sift]), so the order they
+ * are collected in is not the order they were written in, and only an argv-scale index can say which of
+ * them came last.
+ *
+ * A null [position] means the caller tracks none (completion), and such an occurrence sorts after every
+ * positioned one, so the later pass's observation simply wins.
+ */
+internal class Occurrence(val value: String, val position: Int?)
+
+/** These occurrences' values in argv order; an unpositioned one (see [Occurrence]) comes last. */
+private fun List<Occurrence>.inArgvOrder(): List<String> =
+    sortedBy { it.position ?: Int.MAX_VALUE }.map { it.value }
+
+/**
  * A mutable running tally of global occurrences: seeded from [siftGlobals]' position-independent pass, then
  * topped up by a command segment's own [sift] when a global char is buried in a mixed short cluster (`-fv`).
  * [flagSpecs]/[optionSpecs] let that sift recognize a global char after it has ruled out a local one.
@@ -1378,7 +1404,7 @@ internal class GlobalAccumulator(
     val inference: Inference = Inference.None,
     private val flags: MutableMap<FlagSpec, Int>,
     private val negations: MutableMap<FlagSpec, Polarity>,
-    private val options: MutableMap<OptionSpec, MutableList<String>>,
+    private val options: MutableMap<OptionSpec, MutableList<Occurrence>>,
 ) {
     /**
      * Record a short-flag occurrence at argv index [position], [on] true for the plain short and false for
@@ -1398,8 +1424,16 @@ internal class GlobalAccumulator(
     /** Whether a subcommand name resolves by prefix here; only [Inference.All] reaches this far. */
     val inferSubcommands: Boolean get() = inference == Inference.All
 
-    fun addOptionValue(spec: OptionSpec, value: String) {
-        options.getOrPut(spec) { mutableListOf() } += value
+    /**
+     * Whether [spec] was GIVEN in its positive form, [Command.supplied]'s question asked of a global: a
+     * negatable flag's `--no-x` is an opt-out, so it must not read as a selection of `x`.
+     */
+    fun supplied(spec: FlagSpec): Boolean =
+        if (spec.negatable) negations[spec]?.on == true else (flags[spec] ?: 0) > 0
+
+    /** Record an option occurrence; [position] orders it against the pass before, see [Occurrence]. */
+    fun addOptionValue(spec: OptionSpec, value: String, position: Int?) {
+        options.getOrPut(spec) { mutableListOf() } += Occurrence(value, position)
     }
 
     /** The merged occurrences, ready for [bindGlobals]. Segment syntax errors surface via [Sifted.error]. */

@@ -222,12 +222,12 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
     val withoutColor = if (builtins.color) {
         val colorRaw = withoutJson.value("color").getOrElse { return Result.Error(it) }
         colorRaw?.let { raw ->
-            val resolved = resolveBuiltinChoice("color", raw, COLOR_MODE_NAMES)
+            val resolved = resolveBuiltinChoice("--color", raw, COLOR_MODE_NAMES)
                 .getOrElse { return Result.Error(it) }
             if (ColorMode.fromOrNull(resolved) == null) {
                 return Result.Error(
                     CliError.InvalidChoice(
-                        "color", raw, COLOR_MODE_NAMES,
+                        "--color", raw, COLOR_MODE_NAMES,
                         suggest(raw, COLOR_MODE_NAMES)
                     )
                 )
@@ -249,12 +249,12 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
         if (builtins.completion) {
             withoutColor.value("completion").getOrElse { return Result.Error(it) }
                 ?.let { raw ->
-                    val resolved = resolveBuiltinChoice("completion", raw, COMPLETION_SHELL_NAMES)
+                    val resolved = resolveBuiltinChoice("--completion", raw, COMPLETION_SHELL_NAMES)
                         .getOrElse { return Result.Error(it) }
                     val shell = CompletionShell.fromOrNull(resolved)
                         ?: return Result.Error(
                             CliError.InvalidChoice(
-                                "completion", raw, COMPLETION_SHELL_NAMES,
+                                "--completion", raw, COMPLETION_SHELL_NAMES,
                                 suggest(raw, COMPLETION_SHELL_NAMES)
                             )
                         )
@@ -263,12 +263,12 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
         }
         if (builtins.docs) {
             withoutColor.value("docs").getOrElse { return Result.Error(it) }?.let { raw ->
-                val resolved = resolveBuiltinChoice("docs", raw, DOC_FORMAT_NAMES)
+                val resolved = resolveBuiltinChoice("--docs", raw, DOC_FORMAT_NAMES)
                     .getOrElse { return Result.Error(it) }
                 val format = DocFormat.fromOrNull(resolved)
                     ?: return Result.Error(
                         CliError.InvalidChoice(
-                            "docs", raw, DOC_FORMAT_NAMES,
+                            "--docs", raw, DOC_FORMAT_NAMES,
                             suggest(raw, DOC_FORMAT_NAMES)
                         )
                     )

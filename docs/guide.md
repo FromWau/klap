@@ -156,9 +156,8 @@ $ convert 100 --from c --to f --json
 
 Declare an input, then chain converters. Each holder returned — an `Arg<T>` (argument), `Opt<T>`
 (option), or `Flag` / `CountFlag` — is captured as a `val` and read by invoking it (`name()`) inside
-`action { }`; each converter narrows its `T`. A holder declared inside a `group { }` block needs a
-different pattern, since a plain `val` there does not compile when read from the enclosing `action`;
-see [Help output](#help-output) for the `lateinit var` pattern that does.
+`action { }`; each converter narrows its `T`. A holder declared inside a `group { }` block is captured
+the same way, since `group` returns its block's value; see [Help output](#help-output).
 
 ### Spellings
 
@@ -249,11 +248,11 @@ val files   = argument("files").file().multiple(min = 1)           //  List<Stri
 | `.validate("msg") { it > 0 }` | argument, option | same type; fails with `BadValue` when the predicate is false |
 | `.range(1..65535)` | argument, option (`Comparable`) | same type, bounds-checked; shows the range in help |
 | `.optional()` | argument | makes a positional nullable (options are already nullable) |
-| `.default(v)` | argument, option | binds `v` whenever the value would be null (absent, or a converter that resolved to `null`); `v` itself may be `null`. A default is never re-validated. |
+| `.default(v)` | argument, option | binds `v` whenever the value would be null (absent, or a converter that resolved to `null`); `v` itself may be `null`. Declared *before* a converter, it runs through that too, so `.default("0").int()` binds `0`; one the converter rejects fails at construction. A default is never re-validated. |
 | `.required()` | option | fails if the option is missing |
 | `.requiredIf(flag)` | option | fails if the option is missing *and* `flag` was given (see [Cross-input constraints](#cross-input-constraints)) |
 | `.optionalValue(whenBare)` | option | `--opt=V` binds `V`, a bare `--opt` binds `whenBare`, and the space form never binds (see [POSIX conformance](#posix-conformance)) |
-| `.multiple(min = 0)` | argument, option | collects every occurrence into a `List`; at most one per command, and `min` is enforced |
+| `.multiple(min = 0)` | argument, option | collects every occurrence into a `List`, and `min` is enforced. A command may declare **one** variadic argument, but any number of repeatable options |
 | `.absentWhen(input)` | argument | removes this operand slot entirely whenever `input` was supplied, so the operands after it keep their own positions (see [Operands that depend on an option](#operands-that-depend-on-an-option)) |
 | `.requiredUnless(input)` | argument | drops this operand's declared minimum to zero whenever `input` was supplied; the slot itself stays, so nothing shifts. Only a `.multiple()` operand carries a minimum to relax, so any other cardinality is rejected when the tree is constructed (reach for `.absentWhen()` to remove a slot instead) |
 | `.placeholder(name)` | argument, option | the word help and usage show in the value slot: `--out <FILE>` instead of `--out <value>`. On an option it also replaces the choice list, which keeps a long one from widening every other row |
@@ -285,7 +284,7 @@ val port = option("--port").int().validate("must be 1..65535") { it in 1..65535 
 ```
 ```
 $ app --port 70000
-error: invalid value '70000' for port: must be 1..65535     # exit 2
+error: invalid value '70000' for --port: must be 1..65535     # exit 2
 ```
 
 An invalid `.enum<E>()` / `.choice(...)` value uses a different shape, listing the valid choices instead
@@ -293,7 +292,7 @@ of a `: message` suffix:
 
 ```
 $ app --level bogus
-error: invalid value 'bogus' for level (choose from debug, info, warn, error)     # exit 2
+error: invalid value 'bogus' for --level (choose from debug, info, warn, error)     # exit 2
 ```
 
 `.range(a..b)` is sugar over `.validate` that also prints `(a..b)` in the help row. Keep single-input
@@ -594,15 +593,21 @@ Checked after binding, against what was actually typed — a `.default()` on the
 not satisfy it. It takes a handle rather than a lambda so the help row can say `(required when --remote)`;
 the accessor stays nullable, since the option really does bind null whenever the condition is absent.
 
-Tab completion stops offering what the parse would reject: once one member of a set is on the line, the
-others leave the candidate list (`tar -c -<TAB>` offers neither `-x`/`--extract` nor `-t`/`--list`). The
-member you already typed stays on offer.
+The condition may be a `globalFlag` as well as one of this command's own flags. A negatable condition
+counts only in its positive form: `--no-remote` asks to turn the remote *off*, so it does not fire a
+requirement that `--remote` would.
 
-A constraint is scoped to **one command's own inputs**: a `globalOption` / `globalFlag` handle, or an
-input declared on another command, cannot join one. That, a set of fewer than two inputs, and a repeated
-member are all rejected when the command tree is constructed, as an `IllegalArgumentException` thrown at
-startup. Constraints are independent of `group(...)`, which is a help heading and nothing else; you can
-use either without the other.
+Tab completion stops offering what the parse would reject: once one member of an *exclusivity* set is on
+the line, the others leave the candidate list (`tar -c -<TAB>` offers neither `-x`/`--extract` nor
+`-t`/`--list`). The member you already typed stays on offer. A `lastWins` set is exempt, since a second
+member is legal there — `rm -i -<TAB>` still offers `-f`/`--force`.
+
+A *set* constraint — `requireExactlyOne`, `requireAtMostOne`, `lastWins` — is scoped to **one command's
+own inputs**: a `globalOption` / `globalFlag` handle, or an input declared on another command, cannot
+join one. That, a set of fewer than two inputs, and a repeated member are all rejected when the command
+tree is constructed, as an `IllegalArgumentException` thrown at startup. (`.requiredIf` is the exception,
+as above: its condition may be a global.) Constraints are independent of `group(...)`, which is a help
+heading and nothing else; you can use either without the other.
 
 ## Global / persistent options
 
@@ -1033,20 +1038,28 @@ command and every descendant recursively, each as its own help block, scoped to 
 advertised under Global options on any command that has subcommands, and `docs markdown` / `docs man`
 give the same full tree as a document.
 
-`group(title) { }` returns `Unit`, so you cannot capture a holder from its return value. Declare a
-`lateinit var` above the block and assign it inside; the block runs synchronously during construction,
-so it is already set by the time `action { }` runs:
+`group(title) { }` returns its block's value, so a holder declared inside is captured by a plain `val`
+with its type inferred — no `lateinit var`, no hand-written type. The block runs synchronously during
+construction (`callsInPlace(EXACTLY_ONCE)`), so the holder is already set by the time `action { }` runs:
 
 ```kotlin
-fun main(args: Array<String>) {
-    lateinit var host: Opt<String>
+fun main(args: Array<String>) = cli("deploy") {
+    val host = group("Networking") {
+        option("--host", "-H", help = "target host").required()
+    }
+    action { Ok("shipped to ${host()}") }
+}.main(args)
+```
 
-    cli("deploy") {
-        group("Networking") {
-            host = option("--host", "-H", help = "target host").required()
-        }
-        action { Ok("shipped to ${host()}") }
-    }.main(args)
+To capture several, declare them above the block and assign inside — the types are still inferred at the
+declaration, and definite assignment still holds:
+
+```kotlin
+val jobs: Opt<Int>
+val tags: Opt<List<String>>
+group("Tuning") {
+    jobs = option("--jobs", "-j", help = "parallelism").int().default(1)
+    tags = option("--tag", "-t", help = "labels").multiple()
 }
 ```
 
@@ -1185,10 +1198,11 @@ prints the same output, so a user can pipe it straight to a file.
 
 Your help text (a `description`, `epilogue`, or example note) is rendered as markdown in the markdown
 output: klap escapes a backslash and a backtick (and, in a table cell, a pipe `|` and newline) so a
-Windows path, stray backtick, or table-breaking pipe survives, but it
-does not neutralize other markdown, so a `#`, `[link](...)`, `*emphasis*`, or raw HTML in your help
-text renders as markdown. That is your own authored content, so treat generated docs as trusted: if you
-publish a tool's docs, keep in mind the help strings become live markup.
+Windows path, stray backtick, or table-breaking pipe survives, and it escapes `<` and `>` to `&lt;`/`&gt;`
+so nothing in your help text can open an HTML tag. It does not neutralize the rest of markdown, so a `#`,
+`[link](...)`, or `*emphasis*` in your help text renders as markdown. That is your own authored content,
+so treat generated docs as trusted: if you publish a tool's docs, keep in mind the help strings become
+live markup — but raw HTML is not one of the things that survives.
 
 ## Escape hatch
 

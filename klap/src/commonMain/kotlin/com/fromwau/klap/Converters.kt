@@ -25,6 +25,16 @@ private fun ValueSpec.andThenConvert(next: (String) -> Result<Any?, String>) {
             is Result.Error -> p
         }
     }
+    val declaredDefault = cardinality as? Cardinality.Default ?: return
+    // Only a String-typed receiver reaches a converter, so a default already stored is the raw text the
+    // author wrote; without this the parser would write that text into an accessor now typed otherwise.
+    val converted = next(declaredDefault.value as String)
+    val label = if (this is OptionSpec) "option" else "argument"
+    require(converted is Result.Success) {
+        "$label '$name': default value '${declaredDefault.value}' is invalid: " +
+            "${(converted as Result.Error).error}"
+    }
+    cardinality = Cardinality.Default(converted.value)
 }
 
 /**
@@ -80,9 +90,11 @@ private fun ValueSpec.applyChoice(choices: List<String>) {
     (this as? OptionSpec)?.bareValue?.let { requireBareValueInChoices(name, it, choices) }
     this.choices = choices
     andThenConvert { raw ->
-        choices.firstOrNull { it.equals(raw, ignoreCase = true) }
+        // Reads the live field, not this call's [choices], so a later choice()/enum() overwrite retargets it too.
+        val current = this.choices!!
+        current.firstOrNull { it.equals(raw, ignoreCase = true) }
             ?.let { Result.Success(it) }
-            ?: Result.Error("not one of ${choices.joinToString(", ")}")
+            ?: Result.Error("not one of ${current.joinToString(", ")}")
     }
 }
 
