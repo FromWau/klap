@@ -7,6 +7,7 @@ import com.fromwau.klap.CliBuilder
 import com.fromwau.klap.Command
 import com.fromwau.klap.CommandBuilder
 import com.fromwau.klap.Flag
+import com.fromwau.klap.Inference
 import com.fromwau.klap.Input
 import com.fromwau.klap.Opt
 import com.fromwau.klap.Projection
@@ -47,6 +48,7 @@ internal class BuilderImpl(private val name: String) : CliBuilder() {
     override var aliases: Collection<String> = emptyList()
     override var version: String? = null
     override var author: String? = null
+    override var inference: Inference = Inference.None
     override var epilogue: String = ""
     override var hidden: Boolean = false
     override var optionsEndAtFirstOperand: Boolean = false

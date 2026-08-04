@@ -107,6 +107,8 @@ class LsParityTest {
         parity.binds("--", "-foo", expected = NOTHING_BOUND.copy(files = listOf("-foo")))
         // `--rec` reaches `--recursive` and no other spelling, as it does for real ls.
         parity.binds("--rec", "f", expected = NOTHING_BOUND.copy(recursive = true, files = listOf("f")))
+        // real ls: `--color=al` lists in colour, the only value starting with "al".
+        parity.binds("--color=al", "f", expected = NOTHING_BOUND.copy(color = "always", files = listOf("f")))
     }
 
     @Test
@@ -124,6 +126,8 @@ class LsParityTest {
         parity.rejects("--format=zzz", because = "real ls: invalid argument 'zzz' for '--format'")
         parity.rejects("--hide", because = "real ls: option '--hide' requires an argument")
         parity.rejects("-F=never", "f", because = "real ls: invalid option -- '='")
+        // real ls: 'n' matches both 'none' and 'name', so argmatch calls it ambiguous.
+        parity.rejects("--sort=n", because = "real ls: ambiguous argument 'n' for '--sort'")
     }
 
     @Test

@@ -43,6 +43,9 @@ private fun stripTerminalEscapes(text: String, allowWhitespace: Boolean = false)
 /** The one place a CliError becomes human text; nothing upstream produces user-facing strings. */
 internal fun CliError.message(): String = when (this) {
     is CliError.UnknownSubcommand -> "unknown subcommand '$token' for '$parent'" + suggestion.didYouMean()
+    is CliError.AmbiguousSubcommand ->
+        "subcommand '$token' is ambiguous; possibilities: ${candidates.joinToString(" ") { "'$it'" }}"
+
     is CliError.UnknownOption -> "unknown option '$token'" + suggestion.didYouMean()
     is CliError.AmbiguousOption ->
         "option '$token' is ambiguous; possibilities: ${candidates.joinToString(" ") { "'$it'" }}"
@@ -59,6 +62,9 @@ internal fun CliError.message(): String = when (this) {
     is CliError.BadValue -> "invalid value '$value' for $name: $reason"
     is CliError.InvalidChoice ->
         "invalid value '$value' for $name (choose from ${choices.joinToString(", ")})" + suggestion.didYouMean()
+
+    is CliError.AmbiguousValue ->
+        "value '$value' for $name is ambiguous; possibilities: ${candidates.joinToString(" ") { "'$it'" }}"
 
     is CliError.TooManyArguments ->
         "unexpected extra argument${if (extras.size > 1) "s" else ""}: ${extras.joinToString(" ")}" +

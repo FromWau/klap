@@ -55,6 +55,13 @@ class RmParityTest {
         // time: `rm -f` binds an empty list, and bare `rm` never reaches the action at all (see
         // rejectsWhatRealRmRejects for the bare-`rm` line).
         parity.binds("-f", expected = NOTHING_BOUND.copy(force = true))
+        // `--recur` reaches `--recursive` and no other spelling, as it does for real rm.
+        parity.binds("--recur", "d", expected = NOTHING_BOUND.copy(recursive = true, files = listOf("d")))
+        // real rm: `--interactive=n` removes without prompting, the only WHEN value starting with "n".
+        parity.binds(
+            "--interactive=n", "a",
+            expected = NOTHING_BOUND.copy(interactive = "never", files = listOf("a")),
+        )
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.fromwau.klap.fixture.mkdir
 
+import com.fromwau.klap.Inference
 import com.fromwau.klap.Ok
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.cliOf
@@ -17,6 +18,8 @@ import com.fromwau.klap.projection
  *       --help / --version
  */
 public fun mkdirCli(): TypedCli<MkdirInputs> = cliOf("mkdir") {
+    // GNU mkdir takes any unambiguous prefix of a long option: `mkdir --par` is --parents.
+    inference = Inference.Options
     description = "Create the DIRECTORY(ies), if they do not already exist."
     version = "9.11"
     epilogue = "Report bugs to: bug-coreutils@gnu.org"

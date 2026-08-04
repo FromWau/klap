@@ -31,9 +31,22 @@ internal fun levenshtein(a: String, b: String): Int {
  * really unknown, so "did you mean <the same word>" must never be produced. [ignoreCase] lowers both
  * sides before measuring distance (used for choice-restricted values, whose matching is itself
  * case-insensitive) while leaving every other call site's case-sensitive comparison untouched.
+ * A token that prefixes exactly one candidate answers with it whatever the distance; a blank token
+ * prefixes everything, so it answers only where there is one candidate at all. Otherwise — including
+ * when the token prefixes several candidates at once — the nearest candidate within the bound wins,
+ * the tied prefixes competing on the same footing as every other candidate.
  */
 internal fun suggest(token: String, candidates: List<String>, ignoreCase: Boolean = false): String? {
     val needle = if (ignoreCase) token.lowercase() else token
+    // A prefix reaching exactly one candidate is a certainty rather than a guess, so it answers regardless
+    // of edit distance: `--h` is three edits from `--help`, past the bound below, and means nothing else.
+    val prefixed = candidates
+        .filter {
+            val candidate = if (ignoreCase) it.lowercase() else it
+            candidate != needle && candidate.startsWith(needle)
+        }
+        .distinct()
+    prefixed.singleOrNull()?.let { return it }
     return candidates
         .map { it to levenshtein(needle, if (ignoreCase) it.lowercase() else it) }
         .filter { (candidate, distance) ->

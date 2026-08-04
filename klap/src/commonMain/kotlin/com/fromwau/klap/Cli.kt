@@ -1,5 +1,7 @@
 package com.fromwau.klap
 
+import com.fromwau.klap.internal.parse.NameMatch
+import com.fromwau.klap.internal.parse.resolveName
 import com.fromwau.klap.internal.render.HelpExample
 import com.fromwau.klap.internal.spec.Action
 import com.fromwau.klap.internal.spec.ArgumentSpec
@@ -55,8 +57,38 @@ public open class Command internal constructor(
     /** A group prints subcommand help when invoked: it has children and no own action. */
     internal val isGroup: Boolean get() = subcommands.isNotEmpty() && action == null
 
+    /** Exact-only: under [Inference.All] this disagrees with [parse], which also accepts an unambiguous prefix. */
     public fun subcommand(token: String): Command? =
         subcommands.firstOrNull { it.name == token || token in it.aliases }
+}
+
+/** What a typed subcommand token reached. [Ambiguous.candidates] are full spellings, in declaration order. */
+internal sealed interface SubcommandMatch {
+    data class One(val command: Command) : SubcommandMatch
+    data class Ambiguous(val candidates: List<String>) : SubcommandMatch
+    data object None : SubcommandMatch
+}
+
+/**
+ * The child [token] names, exactly or — when [infer] — as an unambiguous abbreviation of a name or alias.
+ *
+ * Hidden children take part, mirroring a hidden option: hiding removes a name from help, not from the
+ * parser, so the same line must not bind differently on a tree that hides nothing. A prefix reaching a
+ * command's own name AND one of its aliases is not ambiguous, since both name one command.
+ */
+internal fun Command.resolveSubcommand(token: String, infer: Boolean): SubcommandMatch {
+    val pool = subcommands.flatMap { listOf(it.name) + it.aliases }
+    return when (val match = resolveName(token, pool, infer)) {
+        is NameMatch.Exact -> subcommand(match.name)?.let { SubcommandMatch.One(it) } ?: SubcommandMatch.None
+        is NameMatch.Prefix -> subcommand(match.name)?.let { SubcommandMatch.One(it) } ?: SubcommandMatch.None
+        is NameMatch.Ambiguous -> {
+            val commands = match.candidates.mapNotNull { subcommand(it) }.distinct()
+            commands.singleOrNull()?.let { SubcommandMatch.One(it) }
+                ?: SubcommandMatch.Ambiguous(match.candidates)
+        }
+
+        NameMatch.None -> SubcommandMatch.None
+    }
 }
 
 /**
@@ -78,6 +110,9 @@ public class Cli internal constructor(
     // Which built-ins this tree offers, resolved once from the root's `builtins { }` block. Threaded from
     // here into parse and every renderer, since a subcommand node carries no root-only facts of its own.
     internal val builtins: Builtins = Builtins.DEFAULT,
+    // Root-only, like [builtins]: threaded from here into every scan and sift, since a subcommand node
+    // carries no root-only facts of its own.
+    internal val inference: Inference = Inference.None,
     optionsEndAtFirstOperand: Boolean = false,
 ) : Command(
     name = name,
