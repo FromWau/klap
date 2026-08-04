@@ -201,7 +201,8 @@ class DocsTest {
         val t = RecordingTerminal()
         val code = sampleTree().run(arrayOf("docs", "pdf"), t)
         assertEquals(2, code)
-        assertTrue("invalid value 'pdf'" in t.err.toString(), t.err.toString())
+        // Named bare: the user reached this through the `docs` SUBCOMMAND, not the `--docs` option.
+        assertTrue("invalid value 'pdf' for docs" in t.err.toString(), t.err.toString())
     }
 
     @Test

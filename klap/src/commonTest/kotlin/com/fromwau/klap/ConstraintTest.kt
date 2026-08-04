@@ -904,4 +904,22 @@ class RequiredIfTest {
         }
         assertTrue("pointless" in ex.message.orEmpty(), ex.message)
     }
+
+    @Test
+    fun aNegatableGlobalConditionFiresOnlyOnItsPositiveSpelling() {
+        // The one cell where the accumulator reads polarity rather than a hit count: a global condition and
+        // a negatable one at once. Both halves of that read are exercised here, since nothing else is.
+        val tree = cli("app") {
+            val remote = globalFlag("--remote").negatable()
+            command("c") {
+                val token = option("--token").requiredIf(remote)
+                action { Ok(token() ?: "local") }
+            }
+        }
+        assertIs<Result.Success<Invocation>>(tree.parse(listOf("c", "--no-remote")))
+        assertEquals(
+            CliError.MissingRequiredOption("--token"),
+            assertIs<Result.Error<CliError>>(tree.parse(listOf("c", "--remote"))).error,
+        )
+    }
 }

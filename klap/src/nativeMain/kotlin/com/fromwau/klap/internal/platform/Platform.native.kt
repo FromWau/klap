@@ -21,6 +21,6 @@ internal actual fun defaultTerminal(): Terminal {
         override fun out(text: String) = print(text)
         override fun err(text: String) { fputs(text, stderr) }
         override val columns: Int = resolveColumns(env, terminalWidth())
-        override val ansi: Boolean = ansiEnabled(isTty, env)
+        override val ansi: Boolean = ansiEnabled(isTty, env) && ansiSupported()
     }
 }

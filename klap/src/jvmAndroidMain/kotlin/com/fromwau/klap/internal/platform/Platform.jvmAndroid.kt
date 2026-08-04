@@ -8,6 +8,8 @@ internal actual fun platformExit(code: Int): Nothing = exitProcess(code)
 // JVM/Android has no ioctl without JNI; width comes from the COLUMNS env var handled by resolveColumns.
 internal actual fun terminalWidth(): Int? = null
 
+internal actual fun ansiSupported(): Boolean = true
+
 /** Shared JVM/Android terminal; only the [isTty] probe differs per platform (isTerminal() vs console presence). */
 internal fun jvmTerminal(isTty: Boolean): Terminal {
     val env: (String) -> String? = { System.getenv(it) }

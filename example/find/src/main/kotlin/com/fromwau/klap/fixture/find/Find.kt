@@ -238,10 +238,9 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
     action<String>(human = { it }) {
         // The cost the escape hatch imposes: split find's PATH... from its expression by
         // hand, because klap handed both to the same variadic slot.
-        val startingPoints = operand()
-            .takeWhile { !it.startsWith("-") && it != "(" && it != "!" }
-            .ifEmpty { listOf(".") }
-        val rawExpression = operand().drop(startingPoints.size)
+        val boundStartingPoints = operand().takeWhile { !it.startsWith("-") && it != "(" && it != "!" }
+        val startingPoints = boundStartingPoints.ifEmpty { listOf(".") }
+        val rawExpression = operand().drop(boundStartingPoints.size)
 
         // `lastWins` already collapsed the set to its winner, so this reads one true flag at most and
         // needs no precedence of its own — the rule find documents is the rule the handles carry.

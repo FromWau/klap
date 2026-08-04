@@ -1,15 +1,34 @@
 # Code review findings — adversarially verified
 
-**Status:** PARTIAL. Generated 2026-08-04 from a multi-agent review of `master` @ `0c39c57`.
+**Status:** CLOSED, 2026-08-04. Generated from a multi-agent review of `master` @ `0c39c57`.
 
-23 findings, re-rated by hand after the automated severities proved unreliable (see below).
-**1 fixed** (the sole HIGH), 22 open — of which one (the abbreviated-completion MEDIUM) was **narrowed** on
-`inference-flag`, since it can no longer fire on a default tree. Every finding below was written against
-`0c39c57` and its file:line citations have not been re-derived since; `inference-flag` renamed
-`internal/parse/LongMatch.kt` to `NameMatch.kt` and moved a good deal of `Parser.kt`, so verify a citation
-before acting on it.
+23 findings, re-rated by hand after the automated severities proved unreliable (see below). **All 23 are
+now fixed**, each with a live regression test except where the defect is prose or build configuration.
 
-## Fixed since the review
+The finding bodies below are kept intact rather than deleted: the reproduction in each is what its test
+now asserts the inverse of, and the file:line citations were written against `0c39c57` and have NOT been
+re-derived. Treat them as a record of what was wrong, not as a map of the current tree.
+
+| Fixed in | Findings |
+|---|---|
+| before this pass | the sole HIGH (built-in token stealing) |
+| `621cc47` | global argv-order merge, `.requiredIf` global reach, `.requiredIf` negation polarity, `numericAlias` across the global/local split, `Arg.default` before a converter, `.absentWhen().default()` |
+| `2d66ec6` | stacking `.choice()`/`.enum()`, `lastWins` in completion (×2), variadic-then-fixed completion, abbreviated-option completion, mingwX64 ANSI |
+| `c0f61f4` | undashed meta-option error names |
+| `fb8aed0` | POM metadata and licence, undeclared Java floor |
+| this docs pass | `group` returns `Unit`, `invalid value` dashes, `.multiple()` table row, raw-HTML escaping, `requireAtMostOne` fixture (×2) |
+
+Two findings were re-scoped rather than fixed as written, and the reasoning is worth keeping:
+
+- **`jvmToolchain(25)`** claimed Java 25 was a bleeding-edge choice that stranded consumers on "the current
+  JDK 21 LTS". Java 25 *is* the current LTS, so that framing was wrong. Measured instead: a JDK 21 consumer
+  fails at **compile** time (`class file has wrong version 69.0, should be 65.0`), not at runtime as
+  claimed, and the AAR needs Android build-tools ≥ 36.1.0 (36.0.0 fails, 36.1.0 passes). The real defect was
+  that neither floor was *declared*, which `org.gradle.jvm.version` now fixes.
+- **The abbreviated-completion MEDIUM** was narrowed on `inference-flag` (prefix resolution became opt-in),
+  then fixed outright for trees that do opt in.
+
+## How the HIGH was fixed
 
 **The built-in token-stealing bug is fixed**, along with two cases it turned out to be one instance of.
 The whole family came from the same root: several scans read a token's spelling without asking whether a
@@ -76,6 +95,11 @@ the worst thing an argument parser can do. The `jvmToolchain(25)` entry moved `h
 was rewritten — its proposed fix (lower the toolchain) does not compile, because `Console.isTerminal()`
 requires Java 22+, and a duplicate of it raised by a second dimension was merged away.
 
+That `jvmToolchain(25)` entry was re-rated once more when it came to be fixed (see the header): both its
+severity and the `UnsupportedClassVersionError` in the rule above turned out to be wrong for this case —
+a JDK 21 consumer is stopped by `javac` at compile time, not by the runtime. The rule itself stands; the
+example it reaches for does not describe what klap actually does to a consumer below the floor.
+
 ## Coverage gap
 
 The run was interrupted by spend limits. Findings whose verifier died were dropped entirely, so
@@ -89,7 +113,7 @@ The one parser bug below surfaced from `posix`, which happened to finish. Assume
 
 ### ~~Built-in scans steal a token sitting in an option-argument slot, rebinding the option to the next operand~~ — FIXED
 
-> **Resolved.** See [Fixed since the review](#fixed-since-the-review) above. The entry is kept intact
+> **Resolved.** See [How the HIGH was fixed](#how-the-high-was-fixed) above. The entry is kept intact
 > because the reproduction below is what the regression tests now assert the inverse of, and because the
 > two further cases the fix uncovered (globals, and completion at a shielded slot) are only legible
 > beside the original claim.
@@ -109,7 +133,7 @@ The one parser bug below surfaced from `posix`, which happened to finish. Assume
 
 ## MEDIUM
 
-### Abbreviated long option: completion offers operand values the parser then rejects
+### Abbreviated long option: completion offers operand values the parser then rejects — FIXED
 
 `klap/src/commonMain/kotlin/com/fromwau/klap/internal/render/Completion.kt:343` — *completion* / parser-completion-disagreement
 
@@ -130,7 +154,7 @@ render/Completion.kt:343 `private fun <S : NamedSpec> List<S>.byName(token: Stri
 
 </details>
 
-### lastWins members are hidden from name completion though the parser accepts them
+### lastWins members are hidden from name completion though the parser accepts them — FIXED
 
 `klap/src/commonMain/kotlin/com/fromwau/klap/internal/render/Completion.kt:201` — *completion* / parser-completion-disagreement
 
@@ -144,7 +168,7 @@ render/Completion.kt:201-203 `private fun Command.membersRuledOutBy(sifted: Sift
 
 </details>
 
-### Mid-list variadic operand: completion returns nothing past the slot count (kills file completion for the cp/mv/rsync shape)
+### Mid-list variadic operand: completion returns nothing past the slot count (kills file completion for the cp/mv/rsync shape) — FIXED
 
 `klap/src/commonMain/kotlin/com/fromwau/klap/internal/render/Completion.kt:167` — *completion* / correctness
 
@@ -158,7 +182,7 @@ render/Completion.kt:163-169: `val positionalIndex = sifted.positionals.size` ..
 
 </details>
 
-### Arg.default(v) before a type converter stores the pre-conversion value; accessor reads the wrong type and the CLI dies with an unhandled ClassCastException
+### Arg.default(v) before a type converter stores the pre-conversion value; accessor reads the wrong type and the CLI dies with an unhandled ClassCastException — FIXED
 
 `klap/src/commonMain/kotlin/com/fromwau/klap/Converters.kt:207` — *converters* / type-confusion
 
@@ -172,7 +196,7 @@ Converters.kt:207-214 `public fun <T : Any> Arg<T>.default(value: T): Arg<T> { r
 
 </details>
 
-### .absentWhen(t).default(v) narrows the accessor to non-null but binds null when the trigger fires
+### .absentWhen(t).default(v) narrows the accessor to non-null but binds null when the trigger fires — FIXED
 
 `klap/src/commonMain/kotlin/com/fromwau/klap/Converters.kt:257` — *converters* / correctness
 
@@ -186,7 +210,7 @@ Converters.kt:257-260 `public fun <T> Arg<T>.absentWhen(input: Input): Arg<T?> {
 
 </details>
 
-### .requiredIf() accepts a flag that is not one of the command's own inputs; the rule then silently never fires while --help advertises it
+### .requiredIf() accepts a flag that is not one of the command's own inputs; the rule then silently never fires while --help advertises it — FIXED
 
 `klap/src/commonMain/kotlin/com/fromwau/klap/Converters.kt:391` — *converters* / api-contract
 
@@ -200,7 +224,7 @@ Converters.kt:391-398 `public fun <T> Opt<T>.requiredIf(flag: Flag): Opt<T> { re
 
 </details>
 
-### Guide says `group(title) { }` returns `Unit`; it returns the block's value
+### Guide says `group(title) { }` returns `Unit`; it returns the block's value — FIXED
 
 `docs/guide.md:979` — *docs* / api-contract
 
@@ -214,7 +238,7 @@ docs/guide.md:979 "`group(title) { }` returns `Unit`, so you cannot capture a ho
 
 </details>
 
-### `lastWins` members disappear from tab completion once one is typed
+### `lastWins` members disappear from tab completion once one is typed — FIXED
 
 `klap/src/commonMain/kotlin/com/fromwau/klap/internal/render/Completion.kt:201` — *docs* / correctness
 
@@ -228,7 +252,7 @@ docs/guide.md:979 "`group(title) { }` returns `Unit`, so you cannot capture a ho
 
 </details>
 
-### jvmToolchain(25) ships Java-25 bytecode in the published jvm jar and android AAR
+### jvmToolchain(25) ships Java-25 bytecode in the published jvm jar and android AAR — FIXED
 
 `klap/build.gradle.kts:14` — *multiplatform* / packaging
 
@@ -242,7 +266,7 @@ klap/build.gradle.kts:14 `jvmToolchain(25)` inside `kotlin { }`, with no `compil
 
 </details>
 
-### No test binds one global option through both parser passes; the merge is order-blind
+### No test binds one global option through both parser passes; the merge is order-blind — FIXED
 
 `klap/src/commonTest/kotlin/com/fromwau/klap/ParseOptionsTest.kt:604` — *test-quality* / coverage-gap
 
@@ -256,7 +280,7 @@ ParseOptionsTest.kt:604 `mixedClusterLocalFlagThenGlobalOptionConsumesValue` is 
 
 </details>
 
-### RequiredIfTest never uses a negatable condition flag, so `--no-x` firing the requirement is unpinned
+### RequiredIfTest never uses a negatable condition flag, so `--no-x` firing the requirement is unpinned — FIXED
 
 `klap/src/commonTest/kotlin/com/fromwau/klap/ConstraintTest.kt:851` — *test-quality* / coverage-gap
 
@@ -273,7 +297,7 @@ ParseOptionsTest.kt:604 `mixedClusterLocalFlagThenGlobalOptionConsumesValue` is 
 
 ## LOW
 
-### Published POM carries no name, description, URL, license, developer, or SCM metadata
+### Published POM carries no name, description, URL, license, developer, or SCM metadata — FIXED
 
 `klap/build.gradle.kts:59` — *build* / publishing-metadata
 
@@ -287,7 +311,7 @@ ParseOptionsTest.kt:604 `mixedClusterLocalFlagThenGlobalOptionConsumesValue` is 
 
 </details>
 
-### A second .choice()/.enum() stacks onto the first instead of replacing it, producing a spec that can bind no input while help and the error text advertise the second set
+### A second .choice()/.enum() stacks onto the first instead of replacing it, producing a spec that can bind no input while help and the error text advertise the second set — FIXED
 
 `klap/src/commonMain/kotlin/com/fromwau/klap/Converters.kt:77` — *converters* / correctness
 
@@ -301,7 +325,7 @@ Converters.kt:77-87 `applyChoice`: `this.choices = choices` (overwrite) followed
 
 </details>
 
-### Guide's rendered `invalid value` errors drop the option's dashes
+### Guide's rendered `invalid value` errors drop the option's dashes — FIXED
 
 `docs/guide.md:282` — *docs* / documented-output
 
@@ -315,7 +339,7 @@ docs/guide.md:281-282 `$ app --port 70000` → `error: invalid value '70000' for
 
 </details>
 
-### Converter table says `.multiple()` is limited to one per command; that holds only for positionals
+### Converter table says `.multiple()` is limited to one per command; that holds only for positionals — FIXED
 
 `docs/guide.md:250` — *docs* / api-contract
 
@@ -329,7 +353,7 @@ docs/guide.md:250 `| .multiple(min = 0) | argument, option | collects every occu
 
 </details>
 
-### example/README says `requireAtMostOne` has no fixture, two rows after pointing at the fixture that uses it
+### example/README says `requireAtMostOne` has no fixture, two rows after pointing at the fixture that uses it — FIXED
 
 `example/README.md:43` — *docs* / stale-doc
 
@@ -343,7 +367,7 @@ example/README.md:42-45 "Two constructs klap offers have **no example here yet**
 
 </details>
 
-### Generated-docs section claims raw HTML in help text renders; `<`/`>` are entity-escaped
+### Generated-docs section claims raw HTML in help text renders; `<`/`>` are entity-escaped — FIXED
 
 `docs/guide.md:1132` — *docs* / documented-behavior
 
@@ -357,7 +381,7 @@ docs/guide.md:1129-1134 "klap escapes a backslash and a backtick (and, in a tabl
 
 </details>
 
-### find fixture's raw-expression split silently drops the first expression token when no starting point is given
+### find fixture's raw-expression split silently drops the first expression token when no starting point is given — FIXED
 
 `example/find/src/main/kotlin/com/fromwau/klap/fixture/find/Find.kt:244` — *fixtures* / correctness
 
@@ -378,7 +402,7 @@ This is the fixture's demonstration of the escape hatch its own KDoc sells: `epi
 
 </details>
 
-### example/README.md contradicts itself on requireAtMostOne in the sentence claiming every row was checked
+### example/README.md contradicts itself on requireAtMostOne in the sentence claiming every row was checked — FIXED
 
 `example/README.md:42` — *fixtures* / documentation
 
@@ -392,7 +416,7 @@ example/README.md:20 `| Two options that conflict but are both optional (\`tar -
 
 </details>
 
-### mingwX64 enables ANSI from isatty() alone, never calling SetConsoleMode(ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+### mingwX64 enables ANSI from isatty() alone, never calling SetConsoleMode(ENABLE_VIRTUAL_TERMINAL_PROCESSING) — FIXED
 
 `klap/src/nativeMain/kotlin/com/fromwau/klap/internal/platform/Platform.native.kt:19` — *multiplatform* / correctness
 
@@ -406,7 +430,7 @@ Platform.native.kt:19 `val isTty = isatty(fileno(stdout)) != 0` and :24 `overrid
 
 </details>
 
-### numericAlias claims a `-<digits>` token that is a complete option group when the digit shorts are split between global and local specs
+### numericAlias claims a `-<digits>` token that is a complete option group when the digit shorts are split between global and local specs — FIXED
 
 `klap/src/commonMain/kotlin/com/fromwau/klap/internal/parse/Parser.kt:67` — *posix* / posix-conformance
 
@@ -420,7 +444,7 @@ internal/parse/Parser.kt:67 `val shorts = shortsOf(namedInputs)` guarded by the 
 
 </details>
 
-### BuiltinsTest asserts the undashed MissingOptionValue("color"/"completion") value and never its rendered text
+### BuiltinsTest asserts the undashed MissingOptionValue("color"/"completion") value and never its rendered text — FIXED
 
 `klap/src/commonTest/kotlin/com/fromwau/klap/BuiltinsTest.kt:220` — *test-quality* / test-asserts-the-bug
 

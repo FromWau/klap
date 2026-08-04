@@ -11,6 +11,9 @@ internal expect fun defaultTerminal(): Terminal
 /** Detected terminal width in columns (ioctl/Win32), or null when undetectable or not a tty. */
 internal expect fun terminalWidth(): Int?
 
+/** Whether the output handle can actually render ANSI escapes right now (always true off Windows). */
+internal expect fun ansiSupported(): Boolean
+
 /** Shared color precedence, one source of truth for every platform: `NO_COLOR` > `FORCE_COLOR`/`CLICOLOR_FORCE` > dumb `TERM` > real tty. */
 internal fun ansiEnabled(isTty: Boolean, env: (String) -> String?): Boolean = when {
     // Per the NO_COLOR spec (no-color.org), only a present AND non-empty value disables color; an

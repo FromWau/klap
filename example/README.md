@@ -39,10 +39,9 @@ Find the behaviour, open the file. Every path below is `example/<tool>/src/main/
 | Tab completion that reads your CLI's own parsed inputs | [`task-manager`](task-manager/), [`chmod`](chmod/), [`dd`](dd/) | `completeWith { }` |
 | An option that may appear many times (`curl -H a -H b`) | [`git`](git/), [`ssh`](ssh/), [`curl`](curl/) | `.multiple()` |
 
-Every row above was checked against a real call, not a mention in a comment. Two constructs klap offers
-have **no example here yet**, so read the guide for them: [`requireAtMostOne`](../docs/guide.md#cross-input-constraints)
-(at most one of a set, none required) and [`requiredIf`](../docs/guide.md#cross-input-constraints)
-(required only when another input is present).
+Every row above was checked against a real call, not a mention in a comment. One construct klap offers
+has **no example here yet**, so read the guide for it:
+[`requiredIf`](../docs/guide.md#cross-input-constraints) (required only when another input is present).
 
 ## The tool fixtures
 

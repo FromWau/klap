@@ -56,7 +56,8 @@ class BuiltinsTest {
         val t = RecordingTerminal()
         val code = app().run(arrayOf("completion", "ksh"), t)
         assertEquals(2, code)
-        assertTrue("invalid value 'ksh'" in t.err.toString(), t.err.toString())
+        // Named bare: the user reached this through the `completion` SUBCOMMAND, not the `--completion` option.
+        assertTrue("invalid value 'ksh' for completion" in t.err.toString(), t.err.toString())
     }
 
     @Test
@@ -110,14 +111,14 @@ class BuiltinsTest {
     fun completionMetaOptionRejectsUnknownShellWithSuggestion() {
         val tree = greet()
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--completion", "bsh"))).error
-        assertEquals(CliError.InvalidChoice("completion", "bsh", COMPLETION_SHELL_NAMES, "bash"), err)
+        assertEquals(CliError.InvalidChoice("--completion", "bsh", COMPLETION_SHELL_NAMES, "bash"), err)
     }
 
     @Test
     fun completionMetaOptionMissingValueReportsMissingOptionValue() {
         val tree = greet()
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--completion"))).error
-        assertEquals(CliError.MissingOptionValue("completion"), err)
+        assertEquals(CliError.MissingOptionValue("--completion"), err)
     }
 
     @Test
@@ -142,7 +143,7 @@ class BuiltinsTest {
     fun completionMetaOptionTreatsAFlagLikeNextTokenAsMissingValue() {
         val tree = greet()
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--completion", "--foo"))).error
-        assertEquals(CliError.MissingOptionValue("completion"), err)
+        assertEquals(CliError.MissingOptionValue("--completion"), err)
     }
 
     @Test
@@ -220,18 +221,18 @@ class BuiltinsTest {
 
         // Attached bad value.
         assertEquals(
-            CliError.InvalidChoice("color", "bogus", listOf("auto", "always", "never"), null),
+            CliError.InvalidChoice("--color", "bogus", listOf("auto", "always", "never"), null),
             assertIs<Result.Error<CliError>>(tree.parse(listOf("--color=bogus", "go"))).error,
         )
         // The space form consumes the next token as the value (like --completion), so a bad space value
         // is InvalidChoice too, not MissingOptionValue.
         assertEquals(
-            CliError.InvalidChoice("color", "nope", listOf("auto", "always", "never"), null),
+            CliError.InvalidChoice("--color", "nope", listOf("auto", "always", "never"), null),
             assertIs<Result.Error<CliError>>(tree.parse(listOf("--color", "nope", "go"))).error,
         )
         // MissingOptionValue only when no value follows (--color at the end).
         assertEquals(
-            CliError.MissingOptionValue("color"),
+            CliError.MissingOptionValue("--color"),
             assertIs<Result.Error<CliError>>(tree.parse(listOf("go", "--color"))).error,
         )
     }
@@ -246,11 +247,11 @@ class BuiltinsTest {
         }
 
         assertEquals(
-            CliError.InvalidChoice("color", "bogus", listOf("auto", "always", "never"), null),
+            CliError.InvalidChoice("--color", "bogus", listOf("auto", "always", "never"), null),
             assertIs<Result.Error<CliError>>(tree.parse(listOf("--color=bogus", "--version"))).error,
         )
         assertEquals(
-            CliError.MissingOptionValue("color"),
+            CliError.MissingOptionValue("--color"),
             assertIs<Result.Error<CliError>>(tree.parse(listOf("--color", "--version"))).error,
         )
         assertIs<Invocation.ShowVersion>(
