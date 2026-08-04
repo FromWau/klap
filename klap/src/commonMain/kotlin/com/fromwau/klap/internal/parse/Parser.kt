@@ -6,8 +6,10 @@ import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Command
 import com.fromwau.klap.Globals
+import com.fromwau.klap.Inference
 import com.fromwau.klap.Invocation
 import com.fromwau.klap.Result
+import com.fromwau.klap.SubcommandMatch
 import com.fromwau.klap.builtinLongs
 import com.fromwau.klap.getOrElse
 import com.fromwau.klap.internal.spec.ArgumentSpec
@@ -25,6 +27,7 @@ import com.fromwau.klap.internal.spec.negativeLongs
 import com.fromwau.klap.internal.spec.negativeShorts
 import com.fromwau.klap.internal.spec.shorts
 import com.fromwau.klap.internal.spec.token
+import com.fromwau.klap.resolveSubcommand
 
 /** POSIX end-of-options: every token after it is positional, never a flag. */
 internal const val END_OF_OPTIONS = "--"
@@ -97,9 +100,11 @@ internal fun Command.bind(
                 // A group binds nothing, so this token is an error whichever way it resolves; it is
                 // resolved anyway, because "unknown option '--he'; did you mean '--help'?" is a false
                 // diagnosis of a token that names several spellings, and a leaf would never give it.
-                val ambiguous = long?.let { resolveLong(it, longMatchPool(globalAcc)) as? LongMatch.Ambiguous }
+                val ambiguous = long?.let {
+                    resolveLong(it, longMatchPool(globalAcc), globalAcc?.inferNames ?: false) as? NameMatch.Ambiguous
+                }
                 if (ambiguous != null) {
-                    Result.Error(CliError.AmbiguousOption("--$long", ambiguous.candidates.map { "--$it" }))
+                    Result.Error(ambiguousOrUnknown("--$long", ambiguous.candidates.map { "--$it" }, globalAcc))
                 } else {
                     val offending = if (long != null) firstToken else "-${firstToken[1]}"
                     val suggestion = long?.let { suggest(offending, longOptionCandidates(globalAcc)) }
@@ -111,7 +116,8 @@ internal fun Command.bind(
                 val token = positionals.first()
                 // A real subcommand that only reached here because `--` preceded it (routing had already
                 // stopped) is misplaced, not unknown; say so instead of "unknown subcommand".
-                if (ddIndex >= 0 && subcommand(token) != null) {
+                val infer = globalAcc?.inferSubcommands ?: false
+                if (ddIndex >= 0 && resolveSubcommand(token, infer) is SubcommandMatch.One) {
                     Result.Error(CliError.SubcommandAfterSeparator(token, name))
                 } else {
                     Result.Error(
@@ -138,9 +144,11 @@ internal fun Command.bind(
         sifted.negations,
         sifted.options,
         sink,
+        globalAcc?.inferNames ?: false,
     ).getOrElse { return Result.Error(it) }
     resolveLastWins(sifted, sink)
-    bindPositionals(sifted.positionals, sink, sifted).getOrElse { return Result.Error(it) }
+    bindPositionals(sifted.positionals, sink, sifted, globalAcc?.inferNames ?: false)
+        .getOrElse { return Result.Error(it) }
     checkConditionalRequirements(sifted)?.let { return Result.Error(it) }
     // Placeholder scope: parse() attaches the completed snapshot (command inputs + globals) via copy().
     return Result.Success(Invocation.Execute(this, globals, ActionScope(emptyMap())))
@@ -294,6 +302,7 @@ private fun bindFlagsAndOptions(
     negations: Map<FlagSpec, Boolean>,
     optionValues: Map<OptionSpec, List<String>>,
     sink: MutableMap<HolderSpec, Any?>,
+    inferValues: Boolean,
     policy: BindPolicy = BindPolicy.Strict,
 ): Result<List<CliError>, CliError> {
     flags.forEach { spec ->
@@ -326,7 +335,7 @@ private fun bindFlagsAndOptions(
                     val converted = mutableListOf<Any?>()
                     var failed = false
                     for (raw in raws) {
-                        val value = when (val outcome = opt.convertOne(raw)) {
+                        val value = when (val outcome = opt.convertOne(raw, inferValues)) {
                             is Result.Error -> {
                                 if (policy != BindPolicy.Lenient) return Result.Error(outcome.error)
                                 failed = true
@@ -357,7 +366,7 @@ private fun bindFlagsAndOptions(
             else -> {
                 val raw = raws.lastOrNull()
                 if (raw != null) {
-                    when (val outcome = opt.convertOne(raw)) {
+                    when (val outcome = opt.convertOne(raw, inferValues)) {
                         // Lenient leaves it unbound: a wrong or half-typed value must not blank its siblings.
                         is Result.Error -> if (policy != BindPolicy.Lenient) {
                             return Result.Error(outcome.error)
@@ -396,6 +405,7 @@ internal fun bindGlobals(
     globalSpecs: List<HolderSpec>,
     globalSift: GlobalSift,
     sink: MutableMap<HolderSpec, Any?>,
+    inferValues: Boolean,
     policy: BindPolicy = BindPolicy.DeferRequired,
 ): Result<List<CliError>, CliError> {
     val flags = globalSpecs.filterIsInstance<FlagSpec>()
@@ -408,6 +418,7 @@ internal fun bindGlobals(
         globalSift.negations.mapValues { (_, polarity) -> polarity.on },
         globalSift.options,
         sink,
+        inferValues,
         policy,
     )
 }
@@ -435,6 +446,7 @@ internal fun Command.bindPositionals(
     values: List<String>,
     sink: MutableMap<HolderSpec, Any?>,
     sifted: Sifted,
+    inferValues: Boolean,
     policy: BindPolicy = BindPolicy.Strict,
 ): Result<Unit, CliError> {
     val overridden = lastWinsLosers(sifted)
@@ -476,7 +488,7 @@ internal fun Command.bindPositionals(
                 val converted = mutableListOf<Any?>()
                 var failed = false
                 for (raw in slice) {
-                    val value = when (val outcome = spec.convertOne(raw)) {
+                    val value = when (val outcome = spec.convertOne(raw, inferValues)) {
                         is Result.Error -> {
                             if (policy != BindPolicy.Lenient) return Result.Error(outcome.error)
                             failed = true
@@ -502,7 +514,7 @@ internal fun Command.bindPositionals(
                         }
                     }
                 } else {
-                    when (val outcome = spec.convertOne(raw)) {
+                    when (val outcome = spec.convertOne(raw, inferValues)) {
                         is Result.Error -> if (policy != BindPolicy.Lenient) {
                             return Result.Error(outcome.error)
                         }
@@ -529,14 +541,21 @@ internal fun Command.bindPositionals(
 
 /**
  * Convert one raw value through a spec, mapping a converter failure to the right CliError, then run
- * [ValueSpec.validate].
+ * [ValueSpec.validate]. [inferValues] resolves a `.choice()`/`.enum<E>()` prefix before the converter ever
+ * sees the raw token, since the converter closes over its choices at declaration time and cannot know the
+ * root's [Inference] mode itself.
  */
-private fun ValueSpec.convertOne(raw: String): Result<Any?, CliError> {
+private fun ValueSpec.convertOne(raw: String, inferValues: Boolean): Result<Any?, CliError> {
+    val resolved = if (!inferValues || choices == null) {
+        raw
+    } else {
+        resolveChoice(raw, choices!!).getOrElse { return Result.Error(it) }
+    }
     // A converter chain that compiles but is misused (two type converters stacked, or a nullable map
     // feeding a later String-typed stage) can throw at parse; the parse-never-throws contract turns any
     // converter exception into a BadValue instead of crashing the process.
     val converted = try {
-        convert(raw)
+        convert(resolved)
     } catch (e: Exception) {
         return Result.Error(CliError.BadValue(name, raw, e.message?.takeIf { it.isNotBlank() } ?: "conversion failed"))
     }
@@ -569,6 +588,32 @@ private fun ValueSpec.convertOne(raw: String): Result<Any?, CliError> {
     }
     return Result.Success(value)
 }
+
+/**
+ * The declared choice [raw] names when a prefix may resolve one, or [raw] itself when none does — an
+ * unmatched value is left for the converter to reject, so the InvalidChoice list and its suggestion are
+ * still what the user sees.
+ *
+ * Matching is case-insensitive on both halves, because `.choice()` / `.enum<E>()` already are: the pool is
+ * lowered only to compare, and the DECLARED spelling is what comes back, since that is what the converter
+ * canonicalises against. A free function, taking [name] rather than a [ValueSpec] receiver, so klap's own
+ * built-in choice values (`--color`, `completion <shell>`, `docs <format>`) share this implementation
+ * without a spec of their own to be an extension on.
+ */
+internal fun resolveChoice(name: String, raw: String, choices: List<String>): Result<String, CliError> {
+    val lowered = choices.map { it.lowercase() }
+    return when (val match = resolveName(raw.lowercase(), lowered, infer = true)) {
+        is NameMatch.Exact, NameMatch.None -> Result.Success(raw)
+        is NameMatch.Prefix -> Result.Success(choices[lowered.indexOf(match.name)])
+        is NameMatch.Ambiguous -> Result.Error(
+            CliError.AmbiguousValue(name, raw, match.candidates.map { choices[lowered.indexOf(it)] }),
+        )
+    }
+}
+
+/** [resolveChoice], reading this spec's own [ValueSpec.name] as the error's [CliError.AmbiguousValue.name]. */
+private fun ValueSpec.resolveChoice(raw: String, choices: List<String>): Result<String, CliError> =
+    resolveChoice(name, raw, choices)
 
 /**
  * A [CliError.TooManyArguments] whose first extra token, when it near-matches a visible subcommand,
@@ -660,10 +705,33 @@ private fun Command.longPool(globalAcc: GlobalAccumulator?, treeLongs: List<Stri
 }
 
 /**
+ * Narrows an ambiguity detected against [longMatchPool] to the spellings [this] command can actually reach.
+ *
+ * Detection stays tree-wide so a pre-strip's decline is never contradicted (see [longMatchPool]), but the
+ * candidates it names can belong to a sibling, and reporting those sends the user to a spelling this command
+ * calls unknown. [candidates] carry dashes (`--limit`); [resolvedLongPool] does not.
+ */
+private fun Command.ambiguousOrUnknown(
+    token: String,
+    candidates: List<String>,
+    globalAcc: GlobalAccumulator?,
+): CliError {
+    val reachable = resolvedLongPool(globalAcc).toSet()
+    val filtered = candidates.filter { it.removePrefix("--") in reachable }
+    return when {
+        filtered.size >= 2 -> CliError.AmbiguousOption(token, filtered)
+        // One survivor still reports the whole list rather than binding it: the pre-strip already declined
+        // this token, so resolving it here would bind what an earlier pass refused.
+        filtered.size == 1 -> CliError.AmbiguousOption(token, candidates)
+        else -> CliError.UnknownOption(token, suggest(token, longOptionCandidates(globalAcc)))
+    }
+}
+
+/**
  * Candidate names for did-you-mean on an unknown subcommand: each visible child's name plus its aliases.
  * Hidden subcommands are excluded so a typo suggestion never reveals a hidden command's name.
  */
-private fun Command.subcommandCandidates(): List<String> =
+internal fun Command.subcommandCandidates(): List<String> =
     subcommands.filterNot { it.hidden }.flatMap { listOf(it.name) + it.aliases }
 
 /**
@@ -744,10 +812,10 @@ internal fun Command.sift(
                 val inlineValue = if (eq >= 0) body.drop(eq + 1) else null
                 // Resolved against ONE pool so an abbreviation reaching two spellings is reported as
                 // ambiguous rather than binding whichever lookup ran first; see [longMatchPool].
-                val resolved = resolveLong(typed, longPool)
+                val resolved = resolveLong(typed, longPool, globalAcc?.inferNames ?: false)
                 val long = when (resolved) {
-                    is LongMatch.Exact -> resolved.name
-                    is LongMatch.Prefix -> resolved.name
+                    is NameMatch.Exact -> resolved.name
+                    is NameMatch.Prefix -> resolved.name
                     else -> typed
                 }
                 // Every error below names what the user typed, never what it resolved to: a diagnostic
@@ -757,8 +825,8 @@ internal fun Command.sift(
                 val flag = findFlag("--$long")
                 val negated = if (flag == null) findNegatedFlag(long) else null
                 when {
-                    resolved is LongMatch.Ambiguous -> {
-                        record { CliError.AmbiguousOption(spelled, resolved.candidates.map { "--$it" }) }
+                    resolved is NameMatch.Ambiguous -> {
+                        record { ambiguousOrUnknown(spelled, resolved.candidates.map { "--$it" }, globalAcc) }
                         i += 1
                     }
 
@@ -989,6 +1057,7 @@ internal fun GlobalSift.accumulator(
     builtins: Builtins = Builtins.DEFAULT,
     metaOptions: Boolean = false,
     treeLongs: List<String> = emptyList(),
+    inference: Inference = Inference.None,
 ): GlobalAccumulator = GlobalAccumulator(
     flagSpecs = globalSpecs.filterIsInstance<FlagSpec>(),
     optionSpecs = globalSpecs.filterIsInstance<OptionSpec>(),
@@ -996,6 +1065,7 @@ internal fun GlobalSift.accumulator(
     builtins = builtins,
     metaOptions = metaOptions,
     treeLongs = treeLongs,
+    inference = inference,
     flags = flags.toMutableMap(),
     negations = negations.toMutableMap(),
     options = options.mapValues { it.value.toMutableList() }.toMutableMap(),
@@ -1080,9 +1150,9 @@ internal fun List<HolderSpec>.siftGlobals(
                 // An abbreviation resolving to anything but a global (an ambiguity, or one of the built-ins
                 // in the pool) leaves the token whole, exactly as an unrecognized one does: this pass runs
                 // before the walk knows its command, so only that command's own sift sees the full pool.
-                val long = when (val resolved = resolveLong(typed, globalPool)) {
-                    is LongMatch.Exact -> resolved.name
-                    is LongMatch.Prefix -> resolved.name
+                val long = when (val resolved = resolveLong(typed, globalPool, scan.infer)) {
+                    is NameMatch.Exact -> resolved.name
+                    is NameMatch.Prefix -> resolved.name
                     else -> typed
                 }
                 val spelled = token.substringBefore('=')
@@ -1292,11 +1362,11 @@ private fun MutableMap<FlagSpec, Polarity>.recordPolarity(flag: FlagSpec, on: Bo
  * A mutable running tally of global occurrences: seeded from [siftGlobals]' position-independent pass, then
  * topped up by a command segment's own [sift] when a global char is buried in a mixed short cluster (`-fv`).
  * [flagSpecs]/[optionSpecs] let that sift recognize a global char after it has ruled out a local one.
- * [rootVersion] carries the root's own [Cli.version], [builtins] its resolved built-in surface and
- * [metaOptions] its `--completion`/`--docs` gate, and [treeLongs] its [Cli.declaredLongs], down to a nested
- * command's [sift]: the only way any of them reaches the did-you-mean candidate set and the abbreviation
- * pool (see [longOptionCandidates], [longMatchPool]) without threading four separate parameters through
- * every call between [parse] and [sift].
+ * [rootVersion] carries the root's own [Cli.version], [builtins] its resolved built-in surface,
+ * [metaOptions] its `--completion`/`--docs` gate, [treeLongs] its [Cli.declaredLongs], and [inference] its
+ * [Cli.inference], down to a nested command's [sift]: the only way any of them reaches the did-you-mean
+ * candidate set and the abbreviation pool (see [longOptionCandidates], [longMatchPool]) without threading
+ * five separate parameters through every call between [parse] and [sift].
  */
 internal class GlobalAccumulator(
     val flagSpecs: List<FlagSpec>,
@@ -1305,6 +1375,7 @@ internal class GlobalAccumulator(
     val builtins: Builtins = Builtins.DEFAULT,
     val metaOptions: Boolean = false,
     val treeLongs: List<String> = emptyList(),
+    val inference: Inference = Inference.None,
     private val flags: MutableMap<FlagSpec, Int>,
     private val negations: MutableMap<FlagSpec, Polarity>,
     private val options: MutableMap<OptionSpec, MutableList<String>>,
@@ -1320,6 +1391,12 @@ internal class GlobalAccumulator(
         flags[spec] = (flags[spec] ?: 0) + 1
         if (spec.negatable) negations.recordPolarity(spec, on = on, at = position)
     }
+
+    /** Whether a long option or a declared choice value resolves by prefix here; an exact spelling always binds. */
+    val inferNames: Boolean get() = inference != Inference.None
+
+    /** Whether a subcommand name resolves by prefix here; only [Inference.All] reaches this far. */
+    val inferSubcommands: Boolean get() = inference == Inference.All
 
     fun addOptionValue(spec: OptionSpec, value: String) {
         options.getOrPut(spec) { mutableListOf() } += value
@@ -1356,9 +1433,10 @@ internal fun Cli.completionValues(
         sifted.negations,
         sifted.options,
         sink,
+        globalAcc.inferNames,
         BindPolicy.Lenient,
     )
-    cmd.bindPositionals(sifted.positionals, sink, sifted, BindPolicy.Lenient)
-    bindGlobals(globalSpecs, globalAcc.toGlobalSift(), sink, BindPolicy.Lenient)
+    cmd.bindPositionals(sifted.positionals, sink, sifted, globalAcc.inferNames, BindPolicy.Lenient)
+    bindGlobals(globalSpecs, globalAcc.toGlobalSift(), sink, globalAcc.inferNames, BindPolicy.Lenient)
     return sink
 }

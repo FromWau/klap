@@ -1,5 +1,6 @@
 package com.fromwau.klap.fixture.git
 
+import com.fromwau.klap.Inference
 import com.fromwau.klap.Ok
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
@@ -28,6 +29,9 @@ import com.fromwau.klap.projection
  *   git remote remove <name>                                                            (alias: rm)
  */
 public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
+    // Real git abbreviates a subcommand's long options (`git commit --am` reaches `--amend`) but never a
+    // top-level one; klap's switch is root-only, so it abbreviates both (see knownDivergenceFromRealGit).
+    inference = Inference.Options
     description = "the stupid content tracker"
     version = "2.55.0"
     epilogue = "See 'git help <command>' to read about a specific subcommand."

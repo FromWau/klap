@@ -1,6 +1,7 @@
 package com.fromwau.klap.fixture.chmod
 
 import com.fromwau.klap.Err
+import com.fromwau.klap.Inference
 import com.fromwau.klap.Ok
 import com.fromwau.klap.Result
 import com.fromwau.klap.TypedCli
@@ -52,6 +53,8 @@ private fun chmodModeLabel(mode: ChmodMode): String = when (mode) {
 }
 
 public fun chmodCli(): TypedCli<ChmodInputs> = cliOf("chmod") {
+    // GNU chmod takes any unambiguous prefix of a long option: `chmod --re 700 d` is ambiguous.
+    inference = Inference.Options
     description = "Change the mode of each FILE to MODE"
     version = "9.11"
     author = "David MacKenzie and Jim Meyering"

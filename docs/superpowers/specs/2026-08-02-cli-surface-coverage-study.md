@@ -2,8 +2,8 @@
 
 **Status:** No longer observational. Fifteen of the limits recorded here have been closed, one more is half
 closed, and four have been declared permanent non-goals; each is marked in place below. **Date:**
-2026-08-02 (original observations), updated 2026-08-02 as the first fixes landed and 2026-08-03 as the
-gap-closure branch landed.
+2026-08-02 (original observations), updated 2026-08-02 as the first fixes landed, 2026-08-03 as the
+gap-closure branch landed, and 2026-08-04 as the inference switch landed.
 
 > ### Read this before citing anything below
 >
@@ -587,8 +587,11 @@ it. What is left is `-T`'s exactly-two cap, which is a *maximum*, and no cardina
 Every mechanism below was re-read in the source during this pass; line references were corrected where the
 original findings were stale, and again after `db15fd4` shifted `Parser.kt` by +4 lines below `bindPositionals`
 and `Help.kt` by +2 below `argSummary`. **The `klap/` line references below are stale again after
-2026-08-03**: `internal/parse/Parser.kt` gained the abbreviation resolution and `LongMatch.kt` is a new file
-beside it. They are left as they are, for the same reason the rest of this document's citations are.
+2026-08-03**: `internal/parse/Parser.kt` gained the abbreviation resolution and a resolver file appeared
+beside it. **Staler still after 2026-08-04**, when the resolver became opt-in: that file is
+`internal/parse/NameMatch.kt` (it was `LongMatch.kt`, and the type it carries is `NameMatch`, not
+`LongMatch`), and `internal/parse/ArgvScan.kt` and `Parser.kt` both grew again around it. They are left as
+they are, for the same reason the rest of this document's citations are.
 
 ### 5.1 A variadic positional can never be empty (`argument(...).multiple(min = 0)` is a lie) — **RESOLVED**
 
@@ -1075,15 +1078,22 @@ surface, and klap has no vocabulary for it.
 > `option '--re' is ambiguous; possibilities: '--recursive' '--reference'`.
 >
 > **This section's closing note asked for a policy statement instead**, and the answer went the other way:
-> it is a capability, on by default, with no switch. The README now documents it beside the
+> it was made a capability, on by default, with no switch. The README documents it beside the
 > command-line-forms paragraph, which is what that note asked for either way.
 >
+> **Superseded 2026-08-04.** The switch the note asked for now exists: `Inference` (`None` / `Options` /
+> `All`), a root-only `var` on `CliBuilder`, **defaulting to `None`**. So prefix resolution is opt-in, and
+> it reaches subcommand names and `.choice()` / `.enum<E>()` values as well as long options. The resolver
+> described below is unchanged in substance but now lives in `internal/parse/NameMatch.kt`, gated on the
+> mode; `docs/guide.md` and `example/README.md` carry the current account.
+>
 > `internal/parse/Parser.kt`'s three independent exact lookups became one resolution through
-> `internal/parse/LongMatch.kt`: exact wins outright (so a pool holding both `--sort` and `--sort-by`
+> what is now `internal/parse/NameMatch.kt`: exact wins outright (so a pool holding both `--sort` and `--sort-by`
 > keeps the shorter reachable), a prefix reaching one candidate resolves, a prefix reaching several is
 > `CliError.AmbiguousOption`, and duplicates collapse before the count because one spelling can reach the
-> pool from two sources. Shorts never abbreviate (a one-dash token is a cluster) and neither do subcommand
-> names. A negatable flag's negative half abbreviates too, which is why §5.8 had to land first.
+> pool from two sources. Shorts never abbreviate, in any mode (a one-dash token is a cluster); subcommand
+> names abbreviate only under `Inference.All`. A negatable flag's negative half abbreviates too, which is
+> why §5.8 had to land first.
 >
 > **Ambiguity is judged against ONE pool**, everything the token can reach at that point: the command's
 > own inputs, hidden ones included, plus globals plus built-ins. Hidden inputs take part because hiding
@@ -2018,15 +2028,27 @@ gap: klap's exact-match-plus-did-you-mean is a defensible design. If the answer 
 next to the command-line-forms paragraph, because the current output makes a supported GNU spelling look like
 a typo.
 
-*As landed:* the policy question was answered the other way, **always on, no switch**, so the README
-documents the behaviour beside the command-line-forms paragraph rather than documenting its absence. The
-"small change" estimate held for the resolver itself (`LongMatch.kt` is 40 lines) and was wrong about
+*As landed 2026-08-03:* the policy question was answered the other way, **always on, no switch**, so the
+README documents the behaviour beside the command-line-forms paragraph rather than documenting its absence.
+The "small change" estimate held for the resolver itself (40 lines) and was wrong about
 everything around it. Resolving in `findOption`/`findFlag` is precisely what does *not* work: ambiguity is a
 property of everything a token can reach, so the three independent lookups had to become one resolution over
 one pool, and the built-in pre-strip in `klap/Parser.kt` had to resolve through the same matcher. Two review
 rounds were needed to get the pool right, from opposite sides (see §5.8's neighbour, §5.10). Two decisions
 the estimate could not have contained: `--help-all` matches exactly and never by prefix, and a long declared
 anywhere in a tree declines an abbreviation on behalf of its siblings. Measured effect: §5.10.
+
+*Revised 2026-08-04:* the switch this entry originally asked for now exists, and the "always on" answer was
+reversed. `Inference` (`None` / `Options` / `All`) is a root-only `var` on `CliBuilder` **defaulting to
+`None`**, so inference is opt-in everywhere. It is an enum rather than the proposed
+`abbreviateLongOptions = true` because a boolean cannot express the shape `git` actually has — real git
+abbreviates a subcommand's long options (`git status --sh` reports an ambiguity) while refusing `git stat`,
+so the two axes had to be separable. `Options` also turns out to cover `.choice()` / `.enum<E>()` **values**,
+because GNU couples them: `ls --color=al` binds and `ls --sort=n` reports an ambiguous argument, both through
+`argmatch`. Twelve of the fifteen fixtures now declare a mode, which is the real gain — an invisible global
+assumption became explicit per-tool claims. The one thing still not expressible: because the switch is
+root-only, a tree cannot abbreviate its subcommands' options while refusing its own, which is exactly git's
+shape; the git fixture records that as a known divergence.
 
 **14 (was 15). Expose the file-completion sentinel to providers. Unblocked a sub-case of 1 tool. Invasiveness: trivial.
 LANDED in `922271e` and `4e0aaf5`, 2026-08-03.**

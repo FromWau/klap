@@ -4,6 +4,7 @@ import com.fromwau.klap.CliError
 import com.fromwau.klap.CountFlag
 import com.fromwau.klap.Err
 import com.fromwau.klap.Flag
+import com.fromwau.klap.Inference
 import com.fromwau.klap.Ok
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
@@ -23,6 +24,8 @@ import com.fromwau.klap.projection
  * declarations below — the price of using help sections on a flat tool this wide.
  */
 public fun curlCli(): TypedCli<CurlInputs> = cliOf("curl") {
+    // curl matches long options exactly: `--loc` and `--sil` really do answer "option --loc: is unknown".
+    inference = Inference.None
     description = "Transfer a URL"
     version = "8.21.0"
     epilogue = "This is a parsing-surface study: no request is ever sent."

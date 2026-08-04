@@ -3,7 +3,11 @@
 **Status:** PARTIAL. Generated 2026-08-04 from a multi-agent review of `master` @ `0c39c57`.
 
 23 findings, re-rated by hand after the automated severities proved unreliable (see below).
-**1 fixed** (the sole HIGH), 22 open.
+**1 fixed** (the sole HIGH), 22 open — of which one (the abbreviated-completion MEDIUM) was **narrowed** on
+`inference-flag`, since it can no longer fire on a default tree. Every finding below was written against
+`0c39c57` and its file:line citations have not been re-derived since; `inference-flag` renamed
+`internal/parse/LongMatch.kt` to `NameMatch.kt` and moved a good deal of `Parser.kt`, so verify a citation
+before acting on it.
 
 ## Fixed since the review
 
@@ -109,13 +113,20 @@ The one parser bug below surfaced from `posix`, which happened to finish. Assume
 
 `klap/src/commonMain/kotlin/com/fromwau/klap/internal/render/Completion.kt:343` — *completion* / parser-completion-disagreement
 
+> **Narrowed, not fixed, on `inference-flag` (2026-08-04).** Prefix resolution became opt-in and now
+> defaults to `Inference.None`, so on a default tree `--sor` resolves to nothing in either the parser or
+> completion and the two can no longer disagree. The defect is unchanged for any tree that declares
+> `Inference.Options` or `Inference.All` — the parser resolves through `resolveName` while
+> `byName()` still matches exact spellings only. Reproduce it by adding `inference = Inference.Options`
+> to the tree in **How it fails** below.
+
 **Claim.** trailingValueOption/attachedValueOption resolve the option under the cursor with exact-spelling byName(), while the parser's sift resolves the same token through resolveLong() prefix abbreviation, so for any abbreviated long option completion silently falls through to the NEXT positional slot and offers operand candidates that the parse then rejects as bad option values.
 
 **How it fails.** cli("tool") { option("--sort").choice("name","size"); argument("a").choice("A1","A2") }. Verified by running completeCandidates: `tool --sort <TAB>` -> [name, size] (correct); `tool --sor <TAB>` -> [A1, A2] (the POSITIONAL's choices). `tool --sor=<TAB>` -> [] instead of [name, size]. The user accepts the offered A1 and `parse(listOf("--sor","A1"))` returns `Error(InvalidChoice(name=--sort, value=A1, choices=[name, size]))` — completion offered a token that makes the very next parse fail.
 
 <details><summary>Evidence</summary>
 
-render/Completion.kt:343 `private fun <S : NamedSpec> List<S>.byName(token: String): S? = when { token.startsWith("--") -> firstOrNull { token.removePrefix("--") in it.longs } ... }` — exact membership only. It is the sole lookup behind `matchingValueOption` (line 270-271), which backs both `trailingValueOption` (line 279) and `attachedValueOption` (line 313). The parser instead does `val resolved = resolveLong(typed, longPool)` (internal/parse/Parser.kt:747) and binds `LongMatch.Prefix` the same as `Exact`.
+render/Completion.kt:343 `private fun <S : NamedSpec> List<S>.byName(token: String): S? = when { token.startsWith("--") -> firstOrNull { token.removePrefix("--") in it.longs } ... }` — exact membership only. It is the sole lookup behind `matchingValueOption` (line 270-271), which backs both `trailingValueOption` (line 279) and `attachedValueOption` (line 313). The parser instead does `val resolved = resolveLong(typed, longPool)` (internal/parse/Parser.kt:747) and binds `NameMatch.Prefix` the same as `Exact`.
 
 </details>
 

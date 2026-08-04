@@ -3,6 +3,7 @@ package com.fromwau.klap.fixture.cp
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Err
 import com.fromwau.klap.Flag
+import com.fromwau.klap.Inference
 import com.fromwau.klap.Ok
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
@@ -21,6 +22,8 @@ import com.fromwau.klap.projection
  * followed by exactly one required positional, which is declared below as the two slots it is.
  */
 public fun cpCli(): TypedCli<CpInputs> = cliOf("cp") {
+    // GNU cp takes any unambiguous prefix of a long option or a choice value: `cp --parent` is --parents.
+    inference = Inference.Options
     description = "Copy SOURCE to DEST, or multiple SOURCE(s) to DIRECTORY."
     version = "9.11"
     author = "Torbjorn Granlund, David MacKenzie, and Jim Meyering"

@@ -88,6 +88,11 @@ class MvParityTest {
         )
         // A dash-led filename needs the POSIX escape here exactly as it does in real mv.
         parity.binds("--", "-foo", "bar", expected = NOTHING_BOUND.copy(sources = listOf("-foo"), dest = "bar"))
+        // real mv: `--backup=nu` makes b.~1~, the only value starting with "nu".
+        parity.binds(
+            "--backup=nu", "a", "b",
+            expected = NOTHING_BOUND.copy(backup = "numbered", sources = listOf("a"), dest = "b"),
+        )
     }
 
     @Test
@@ -111,6 +116,8 @@ class MvParityTest {
         parity.rejects("--target-directory", because = "real mv: option '--target-directory' requires an argument")
         parity.rejects("--update=zzz", "a", "b", because = "real mv: invalid argument 'zzz' for '--update'")
         parity.rejects("--force=yes", "a", "b", because = "real mv: option '--force' doesn't allow an argument")
+        // real mv: 'n' matches 'none', 'numbered', 'nil' and 'never', so argmatch calls it ambiguous.
+        parity.rejects("--backup=n", "a", "b", because = "real mv: ambiguous argument 'n' for 'backup type'")
     }
 
     @Test

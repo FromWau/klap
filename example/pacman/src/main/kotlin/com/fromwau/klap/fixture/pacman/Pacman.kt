@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.pacman
 
 import com.fromwau.klap.CountFlag
 import com.fromwau.klap.Flag
+import com.fromwau.klap.Inference
 import com.fromwau.klap.Ok
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
@@ -31,6 +32,8 @@ import com.fromwau.klap.projection
  * what klap does with that.
  */
 public fun pacmanCli(): TypedCli<PacmanInputs> = cliOf("pacman") {
+    // pacman takes any unambiguous prefix of a long option: `pacman --quer` is --query.
+    inference = Inference.Options
     description = "Package manager utility"
     version = "7.1.0"
     epilogue = "A target is usually a package name, file name, URL, or a search string."

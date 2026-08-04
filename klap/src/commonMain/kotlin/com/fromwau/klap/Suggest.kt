@@ -11,6 +11,9 @@ import com.fromwau.klap.internal.parse.suggest as internalSuggest
  * candidate is not unknown), and a wholesale rewrite never suggests either, so a two-character alias
  * stops suggesting for an unrelated two-character token. [ignoreCase] measures with both sides lowered,
  * for a value set whose own matching is case-insensitive.
+ *
+ * A token prefixing exactly one candidate answers with it whatever the distance; otherwise — even when
+ * the token prefixes several candidates at once — the nearest candidate within the bound wins.
  */
 public fun suggest(
     token: String,

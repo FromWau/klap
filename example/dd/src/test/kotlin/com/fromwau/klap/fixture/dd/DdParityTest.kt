@@ -85,6 +85,15 @@ class DdParityTest {
     }
 
     @Test
+    fun theHelpAndVersionAbbreviationsRealDdAcceptsReachThemHereToo() {
+        // dd declares no long option of its own, so this exercises only klap's injected built-ins — but
+        // real dd abbreviates them the same way head's own --verbose/--version pair does: `--hel` prints
+        // help and `--vers` prints the version.
+        parity.showsHelp("--hel", because = "real dd: --hel is an unambiguous abbreviation of --help")
+        parity.shortCircuits("--vers", because = "real dd: --vers is an unambiguous abbreviation of --version")
+    }
+
+    @Test
     fun klapAcceptsWhatRealDdRejects() {
         // The missing named-operand shape only costs help rows and error wording, not whether a token
         // parses, so it has no accept/reject line of its own here.

@@ -270,10 +270,13 @@ class PublicSurfaceTest {
 
     @Test
     fun theDidYouMeanHelperIsPublicAndMatchesTheParsersOwn() {
-        assertEquals("list", suggest("lst", listOf("list", "add")))
+        // Qualified so this reaches the public re-export even if a future import in this file shadows it.
+        assertEquals("list", com.fromwau.klap.suggest("lst", listOf("list", "add")))
         // Past the threshold: nothing is close enough, and an exact match is never "did you mean".
-        assertNull(suggest("zzzzzzzz", listOf("list", "add")))
-        assertNull(suggest("list", listOf("list", "add")))
+        assertNull(com.fromwau.klap.suggest("zzzzzzzz", listOf("list", "add")))
+        assertNull(com.fromwau.klap.suggest("list", listOf("list", "add")))
+        // ignoreCase folds both sides before the exact-match check, same as the internal helper it wraps.
+        assertNull(com.fromwau.klap.suggest("FAST", listOf("fast"), ignoreCase = true))
     }
 
     @Test

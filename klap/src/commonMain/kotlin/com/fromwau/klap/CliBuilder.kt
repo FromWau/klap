@@ -13,6 +13,13 @@ public abstract class CliBuilder internal constructor() : CommandBuilder() {
     public abstract var author: String?
 
     /**
+     * How far klap resolves a partially typed name; see [Inference]. Root-only: the ambiguity pool already
+     * spans siblings, so a per-command setting would give one token two meanings depending on which command
+     * was asked.
+     */
+    public abstract var inference: Inference
+
+    /**
      * A position-independent option shared by every subcommand: recognized before, between, or
      * after the subcommand path, bound once, and readable from any nested `action { }` by closing
      * over the returned [Opt] as a `val`. Root-only, mirroring [version].
@@ -202,6 +209,7 @@ private fun <T> build(name: String, block: CliBuilder.() -> T): Pair<Cli, T> {
         globalSpecs = builder.builtGlobals(),
         display = base.display,
         builtins = builtins,
+        inference = builder.inference,
         optionsEndAtFirstOperand = base.optionsEndAtFirstOperand,
     ) to handles
 }
