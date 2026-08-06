@@ -3,17 +3,16 @@ package com.fromwau.klap
 import com.fromwau.klap.internal.spec.HolderSpec
 
 /**
- * The typed read side of one parse: a snapshot of resolved values, addressed by the [Arg]/[Opt]/[Flag]/
- * [CountFlag] handles the builder handed back. Shared by [ActionScope] (an execution's inputs) and
- * [CompletionScope] (what a half-typed command line has supplied so far), so a helper written once against
- * this type serves both — `fun ValueScope.store() = Store(path())` reads the same in an `action { }` and in
- * a `.completeWith { }`.
+ * Where you read parsed values, by invoking the [Arg]/[Opt]/[Flag]/[CountFlag] handles the builder gave you.
  *
- * The accessors are members here rather than on the handles themselves so that reading one outside a scope
- * is a compile error instead of a runtime one.
+ * Both [ActionScope] (what one run supplied) and [CompletionScope] (what a half-typed line has supplied so
+ * far) are one, so a helper written against this type serves both:
  *
- * A sealed class cannot take an `internal constructor()` guard ("constructor must be private or protected
- * in sealed class") and does not need one: sealed already confines subclassing to this module and package.
+ * ```kotlin
+ * fun ValueScope.store() = Store(path())
+ * ```
+ *
+ * Reading a handle outside such a scope does not compile, so you cannot read a value before it exists.
  */
 @KlapDsl
 public sealed class ValueScope {

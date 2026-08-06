@@ -28,24 +28,24 @@ class OperandTerminatedOptionsTest {
     }
 
     @Test
-    fun aDeclaredShortAfterTheFirstOperandIsNoLongerStolen() {
-        // The silent theft this closes: `-l` is declared, so without the switch `ssh web1 ls -la` bound
-        // login = "a" and exited 0 with the `-la` cluster consumed locally.
+    fun aDeclaredShortAfterTheFirstOperandStaysWithTheOperands() {
+        // The silent theft the switch prevents: `-l` is declared, so under permutation `ssh web1 ls -la`
+        // binds login = "a" and exits 0 with the `-la` cluster consumed locally.
         assertEquals("v=false l=null cmd=[tar, -C, /src]", sshLike().bindText("web1", "tar", "-C", "/src"))
     }
 
     @Test
-    fun anUndeclaredOptionAfterTheFirstOperandIsNoLongerAnError() {
+    fun anUndeclaredOptionAfterTheFirstOperandIsAnOperandNotAnError() {
         assertEquals("v=false l=null cmd=[grep, -x, pat]", sshLike().bindText("web1", "grep", "-x", "pat"))
     }
 
     @Test
-    fun theEndOfOptionsMarkerStillWorks() {
+    fun theEndOfOptionsMarkerEndsOptionsUnderTheSwitchToo() {
         assertEquals("v=true l=null cmd=[ls, -la]", sshLike().bindText("-v", "--", "web1", "ls", "-la"))
     }
 
     @Test
-    fun theSwitchIsOffByDefaultSoPermutationIsUnchanged() {
+    fun theSwitchIsOffByDefaultSoOptionsPermute() {
         val permuting = cli("t") {
             val v = flag("--verbose", "-v")
             val files = argument("file").multiple()

@@ -15,7 +15,10 @@ import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.longs
 import com.fromwau.klap.internal.spec.negativeLongs
 
-/** A resolved, immutable node in the command tree. Leaves carry an [action]; pure groups do not. Presentation lives in [display]. */
+/**
+ * One command in a built tree: its name, its aliases, its subcommands and its help text. A command that has
+ * subcommands but no behaviour of its own lists them when invoked instead of doing anything.
+ */
 public open class Command internal constructor(
     public val name: String,
     public val aliases: List<String>,
@@ -57,7 +60,10 @@ public open class Command internal constructor(
     /** A group prints subcommand help when invoked: it has children and no own action. */
     internal val isGroup: Boolean get() = subcommands.isNotEmpty() && action == null
 
-    /** Exact-only: under [Inference.All] this disagrees with [parse], which also accepts an unambiguous prefix. */
+    /**
+     * The child named exactly [token], by its own name or one of its aliases, or null. This never resolves
+     * an abbreviation, even under [Abbreviation.All], so it can miss a token that parsing would have matched.
+     */
     public fun subcommand(token: String): Command? =
         subcommands.firstOrNull { it.name == token || token in it.aliases }
 }
@@ -92,13 +98,18 @@ internal fun Command.resolveSubcommand(token: String, infer: Boolean): Subcomman
 }
 
 /**
- * The resolved root of the tree: a [Command] plus the root-only concerns, mirroring the
- * [CliBuilder] : [CommandBuilder] split. A root has no aliases (it is invoked by its binary name, never
- * resolved by token) and no parent-facing listing. [author]/[version] are its own display/meta.
+ * A built command tree, ready to use: what `cli { }` and `cliOf { }` hand back. Give it to `run` to parse,
+ * dispatch and render in one call, to `main` to do that and exit the process, or to `parse` to get the
+ * resolved invocation with nothing printed.
+ *
+ * The root differs from the commands under it in two ways: it answers to its binary name rather than to a
+ * token, so it has no aliases, and it is where [author] and [version] live.
  */
 public class Cli internal constructor(
     name: String,
+    /** The `Author:` line `--help` and the generated docs show, or null when the CLI declares none. */
     public val author: String?,
+    /** The version `--version` reports, or null when the CLI declares none, which also removes the flag. */
     public val version: String?,
     specs: List<HolderSpec>,
     constraints: List<InputConstraint>,
@@ -112,7 +123,7 @@ public class Cli internal constructor(
     internal val builtins: Builtins = Builtins.DEFAULT,
     // Root-only, like [builtins]: threaded from here into every scan and sift, since a subcommand node
     // carries no root-only facts of its own.
-    internal val inference: Inference = Inference.None,
+    internal val abbreviation: Abbreviation = Abbreviation.None,
     optionsEndAtFirstOperand: Boolean = false,
 ) : Command(
     name = name,

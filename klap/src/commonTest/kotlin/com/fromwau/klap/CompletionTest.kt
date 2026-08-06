@@ -19,6 +19,16 @@ private fun sampleTree(): Cli = cli("todo") {
 /** Drives the same planner `__complete` answers from, for a tree with no subcommand to route through first. */
 private fun Cli.completionsFor(vararg words: String): List<String> = completeCandidates(words.toList()).map { it.value }
 
+private fun globalPrecedingSubcommandTree(): Cli = cli("myapp") {
+    globalFlag("--verbose", "-v")
+    command("issue") {
+        command("show") {
+            argument("state").choice("open", "closed")
+            action { Ok("") }
+        }
+    }
+}
+
 class ShortClusterCompletionTest {
 
     private val cli = cli("tasks") {
@@ -32,9 +42,8 @@ class ShortClusterCompletionTest {
 
     @Test
     fun aPartialShortClusterOffersEveryRemainingShortAsAContinuation() {
-        // The gripe this fixes: `-r<TAB>` used to return only `-r`, because candidates were whole option
-        // names filtered by startsWith. Guideline 5 bundles one-character options into one token, so a
-        // half-typed cluster has continuations and the completion should say so.
+        // Guideline 5 bundles one-character options into one token, so a half-typed cluster has
+        // continuations: `-r<TAB>` must offer them, not just `-r` itself.
         val candidates = cli.completionsFor("list", "-r")
         assertTrue("-rl" in candidates, "expected -rl among $candidates")
         assertTrue("-rn" in candidates, "expected -rn among $candidates")
@@ -80,6 +89,11 @@ class CompletionTest {
         assertEquals(CompletionShell.FISH, CompletionShell.fromOrNull("Fish"))
         assertEquals(CompletionShell.POWERSHELL, CompletionShell.fromOrNull("PowerShell"))
     }
+}
+
+/** The scripts klap emits per shell: every one delegates to `__complete` and renders what it returns. */
+class GeneratedShellScriptTest {
+
 
     @Test
     fun bash_delegatesEveryCompletionToComplete() {
@@ -171,9 +185,9 @@ class CompletionTest {
 
     @Test
     fun powershell_fileCompletionPreservesDirectoryPrefix() {
-        // The old `Get-ChildItem -Name` returned only the leaf, so completing `src/ma<TAB>` inserted
-        // `main.kt` and lost the `src/` directory; the fix re-prepends the typed prefix and marks a
-        // directory match so it can tab-descend. commonTest cannot run PowerShell, so anchor the script.
+        // `Get-ChildItem -Name` returns only the leaf, which would complete `src/ma<TAB>` to `main.kt`
+        // and lose the `src/`, so the script re-prepends the typed prefix and marks a directory match to
+        // tab-descend. commonTest cannot run PowerShell, so anchor the script instead.
         val script = sampleTree().renderCompletion(CompletionShell.POWERSHELL)
         assertTrue("Get-ChildItem -Name" !in script, script)
         assertTrue($$"$completion = \"$nonPath$prefix$($_.Name)\"" in script, script)
@@ -221,6 +235,11 @@ class CompletionTest {
             script,
         )
     }
+}
+
+/** The hidden `__complete` path end to end, and the shell-side reading of its output. */
+class CompleteBuiltinRoundTripTest {
+
 
     @Test
     fun completeSubcommandReturnsProviderCandidates() {
@@ -287,6 +306,11 @@ class CompletionTest {
         assertTrue("Invoke-Expression" !in pwsh, pwsh)
         assertTrue("iex " !in pwsh, pwsh)
     }
+}
+
+/** Which subcommands a half-typed line offers, and which it must keep out of sight. */
+class SubcommandCandidateTest {
+
 
     @Test
     fun completeCandidatesReturnsNestedSubcommands() {
@@ -330,6 +354,11 @@ class CompletionTest {
         assertTrue("secret" !in cands, cands.toString())
         assertTrue("__complete" !in cands, cands.toString())
     }
+}
+
+/** A slot marked for files answers with a sentinel the generated script turns into native completion. */
+class FileCompletionSentinelTest {
+
 
     @Test
     fun fileSlotYieldsSentinelAndBashMapsItToCompgenF() {
@@ -363,6 +392,11 @@ class CompletionTest {
         assertTrue(compoptIndex >= 0, bash)
         assertTrue(compgenIndex < compoptIndex, bash)
     }
+}
+
+/** Completing the value an option expects, rather than the positional that would otherwise be next. */
+class OptionValueCandidateTest {
+
 
     @Test
     fun completeCandidatesCountsOptionValueNotAsPositional() {
@@ -415,6 +449,11 @@ class CompletionTest {
         }
         assertEquals(listOf("lines", "words"), tree.completeCandidates(listOf("add", "-o", "")).map { it.value })
     }
+}
+
+/** A dash-led word offers option and flag names, filtered by what is typed and what is visible. */
+class FlagNameCandidateTest {
+
 
     @Test
     fun completeCandidatesOffersFlagNamesForAFlagShapedWord() {
@@ -526,6 +565,11 @@ class CompletionTest {
         val names = tree.completeCandidates(listOf("run", "--")).map { it.value }
         assertTrue("--secret" !in names, names.toString())
     }
+}
+
+/** `.completeWith { }`: what your own provider returns, and the prefix filtering applied around it. */
+class ProviderCandidateTest {
+
 
     @Test
     fun completeWithDefaultPrefixFiltersProviderCandidates() {
@@ -567,6 +611,11 @@ class CompletionTest {
         // prefix filters on value, not description:
         assertEquals(listOf(Candidate("2", "Write Report")), tree.completeCandidates(listOf("rm", "2")))
     }
+}
+
+/** Which slot the cursor is actually in, once the options before it have taken their values. */
+class CursorSlotTargetingTest {
+
 
     @Test
     fun completeCandidatesTargetsFirstPositionalAfterClusteredFlagAndOptionValue() {
@@ -632,16 +681,6 @@ class CompletionTest {
         )
     }
 
-    private fun globalPrecedingSubcommandTree(): Cli = cli("myapp") {
-        globalFlag("--verbose", "-v")
-        command("issue") {
-            command("show") {
-                argument("state").choice("open", "closed")
-                action { Ok("") }
-            }
-        }
-    }
-
     @Test
     fun completeCandidatesResolvesTheCommandPastALeadingGlobalFlag() {
         // A leading global option/flag must not stop the subcommand walk: `myapp -v issue show <TAB>`
@@ -688,6 +727,11 @@ class CompletionTest {
         assertTrue("visible" in cands, cands.toString())
         assertTrue("shh" !in cands, cands.toString())
     }
+}
+
+/** Completing the value half of `--opt=` and `-o`, where the name and value share one word. */
+class AttachedValueCompletionTest {
+
 
     @Test
     fun completeCandidatesCompletesAttachedLongOptionValue() {
@@ -725,6 +769,11 @@ class CompletionTest {
         }
         assertEquals(listOf("red"), tree.completeCandidates(listOf("add", "-tr")).map { it.value })
     }
+}
+
+/** Provider code runs on every keypress, so a throw must degrade to no candidates, never reach the terminal. */
+class ProviderFailureTest {
+
 
     @Test
     fun completeCandidatesReturnsEmptyWhenProviderThrowsButSiblingProviderStillWorks() {
@@ -775,6 +824,11 @@ class CompletionTest {
                 .lines(),
         )
     }
+}
+
+/** Which candidates carry their help text as a description for the shell to display. */
+class CandidateDescriptionTest {
+
 
     @Test
     fun subcommandAndOptionNameCompletionCarryTheirHelpAsDescription() {
@@ -867,12 +921,17 @@ class CompletionTest {
             tree.completeCandidates(listOf("deploy", "")),
         )
     }
+}
+
+/** `--color` is a meta-option rather than a declared spec, so its values complete from klap's own list. */
+class BuiltinColorValueCompletionTest {
+
 
     @Test
     fun completeCandidatesCompletesTheBuiltinColorOptionValueSpaceForm() {
         // --color is a built-in meta-option, not a user-declared OptionSpec, so its value must complete
         // from COLOR_MODE_NAMES directly instead of falling through to the next positional/subcommand once
-        // its name has been typed. A tree with subcommands makes the regression visible: falling through
+        // its name has been typed. A tree with subcommands makes the difference visible: falling through
         // would return the subcommand list ("build"/"test") instead of the color choices.
         val tree = cli("app") {
             command("build") { action { Ok("") } }
@@ -909,6 +968,11 @@ class CompletionTest {
             tree.completeCandidates(listOf("--color=")).map { it.value },
         )
     }
+}
+
+/** `completeFiles()`: handing the word off to the shell's own file completion, and what that discards. */
+class CompleteFilesDirectiveTest {
+
 
     @Test
     fun aProviderCanHandOffToNativeFileCompletion() {
@@ -1020,45 +1084,45 @@ class CompletionModifierRoutingTest {
     }
 }
 
-/** Unlike modifierTree, this sets `inference` explicitly, since the abbreviation these tests pin only fires above `Inference.None`. */
-private fun colorAbbreviationDispatcherTree(inferenceMode: Inference): Cli = cli("app") {
-    inference = inferenceMode
+/** Unlike modifierTree, this sets `abbreviation` explicitly, since the abbreviation these tests pin only fires above `Abbreviation.None`. */
+private fun colorAbbreviationDispatcherTree(abbreviationMode: Abbreviation): Cli = cli("app") {
+    abbreviation = abbreviationMode
     command("add") { action { Ok("") } }
 }
 
 class ColorAbbreviationCompletionTest {
 
     @Test
-    fun anAbbreviatedColorOptionOffersColorModesUnderInferenceAll() {
+    fun anAbbreviatedColorOptionOffersColorModesUnderAbbreviationAll() {
         // An unambiguous abbreviation binds --color at parse time, so completion has to offer its values
         // rather than falling through to the first-positional branch and naming subcommands.
-        val tree = colorAbbreviationDispatcherTree(Inference.All)
+        val tree = colorAbbreviationDispatcherTree(Abbreviation.All)
         assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--col", ""))
     }
 
     @Test
-    fun anAbbreviatedAttachedColorOptionOffersColorModesUnderInferenceAll() {
+    fun anAbbreviatedAttachedColorOptionOffersColorModesUnderAbbreviationAll() {
         // The attached form resolves the same way. matchingValueOption cannot cover it: --color is a
         // built-in, so there is no declared OptionSpec for it to find.
-        val tree = colorAbbreviationDispatcherTree(Inference.All)
+        val tree = colorAbbreviationDispatcherTree(Abbreviation.All)
         assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--col="))
         assertEquals(listOf("auto", "always"), tree.candidateValuesFor("--col=a"))
     }
 
     @Test
-    fun anAbbreviatedColorOptionDoesNotOfferColorModesUnderInferenceNone() {
-        // Same result with or without the fix: Inference.None turns off scan.matched's prefix half, so
-        // "--col" resolves to nothing here, exactly as the parser itself would refuse the abbreviation.
-        val tree = colorAbbreviationDispatcherTree(Inference.None)
+    fun anAbbreviatedColorOptionDoesNotOfferColorModesUnderAbbreviationNone() {
+        // Abbreviation.None turns off scan.matched's prefix half, so "--col" resolves to nothing here,
+        // exactly as the parser itself refuses the abbreviation.
+        val tree = colorAbbreviationDispatcherTree(Abbreviation.None)
         assertEquals(listOf("add", "completion", "docs"), tree.candidateValuesFor("--col", ""))
     }
 
     @Test
     fun anAbbreviationAmbiguousWithAnotherDeclaredOptionOffersNoColorModes() {
-        // Same result with or without the fix: the literal check never matched "--col" either way, so this
-        // guards against a broader fix that would resolve the abbreviation without checking ambiguity first.
+        // Guards against resolving the abbreviation without checking ambiguity first: "--col" reaches
+        // both the declared --collate and the built-in --color, so it must offer nothing rather than pick.
         val tree = cli("app") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             option("--collate")
             action { Ok("") }
         }
@@ -1066,8 +1130,8 @@ class ColorAbbreviationCompletionTest {
     }
 
     @Test
-    fun theExactColorSpellingStillCompletesUnderEveryInferenceMode() {
-        val tree = colorAbbreviationDispatcherTree(Inference.All)
+    fun theExactColorSpellingStillCompletesUnderEveryAbbreviationMode() {
+        val tree = colorAbbreviationDispatcherTree(Abbreviation.All)
         assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--color", ""))
         assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--color="))
     }
@@ -1096,7 +1160,7 @@ class SiftAccumulationTest {
         assertEquals(listOf("one", "two"), sifted.positionals)
         assertEquals(listOf("x"), sifted.options.entries.single { it.key.name == "--out" }.value)
         assertEquals(1, sifted.flags.entries.single { it.key.name == "--verbose" }.value)
-        // First error wins, so the reported error matches what the old early return produced.
+        // First error wins: the walk keeps going after recording one, but never replaces it.
         assertEquals("--bogus", (sifted.error as CliError.UnknownOption).token)
     }
 
@@ -1134,7 +1198,7 @@ class SiftAccumulationTest {
     }
 
     @Test
-    fun parseStillReportsTheFirstSiftErrorUnchanged() {
+    fun parseRaisesTheFirstSiftErrorBeforeBinding() {
         val tree = cli("t") {
             command("go") {
                 flag("--verbose", "-v", help = "chatty")
@@ -1177,9 +1241,9 @@ class CompletionSlotCountingTest {
         assertEquals(listOf("SECOND"), tree.candidateValuesFor("go", "--port=8080", "a", ""))
         assertEquals(listOf("SECOND"), tree.candidateValuesFor("go", "--port", "8080", "a", ""))
         assertEquals(listOf("SECOND"), tree.candidateValuesFor("go", "-vp", "8080", "a", ""))
-        // The one coupling this planner adds over the old walk: `f` is local, `r` is a GLOBAL option, so
-        // the cluster takes the next token as r's value. Without the accumulator, sift cannot see `r`,
-        // `us` is miscounted as a positional, and the cursor lands on the wrong slot.
+        // The planner's one coupling to the accumulator: `f` is local, `r` is a GLOBAL option, so the
+        // cluster takes the next token as r's value. Without the accumulator sift cannot see `r`, `us`
+        // is miscounted as a positional, and the cursor lands on the wrong slot.
         assertEquals(listOf("SECOND"), tree.candidateValuesFor("go", "-fr", "us", "a", ""))
     }
 

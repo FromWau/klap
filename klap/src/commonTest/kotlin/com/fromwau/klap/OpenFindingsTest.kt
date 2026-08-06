@@ -198,7 +198,7 @@ class AbbreviatedOptionCompletionTest {
     @Test
     fun anAbbreviatedOptionOffersItsOwnValues() {
         val tree = cli("tool") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             command("go") {
                 option("--sort").choice("name", "size")
                 argument("a").choice("A1", "A2")

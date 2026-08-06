@@ -90,7 +90,7 @@ internal fun Cli.positionIndependentLongs(): List<String> {
 internal fun Cli.builtinScan(
     argv: List<String>,
     pool: List<String> = positionIndependentLongs(),
-): ArgvScan = ArgvScan(pool, inference != Inference.None, optionValueSlots(argv), argv)
+): ArgvScan = ArgvScan(pool, abbreviation != Abbreviation.None, optionValueSlots(argv), argv)
 
 /** The built-ins that are boolean, so an inline `=value` on one is always a usage error. */
 private val VALUELESS_BUILTIN_LONGS = listOf("help", "help-all", "json", "version")
@@ -105,9 +105,9 @@ private val VALUELESS_BUILTIN_LONGS = listOf("help", "help-all", "json", "versio
  * the app's own (or unknown), and AUTO is the only mode klap still has an opinion about.
  *
  * [pool] is the root's own [positionIndependentLongs], [valueSlots] the root's own [optionValueSlots], and
- * [infer] the root's own [Cli.inference] reduced to a boolean, so `--col` abbreviates, `-e --color` stays
+ * [infer] the root's own [Cli.abbreviation] reduced to a boolean, so `--col` abbreviates, `-e --color` stays
  * `-e`'s value, and `al` resolves to `always` here exactly as they do in [parse]; the defaults stand in for
- * a caller with no root at hand, mirroring [Builtins.DEFAULT] and [Inference.None].
+ * a caller with no root at hand, mirroring [Builtins.DEFAULT] and [Abbreviation.None].
  */
 internal fun List<String>.colorMode(
     builtins: Builtins = Builtins.DEFAULT,
@@ -176,7 +176,7 @@ private fun Cli.hasHelpRequest(scan: ArgvScan): Boolean =
 private fun Cli.unknownSubcommandBeforeHelp(cmd: Command, rest: List<String>): CliError.UnknownSubcommand? {
     val leadingToken = rest.firstOrNull() ?: return null
     if (!cmd.isGroup || leadingToken.isFlagLike()) return null
-    if (cmd.resolveSubcommand(leadingToken, inference == Inference.All) !is SubcommandMatch.None) return null
+    if (cmd.resolveSubcommand(leadingToken, abbreviation == Abbreviation.All) !is SubcommandMatch.None) return null
     return CliError.UnknownSubcommand(cmd.name, leadingToken, suggest(leadingToken, cmd.subcommandCandidates()))
 }
 
@@ -186,12 +186,15 @@ private fun Cli.unknownSubcommandBeforeHelp(cmd: Command, rest: List<String>): C
  * `completion <shell>` and `docs <format>`, none of which reach a `ValueSpec` of their own. A user cannot
  * tell a built-in from an option the app declared, so both must resolve by the same rule.
  */
-// Reads this tree's own inference rather than globalAcc.inferNames: the meta-option checks that call this
+// Reads this tree's own abbreviation mode rather than globalAcc.inferNames: the meta-option checks that call this
 // run before the accumulator is constructed, so there is no globalAcc yet to read it from.
 private fun Cli.resolveBuiltinChoice(name: String, raw: String, choices: List<String>): Result<String, CliError> =
-    if (inference != Inference.None) resolveChoice(name, raw, choices) else Result.Success(raw)
+    if (abbreviation != Abbreviation.None) resolveChoice(name, raw, choices) else Result.Success(raw)
 
-/** Parse [argv] against this root command. Pure: no output, no exit; the escape hatch. */
+/**
+ * Parses [argv] and hands back what it resolved to, without printing anything or exiting. Use it when you
+ * want to inspect or reroute the result yourself; use `run` when you want klap to render and return a code.
+ */
 public fun Cli.parse(argv: Collection<String>): Result<Invocation, CliError> = parseTokens(argv.toList())
 
 /**
@@ -298,7 +301,7 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
     var idx = 0
     while (idx < preStrip.cleaned.size) {
         val token = preStrip.cleaned[idx]
-        when (val match = cmd.resolveSubcommand(token, inference == Inference.All)) {
+        when (val match = cmd.resolveSubcommand(token, abbreviation == Abbreviation.All)) {
             is SubcommandMatch.One -> {
                 cmd = match.command
                 path += match.command.name
@@ -332,7 +335,7 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
     // accumulator, so globals are bound AFTER the command bind, over the pre-strip occurrences plus any the
     // segment added. A Required-but-absent global is deferred: whether it matters depends on where the walk
     // ended up (a bare group that only shows help doesn't need it; a leaf that executes does).
-    val globalAcc = globalSift.accumulator(globalSpecs, version, builtins, metaOptions, declaredLongs, inference)
+    val globalAcc = globalSift.accumulator(globalSpecs, version, builtins, metaOptions, declaredLongs, abbreviation)
 
     // --help and --help-all are the only built-ins resolved after the walk, so they resolve against the pool
     // of the command it reached rather than the tree-wide one every pre-walk scan must settle for: a
@@ -420,12 +423,7 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
     }
 }
 
-/**
- * Array overload of [parse]: lets an escape-hatch caller pass the `main`-shaped `Array<String>` directly.
- *
- * An `Array` is not a [Collection], so this cannot be folded into the widened parameter and has to stay a
- * separate overload.
- */
+/** [parse] over the `Array` that Kotlin's own `main` hands you. */
 public fun Cli.parse(argv: Array<String>): Result<Invocation, CliError> = parseTokens(argv.toList())
 
 /**

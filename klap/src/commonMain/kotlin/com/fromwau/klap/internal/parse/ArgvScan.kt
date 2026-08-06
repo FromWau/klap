@@ -3,7 +3,7 @@ package com.fromwau.klap.internal.parse
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Command
-import com.fromwau.klap.Inference
+import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Result
 import com.fromwau.klap.SubcommandMatch
 import com.fromwau.klap.internal.spec.OptionSpec
@@ -158,7 +158,7 @@ private class ArityWalk(private val cli: Cli) {
                 cli.builtins,
                 cli.metaOptions,
                 cli.declaredLongs,
-                cli.inference,
+                cli.abbreviation,
             )
 
     private var cmd: Command = cli
@@ -176,7 +176,7 @@ private class ArityWalk(private val cli: Cli) {
             val token = head[i]
             if (!token.isFlagLike()) {
                 val child = if (routing) {
-                    (cmd.resolveSubcommand(token, cli.inference == Inference.All) as? SubcommandMatch.One)?.command
+                    (cmd.resolveSubcommand(token, cli.abbreviation == Abbreviation.All) as? SubcommandMatch.One)?.command
                 } else {
                     null
                 }

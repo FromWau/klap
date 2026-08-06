@@ -3,16 +3,17 @@ package com.fromwau.klap
 import com.fromwau.klap.internal.spec.HolderSpec
 
 /**
- * The receiver of an `action { }` block: one execution's parsed values, resolved per accessor (inherited
- * from [ValueScope]). Every run constructs its own scope, so values are confined to the executing call —
- * the command tree stays immutable and concurrent runs of one tree never share state (no thread-locals,
- * no locks).
+ * Receiver of an `action { }` block: read this run's parsed values by invoking the handles the builder
+ * handed you, and wrap text in a [Style] to colour it when colour is on.
+ *
+ * ```kotlin
+ * val name = argument("name")
+ * action { Ok("hello, ${bold(name())}") }
+ * ```
  */
 @KlapDsl
 public class ActionScope internal constructor(
     override val values: Map<HolderSpec, Any?>,
-    // Defaults off: parse() builds this scope before a terminal exists, so effectiveColor is unknown yet;
-    // run() re-threads the resolved switch afterward via withColorEnabled.
     internal val colorEnabled: Boolean = false,
 ) : ValueScope(), ColorScope {
     override fun Style.invoke(block: () -> String): String = render(block(), colorEnabled)

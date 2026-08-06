@@ -5,9 +5,10 @@ import com.fromwau.klap.COMPLETE_FILES
 import com.fromwau.klap.Cli
 import com.fromwau.klap.Command
 import com.fromwau.klap.CompletionScope
-import com.fromwau.klap.Inference
+import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.SubcommandMatch
 import com.fromwau.klap.builtinScan
+import com.fromwau.klap.internal.parse.ArgvScan
 import com.fromwau.klap.internal.parse.END_OF_OPTIONS
 import com.fromwau.klap.internal.parse.GlobalAccumulator
 import com.fromwau.klap.internal.parse.NameMatch
@@ -69,22 +70,9 @@ internal fun Cli.completeCandidates(words: List<String>): List<Candidate> {
     // token IT reads, which is not always this one.
     val trailingIsConsumedValue = head.lastIndex in scan.valueSlots
 
-    // --color takes its value from a fixed choice set (auto|always|never) like a user `.choice()` option, but
-    // it is a meta-option, not a user-declared NamedSpec, so trailingValueOption/attachedValueOption below
-    // never resolve it and it would otherwise fall through to completing the NEXT token. Answered here, from
-    // the RAW head, for both the space form (`--color <cur>`) and the attached form (`--color=<cur>`, which
-    // zsh/fish never split) — BEFORE the strip below removes the very token the space form matches on. Safe
-    // to preempt on a reserved name, but NOT when the token is standing in a value slot: `-e --color <cur>`
-    // already gave "--color" to `-e`. Skipped entirely when the tree declined --color, since "color" may then
-    // be the app's own option and answering here would shadow its value candidates.
-    //
-    // `scan.matched` resolves an abbreviation the same way `stripValued` two lines below does — gated on this
-    // tree's own inference mode and declining an ambiguous prefix — so `--col`/`--col=` bind here exactly when
-    // the parser would bind them, rather than only the one literal spelling a plain string comparison sees.
+    // Must run on the RAW head, before the strip below removes the very token the space form matches on.
     if (builtins.color && !trailingIsConsumedValue) {
-        if (head.lastOrNull()?.let(scan::matched) == "color") return colorModeCandidates(current)
-        val eq = current.indexOf('=')
-        if (eq >= 0 && scan.matched(current.take(eq)) == "color") return colorModeCandidates(current.substring(eq + 1))
+        colorValueCandidates(head, current, scan)?.let { return it }
     }
 
     // Strip the position-independent modifiers exactly as parse() does before its own walk: --json first, so
@@ -107,7 +95,7 @@ internal fun Cli.completeCandidates(words: List<String>): List<Candidate> {
 
     // Built via accumulator() to stay in lockstep with parse(), but only its spec lists are read here: they
     // are what lets the segment sift below recognize a global hiding in a mixed short cluster (`-fr`).
-    val globalAcc = globalSift.accumulator(globalSpecs, version, builtins, metaOptions, declaredLongs, inference)
+    val globalAcc = globalSift.accumulator(globalSpecs, version, builtins, metaOptions, declaredLongs, abbreviation)
     // One segment walk: the flag-name branch reads which constraint members are already on the line, the
     // positional branch the positional count. Lazy for the value-completion branches, which need it only
     // when the option under the cursor has a provider that reads an accessor. Forcing it on a Tab press is
@@ -263,13 +251,29 @@ private fun Cli.walkTo(argv: List<String>): Pair<Command, List<String>> {
     var cmd: Command = this
     var rest = argv
     while (rest.isNotEmpty()) {
-        val child = (cmd.resolveSubcommand(rest.first(), inference == Inference.All) as? SubcommandMatch.One)
+        val child = (cmd.resolveSubcommand(rest.first(), abbreviation == Abbreviation.All) as? SubcommandMatch.One)
             ?.command
             ?: break
         cmd = child
         rest = rest.drop(1)
     }
     return cmd to rest
+}
+
+/**
+ * `--color`'s own value candidates, for its space form (`--color <cur>`) and its attached form
+ * (`--color=<cur>`, which zsh and fish never split), or null when the cursor is not in either.
+ *
+ * Answered here because `--color` is a meta-option rather than a declared spec, so the value-option
+ * branches below never resolve it and the cursor would fall through to completing the NEXT token.
+ * [ArgvScan.matched] rather than a string comparison, so an abbreviated `--col` binds here exactly when
+ * the parser would bind it.
+ */
+private fun colorValueCandidates(head: List<String>, current: String, scan: ArgvScan): List<Candidate>? {
+    if (head.lastOrNull()?.let(scan::matched) == "color") return colorModeCandidates(current)
+    val eq = current.indexOf('=')
+    if (eq >= 0 && scan.matched(current.take(eq)) == "color") return colorModeCandidates(current.substring(eq + 1))
+    return null
 }
 
 /**

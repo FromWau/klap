@@ -36,6 +36,12 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
+gradle.lifecycle.beforeProject {
+    tasks.withType<Test>().configureEach {
+        useJUnitPlatform()
+    }
+}
+
 include(":klap")
 include(":example:task-manager")
 include(":example:parity")

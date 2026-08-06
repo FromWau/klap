@@ -1,6 +1,5 @@
 package com.fromwau.klap.internal.platform
 
-import com.fromwau.klap.Terminal
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.toKString
 import platform.posix.fileno
@@ -13,14 +12,17 @@ import kotlin.system.exitProcess
 
 internal actual fun platformExit(code: Int): Nothing = exitProcess(code)
 
+/**
+ * Stdio shared by every native target; width and ANSI capability are the only per-family answers. No
+ * [PlatformIo.writeFailed]: SIGPIPE kills the process on a closed pipe before anything can ask, and
+ * Windows offers no equivalent to detect.
+ */
 @OptIn(ExperimentalForeignApi::class)
-internal actual fun defaultTerminal(): Terminal {
-    val env: (String) -> String? = { getenv(it)?.toKString() }
-    val isTty = isatty(fileno(stdout)) != 0
-    return object : Terminal {
-        override fun out(text: String) = print(text)
-        override fun err(text: String) { fputs(text, stderr) }
-        override val columns: Int = resolveColumns(env, terminalWidth())
-        override val ansi: Boolean = ansiEnabled(isTty, env, ::ansiSupported)
-    }
-}
+internal fun nativePlatformIo(width: Int?, ansiCapable: Boolean): PlatformIo = PlatformIo(
+    writeOut = { print(it) },
+    writeErr = { fputs(it, stderr) },
+    isTty = isatty(fileno(stdout)) != 0,
+    width = width,
+    ansiCapable = ansiCapable,
+    env = { getenv(it)?.toKString() },
+)

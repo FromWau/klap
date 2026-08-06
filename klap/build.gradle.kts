@@ -5,18 +5,14 @@ plugins {
     `maven-publish`
 }
 
-// One source for the toolchain and for the floor published to consumers: a bump that moved only one of
-// them would leave the metadata claiming a compatibility the bytecode does not have.
-val jdkVersion = 25
+val jdkVersion = libs.versions.jdk.get().toInt()
 
 group = "com.fromwau"
 version = libs.versions.klapVersion.get()
 
-// Shipped as a resource rather than through Jar.metaInf so the Android AAR carries it too; AGP builds its
-// classes.jar itself and never sees that hook. Named for klap rather than the conventional META-INF/LICENSE:
-// a consumer merging several dependencies hits a duplicate-path packaging failure on that shared name, and
-// AGP 8 removed the global exclude that used to paper over it.
-val licenseResource by tasks.registering(Copy::class) {
+val licenseResource = tasks.register<Copy>("licenseResource") {
+    description = "Copies the project LICENSE into the common resources as META-INF/LICENSE-klap.txt."
+    group = LifecycleBasePlugin.BUILD_GROUP
     from(rootProject.file("LICENSE")) { rename { "LICENSE-klap.txt" } }
     into(layout.buildDirectory.dir("generated/license/META-INF"))
 }
@@ -35,9 +31,6 @@ kotlin {
     }
 
     jvm {
-        // KMP's jvm target does not derive this from the toolchain the way java-library does, so without it
-        // Gradle resolves this variant for any consumer, who then meets the floor as `class file has wrong
-        // version` rather than as an unmet requirement.
         attributes.attribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, jdkVersion)
     }
     linuxX64()
@@ -64,8 +57,6 @@ kotlin {
         androidMain.get().dependsOn(jvmAndroidMain)
 
         commonMain {
-            // The resources ROOT is the task's parent dir, so its META-INF/ subdirectory is what lands in
-            // the artifact; pointing at the task's own output would put the file at the classpath root.
             resources.srcDir(licenseResource.map { it.destinationDir.parentFile })
             dependencies {
                 api(libs.kotlinx.serialization.json)
@@ -91,7 +82,6 @@ publishing {
             url = repoUrl
             licenses {
                 license {
-                    // The "or later" half is the project's own choice, not the bare GPL-3.0 the SPDX list retired.
                     name = "GNU General Public License v3.0 or later"
                     url = "https://www.gnu.org/licenses/gpl-3.0.txt"
                     distribution = "repo"

@@ -111,7 +111,7 @@ class GitParityTest {
             "commit", "-F", "msg.txt", "--author=A U Thor",
             expected = NOTHING_COMMIT.copy(messageFile = "msg.txt", author = "A U Thor"),
         )
-        // `Inference.Options` reaches a subcommand's long options, which is the shape real git itself has:
+        // `Abbreviation.Options` reaches a subcommand's long options, which is the shape real git itself has:
         // `git commit --am` resolves to `--amend` (verified against 2.55.0), and `--am` is unambiguous
         // against every other option this command declares.
         parity.binds(
@@ -234,7 +234,7 @@ class GitParityTest {
             expected = NOTHING_LOG.copy(revisionRange = "main", paths = listOf("dev")),
         )
 
-        // `Inference` is root-only, so the same switch that reaches commit's `--am` above also reaches
+        // `Abbreviation` is root-only, so the same switch that reaches commit's `--am` above also reaches
         // every global below the root: real git never abbreviates a TOP-LEVEL long option (`git --exec
         // status` answers "unknown option: --exec", verified against 2.55.0), but klap's switch has no way
         // to turn abbreviation on beneath the root and off at it, so it resolves here too.

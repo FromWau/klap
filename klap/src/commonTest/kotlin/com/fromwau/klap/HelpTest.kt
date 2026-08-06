@@ -322,6 +322,23 @@ class HelpTest {
     }
 
     @Test
+    fun subcommandHelpRendersItsOwnEpilogueNotTheRoots() {
+        val tree = cli("app") {
+            epilogue = "Root trailer."
+            command("run") {
+                epilogue = "Exit codes: 0 ok, 1 failure."
+                action { Ok("") }
+            }
+        }
+        val term = RecordingTerminal()
+        tree.run(arrayOf("run", "--help"), term)
+
+        val help = term.out.toString()
+        assertTrue("Exit codes: 0 ok, 1 failure." in help, help)
+        assertFalse("Root trailer." in help, help)
+    }
+
+    @Test
     fun hiddenOptionOmittedFromHelpButStillParses() {
         var seen: String? = null
         val cmd = cli("run") {
@@ -881,7 +898,7 @@ class OptionalValueHelpTest {
     }
 
     @Test
-    fun anOrdinaryOptionIsUnchanged() {
+    fun anOptionWithAShortRendersBothFormsAndItsPlaceholder() {
         val cmd = cli("app") {
             option("--out", "-o", help = "where to write")
             action { Ok("") }

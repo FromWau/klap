@@ -1,6 +1,6 @@
 package com.fromwau.klap.fixture.git
 
-import com.fromwau.klap.Inference
+import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Ok
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
@@ -31,7 +31,7 @@ import com.fromwau.klap.projection
 public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
     // Real git abbreviates a subcommand's long options (`git commit --am` reaches `--amend`) but never a
     // top-level one; klap's switch is root-only, so it abbreviates both (see knownDivergenceFromRealGit).
-    inference = Inference.Options
+    abbreviation = Abbreviation.Options
     description = "the stupid content tracker"
     version = "2.55.0"
     epilogue = "See 'git help <command>' to read about a specific subcommand."
@@ -49,7 +49,8 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         .multiple()
 
     // KLAP-GAP: `validateGlobalCollisions` reserves a global's short tree-wide, but git reuses the same
-    // letter below the subcommand with a different meaning, so `-p` (git's paginate/patch overload) stays unclaimed here and `git -p log` is not expressible.
+    // letter below the subcommand with a different meaning, so `-p` (git's paginate/patch overload)
+    // stays unclaimed here and `git -p log` is not expressible.
     val paginate = globalFlag("--paginate", help = "pipe all output into a pager")
         .negatable("--no-pager", "-P")
 
@@ -192,7 +193,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         // does for both spellings. `git commit -S -m x` (sign with the default key) still binds "default"
         // and leaves `-m x` alone, unaffected. git's `-u[<mode>]` is the same shape and stays unexpressed.
         //
-        // Real git also has `--no-gpg-sign` alongside `-S`/`--gpg-sign[=<key-id>]` (verified against
+        // KLAP-GAP: real git also has `--no-gpg-sign` alongside `-S`/`--gpg-sign[=<key-id>]` (verified against
         // 2.55.0) — the same negatable-plus-optional-value shape `--decorate` and `--preserve-root` face,
         // and klap cannot hold both on one holder here either. Unlike those two, this one took the value
         // form and lost `--no-gpg-sign`: the trade goes the other way because picking WHICH key signs

@@ -395,14 +395,14 @@ class PosixConformanceTest {
 
     @Test
     fun extension_prefixAbbreviationIsSugarAndCannotDisturbAConformingLine() {
-        // EXTENSION: GNU's unambiguous-prefix rule, opt-in via `inference = Inference.Options`. Guideline 3
+        // EXTENSION: GNU's unambiguous-prefix rule, opt-in via `abbreviation = Abbreviation.Options`. Guideline 3
         // makes an option name a single alphanumeric character, so a `--`-led long option lies outside the
         // guidelines entirely and an abbreviation of one can only ever name input they leave undefined. On
         // a tree that opts in, the first line below is the conforming one, spelled with guideline-3 shorts
         // alone, and it binds exactly what it always bound; the second reaches the same option through an
         // abbreviation, which is the only place the rule can act.
         fun tree() = cli("util") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             val a = flag("--all", "-a")
             val b = flag("--brief", "-b")
             val c = option("--config", "-c")

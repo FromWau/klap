@@ -4,10 +4,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
-class InferenceModeTest {
+class AbbreviationModeTest {
 
-    private fun tree(mode: Inference) = cli("t") {
-        inference = mode
+    private fun tree(mode: Abbreviation) = cli("t") {
+        abbreviation = mode
         val recursive = flag("--recursive", "-r")
         val reference = option("--reference")
         argument("file").multiple()
@@ -16,36 +16,36 @@ class InferenceModeTest {
 
     @Test
     fun noneRefusesALongOptionPrefix() {
-        val err = assertIs<Result.Error<CliError>>(tree(Inference.None).parse(listOf("--recu", "f"))).error
+        val err = assertIs<Result.Error<CliError>>(tree(Abbreviation.None).parse(listOf("--recu", "f"))).error
         assertEquals(CliError.UnknownOption("--recu", "--recursive"), err)
     }
 
     @Test
     fun noneStillBindsTheFullSpelling() {
-        assertEquals("r=true ref=null", tree(Inference.None).bindText("--recursive", "f"))
-        assertEquals("r=false ref=x", tree(Inference.None).bindText("--reference", "x", "f"))
+        assertEquals("r=true ref=null", tree(Abbreviation.None).bindText("--recursive", "f"))
+        assertEquals("r=false ref=x", tree(Abbreviation.None).bindText("--reference", "x", "f"))
     }
 
     @Test
     fun noneNeverReportsAnAmbiguity() {
         // Nothing infers, so a prefix reaching two spellings is simply not a spelling.
-        val err = assertIs<Result.Error<CliError>>(tree(Inference.None).parse(listOf("--re", "f"))).error
+        val err = assertIs<Result.Error<CliError>>(tree(Abbreviation.None).parse(listOf("--re", "f"))).error
         assertIs<CliError.UnknownOption>(err)
     }
 
     @Test
     fun longOptionsInfersALongOptionPrefix() {
-        assertEquals("r=true ref=null", tree(Inference.Options).bindText("--recu", "f"))
+        assertEquals("r=true ref=null", tree(Abbreviation.Options).bindText("--recu", "f"))
         assertEquals(
             CliError.AmbiguousOption("--re", listOf("--recursive", "--reference")),
-            assertIs<Result.Error<CliError>>(tree(Inference.Options).parse(listOf("--re", "f"))).error,
+            assertIs<Result.Error<CliError>>(tree(Abbreviation.Options).parse(listOf("--re", "f"))).error,
         )
     }
 
     @Test
     fun noneKeepsTheShortAndTheFullBuiltinSpellings() {
         val strict = cli("t") {
-            inference = Inference.None
+            abbreviation = Abbreviation.None
             version = "1.0"
             action<String>(human = { it }) { Ok("ran") }
         }
@@ -62,7 +62,7 @@ class InferenceModeTest {
     @Test
     fun noneRefusesAGlobalPrefixInEveryPosition() {
         val tree = cli("app") {
-            inference = Inference.None
+            abbreviation = Abbreviation.None
             val header = globalOption("--header")
             command("build") { action<String>(human = { it }) { Ok("header=${header()}") } }
         }
@@ -82,12 +82,12 @@ class InferenceModeTest {
     @Test
     fun theDefaultIsWhateverTheRootDeclares() {
         // Two roots differing only in the switch must disagree on the same line.
-        assertEquals("r=true ref=null", tree(Inference.Options).bindText("--recu", "f"))
-        assertIs<Result.Error<CliError>>(tree(Inference.None).parse(listOf("--recu", "f")))
+        assertEquals("r=true ref=null", tree(Abbreviation.Options).bindText("--recu", "f"))
+        assertIs<Result.Error<CliError>>(tree(Abbreviation.None).parse(listOf("--recu", "f")))
     }
 
-    private fun head(mode: Inference) = cli("head") {
-        inference = mode
+    private fun head(mode: Abbreviation) = cli("head") {
+        abbreviation = mode
         val lines = option("--lines", "-n")
         numericAlias(lines)
         argument("file").multiple()
@@ -97,14 +97,14 @@ class InferenceModeTest {
     @Test
     fun aNumericAliasIsUntouchedByEveryMode() {
         // The alias is short-side, so no mode may reach it: `-5` is `-n 5` in all three.
-        for (mode in Inference.entries) {
+        for (mode in Abbreviation.entries) {
             assertEquals("n=5", head(mode).bindText("-5", "f"), mode.name)
             assertEquals("n=5", head(mode).bindText("-n", "5", "f"), mode.name)
         }
     }
 
-    private fun dispatcher(mode: Inference) = cli("app") {
-        inference = mode
+    private fun dispatcher(mode: Abbreviation) = cli("app") {
+        abbreviation = mode
         command("status") { action<String>(human = { it }) { Ok("status") } }
         command("stash") { action<String>(human = { it }) { Ok("stash") } }
         command("list") {
@@ -116,8 +116,8 @@ class InferenceModeTest {
 
     @Test
     fun onlyAllInfersASubcommandPrefix() {
-        assertEquals("listen", dispatcher(Inference.All).bindText("liste"))
-        for (mode in listOf(Inference.None, Inference.Options)) {
+        assertEquals("listen", dispatcher(Abbreviation.All).bindText("liste"))
+        for (mode in listOf(Abbreviation.None, Abbreviation.Options)) {
             assertEquals(
                 CliError.UnknownSubcommand("app", "liste", "listen"),
                 assertIs<Result.Error<CliError>>(dispatcher(mode).parse(listOf("liste"))).error,
@@ -130,28 +130,28 @@ class InferenceModeTest {
     fun anAmbiguousSubcommandPrefixNamesEveryPossibility() {
         assertEquals(
             CliError.AmbiguousSubcommand("app", "st", listOf("status", "stash")),
-            assertIs<Result.Error<CliError>>(dispatcher(Inference.All).parse(listOf("st"))).error,
+            assertIs<Result.Error<CliError>>(dispatcher(Abbreviation.All).parse(listOf("st"))).error,
         )
     }
 
     @Test
     fun anExactSubcommandBeatsBeingAPrefixOfAnother() {
         // `list` is a strict prefix of `listen`, so prefix matching alone would call it ambiguous.
-        assertEquals("list", dispatcher(Inference.All).bindText("list"))
+        assertEquals("list", dispatcher(Abbreviation.All).bindText("list"))
     }
 
     @Test
     fun anAliasTakesPartInThePoolWithoutFakingAnAmbiguity() {
         // `l` reaches `list`, `ls` and `listen`. The first two name ONE command, so the only real
         // possibilities are two, not three; and `ls` on its own still resolves exactly.
-        assertEquals("list", dispatcher(Inference.All).bindText("ls"))
+        assertEquals("list", dispatcher(Abbreviation.All).bindText("ls"))
         assertEquals(
             CliError.AmbiguousSubcommand("app", "l", listOf("list", "ls", "listen")),
-            assertIs<Result.Error<CliError>>(dispatcher(Inference.All).parse(listOf("l"))).error,
+            assertIs<Result.Error<CliError>>(dispatcher(Abbreviation.All).parse(listOf("l"))).error,
         )
         // A prefix reaching a name AND its own alias is not ambiguous: both name the same command.
         val aliased = cli("app") {
-            inference = Inference.All
+            abbreviation = Abbreviation.All
             command("list") {
                 aliases = listOf("listing")
                 action<String>(human = { it }) { Ok("list") }
@@ -162,15 +162,15 @@ class InferenceModeTest {
 
     @Test
     fun aMissThatIsNoPrefixStillSuggests() {
-        // Inference rescues prefixes; suggestion rescues transpositions. They are complementary.
-        val err = assertIs<Result.Error<CliError>>(dispatcher(Inference.All).parse(listOf("lsit"))).error
+        // Abbreviation rescues prefixes; suggestion rescues transpositions. They are complementary.
+        val err = assertIs<Result.Error<CliError>>(dispatcher(Abbreviation.All).parse(listOf("lsit"))).error
         assertEquals(CliError.UnknownSubcommand("app", "lsit", "list"), err)
     }
 
     @Test
     fun anInferredSubcommandIsWhereItsOptionsResolve() {
         val tree = cli("app") {
-            inference = Inference.All
+            abbreviation = Abbreviation.All
             command("status") {
                 val short = flag("--short", "-s")
                 val files = argument("file").multiple()
@@ -182,8 +182,8 @@ class InferenceModeTest {
         assertEquals("short=true files=[f]", tree.bindText("stat", "-s", "f"))
     }
 
-    private fun priority(mode: Inference) = cli("t") {
-        inference = mode
+    private fun priority(mode: Abbreviation) = cli("t") {
+        abbreviation = mode
         val level = option("--priority").choice("low", "high", "highest")
         action<String>(human = { it }) { Ok("p=${level()}") }
     }
@@ -191,11 +191,11 @@ class InferenceModeTest {
     @Test
     fun aChoiceValueInfersWhereverAnOptionNameDoes() {
         // GNU couples the two: `ls --color=al` works for the same reason `--colo` does.
-        for (mode in listOf(Inference.Options, Inference.All)) {
+        for (mode in listOf(Abbreviation.Options, Abbreviation.All)) {
             assertEquals("p=low", priority(mode).bindText("--priority", "lo"), mode.name)
         }
         assertIs<CliError.InvalidChoice>(
-            assertIs<Result.Error<CliError>>(priority(Inference.None).parse(listOf("--priority", "lo"))).error,
+            assertIs<Result.Error<CliError>>(priority(Abbreviation.None).parse(listOf("--priority", "lo"))).error,
         )
     }
 
@@ -203,23 +203,23 @@ class InferenceModeTest {
     fun anAmbiguousChoiceValueNamesEveryPossibility() {
         assertEquals(
             CliError.AmbiguousValue("--priority", "hi", listOf("high", "highest")),
-            assertIs<Result.Error<CliError>>(priority(Inference.Options).parse(listOf("--priority", "hi"))).error,
+            assertIs<Result.Error<CliError>>(priority(Abbreviation.Options).parse(listOf("--priority", "hi"))).error,
         )
     }
 
     @Test
     fun anExactChoiceBeatsBeingAPrefixOfAnother() {
-        assertEquals("p=high", priority(Inference.Options).bindText("--priority", "high"))
+        assertEquals("p=high", priority(Abbreviation.Options).bindText("--priority", "high"))
     }
 
     @Test
-    fun choiceInferenceComposesWithCaseInsensitiveMatching() {
+    fun choiceAbbreviationComposesWithCaseInsensitiveMatching() {
         // `.choice()` already matches case-insensitively; prefixing is layered on top, not instead of it.
-        assertEquals("p=low", priority(Inference.Options).bindText("--priority", "LO"))
-        assertEquals("p=high", priority(Inference.Options).bindText("--priority", "HIGH"))
+        assertEquals("p=low", priority(Abbreviation.Options).bindText("--priority", "LO"))
+        assertEquals("p=high", priority(Abbreviation.Options).bindText("--priority", "HIGH"))
         assertEquals(
             CliError.AmbiguousValue("--priority", "HI", listOf("high", "highest")),
-            assertIs<Result.Error<CliError>>(priority(Inference.Options).parse(listOf("--priority", "HI"))).error,
+            assertIs<Result.Error<CliError>>(priority(Abbreviation.Options).parse(listOf("--priority", "HI"))).error,
         )
     }
 
@@ -228,7 +228,7 @@ class InferenceModeTest {
     @Test
     fun anEnumValueInfersToo() {
         val tree = cli("t") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             val level = option("--level").enum<Level>()
             action<String>(human = { it }) { Ok("l=${level()}") }
         }
@@ -240,7 +240,7 @@ class InferenceModeTest {
         // A user cannot tell klap's own --color from an option the app declared, so it must not resolve
         // by a different rule; real `ls --color=al` binds `always`.
         val tree = cli("t") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             action<String>(human = { it }) { Ok("ran") }
         }
         assertIs<Result.Success<Invocation>>(tree.parse(listOf("--color", "al")))
@@ -251,8 +251,8 @@ class InferenceModeTest {
 
     @Test
     fun anUnmatchedValueStillReportsTheChoicesAndSuggests() {
-        // Inference rescues prefixes; the existing InvalidChoice suggestion rescues near-misses.
-        val err = assertIs<Result.Error<CliError>>(priority(Inference.Options).parse(listOf("--priority", "hgih")))
+        // Abbreviation rescues prefixes; the existing InvalidChoice suggestion rescues near-misses.
+        val err = assertIs<Result.Error<CliError>>(priority(Abbreviation.Options).parse(listOf("--priority", "hgih")))
             .error
         assertEquals(CliError.InvalidChoice("--priority", "hgih", listOf("low", "high", "highest"), "high"), err)
     }
@@ -260,7 +260,7 @@ class InferenceModeTest {
     @Test
     fun aValueInAnOperandSlotInfersThroughTheSameConverter() {
         val tree = cli("t") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             val mode = argument("mode").choice("fast", "slow")
             action<String>(human = { it }) { Ok("m=${mode()}") }
         }
@@ -270,7 +270,7 @@ class InferenceModeTest {
     @Test
     fun aRefusedPrefixStillPointsAtTheOneSpellingItReached() {
         val strict = cli("t") {
-            inference = Inference.None
+            abbreviation = Abbreviation.None
             action<String>(human = { it }) { Ok("ran") }
         }
         // Every one of these is further from --help than the edit-distance bound allows, and under None
@@ -287,7 +287,7 @@ class InferenceModeTest {
     @Test
     fun aPrefixReachingTwoSpellingsSuggestsTheNearest() {
         val strict = cli("t") {
-            inference = Inference.None
+            abbreviation = Abbreviation.None
             option("--header")
             action<String>(human = { it }) { Ok("ran") }
         }
@@ -302,7 +302,7 @@ class InferenceModeTest {
     @Test
     fun aTiedPrefixNeverSurrendersToAnUnrelatedCandidate() {
         val strict = cli("t") {
-            inference = Inference.None
+            abbreviation = Abbreviation.None
             option("--sort")
             option("--sort-by")
             action<String>(human = { it }) { Ok("ran") }
@@ -318,7 +318,7 @@ class InferenceModeTest {
     @Test
     fun aRefusedSubcommandPrefixSuggestsToo() {
         val strict = cli("app") {
-            inference = Inference.None
+            abbreviation = Abbreviation.None
             command("status") { action<String>(human = { it }) { Ok("status") } }
         }
         assertEquals(

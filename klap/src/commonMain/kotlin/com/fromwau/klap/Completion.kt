@@ -39,8 +39,8 @@ internal val COMPLETION_SHELL_NAMES: List<String> =
  *
  * Two costs to know. Reading ANY accessor resolves ALL of them: the command's inputs and every global are
  * converted and validated on that keypress, so a converter or `.validate { }` must be cheap and free of
- * side effects. And an aborted provider is indistinguishable from one that yielded nothing — the seam that
- * keeps a Tab press from dumping a stack trace also swallows a genuine bug in provider code.
+ * side effects. And a provider that gives up looks exactly like one that found nothing, so a bug in yours
+ * surfaces as an empty completion rather than as an error.
  *
  * Candidates are prefix-filtered by [current] by default, matching on each candidate's value only, never
  * its description; pass `filterByPrefix = false` to `.completeWith` to do fuzzy matching against [current]

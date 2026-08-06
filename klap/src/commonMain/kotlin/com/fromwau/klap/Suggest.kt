@@ -4,16 +4,8 @@ import com.fromwau.klap.internal.parse.suggest as internalSuggest
 
 /**
  * The nearest entry in [candidates] to [token], or null when nothing is close enough — klap's own
- * did-you-mean, so a consumer's hand-written suggestion is phrased and thresholded identically to the
- * ones the parser produces for an unknown subcommand or option.
- *
- * Reuses klap's threshold rather than exposing it: an exact match never suggests (a token equal to a
- * candidate is not unknown), and a wholesale rewrite never suggests either, so a two-character alias
- * stops suggesting for an unrelated two-character token. [ignoreCase] measures with both sides lowered,
- * for a value set whose own matching is case-insensitive.
- *
- * A token prefixing exactly one candidate answers with it whatever the distance; otherwise — even when
- * the token prefixes several candidates at once — the nearest candidate within the bound wins.
+ * did-you-mean, so a suggestion you write by hand reads exactly like the ones klap produces for an
+ * unknown subcommand or option.
  */
 public fun suggest(
     token: String,

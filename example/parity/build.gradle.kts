@@ -4,7 +4,7 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(25)
+    jvmToolchain(libs.versions.jdk.get().toInt())
 }
 
 dependencies {

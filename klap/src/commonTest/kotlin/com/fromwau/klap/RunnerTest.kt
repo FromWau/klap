@@ -141,13 +141,13 @@ class RunnerTest {
     }
 
     @Test
-    fun failureDefaultExitCodeIsUnchanged() {
+    fun aFailureErrorExitsOne() {
         val code = cli("x") { action<String> { Err(CliError.Failure("boom")) } }.run(arrayOf(), RecordingTerminal())
         assertEquals(1, code)
     }
 
     @Test
-    fun parserErrorExitCodeIsUnchanged() {
+    fun aParseErrorExitsTwo() {
         val code = app().run(arrayOf("--nope"), RecordingTerminal())
         assertEquals(2, code)
     }
@@ -267,15 +267,15 @@ class RunnerTest {
     }
 
     @Test
-    fun ordinaryCandidateLineIsUnchanged() {
+    fun aCandidateLineIsTheValueThenATabThenItsDescription() {
         assertEquals("tag1", Candidate("tag1").toCompletionLine())
         assertEquals("tag1\tBuy milk", Candidate("tag1", "Buy milk").toCompletionLine())
     }
 
     @Test
     fun descriptionWithTabOrNewlineStillCollapsesToSpaceRatherThanDropping() {
-        // The value fix leaves the description path untouched: a description is display-only, never fed
-        // back to the shell, so it keeps collapsing separators to a space instead of dropping the candidate.
+        // A description is display-only, never fed back to the shell, so it collapses separators to a
+        // space instead of dropping the candidate the way a value would.
         assertEquals("tag1\ta b", Candidate("tag1", "a\tb").toCompletionLine())
         assertEquals("tag1\ta b", Candidate("tag1", "a\nb").toCompletionLine())
     }

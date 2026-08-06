@@ -21,6 +21,14 @@ class HelpAndHiddenCommandTest {
     }
 
     @Test
+    fun addsHelpClosesWithItsOwnEpilogueNotTheRoots() {
+        val result = taskManagerCli().capture("add", "--help")
+        assertEquals(0, result.exitCode, result.err)
+        assertContains(result.out, "Repeat --tag to attach several labels")
+        assertFalse("point --file elsewhere" in result.out, result.out)
+    }
+
+    @Test
     fun whereRunsAndPrintsTheConfiguredPathEvenThoughHelpNeverMentionsIt() = withTempStore { path ->
         val result = taskManagerCli().captureWithFile(path, "where")
         assertEquals(0, result.exitCode, result.err)

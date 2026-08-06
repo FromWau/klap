@@ -1,6 +1,6 @@
 package com.fromwau.klap.fixture.ls
 
-import com.fromwau.klap.Inference
+import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Ok
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.cliOf
@@ -25,7 +25,7 @@ import com.fromwau.klap.projection
  */
 public fun lsCli(): TypedCli<LsInputs> = cliOf("ls") {
     // GNU ls takes any unambiguous prefix of a long option or a choice value: `ls --rec` is --recursive.
-    inference = Inference.Options
+    abbreviation = Abbreviation.Options
     description = "List information about the FILEs (the current directory by default)."
     version = "9.11"
     epilogue = "Sort entries alphabetically if none of -tSUX nor --sort is specified. " +
@@ -111,8 +111,12 @@ public fun lsCli(): TypedCli<LsInputs> = cliOf("ls") {
     val inode = flag("--inode", "-i", help = "print the index number of each file")
     val size = flag("--size", "-s", help = "print the allocated size of each file, in blocks")
 
-    val width = option("--width", "-w", help = "set output width to COLS; 0 means no limit").int().placeholder("COLS")
-    val tabSize = option("--tabsize", "-T", help = "assume tab stops at each COLS instead of 8").int().placeholder("COLS")
+    val width = option("--width", "-w", help = "set output width to COLS; 0 means no limit")
+        .int()
+        .placeholder("COLS")
+    val tabSize = option("--tabsize", "-T", help = "assume tab stops at each COLS instead of 8")
+        .int()
+        .placeholder("COLS")
 
     // `--color[=WHEN]` is optional-value via `.optionalValue("always")` — a bare occurrence binds "always"
     // and `--color=never` binds its own value, matching real ls exactly. The space form never binds (GNU's

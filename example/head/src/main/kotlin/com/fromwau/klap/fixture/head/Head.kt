@@ -1,6 +1,6 @@
 package com.fromwau.klap.fixture.head
 
-import com.fromwau.klap.Inference
+import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Ok
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.cliOf
@@ -29,7 +29,7 @@ private val HEAD_NUM = Regex("""-?\d+(?:b|[kKMGTPEZYRQ](?:B|iB)?)?""")
 
 public fun headCli(): TypedCli<HeadInputs> = cliOf("head") {
     // GNU head takes any unambiguous prefix of a long option: `head --ver f` is ambiguous.
-    inference = Inference.Options
+    abbreviation = Abbreviation.Options
     description = "Print the first 10 lines of each FILE to standard output."
     version = "9.11"
     epilogue = "With no FILE, or when FILE is -, read standard input. " +

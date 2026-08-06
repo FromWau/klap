@@ -104,7 +104,7 @@ class BuiltinsOptOutTest {
         // The declined built-in must not leak into the action's view of the world either.
         assertFalse(exec.globals.json)
 
-        // The attached form used to survive the strip and then error as "flag '--json' takes no value".
+        // The attached form reaches the app's own option too, rather than klap's declined flag.
         curl.execute("""--json={"b":2}""", "https://x").run()
         assertEquals("""{"b":2}""", body)
 
@@ -123,9 +123,9 @@ class BuiltinsOptOutTest {
 
         // Not stripped, not short-circuited: it reaches the command and fails as an unknown option.
         assertEquals(CliError.UnknownOption("--json", null), tree.parseError("go", "--json"))
-        // The inline form is no longer klap's "this flag takes no value" either.
+        // The inline form is not klap's "this flag takes no value" either.
         assertIs<CliError.UnknownOption>(tree.parseError("go", "--json=1"))
-        // A --json anywhere on the line no longer flips Globals.json.
+        // A --json anywhere on the line does not flip Globals.json.
         assertFalse(tree.execute("go").globals.json)
     }
 
@@ -142,7 +142,7 @@ class BuiltinsOptOutTest {
         assertFalse("--json" in tree.renderMarkdownDocs(), tree.renderMarkdownDocs())
         assertFalse("""\-\-json""" in tree.renderManPage(), tree.renderManPage())
         assertFalse("--json" in tree.candidates("--"))
-        // The did-you-mean set drops it too, so a typo is never pointed at a flag that no longer exists.
+        // The did-you-mean set drops it too, so a typo is never pointed at a flag this tree does not have.
         assertEquals(CliError.UnknownOption("--jsonn", null), tree.parseError("go", "--jsonn"))
     }
 
@@ -311,7 +311,7 @@ class BuiltinsOptOutTest {
 
         // --help itself is never declinable.
         assertIs<Invocation.ShowHelp>(assertIs<Result.Success<Invocation>>(tree.parse(listOf("--help"))).value)
-        // -h no longer requests help; with nothing declared under it, it is simply unknown.
+        // -h does not request help here; with nothing declared under it, it is simply unknown.
         assertIs<CliError.UnknownOption>(tree.parseError("go", "-h"))
 
         val help = tree.helpOutput()

@@ -1,6 +1,6 @@
 package com.fromwau.klap.fixture.rm
 
-import com.fromwau.klap.Inference
+import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Ok
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.cliOf
@@ -16,7 +16,7 @@ import com.fromwau.klap.projection
  */
 public fun rmCli(): TypedCli<RmInputs> = cliOf("rm") {
     // GNU rm takes any unambiguous prefix of a long option or a choice value: `rm --recur d` is --recursive.
-    inference = Inference.Options
+    abbreviation = Abbreviation.Options
     description = "Remove (unlink) the FILE(s)"
     version = "9.11"
     epilogue = "By default, rm does not remove directories. Use --recursive (-r or -R) to remove each " +

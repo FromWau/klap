@@ -13,7 +13,15 @@ import com.fromwau.klap.internal.render.renderError
 /** Exit code for a truncated output pipe: the shell's 128+N "killed by signal N" convention, N = SIGPIPE (13). */
 public const val BROKEN_PIPE_EXIT: Int = 128 + 13
 
-/** Parse, dispatch, and render to [terminal]; return the exit code. Never exits the process. */
+/**
+ * Parses [argv], runs whatever it resolved to, writes the result to [terminal] and hands back the exit
+ * code. Nothing is thrown and the process is not terminated, which is what makes it the entry point to use
+ * from a test or from inside a larger program.
+ *
+ * ```kotlin
+ * assertEquals(0, app.run(listOf("greet", "ada"), recorder))
+ * ```
+ */
 public fun Cli.run(argv: Collection<String>, terminal: Terminal): Int {
     val argList = argv.toList()
     // The tree's own built-in pool and value slots, read once and shared by both reads below, so an
@@ -24,7 +32,7 @@ public fun Cli.run(argv: Collection<String>, terminal: Terminal): Int {
     val json = builtins.json && scan.names("json")
     // --color=always/never beats the whole env ladder below; auto (absent/bare/invalid) defers to the
     // terminal's own reading, unchanged. A bad/missing --color value is reported by parse() itself, not here.
-    val mode = argList.colorMode(builtins, builtinPool, scan.valueSlots, inference != Inference.None)
+    val mode = argList.colorMode(builtins, builtinPool, scan.valueSlots, abbreviation != Abbreviation.None)
     val effectiveColor = when (mode) {
         ColorMode.ALWAYS -> true
         ColorMode.NEVER -> false
@@ -91,30 +99,34 @@ private fun Terminal.outputLine(text: String): Int {
 }
 
 /**
- * Runs the resolved action and hands back its own result value: the embedding hatch for when you want
- * the action's `Ok(value)`/typed `Failure` rather than the output and exit code [run] renders. Writes
- * nothing and never exits; null when the node is a pure group with no action. The value is erased to
- * `Any?` (a [Cli] is not typed over its actions' return types), so cast it to your action's return type.
+ * Runs the resolved action and hands back its own `Ok(value)` or typed failure, instead of the rendered
+ * output and exit code `run` produces. Writes nothing, exits nothing, and answers null when the command is
+ * a group with no action of its own.
+ *
+ * The value arrives as `Any?`, so cast it to what your action returns.
  */
 public fun Invocation.Execute.runAction(): Result<Any?, CliError>? {
     val action = command.action ?: return null
     return action.evaluate(scope)
 }
 
-/**
- * Array overload of [run]: an `Array` is not a [Collection], so the `main`-shaped argv needs its own entry.
- */
+/** [run] over the `Array` that Kotlin's own `main` hands you. */
 public fun Cli.run(argv: Array<String>, terminal: Terminal): Int = run(argv.toList(), terminal)
 
-/** Full drop-in entry point: parse, dispatch, render, and exit with the resulting code. */
+/**
+ * Runs the CLI and exits the process with its code, the one-line way to wire up a `main`:
+ *
+ * ```kotlin
+ * fun main(args: Array<String>) = app.main(args)
+ * ```
+ *
+ * Use `run` instead when you need the exit code back rather than a terminated process.
+ */
 public fun Cli.main(argv: Collection<String>) {
     platformExit(run(argv, defaultTerminal()))
 }
 
-/**
- * Array overload of [main]: the shape Kotlin's own `fun main(args: Array<String>)` hands you, and so the
- * spelling almost every program actually uses. An `Array` is not a [Collection], so it needs its own entry.
- */
+/** [main] over the `Array` that Kotlin's own `main` hands you, which is the usual spelling. */
 public fun Cli.main(argv: Array<String>) {
     main(argv.toList())
 }

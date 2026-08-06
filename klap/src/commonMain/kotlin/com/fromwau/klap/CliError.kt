@@ -3,7 +3,11 @@ package com.fromwau.klap
 /** POSIX convention: a command-line usage error exits 2. */
 public const val USAGE_ERROR_EXIT: Int = 2
 
-/** A structured, message-free parse/usage failure. The single renderer in ErrorRendering.kt owns the words. */
+/**
+ * Why a command line was refused, or why an action failed, carried as data rather than as a sentence: klap
+ * writes the words. Return [Usage], [Failure] or [Domain] from an action; the rest describe parse failures
+ * you can match on after calling `parse`.
+ */
 public sealed interface CliError {
     public val exitCode: Int get() = USAGE_ERROR_EXIT
 
@@ -38,16 +42,15 @@ public sealed interface CliError {
 
     public data class MissingArgument(val command: String, val argument: String) : CliError
 
-    /** [option] already carries its own `-`/`--` prefix, rendered verbatim: an input's primary spelling may be a short. */
+    /** [option] is the primary spelling, dashes included, which may be a short one. */
     public data class MissingRequiredOption(val option: String) : CliError
 
-    /** [option] already carries its own `-`/`--` prefix, rendered verbatim: an input's primary spelling may be a short. */
+    /** [option] is the primary spelling, dashes included, which may be a short one. */
     public data class MissingOptionValue(val option: String) : CliError
 
     /**
-     * [flag] is the exact token the user typed (already carrying its own `-`/`--` prefix), rendered verbatim.
-     * [negationHint], unlike [flag], is the negated long spelling with dashes stripped, since the renderer
-     * supplies the `--` itself; null when the flag has no negated form.
+     * [flag] is the exact token typed, dashes included. [negationHint] is the negated long spelling without
+     * dashes, or null when the flag has no negated form.
      */
     public data class FlagTakesNoValue(val flag: String, val negationHint: String? = null) : CliError
 
@@ -80,9 +83,8 @@ public sealed interface CliError {
     public data class TooFewOccurrences(val option: String, val min: Int, val actual: Int) : CliError
 
     /**
-     * No member of a [CommandBuilder.requireExactlyOne] set was supplied. [inputs] lists the whole set in
-     * declaration order; like [FlagTakesNoValue.flag], each entry already carries its own `--`/`<>` form,
-     * since a set can mix options, flags and positionals, which render differently.
+     * No member of a [CommandBuilder.requireExactlyOne] set was supplied. [inputs] is the whole set in
+     * declaration order, each entry in its own `--option` or `<operand>` form, since a set can mix both.
      */
     public data class ExactlyOneRequired(val inputs: List<String>) : CliError
 
@@ -93,11 +95,9 @@ public sealed interface CliError {
     public data class MutuallyExclusive(val inputs: List<String>) : CliError
 
     /**
-     * A usage error the command detected itself, for a rule klap cannot express as a constraint. Exits
-     * [USAGE_ERROR_EXIT] like every parse-level variant above, so a hand-written rule reports the same
-     * code as a built-in one instead of the runtime-failure code; that is the whole reason it exists
-     * alongside [Failure], which is otherwise identical. It carries no `exitCode` parameter, since a
-     * usage error that exits anything else is not a usage error.
+     * A usage error your command detected itself, for a rule klap cannot express as a constraint. It exits
+     * [USAGE_ERROR_EXIT], the same code klap's own usage errors use, which is what separates it from
+     * [Failure]. There is no exit code to choose: a usage error that exits anything else is not one.
      */
     public data class Usage(val detail: String) : CliError
 
@@ -105,13 +105,11 @@ public sealed interface CliError {
     public data class Failure(val detail: String, override val exitCode: Int = 1) : CliError
 
     /**
-     * A consumer's own typed error, carried through klap's error path with its payload intact. klap renders
-     * [detail] and exits [exitCode], exactly as it does for [Failure]; what it adds is that a `parse()`
-     * caller can recover [error] and match on it, so a domain hierarchy survives the trip instead of being
-     * flattened to a sentence at the boundary.
+     * Your own typed error, carried through with its payload intact. klap renders [detail] and exits
+     * [exitCode] exactly as for [Failure]; what it adds is that a `parse` caller can recover [error] and
+     * match on it, so your error hierarchy survives instead of flattening to a sentence.
      *
-     * [error] is deliberately `Any`: klap never inspects it, and typing it would force a klap-owned
-     * supertype onto a hierarchy that already has its own root.
+     * [error] is `Any` because klap never looks inside it; your hierarchy keeps its own root.
      */
     public data class Domain(
         val error: Any,

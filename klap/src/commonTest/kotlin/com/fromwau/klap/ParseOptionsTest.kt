@@ -109,6 +109,11 @@ class ParseOptionsTest {
         val err = assertIs<Result.Error<CliError>>(app.parse(listOf("grp", "--", "--"))).error
         assertEquals(CliError.UnknownSubcommand("grp", "--"), err)
     }
+}
+
+/** What a value-taking option does when its value is absent, unconvertible, or not one of its choices. */
+class OptionValueAndChoiceTest {
+
 
     @Test
     fun requiredOptionAbsentIsRejected() {
@@ -213,6 +218,11 @@ class ParseOptionsTest {
         // the flag writes `--host <value> --verbose`; there is no reading that gives them both here.
         assertEquals("--verbose v=false\n", tree.execAndCapture(listOf("dial", "--host", "--verbose")))
     }
+}
+
+/** Which character a malformed short cluster blames, and how the token is quoted back. */
+class ShortClusterErrorTest {
+
 
     @Test
     fun unknownCharInClusterNamesThatChar() {
@@ -268,6 +278,11 @@ class ParseOptionsTest {
         // before any '=' is ever reached, so -p=8080 binds the literal value "=8080".
         assertEquals("verbose=false force=false port==8080\n", clusterTree().execAndCapture(listOf("run", "-p=8080")))
     }
+}
+
+/** A `.validate`/`.range` failure reaching the user as a value error rather than an exception. */
+class ConverterAndValidationTest {
+
 
     @Test
     fun validateFailurePassesThroughAsBadValue() {
@@ -328,6 +343,11 @@ class ParseOptionsTest {
         }
         assertEquals("8080\n", tree.execAndCapture(listOf("dial", "--port", "8080")))
     }
+}
+
+/** `multiple(min)` on options and positionals, and what a declared default does and does not bypass. */
+class RepeatedAndDefaultedValueTest {
+
 
     @Test
     fun multipleOptionMinEnforced() {
@@ -432,6 +452,11 @@ class ParseOptionsTest {
         }
         assertEquals("99999\n", tree.execAndCapture(listOf("dial")))
     }
+}
+
+/** A `.count()` flag binds how many times it was written, however it was spelled. */
+class CountFlagTest {
+
 
     @Test
     fun countFlagAccumulatesClusteredOccurrences() {
@@ -466,6 +491,11 @@ class ParseOptionsTest {
         }
         assertEquals("0\n", tree.execAndCapture(listOf("run")))
     }
+}
+
+/** `--x` / `--no-x` and the declared default, resolved by last occurrence. */
+class NegatableFlagBindingTest {
+
 
     @Test
     fun negatableFlagLongFormSetsTrue() {
@@ -510,6 +540,11 @@ class ParseOptionsTest {
         }
         assertEquals("false\n", tree.execAndCapture(listOf("run", "--tint", "--no-tint")))
     }
+}
+
+/** When a rejected option carries a did-you-mean, and when it must not. */
+class UnknownOptionSuggestionTest {
+
 
     @Test
     fun unknownOptionSuggestsNearestLongName() {
@@ -531,6 +566,11 @@ class ParseOptionsTest {
         val err = assertIs<Result.Error<CliError>>(optTree().parse(listOf("call", "-z"))).error
         assertEquals(CliError.UnknownOption("-z"), err)
     }
+}
+
+/** A global binds wherever it appears on the line and reads from any nested action. */
+class GlobalReachTest {
+
 
     @Test
     fun globalFlagReadableFromNestedSubcommandAction() {
@@ -572,6 +612,11 @@ class ParseOptionsTest {
         assertEquals("v=true c=true\n", tree.execAndCapture(listOf("-vc", "build")))
         assertEquals("v=true c=true\n", tree.execAndCapture(listOf("build", "-vc")))
     }
+}
+
+/** A short cluster mixing local and global characters, in either order and either side of the subcommand. */
+class MixedShortClusterTest {
+
 
     @Test
     fun clusterPeelsGlobalsAndLeavesTheLocalRemainder() {
@@ -703,6 +748,11 @@ class ParseOptionsTest {
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("-hv", "build"))).error
         assertEquals(CliError.UnknownOption("-h"), err)
     }
+}
+
+/** A miss at one node suggesting from everything that node can actually reach. */
+class SuggestionAcrossTheTreeTest {
+
 
     @Test
     fun groupRootLongOptionTypoSuggestsTheVersionBuiltin() {
@@ -753,7 +803,7 @@ class ParseOptionsTest {
     }
 
     @Test
-    fun tooManyArgumentsNoLongerSuggestsDocsOnASingleCommandTool() {
+    fun tooManyArgumentsOnASingleCommandToolSuggestsNothing() {
         val tree = cli("app") {
             option("--image").required()
             action { Ok("") }
@@ -776,6 +826,11 @@ class ParseOptionsTest {
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("biuld"))).error
         assertEquals(CliError.TooManyArguments("app", listOf("biuld"), "build"), err)
     }
+}
+
+/** A required global fails a leaf that executes but must not block a bare group that only shows help. */
+class GlobalBindPolicyTest {
+
 
     @Test
     fun globalOptionWithConverterAndDefaultResolves() {
@@ -841,6 +896,11 @@ class ParseOptionsTest {
         val shortErr = assertIs<Result.Error<CliError>>(tree.parse(listOf("plan", "-w"))).error
         assertEquals(CliError.MissingOptionValue("--workspace"), shortErr)
     }
+}
+
+/** A boolean flag takes no value, so `--flag=x` is an error naming the flag exactly as it was typed. */
+class FlagInlineValueTest {
+
 
     @Test
     fun localBooleanFlagRejectsInlineValue() {
@@ -929,6 +989,11 @@ class ParseOptionsTest {
         }
         assertEquals("=val\n", tree.execAndCapture(listOf("-o=val", "flags")))
     }
+}
+
+/** Hiding removes an input from suggestions as well as from help; klap's own built-ins stay suggestible. */
+class HiddenAndBuiltinSuggestionTest {
+
 
     @Test
     fun unknownOptionNeverSuggestsAHiddenLocalOption() {
@@ -984,6 +1049,11 @@ class ParseOptionsTest {
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("build", "--versoin"))).error
         assertEquals(CliError.UnknownOption("--versoin", "--version"), err)
     }
+}
+
+/** klap's injected flags reject an inline value the same way an app-declared flag does. */
+class BuiltinInlineValueTest {
+
 
     @Test
     fun helpBuiltinGivenAnInlineValueTakesNoValue() {
@@ -1047,8 +1117,10 @@ class ParseOptionsTest {
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--help="))).error
         assertEquals(CliError.FlagTakesNoValue("--help", null), err)
     }
+}
 
-    // --- "?: default" substitution semantics on options ---
+/** When a declared default stands in for a value: absent, or a converter that succeeds with null. */
+class DefaultSubstitutionTest {
 
     @Test
     fun optionDefaultNonNull_stillNarrows_absentUsesDefault_presentUsesValue() {
@@ -1105,8 +1177,10 @@ class ParseOptionsTest {
         assertIs<Invocation.Execute>(inv)
         assertEquals("--help=x\n", tree.execAndCapture(listOf("--", "--help=x")))
     }
+}
 
-    // --- converter/validate chains must never throw at parse (never-throw contract) ---
+/** A converter chain that is misused still reports a value error rather than crashing the parse. */
+class NeverThrowContractTest {
 
     @Test
     fun nullableMapThenValidateOnBadInputSkipsValidateInsteadOfCrashing() {
@@ -1134,6 +1208,11 @@ class ParseOptionsTest {
         assertIs<CliError.BadValue>(err)
         assertEquals("-v", err.name)
     }
+}
+
+/** An option declared with no long form at all. */
+class ShortOnlyOptionTest {
+
 
     @Test
     fun shortOnlyOptionIsDeclarableAndParses() {
@@ -1171,6 +1250,11 @@ class ParseOptionsTest {
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("go", "--z"))).error
         assertEquals(CliError.UnknownOption("--z"), err)
     }
+}
+
+/** An input declared under several names answers to all of them, and errors name the right one. */
+class MultipleSpellingsTest {
+
 
     @Test
     fun oneFlagAnswersToEverySpelling() {
@@ -1307,14 +1391,14 @@ class NegatableGlobalPolarityTest {
     }
 
     @Test
-    fun longFormOrderingIsUnchanged() {
+    fun theLastLongFormWins() {
         val tree = negatableGlobalTree()
         assertEquals("v=false f=false\n", tree.execAndCapture(listOf("go", "--verbose", "--no-verbose")))
         assertEquals("v=true f=false\n", tree.execAndCapture(listOf("go", "--no-verbose", "--verbose")))
     }
 
     @Test
-    fun pureGlobalClusterOrderingIsUnchanged() {
+    fun aPureGlobalShortClusterTakesPartInTheOrdering() {
         // `-v` alone is fully global, so the pre-strip resolves it in the same pass as `--no-verbose`.
         val tree = negatableGlobalTree()
         assertEquals("v=false f=false\n", tree.execAndCapture(listOf("go", "-v", "--no-verbose")))
@@ -1323,7 +1407,7 @@ class NegatableGlobalPolarityTest {
     }
 
     @Test
-    fun negationAloneAndAbsenceAreUnchanged() {
+    fun negationAloneBindsOffAndAbsenceBindsTheDeclaredDefault() {
         val tree = negatableGlobalTree()
         assertEquals("v=false f=false\n", tree.execAndCapture(listOf("go", "--no-verbose")))
         assertEquals("v=true f=false\n", tree.execAndCapture(listOf("go")))
@@ -1372,7 +1456,7 @@ class NegatableGlobalPolarityTest {
     }
 
     @Test
-    fun negatableGlobalWithNoShortIsUnchanged() {
+    fun aNegatableGlobalWithNoShortOrdersByPosition() {
         val tree = cli("app") {
             val tint = globalFlag("--tint").negatable(default = true)
             command("go") {
@@ -1385,7 +1469,7 @@ class NegatableGlobalPolarityTest {
     }
 
     @Test
-    fun negatableGlobalWhoseShortNeverClustersIsUnchanged() {
+    fun anUnclusteredShortBindsOnAndTheLongNegationBindsOff() {
         val tree = negatableGlobalTree()
         assertEquals("v=true f=false\n", tree.execAndCapture(listOf("go", "-v")))
         assertEquals("v=false f=false\n", tree.execAndCapture(listOf("--no-verbose", "go")))

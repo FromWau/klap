@@ -2,7 +2,7 @@
 
 A reflection-free Kotlin Multiplatform command-line framework. A builder DSL for commands and
 subcommands, typed and validated arguments/options/flags, global options, opt-in GNU-style prefix
-inference, auto-generated help with sections and color, value-aware shell completion, generated
+abbreviation, auto-generated help with sections and color, value-aware shell completion, generated
 man/markdown docs, structured `--json` output, and typed `Result` errors. No annotations, no reflection,
 no annotation processing.
 

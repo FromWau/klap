@@ -3,7 +3,7 @@ package com.fromwau.klap
 /**
  * Which of klap's built-ins this CLI offers. Every one defaults to on; setting one to `false` in the
  * root's `builtins { }` block removes it entirely — its name stops being reserved (so the app can declare
- * its own input under it), the parser stops recognizing it, and `--help`, the generated docs and tab
+ * its own input under it), your CLI stops recognizing it, and `--help`, the generated docs and tab
  * completion stop advertising it.
  *
  * ```kotlin

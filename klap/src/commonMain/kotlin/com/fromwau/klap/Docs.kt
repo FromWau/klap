@@ -42,11 +42,11 @@ private fun Cli.docNodes(): List<Pair<Command, String>> {
 }
 
 /**
- * One browsable markdown page for the whole tree: a table of contents over [docNodes], then one section
- * per node, built from the same [helpSections] rows `--help` renders, so the two cannot drift. A
- * single-command tool (no non-hidden subcommand, so [docNodes] collapses to just the root) drops the ToC
- * entirely: `--help` never shows a "Commands:" section for such a tool, and a lone self-referencing
- * `- [name](#name)` entry would be pure noise. A dispatcher (>=1 non-hidden subcommand) keeps it.
+ * Renders the whole CLI as one markdown page: a table of contents, then a section per command, built from
+ * the same rows `--help` shows, so your docs cannot drift from your tool. A tool with no subcommands has
+ * nothing to list, so it gets no table of contents.
+ *
+ * This is what the built-in `docs markdown` command prints; call it yourself to commit the page to a repo.
  */
 public fun Cli.renderMarkdownDocs(): String {
     val nodes = docNodes()
@@ -102,12 +102,11 @@ public fun Cli.renderMarkdownDocs(): String {
 // --- roff (man) ---
 
 /**
- * One roff man page for the whole tree: a `.TH` header (root name/version; [date] fills the date
- * field, empty by default since commonMain has no portable clock), a `.SH NAME`, then either a `.SH` per
- * [docNodes] entry (a dispatcher, >=1 non-hidden subcommand) covering every command's usage, description,
- * and arg/option/flag rows, or (for a single-command tool, where [docNodes] collapses to just the root)
- * that root's body folded directly under `.SH NAME` with no redundant `.SH <ROOT>` wrapper, matching how
- * `--help` never shows a "Commands:" section for such a tool.
+ * Renders the whole CLI as a roff man page, one section per command, from the same rows `--help` shows. A
+ * tool with no subcommands renders as a single body rather than a section per command.
+ *
+ * @param date fills the date field of the man header. klap leaves it empty rather than guessing, since it
+ *   has no clock of its own; pass your build date to have one.
  */
 public fun Cli.renderManPage(date: String? = null): String {
     val stamp = date.orEmpty()
@@ -150,7 +149,7 @@ public fun Cli.renderManPage(date: String? = null): String {
     }.trimEnd() + "\n"
 }
 
-/** Dispatcher driving the `docs <format>` builtin with a typed [DocFormat], mirroring [renderCompletion]'s shape. */
+/** Renders the docs in [format], which is what the built-in `docs <format>` command calls. */
 public fun Cli.renderDocs(format: DocFormat, date: String? = null): String = when (format) {
     DocFormat.MARKDOWN -> renderMarkdownDocs()
     DocFormat.MAN -> renderManPage(date)

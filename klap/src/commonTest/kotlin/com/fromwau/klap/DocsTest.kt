@@ -587,7 +587,7 @@ class DocsTest {
     }
 
     @Test
-    fun docsSignatureWithShortIsUnchanged() {
+    fun docsSignatureWithAShortRendersBothFormsUnpadded() {
         // An option WITH a short still renders "-v, --verbose <value>" (no padding to begin with); the
         // markdown table cell additionally escapes the placeholder's angle brackets, the man page does not.
         val tree = cli("app") {

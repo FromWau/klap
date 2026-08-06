@@ -1,7 +1,7 @@
 package com.fromwau.klap.fixture.chmod
 
 import com.fromwau.klap.Err
-import com.fromwau.klap.Inference
+import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Ok
 import com.fromwau.klap.Result
 import com.fromwau.klap.TypedCli
@@ -54,7 +54,7 @@ private fun chmodModeLabel(mode: ChmodMode): String = when (mode) {
 
 public fun chmodCli(): TypedCli<ChmodInputs> = cliOf("chmod") {
     // GNU chmod takes any unambiguous prefix of a long option: `chmod --re 700 d` is ambiguous.
-    inference = Inference.Options
+    abbreviation = Abbreviation.Options
     description = "Change the mode of each FILE to MODE"
     version = "9.11"
     author = "David MacKenzie and Jim Meyering"
@@ -62,7 +62,7 @@ public fun chmodCli(): TypedCli<ChmodInputs> = cliOf("chmod") {
 
     example("chmod 755 script.sh", "octal mode")
     example("chmod u+x,go-w -R src", "symbolic mode, recursively")
-    example("chmod -- -w notes.txt", "clear the write bits (see KLAP-GAP below)")
+    example("chmod -- -w notes.txt", "a dash-led mode needs -- to separate it from the options")
 
     val changes = flag("--changes", "-c", help = "like verbose but report only when a change is made")
     val silent = flag("--silent", "-f", help = "suppress most error messages")
@@ -109,7 +109,7 @@ public fun chmodCli(): TypedCli<ChmodInputs> = cliOf("chmod") {
     // Multiple claims the rest — the reverse shape (`SOURCE... DEST`, cp) is what that same greedy slice
     // makes impossible.
     //
-    // A leading-dash mode never reaches this slot: `chmod -w f`, `chmod -rwx f` and `chmod -R -w d` are
+    // KLAP-GAP: a leading-dash mode never reaches this slot. `chmod -w f`, `chmod -rwx f` and `chmod -R -w d` are
     // all accepted by GNU chmod, but every dash-led token is an option token to klap, so it is read as an
     // unknown option instead. No general rule serves both chmod and mkdir (`-w f` is an operand to one and
     // an error to the other), so this is a permanent divergence rather than a gap to close; `chmod -- -w f`
