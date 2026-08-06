@@ -252,7 +252,7 @@ class RsyncParityTest {
         // A trailing option with no value cannot borrow a token that is not there.
         parity.rejects("--exclude", because = "real rsync: --exclude with no value has nothing to bind")
         // Real rsync's own long options never abbreviate (each verified below), and klap now agrees at
-        // Inference.None: neither tool resolves a prefix that is not a declared spelling.
+        // Abbreviation.None: neither tool resolves a prefix that is not a declared spelling.
         parity.rejects("--exc=x", "src/", "dst/", because = "real rsync: --exc=x: unknown option")
         parity.rejects("--dele", "src/", "dst/", because = "real rsync: --dele: unknown option")
         parity.rejects("--compr", "src/", "dst/", because = "real rsync: --compr: unknown option")
@@ -307,8 +307,8 @@ class RsyncParityTest {
         parity.rejects("--no-human-readable", "src/", "dst/", because = "real rsync: --no-human-readable is accepted")
 
         // GAP 4 — `--no-p`. Real rsync resolves it through its own much larger option set (to
-        // --no-perms, a flag this fixture never declares) and exits 0; klap has no inference to reach for
-        // at Inference.None, so the token simply names nothing here. Neither tool is wrong; they are
+        // --no-perms, a flag this fixture never declares) and exits 0; klap has no abbreviation to reach for
+        // at Abbreviation.None, so the token simply names nothing here. Neither tool is wrong; they are
         // reading the prefix against two different option sets.
         parity.rejects("--no-p", "src/", "dst/", because = "real rsync: --no-p resolves to --no-perms, exit 0")
     }

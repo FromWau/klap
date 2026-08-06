@@ -5,8 +5,8 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlinx.serialization.json.Json
 
-/** Pins the three abbreviations `Main.kt`'s `inference = Inference.All` comment claims resolve. */
-class AbbreviationInferenceTest {
+/** Pins the three abbreviations `Main.kt`'s `abbreviation = Abbreviation.All` comment claims resolve. */
+class AbbreviationTest {
 
     @Test
     fun anAbbreviatedSubcommandReachesList() = withTempStore { path ->

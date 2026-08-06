@@ -28,14 +28,15 @@ public class ParitySuite<T>(private val typed: TypedCli<T>) {
      * supply as well as the ones it does, which is how an override rule like `lastWins` gets tested for
      * the loser's absence rather than only the winner's presence.
      */
-    public fun binds(vararg argv: String, expected: T) {
+    public fun binds(vararg argv: String, expected: T, because: String? = null) {
         val line = argv.toList()
+        val note = because?.let { " ($it)" }.orEmpty()
         when (val projected = typed.parse(line)) {
-            is Result.Error -> fail("${expected(line)} to bind, but it was rejected: ${projected.error}")
+            is Result.Error -> fail("${expected(line)} to bind$note, but it was rejected: ${projected.error}")
             is Result.Success -> {
-                val actual = projected.value ?: fail("${expected(line)} to bind, but ${outcome(line)}")
+                val actual = projected.value ?: fail("${expected(line)} to bind$note, but ${outcome(line)}")
                 if (actual != expected) {
-                    fail("${expected(line)} to bind\n  expected: $expected\n  actual:   $actual")
+                    fail("${expected(line)} to bind$note\n  expected: $expected\n  actual:   $actual")
                 }
             }
         }
@@ -47,12 +48,13 @@ public class ParitySuite<T>(private val typed: TypedCli<T>) {
      * The narrow half of [binds], for a case whose claim is about one field rather than the whole record,
      * or whose projected type is a variant the case has to narrow to first.
      */
-    public fun accepts(vararg argv: String, assert: (T) -> Unit = {}) {
+    public fun accepts(vararg argv: String, because: String? = null, assert: (T) -> Unit = {}) {
         val line = argv.toList()
+        val note = because?.let { " ($it)" }.orEmpty()
         when (val projected = typed.parse(line)) {
-            is Result.Error -> fail("${expected(line)} to bind, but it was rejected: ${projected.error}")
+            is Result.Error -> fail("${expected(line)} to bind$note, but it was rejected: ${projected.error}")
             is Result.Success ->
-                assert(projected.value ?: fail("${expected(line)} to bind, but ${outcome(line)}"))
+                assert(projected.value ?: fail("${expected(line)} to bind$note, but ${outcome(line)}"))
         }
     }
 
@@ -78,12 +80,12 @@ public class ParitySuite<T>(private val typed: TypedCli<T>) {
      * models, and it stays safe to hand to the real binary precisely because the real binary rejects it.
      */
     public fun bindsLoosely(vararg argv: String, because: String, expected: T) {
-        binds(argv = argv, expected = expected)
+        binds(argv = argv, expected = expected, because = because)
     }
 
     /** The [accepts]-shaped half of [bindsLoosely], for a case asserting one field rather than the record. */
     public fun acceptsLoosely(vararg argv: String, because: String, assert: (T) -> Unit = {}) {
-        accepts(argv = argv, assert = assert)
+        accepts(argv = argv, because = because, assert = assert)
     }
 
     /**

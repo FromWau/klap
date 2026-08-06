@@ -9,7 +9,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
-/** Prefix resolution itself, under the mode that enables it; [InferenceModeTest] owns the mode boundaries. */
+/** Prefix resolution itself, under the mode that enables it; [AbbreviationModeTest] owns the mode boundaries. */
 class AbbreviationTest {
 
     private val pool = listOf("recursive", "reference", "verbose", "sort", "sort-by")
@@ -51,7 +51,7 @@ class AbbreviationTest {
     }
 
     private fun tree() = cli("t") {
-        inference = Inference.Options
+        abbreviation = Abbreviation.Options
         val recursive = flag("--recursive", "-r")
         val reference = option("--reference")
         val verbose = flag("--verbose", "-v").negatable(default = false)
@@ -86,7 +86,7 @@ class AbbreviationTest {
     @Test
     fun aBuiltinAbbreviates() {
         val versioned = cli("t") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             version = "1.0"
             action<String>(human = { it }) { Ok("ran") }
         }
@@ -96,7 +96,7 @@ class AbbreviationTest {
     @Test
     fun aBuiltinTakesPartInAmbiguity() {
         val withHeader = cli("t") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             option("--header")
             action<String>(human = { it }) { Ok("ran") }
         }
@@ -107,7 +107,7 @@ class AbbreviationTest {
     @Test
     fun theInjectedHelpAllAnswersToItsFullSpellingOnly() {
         val tree = cli("t") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             command("build") { action<String>(human = { it }) { Ok("built") } }
         }
         // --help-all is klap's, not the author's, so it takes no part in prefix resolution: letting it claim
@@ -124,7 +124,7 @@ class AbbreviationTest {
     @Test
     fun aHiddenInputMatchesButIsStillNeverSuggested() {
         val tree = cli("t") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             val secret = flag("--secret").hidden()
             val send = flag("--send")
             action<String>(human = { it }) { Ok("secret=${secret()} send=${send()}") }
@@ -147,7 +147,7 @@ class AbbreviationTest {
     @Test
     fun aGlobalAbbreviatesAndSharesOnePoolWithTheBuiltins() {
         val tree = cli("app") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             val header = globalOption("--header")
             command("build") {
                 action<String>(human = { it }) { Ok("header=${header()}") }
@@ -165,7 +165,7 @@ class AbbreviationTest {
     @Test
     fun aGroupNodeReportsTheSameAmbiguityALeafWould() {
         val tree = cli("app") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             globalOption("--header")
             command("build") { action<String>(human = { it }) { Ok("built") } }
         }
@@ -178,7 +178,7 @@ class AbbreviationTest {
     }
 
     private fun head() = cli("head") {
-        inference = Inference.Options
+        abbreviation = Abbreviation.Options
         version = "9.11"
         val verbose = flag("--verbose", "-v")
         argument("file").multiple()
@@ -210,7 +210,7 @@ class AbbreviationTest {
     }
 
     private fun dispatcher() = cli("app") {
-        inference = Inference.Options
+        abbreviation = Abbreviation.Options
         version = "1.0"
         command("fetch") {
             val header = option("--header")
@@ -240,7 +240,7 @@ class AbbreviationTest {
     @Test
     fun anAbbreviationThePreStripDeclinedIsNeverUnknownAtTheCommand() {
         val tree = cli("app") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             command("fetch") {
                 val collate = option("--collate")
                 action<String>(human = { it }) { Ok("collate=${collate()}") }
@@ -257,7 +257,7 @@ class AbbreviationTest {
     }
 
     private fun addListDispatcher() = cli("app") {
-        inference = Inference.Options
+        abbreviation = Abbreviation.Options
         command("list") {
             val limit = option("--limit")
             val long = flag("--long")
@@ -303,7 +303,7 @@ class AbbreviationTest {
     @Test
     fun aGlobalAndACommandLongShareOnePoolInThePreStrip() {
         val tree = cli("app") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             val sort = globalOption("--sort")
             command("sub") {
                 val sortBy = option("--sort-by")
@@ -325,7 +325,7 @@ class AbbreviationTest {
     @Test
     fun aLocalLongIsNeverEatenByAnAbbreviatedMetaOption() {
         val tree = cli("app") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             command("sub") {
                 val collate = option("--collate")
                 val files = argument("file").multiple()
@@ -351,7 +351,7 @@ class AbbreviationTest {
     @Test
     fun anAbbreviatedGlobalThatCollidesWithABuiltinIsAmbiguousInBothPositions() {
         val tree = cli("app") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             val collate = globalOption("--collate")
             command("sub") {
                 action<String>(human = { it }) { Ok("collate=${collate()}") }
@@ -377,8 +377,8 @@ class AbbreviationTest {
     @Test
     fun subcommandNamesDoNotAbbreviateUnderOptions() {
         val dispatcher = cli("t") {
-            // Only Inference.All infers a subcommand prefix; InferenceModeTest owns that mode boundary.
-            inference = Inference.Options
+            // Only Abbreviation.All infers a subcommand prefix; AbbreviationModeTest owns that mode boundary.
+            abbreviation = Abbreviation.Options
             command("status") { action<String>(human = { it }) { Ok("status") } }
         }
         val err = assertIs<Result.Error<CliError>>(dispatcher.parse(listOf("stat"))).error

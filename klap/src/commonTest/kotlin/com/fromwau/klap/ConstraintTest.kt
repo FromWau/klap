@@ -421,7 +421,7 @@ class ConstraintHelpTest {
     }
 
     @Test
-    fun aCommandWithNoConstraintsRendersExactlyAsBefore() {
+    fun anUnconstrainedInputCarriesNoNoteButKeepsItsOwnAnnotations() {
         val tree = cli("app") {
             command("go") {
                 flag("--plain", "-p", help = "a plain flag")
@@ -520,7 +520,7 @@ class ConstraintUsageLineTest {
     }
 
     @Test
-    fun aCommandWithNoConstraintsRendersExactlyAsBefore() {
+    fun anUnconstrainedCommandsUsageLineCarriesNoGroup() {
         val tree = cli("app") {
             command("go") {
                 argument("name")

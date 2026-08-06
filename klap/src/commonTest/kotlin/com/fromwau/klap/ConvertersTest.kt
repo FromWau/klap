@@ -506,7 +506,7 @@ class ConvertersTest : ConverterScope() {
     }
 
     @Test
-    fun int_then_range_safeOrderStillWorksEndToEnd() {
+    fun int_then_range_safeOrderConvertsAndValidatesEndToEnd() {
         val spec = argSpec()
         val arg = Arg<String>(spec).int().range(1..100)
         assertEquals(Result.Success(42), spec.convert("42"))

@@ -145,21 +145,21 @@ The tools, and why each is in the suite:
 | [`mkdir`](mkdir/) | the small end: a validated option and one variadic operand |
 | [`rsync`](rsync/) | clustered shorts ending in a value-taker (`-vauPe "ssh -p 2222"`), and a real tool whose long options never abbreviate |
 
-### What each fixture declares about `inference`
+### What each fixture declares about `abbreviation`
 
-`Inference` (see the [guide](../docs/guide.md#inference)) is root-only and defaults to `None`, so a
+`Abbreviation` (see the [guide](../docs/guide.md#abbreviation)) is root-only and defaults to `None`, so a
 fixture that wants to reproduce a real tool's abbreviation behaviour states so explicitly:
 
 | Mode | Fixtures |
 |---|---|
-| `Inference.Options` | `chmod`, `cp`, `dd`, `git`, `head`, `ls`, `mkdir`, `mv`, `pacman`, `rm`, `tar` — eleven, including **all eight coreutils stubs**, which go through `getopt_long` without exception, plus `git`, whose subcommands' options abbreviate the same way — though its top-level ones do not, since real git refuses abbreviation there and the switch is root-only |
-| `Inference.None` (declared, not inherited) | `curl`, `rsync` — both match long options exactly, and both say so rather than inheriting the default silently |
-| `Inference.All` | `task-manager`, the showcase |
+| `Abbreviation.Options` | `chmod`, `cp`, `dd`, `git`, `head`, `ls`, `mkdir`, `mv`, `pacman`, `rm`, `tar` — eleven, including **all eight coreutils stubs**, which go through `getopt_long` without exception, plus `git`, whose subcommands' options abbreviate the same way — though its top-level ones do not, since real git refuses abbreviation there and the switch is root-only |
+| `Abbreviation.None` (declared, not inherited) | `curl`, `rsync` — both match long options exactly, and both say so rather than inheriting the default silently |
+| `Abbreviation.All` | `task-manager`, the showcase |
 | left on the ambient default | `ssh`, `find` |
 
 The last row is exempt for two different reasons, not one:
 
-- **`ssh`** has no long options at all — `ssh --help` itself answers `unknown option -- -` — so inference
+- **`ssh`** has no long options at all — `ssh --help` itself answers `unknown option -- -` — so abbreviation
   would be a no-op on the real tool. The fixture's `--port`, `--login` and the rest are klap's own invented
   spellings for readability, not surface `ssh` has to abbreviate.
 - **`find`** is unverified: the machine this suite was built on runs `bfs`, not GNU findutils, so real GNU

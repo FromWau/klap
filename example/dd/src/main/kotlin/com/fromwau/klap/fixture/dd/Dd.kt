@@ -1,7 +1,7 @@
 package com.fromwau.klap.fixture.dd
 
 import com.fromwau.klap.Err
-import com.fromwau.klap.Inference
+import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Ok
 import com.fromwau.klap.Result
 import com.fromwau.klap.TypedCli
@@ -23,7 +23,7 @@ import com.fromwau.klap.projection
  */
 public fun ddCli(): TypedCli<DdInputs> = cliOf("dd") {
     // dd declares no long option of its own, but real dd still abbreviates klap's injected --help/--version.
-    inference = Inference.Options
+    abbreviation = Abbreviation.Options
     description = "Copy a file, converting and formatting according to the operands"
     version = "9.11"
 
@@ -58,9 +58,12 @@ public fun ddCli(): TypedCli<DdInputs> = cliOf("dd") {
         }
 
     // KLAP-GAP: klap accepts built-ins that real dd rejects as operands (`--json`, `--color`, `--help-all`,
-    // `--completion`, `--docs`); `builtins { }` can decline all but `--help`/`--help-all`, but this fixture declines nothing.
+    // `--completion`, `--docs`); `builtins { }` can decline all but `--help`/`--help-all`, but this
+    // fixture declines nothing.
+    // KLAP-GAP: klap has no declarative form for dd's `name=value` operands, so this fixture documents
+    // them in the epilogue instead of declaring them.
     epilogue = """
-        Operands (klap can only document these in prose; see the non-goal note in the source):
+        Operands:
           bs=BYTES      read and write up to BYTES bytes at a time (default: 512); overrides ibs and obs
           cbs=BYTES     convert BYTES bytes at a time
           conv=CONVS    convert the file as per the comma separated symbol list

@@ -23,8 +23,8 @@ private fun greet(): Cli = cli("greet") {
 }
 
 /** A dispatcher with a leaf ("list"), a leaf that takes a value ("show"), and a nested group ("tag"). */
-private fun taggedDispatcher(infer: Inference = Inference.None): Cli = cli("app") {
-    inference = infer
+private fun taggedDispatcher(infer: Abbreviation = Abbreviation.None): Cli = cli("app") {
+    abbreviation = infer
     command("list") { action { Ok("") } }
     command("show") {
         argument("id")
@@ -187,7 +187,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun singleCommandToolNoLongerShadowsPositionalNamedDocs() {
+    fun singleCommandToolDoesNotShadowAPositionalNamedDocs() {
         var seen: List<String>? = null
         val tree = cli("wc") {
             val files = argument("files").multiple(min = 1)
@@ -278,7 +278,7 @@ class BuiltinsTest {
     @Test
     fun colorGivenTwiceResolvesToTheLastOccurrence() {
         // --color follows the documented last-occurrence-wins rule for value options, same as
-        // --completion/--docs; metaOptionValue used to return the FIRST match instead.
+        // --completion/--docs.
         assertEquals(ColorMode.NEVER, listOf("--color=always", "--color=never").colorMode())
         assertEquals(ColorMode.ALWAYS, listOf("--color=never", "--color=always").colorMode())
 
@@ -418,9 +418,8 @@ class BuiltinsTest {
 
     // --- --help/--help-all must not mask a mistyped subcommand ---
     //
-    // Appending --help to a line that names no real subcommand used to print help and exit 0, hiding the
-    // typo. These pin the fix (an unresolved subcommand at a GROUP still errors) and the boundary around it
-    // (a resolved command's own leftover, or an abbreviation, is untouched).
+    // An unresolved subcommand at a GROUP errors even with --help appended; a resolved command's own
+    // leftover, or an abbreviation, is untouched.
 
     @Test
     fun unknownSubcommandWithHelpErrorsIdenticallyToWithoutHelp() {
@@ -468,7 +467,7 @@ class BuiltinsTest {
     fun anAbbreviatedSubcommandPlusHelpShowsThatCommandsHelp() {
         // Must-keep-working: an inferred prefix resolves to a real child during the walk itself, so it never
         // reaches the new unknown-subcommand check at all.
-        val tree = taggedDispatcher(Inference.All)
+        val tree = taggedDispatcher(Abbreviation.All)
         val inv = assertIs<Result.Success<Invocation>>(tree.parse(listOf("li", "--help"))).value
         assertEquals("list", assertIs<Invocation.ShowHelp>(inv).command.name)
     }

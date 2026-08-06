@@ -107,8 +107,8 @@ class ParseResolutionTest {
 
     @Test
     fun suggestRejectsAWhollyDifferentShortToken() {
-        // Regression: a short candidate must not be suggested for a token every character of which is an edit
-        // (a 2-char alias no longer matches an unrelated 2-char word); a single-typo near-miss still fires.
+        // A short candidate is never suggested for a token every character of which is an edit, so a
+        // 2-char alias does not match an unrelated 2-char word; a single-typo near-miss still fires.
         assertEquals(null, suggest("xy", listOf("ls", "rm")))
         assertEquals("ls", suggest("lx", listOf("ls", "rm")))
     }

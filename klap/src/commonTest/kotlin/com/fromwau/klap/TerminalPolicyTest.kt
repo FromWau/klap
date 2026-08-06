@@ -55,7 +55,7 @@ class TerminalPolicyTest {
     }
 
     @Test
-    fun ansi_emptyNoColorNoLongerDisables() {
+    fun ansi_emptyNoColorIsTreatedAsNotSet() {
         // Per the NO_COLOR spec (no-color.org), the variable disables color only when present AND a
         // non-empty string; an empty value must be treated as not-set, so auto still follows the tty.
         assertTrue(ansiEnabled(isTty = true, env = envOf(mapOf("NO_COLOR" to ""))))
@@ -80,13 +80,13 @@ class TerminalPolicyTest {
     @Test
     fun ansi_forcedBranchIgnoresUnsupportedHandle() {
         // On mingw, GetConsoleMode fails whenever stdout is redirected; an explicit force must still win,
-        // since it bypasses the supported() check entirely rather than being gated by it.
-        assertTrue(ansiEnabled(isTty = false, env = envOf(mapOf("FORCE_COLOR" to "1")), supported = { false }))
+        // since it bypasses the supported check entirely rather than being gated by it.
+        assertTrue(ansiEnabled(isTty = false, env = envOf(mapOf("FORCE_COLOR" to "1")), supported = false))
     }
 
     @Test
     fun ansi_autoDetectionRespectsUnsupportedHandle() {
-        assertFalse(ansiEnabled(isTty = true, env = envOf(emptyMap()), supported = { false }))
+        assertFalse(ansiEnabled(isTty = true, env = envOf(emptyMap()), supported = false))
     }
 
     @Test
@@ -130,12 +130,12 @@ class TerminalPolicyTest {
     }
 
     @Test
-    fun colorModeValuePrefixResolvesOnlyUnderInference() {
-        // Unambiguous prefix, inference on: resolves through the same resolveChoice parse() uses.
+    fun colorModeValuePrefixResolvesOnlyUnderAbbreviation() {
+        // Unambiguous prefix, abbreviation on: resolves through the same resolveChoice parse() uses.
         assertEquals(ColorMode.ALWAYS, listOf("--color", "al").colorMode(infer = true))
         // "a" reaches both "auto" and "always"; lenient, so ambiguity falls back to AUTO, never errors.
         assertEquals(ColorMode.AUTO, listOf("--color", "a").colorMode(infer = true))
-        // Inference off: a prefix is just an unrecognized value, so it falls back to AUTO too.
+        // Abbreviation off: a prefix is just an unrecognized value, so it falls back to AUTO too.
         assertEquals(ColorMode.AUTO, listOf("--color", "al").colorMode(infer = false))
         // An exact spelling resolves regardless of the flag.
         assertEquals(ColorMode.ALWAYS, listOf("--color", "always").colorMode(infer = true))
@@ -164,7 +164,7 @@ class TerminalPolicyTest {
         // recompute AUTO from the still-abbreviated raw value, or the one line would bind one mode and paint
         // another.
         val tree = cli("app") {
-            inference = Inference.Options
+            abbreviation = Abbreviation.Options
             command("go") { action { Ok("") } }
         }
         assertIs<Result.Success<Invocation>>(tree.parse(listOf("--color", "al", "--help")))

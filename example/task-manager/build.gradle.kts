@@ -8,7 +8,7 @@ group = "com.fromwau"
 version = libs.versions.klapVersion.get()
 
 kotlin {
-    jvmToolchain(25)
+    jvmToolchain(libs.versions.jdk.get().toInt())
 
     android {
         compileSdk = libs.versions.android.compileSdk.get().toInt()

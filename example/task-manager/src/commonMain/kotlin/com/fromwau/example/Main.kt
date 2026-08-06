@@ -6,7 +6,7 @@ import com.fromwau.klap.ColorScope
 import com.fromwau.klap.CompletionScope
 import com.fromwau.klap.Err
 import com.fromwau.klap.Flag
-import com.fromwau.klap.Inference
+import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Ok
 import com.fromwau.klap.Opt
 import com.fromwau.klap.Style
@@ -34,7 +34,7 @@ fun main(args: Array<String>) {
 internal fun taskManagerCli(): Cli = cli("klapExample") {
     // The showcase opts all the way in: `klapExample lis` reaches `list`, `klapExample list --j` reaches
     // `--json`, and `klapExample add --priority hi` reaches `high` (verified).
-    inference = Inference.All
+    abbreviation = Abbreviation.All
     description = "A tiny file-backed task manager"
     version = "1.0.0"
     author = "The klap example"
@@ -72,6 +72,9 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
     }
 
     command("add", "create a new task") {
+        // Per-command, unlike the root's: `klapExample add --help` closes with this one, never the root's.
+        epilogue = "Repeat --tag to attach several labels; --done records work that is already finished."
+
         val title = argument("title", "what needs doing")
 
         // Plain `val`s, not `lateinit var`s: group's callsInPlace contract makes assigning them inside

@@ -7,22 +7,19 @@ import com.fromwau.klap.internal.spec.Builtin
 /** DSL receiver for the root CLI: a [CommandBuilder] plus root-only settings. */
 @KlapDsl
 public abstract class CliBuilder internal constructor() : CommandBuilder() {
+    /** What `--version` reports. Leaving it null removes the `--version` option altogether. */
     public abstract var version: String?
 
-    /** The tool's author, rendered in `--help`'s footer, the man page's `AUTHOR` section, and generated docs. Root-only. */
+    /** The tool's author, rendered in `--help`'s footer, the man page's `AUTHOR` section, and generated docs. */
     public abstract var author: String?
 
-    /**
-     * How far klap resolves a partially typed name; see [Inference]. Root-only: the ambiguity pool already
-     * spans siblings, so a per-command setting would give one token two meanings depending on which command
-     * was asked.
-     */
-    public abstract var inference: Inference
+    /** How far klap resolves a partially typed name; see [Abbreviation]. */
+    public abstract var abbreviation: Abbreviation
 
     /**
      * A position-independent option shared by every subcommand: recognized before, between, or
      * after the subcommand path, bound once, and readable from any nested `action { }` by closing
-     * over the returned [Opt] as a `val`. Root-only, mirroring [version].
+     * over the returned [Opt] as a `val`.
      *
      * @see [CommandBuilder.option] for how [names] and [help] are read.
      */
@@ -39,15 +36,28 @@ public abstract class CliBuilder internal constructor() : CommandBuilder() {
     public abstract fun builtins(block: BuiltinsBuilder.() -> Unit)
 }
 
-/** Entry point: builds the root [Cli], injecting the built-in completion/docs/__complete subcommands. */
+/**
+ * Builds a CLI named [name] from the declarations in [block]. This is where most tools start.
+ *
+ * ```kotlin
+ * val app = cli("greet") {
+ *     description = "say hello"
+ *     val name = argument("name", "who to greet")
+ *     action { Ok("hello, ${name()}") }
+ * }
+ * ```
+ *
+ * klap adds `--help`, and the `completion` and `docs` built-ins, unless a `builtins { }` block declines
+ * them. Run the result with `main(args)`, or with `run(args, terminal)` when you want the exit code back
+ * instead of a terminated process.
+ */
 public fun cli(name: String, block: CliBuilder.() -> Unit): Cli = build(name, block).first
 
 /**
- * A [Cli] whose parses project into [T], a type of your own made of ordinary values.
+ * A [Cli] whose parses come back as [T], a type of your own made of ordinary values.
  *
- * Where a plain [Cli] (built via [cli]) hands back the declaration handles, which are stateless keys a
- * caller must then read inside some [ValueScope], this has already done that read: [parse] returns [T]
- * itself.
+ * With a plain [Cli] you hold the declaration handles and read them inside a scope. Here that read has
+ * already happened: [parse] hands you [T].
  */
 public class TypedCli<T> internal constructor(
     public val cli: Cli,
@@ -80,8 +90,7 @@ public class TypedCli<T> internal constructor(
 /**
  * [cli], but the block ends in a projection from the parsed values into a type of your own.
  *
- * The projection runs per parse, because that is when values exist at all, and it is the only place the
- * handles are needed. What a caller receives is [T]: plain values, comparable and printable.
+ * The projection runs once per parse, and what you receive is [T]: plain values, comparable and printable.
  *
  * ```kotlin
  * data class HeadArgs(val lines: String?, val quiet: Boolean, val files: List<String>)
@@ -124,12 +133,7 @@ private fun validateEveryExecutableCommandProjects(cli: Cli, readers: Map<Comman
     }
 }
 
-/**
- * How to read one parse into [T]: either a single reader, or a [dispatch] over per-command readers.
- *
- * A wrapper rather than a bare `ValueScope.() -> T` so a block's final `projection { }` reads as a
- * declaration like every line above it, instead of a floating lambda literal.
- */
+/** How to read one parse into [T]: either a single reader, or a [dispatch] over per-command readers. */
 public class Projection<out T> internal constructor(
     internal val read: (ValueScope.() -> T)?,
     internal val parts: List<Projection<T>>,
@@ -163,12 +167,12 @@ public fun <T> projection(read: ValueScope.() -> T): Projection<T> = Projection(
 /**
  * Combines the per-command projections of a tree, so `parse` reads whichever command actually ran.
  *
- * [T] is inferred as the common supertype of the parts, which is what makes a sealed result type the
- * natural shape: `dispatch(commit, status)` over `Projection<Commit>` and `Projection<Status>` yields a
- * `Projection<GitArgs>`, and the caller's `when` over it is exhaustive.
+ * [T] comes out as the common supertype of the parts, so a sealed result type fits naturally:
+ * `dispatch(commit, status)` over `Projection<Commit>` and `Projection<Status>` gives a `Projection<GitArgs>`
+ * your `when` can cover exhaustively.
  *
- * Nesting is flat at the end: a part that is itself a `dispatch` contributes its leaves, because a parse
- * resolves to a leaf command and that is what the reader is keyed by.
+ * Nesting flattens: a part that is itself a `dispatch` contributes its leaves, since a line resolves to one
+ * leaf command.
  */
 public fun <T> dispatch(vararg parts: Projection<T>): Projection<T> = Projection(null, parts.toList())
 
@@ -209,7 +213,7 @@ private fun <T> build(name: String, block: CliBuilder.() -> T): Pair<Cli, T> {
         globalSpecs = builder.builtGlobals(),
         display = base.display,
         builtins = builtins,
-        inference = builder.inference,
+        abbreviation = builder.abbreviation,
         optionsEndAtFirstOperand = base.optionsEndAtFirstOperand,
     ) to handles
 }

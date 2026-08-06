@@ -139,8 +139,8 @@ class ConditionalOperandTest {
 
     @Test
     fun aTriggerThatLostItsOverrideSetLeavesTheMinimumStanding() {
-        // The same shape as the removed slot above: `rm -f -i` with no operand used to exit 0 while
-        // force() read false, so the parse accepted a line neither reading of it allows.
+        // The same shape as the removed slot above: relaxing the minimum here would accept `rm -f -i`
+        // with no operand while force() reads false, a line neither reading of it allows.
         val err = assertIs<Result.Error<CliError>>(rmLikeWithOverride().parse(listOf("-f", "-i"))).error
         assertEquals(CliError.MissingArgument("rm", "file"), err)
     }

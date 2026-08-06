@@ -8,7 +8,7 @@ how to add it; start at [`example/`](../example/README.md) for runnable programs
 | [Quick start](#quick-start) | the builder DSL, the three receivers, sharing a declaration |
 | [Inputs and converters](#inputs-and-converters) | spellings, dash-led values, numbers, dependent and optional-value operands |
 | [Flags](#flags-boolean-counted-negatable) | boolean, counted, negatable |
-| [Inference](#inference) | prefix abbreviation modes, git's rationale, choosing a mode |
+| [Abbreviation](#abbreviation) | how far a partially typed name resolves, git's rationale, choosing a mode |
 | [Cross-input constraints](#cross-input-constraints) | `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `requiredIf` |
 | [Global / persistent options](#global--persistent-options) | options shared by every subcommand, and declining a built-in |
 | [Typed results and errors](#typed-results-and-errors) | `Result`, `CliError`, exit codes, did-you-mean |
@@ -64,7 +64,7 @@ Those receivers have names, and you will want them the first time you factor a d
 | Receiver | Where it is the receiver | What it carries |
 |---|---|---|
 | `CommandBuilder` | `command(name) { }` | `argument`, `option`, `flag`, `command`, `group`, `example`, `action`; the cross-input rules `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `numericAlias`; the per-command settings `description`, `aliases`, `epilogue`, `hidden`, `optionsEndAtFirstOperand` |
-| `CliBuilder` | `cli(name) { }` | everything on `CommandBuilder`, plus the root-only `globalOption`, `globalFlag`, `version`, `author`, `inference`, `builtins { }` |
+| `CliBuilder` | `cli(name) { }` | everything on `CommandBuilder`, plus the root-only `globalOption`, `globalFlag`, `version`, `author`, `abbreviation`, `builtins { }` |
 | `ConverterScope` | the base of both | every converter: `.int()`, `.map()`, `.default()`, `.range()`, `.count()`, `.negatable()`, `.absentWhen()`, `.completeWith()`, ... |
 
 `CliBuilder` extends `CommandBuilder`, which extends `ConverterScope`, so a root block can call
@@ -426,24 +426,24 @@ A single-value option can be given more than once; the last occurrence silently 
 an explicit empty string (`""`), which is distinct from omitting the option entirely, which leaves it at
 its default or `null`.
 
-## Inference
+## Abbreviation
 
-**A partially typed name resolves only when you ask for it.** By default nothing infers: every long
+**A partially typed name resolves only when you ask for it.** By default nothing abbreviates: every long
 option, subcommand and choice value must be spelled in full, and a miss suggests the nearest spelling.
-One root-level switch turns inference on for the whole tree:
+One root-level switch turns abbreviation on for the whole tree:
 
 ```kotlin
 cli("tasks") {
-    inference = Inference.All
+    abbreviation = Abbreviation.All
     ...
 }
 ```
 
 | Mode | Long options | `.choice()` / `.enum<E>()` values | Subcommands |
 |---|---|---|---|
-| `Inference.None` (default) | no | no | no |
-| `Inference.Options` | yes | yes | no |
-| `Inference.All` | yes | yes | yes |
+| `Abbreviation.None` (default) | no | no | no |
+| `Abbreviation.Options` | yes | yes | no |
+| `Abbreviation.All` | yes | yes | yes |
 
 `Options` is the GNU shape, and a name and its value travel together there: `mkdir --par d` reaches
 `--parents`, `--no-der` reaches a negatable flag's negative half, and `ls --color=al` reaches `always`
@@ -451,7 +451,7 @@ the same way. `All` adds what `ip` does (`ip a` for `ip address`).
 
 **`Options` is a superset of what klap had before this switch existed:** its long-option abbreviation is
 the direct replacement, but its `.choice()` / `.enum<E>()` value abbreviation is new behaviour, so an
-author reaching for `Options` purely to restore the old long-option handling gets the value inference too.
+author reaching for `Options` purely to restore the old long-option handling gets the value abbreviation too.
 
 `git` is the reason the middle mode exists. It abbreviates the options of a subcommand — `git branch --f`
 answers *ambiguous option: f (could be --force or --format)* — while refusing `git stat`, because its
@@ -462,7 +462,7 @@ extensible subcommand set wants that same shape.
 Root-only, with no per-command override: the ambiguity pool already spans siblings, so a per-command
 setting would give one token two meanings depending on which command you asked.
 
-**Wherever inference is on, an exact spelling always wins outright**, so a pool holding both `--sort` and
+**Wherever abbreviation is on, an exact spelling always wins outright**, so a pool holding both `--sort` and
 `--sort-by` keeps the shorter one reachable, and `list` stays reachable beside `listen`. A prefix that
 reaches more than one spelling is a usage error naming every possibility, in GNU's own wording:
 
@@ -483,7 +483,7 @@ narrower than the one a rejected token is checked against.
 **Shorts never abbreviate, in any mode.** A one-dash token is a cluster of one-character options
 (`-jso` is `-j -s -o`), so there is nothing to abbreviate.
 
-**Inference and did-you-mean are complementary, and did-you-mean is always on.** Inference rescues
+**Abbreviation and did-you-mean are complementary, and did-you-mean is always on.** Abbreviation rescues
 prefixes; suggestion also rescues transpositions (`lsit` → `list`) that are no prefix of anything. A
 prefix that reaches exactly one spelling is always suggested even when it is far too short for the
 edit-distance rule, so `--h` on a strict CLI still answers *Did you mean --help?*.
@@ -1039,11 +1039,14 @@ cli("deploy") {
 add usage examples and a closing paragraph; `.hidden()` (or `hidden = true` on a command) keeps
 something out of help while it still parses. `author` (root-only, like `version`) adds an `Author:`
 footer to the root's `--help` and an `AUTHOR` section to the generated man page and markdown docs. Descriptions wrap to the terminal width (`COLUMNS`, else the
-detected terminal width, else 80). Headings and usage follow the same color resolution as `action { }`'s
-own output (see [Color output](#color-output)): `NO_COLOR` (present and non-empty) disables color,
-`FORCE_COLOR` / `CLICOLOR_FORCE` force it on (even off a TTY), `CLICOLOR=0` or `TERM=dumb` disables it,
-and otherwise it follows whether stdout is a real TTY, all of which `--color=always` / `--color=never`
-override.
+detected terminal width, else 80); the JVM and Android targets have no width detection, since the JDK
+exposes no such API, so they wrap at `COLUMNS` or 80. Headings and usage follow the same color resolution
+as `action { }`'s own output (see [Color output](#color-output)): `NO_COLOR` (present and non-empty)
+disables color, `FORCE_COLOR` / `CLICOLOR_FORCE` force it on (even off a TTY), `CLICOLOR=0` or
+`TERM=dumb` disables it, and otherwise it follows whether stdout is a real TTY, all of which
+`--color=always` / `--color=never` override. On the JVM and Android that last check is coarser than it
+sounds: the only probe the JDK offers covers stdin and stdout together, so a piped stdin reads as
+"not a TTY" even when stdout is one. The native targets test stdout alone.
 
 `--help` is shallow: a command's own args/options plus its immediate subcommands, one line of description
 each, the standard drill-down shape. For a bird's-eye view, the built-in `--help-all` renders the current
@@ -1408,7 +1411,7 @@ both halves. See [Options whose value is optional](#options-whose-value-is-optio
 The rest of what klap adds is outside the guidelines' model rather than against it, so a conforming line
 has no token for any of it to reach: long options, their `--config=value` spellings, and — where a tree
 opts in — their unambiguous prefixes (guideline 3 makes an option name one character, so `--`-led names
-lie outside it entirely, which is also why no [`inference`](#inference) mode is
+lie outside it entirely, which is also why no [`abbreviation`](#abbreviation) mode is
 more or less conformant than another),
 reading an option after an operand, repeated occurrences, a non-alphanumeric or digit short, and a
 negatable flag's negative half however it is spelled: the guidelines describe no negation at all, so both

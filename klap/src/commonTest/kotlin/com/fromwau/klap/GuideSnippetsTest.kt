@@ -7,25 +7,25 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 
 /**
- * The guide's inference snippets, transcribed and executed. `docs/guide.md`'s abbreviation section makes
- * specific claims about what each `Inference` mode resolves and what a miss suggests; these pin those
+ * The guide's abbreviation snippets, transcribed and executed. `docs/guide.md`'s abbreviation section makes
+ * specific claims about what each `Abbreviation` mode resolves and what a miss suggests; these pin those
  * claims against the real parser so a change that breaks one shows up here, not only in prose.
  */
 class GuideSnippetsTest {
 
-    // --- "Flags: boolean, counted, negatable": the inference table's own worked example ---
+    // --- "Flags: boolean, counted, negatable": the abbreviation table's own worked example ---
 
-    private fun guideInferenceExample() = cli("tasks") {
-        inference = Inference.All
+    private fun guideAbbreviationExample() = cli("tasks") {
+        abbreviation = Abbreviation.All
         command("list") { action<String>(human = { it }) { Ok("list") } }
         command("listen") { action<String>(human = { it }) { Ok("listen") } }
     }
 
     @Test
-    fun theGuidesInferenceTableIsWhatTheModesDo() {
+    fun theGuidesAbbreviationTableIsWhatTheModesDo() {
         // The guide's table claims All resolves a subcommand prefix and that exact still wins outright.
-        assertEquals("listen", guideInferenceExample().bindText("liste"))
-        assertEquals("list", guideInferenceExample().bindText("list"))
+        assertEquals("listen", guideAbbreviationExample().bindText("liste"))
+        assertEquals("list", guideAbbreviationExample().bindText("list"))
     }
 
     @Test

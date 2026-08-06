@@ -222,29 +222,32 @@ internal fun validateDuplicateOptionFlagNames(name: String, specs: List<HolderSp
     }
 }
 
+/** Every rule over one level's `command(...)` declarations, checked once the sibling list is complete. */
+internal fun validateSubcommands(name: String, subs: List<Command>) {
+    requireDistinctSubcommandNames(name, subs)
+    requireWellFormedAliases(name, subs)
+    requireNoAliasCollisions(name, subs)
+    subs.forEach { requireUnreservedSectionTitle(name, "subcommand '${it.name}'", it.section) }
+}
+
 /**
- * Two direct subcommands resolving to the same token: [Command.subcommand] matches by first hit, so a
- * repeated name, or an alias colliding with a sibling's name or another sibling's alias, leaves every
- * later claimant permanently unreachable while `--help` still lists it. Scoped to THIS level's own
- * `command(...)` declarations only ([subs]); [com.fromwau.klap.cli] injects completion/docs/__complete
- * into the tree AFTER this build() returns, so they can never trip this check.
- *
- * Also rejects a subcommand placed under a `group(...)` heading equal to a section `--help` emits itself
- * ([RESERVED_SECTIONS]), which would otherwise render a duplicate heading (see [requireUnreservedSectionTitle]).
- *
- * Also runs every alias through [requireValidName], the same well-formedness check `BuilderImpl`'s init
- * already runs on the command's own name: an alias is just as much an invocation token as the name, so a
- * blank, whitespace-containing, or dash-prefixed alias must fail loudly here instead of building fine and
- * then being unreachable or indistinguishable from an option token on the command line.
+ * [Command.subcommand] matches by first hit, so a repeated name leaves the later claimant permanently
+ * unreachable while `--help` still lists it.
  */
-internal fun validateDuplicateSubcommands(name: String, subs: List<Command>) {
-    val duplicateName = subs.map { it.name }.firstDuplicate()
-    require(duplicateName == null) {
-        "command '$name': two subcommands are named '$duplicateName'"
+private fun requireDistinctSubcommandNames(name: String, subs: List<Command>) {
+    val duplicate = subs.map { it.name }.firstDuplicate()
+    require(duplicate == null) {
+        "command '$name': two subcommands are named '$duplicate'"
     }
-    // Two self-collisions a sibling-vs-sibling walk below can't see, since it only ever compares
-    // DIFFERENT subcommands' names/aliases against each other: an alias equal to its own command's
-    // name (renders "foo, foo"), and a repeated alias within one command's own list ("foo, x, x").
+}
+
+/**
+ * The two self-collisions a sibling-vs-sibling walk cannot see, since it only ever compares DIFFERENT
+ * subcommands: an alias equal to its own command's name (renders "foo, foo"), and a repeated alias within
+ * one command's own list ("foo, x, x"). Aliases also face [requireValidName], the check a command's own name
+ * already gets, since an alias is just as much an invocation token.
+ */
+private fun requireWellFormedAliases(name: String, subs: List<Command>) {
     for (sub in subs) {
         require(sub.name !in sub.aliases) {
             "command '$name': subcommand '${sub.name}' has an alias equal to its own name"
@@ -253,13 +256,15 @@ internal fun validateDuplicateSubcommands(name: String, subs: List<Command>) {
         require(duplicateAlias == null) {
             "command '$name': subcommand '${sub.name}' repeats alias '$duplicateAlias'"
         }
-        for (alias in sub.aliases) {
-            requireValidName("alias", alias)
-        }
+        sub.aliases.forEach { requireValidName("alias", it) }
     }
-    // Seeded with each subcommand's own name so an alias colliding with a DIFFERENT sibling's own
-    // name is caught below; a self-collision (alias == own name) is already rejected above, so it
-    // never reaches this map. Names are already known-distinct at this point (checked above).
+}
+
+/**
+ * An alias colliding with a DIFFERENT sibling's name or alias. Seeded with every subcommand's own name;
+ * a self-collision is already rejected by [requireWellFormedAliases], so it never reaches this map.
+ */
+private fun requireNoAliasCollisions(name: String, subs: List<Command>) {
     val claimedBy = subs.associateTo(mutableMapOf()) { it.name to it.name }
     for (sub in subs) {
         for (alias in sub.aliases.distinct()) {
@@ -269,9 +274,6 @@ internal fun validateDuplicateSubcommands(name: String, subs: List<Command>) {
             }
             claimedBy[alias] = sub.name
         }
-    }
-    for (sub in subs) {
-        requireUnreservedSectionTitle(name, "subcommand '${sub.name}'", sub.section)
     }
 }
 
@@ -462,7 +464,7 @@ internal fun validateSectionTitles(name: String, specs: List<HolderSpec>) {
 /**
  * A `group(...)` title equal to a heading `--help` emits on its own ([RESERVED_SECTIONS]) renders a second,
  * duplicate heading in the output. [title] is null for the untitled default block, which is always allowed.
- * Shared by [validateReservedNames] (option/flag sections) and [validateDuplicateSubcommands] (subcommand sections).
+ * Shared by [validateReservedNames] (option/flag sections) and [validateSubcommands] (subcommand sections).
  */
 private fun requireUnreservedSectionTitle(commandName: String, owner: String, title: String?) {
     require(title !in RESERVED_SECTIONS) {

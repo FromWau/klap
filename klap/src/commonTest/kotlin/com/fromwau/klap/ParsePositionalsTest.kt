@@ -284,7 +284,7 @@ class NonLastVariadicTest {
     }
 
     @Test
-    fun aVariadicThatIsStillLastIsUnchanged() {
+    fun aTrailingVariadicTakesEveryOperandAndAllowsNone() {
         val tree = cli("app") {
             val files = argument("file").multiple(min = 0)
             action { Ok(files().toString()) }

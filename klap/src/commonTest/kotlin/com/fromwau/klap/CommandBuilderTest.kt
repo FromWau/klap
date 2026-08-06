@@ -61,6 +61,11 @@ class CommandBuilderTest {
         assertTrue("root" in ex.message.orEmpty(), ex.message)
         assertTrue("aliases" in ex.message.orEmpty(), ex.message)
     }
+}
+
+/** The order rules over one command's positional slots, enforced when the command is built. */
+class PositionalDeclarationOrderTest {
+
 
     @Test
     fun aVariadicMayBeFollowedByRequiredPositionals() {
@@ -109,6 +114,11 @@ class CommandBuilderTest {
             ex.message,
         )
     }
+}
+
+/** A negatable flag's generated negative half is a declaration too, so it collides like any other name. */
+class NegatableFlagDeclarationTest {
+
 
     @Test
     fun negatableFlagCollidingWithDeclaredNameFailsAtBuild() {
@@ -156,6 +166,11 @@ class CommandBuilderTest {
             }
         }
     }
+}
+
+/** A global and a local input may not claim the same spelling, in either declaration order. */
+class GlobalAndLocalNameCollisionTest {
+
 
     @Test
     fun negatableGlobalFlagCollidingWithSubcommandLocalFailsAtBuild() {
@@ -250,6 +265,11 @@ class CommandBuilderTest {
         }
         assertTrue(cmd.isGroup)
     }
+}
+
+/** Hiding removes a positional from help, so one the user must supply would have no way to be found. */
+class HiddenPositionalTest {
+
 
     @Test
     fun hiddenRequiredPositionalFailsAtBuild() {
@@ -290,6 +310,11 @@ class CommandBuilderTest {
         }
         assertTrue(cmd.arguments.single().name == "files")
     }
+}
+
+/** The names klap injects for its own built-ins, which an app may not redeclare. */
+class ReservedNameTest {
+
 
     @Test
     fun optionNamedJsonFailsAtBuild() {
@@ -379,6 +404,11 @@ class CommandBuilderTest {
         }
         assertEquals("docs", cmd.subcommand("outer")?.subcommand("docs")?.name)
     }
+}
+
+/** Which single characters may be a short, and how one is recognized on the line. */
+class ShortNameSpellingTest {
+
 
     @Test
     fun aDigitOrDotShortBuildsAndIsRecognizedAsASpelling() {
@@ -423,6 +453,11 @@ class CommandBuilderTest {
         }
         assertEquals("x", cmd.name)
     }
+}
+
+/** One spelling, declared twice at the same level. */
+class DuplicateDeclarationTest {
+
 
     @Test
     fun duplicateSubcommandNameFailsAtBuild() {
@@ -481,6 +516,11 @@ class CommandBuilderTest {
             }
         }
     }
+}
+
+/** What a subcommand alias may spell, and what it may not collide with. */
+class SubcommandAliasTest {
+
 
     @Test
     fun subcommandAliasCollidesWithSiblingNameFailsAtBuild() {
@@ -631,8 +671,10 @@ class CommandBuilderTest {
             }
         }
     }
+}
 
-    // --- construction-time validation of command names ---
+/** Construction-time validation of command names. */
+class CommandNameValidationTest {
 
     @Test
     fun blankSubcommandNameFailsAtBuild() {
@@ -679,8 +721,10 @@ class CommandBuilderTest {
         assertEquals("build", cmd.subcommand("build")?.name)
         assertEquals("weird.name", cmd.subcommand("weird.name")?.name)
     }
+}
 
-    // --- construction-time validation of option/flag/argument names ---
+/** Construction-time validation of option, flag and argument names. */
+class InputNameValidationTest {
 
     @Test
     fun optionWithEmptyLongNameFailsAtConstruction() {
@@ -758,8 +802,10 @@ class CommandBuilderTest {
         assertEquals("--name", cmd.options.single().name)
         assertEquals("--verbose", cmd.flags.single().name)
     }
+}
 
-    // --- reject a local option/flag on a command with no action to read it ---
+/** A command with no action can read nothing, so a local option, flag or positional on one is rejected. */
+class ActionlessCommandInputTest {
 
     @Test
     fun actionlessRootWithLocalOptionFailsAtBuild() {
@@ -862,8 +908,10 @@ class CommandBuilderTest {
         }
         assertTrue(cmd.isGroup)
     }
+}
 
-    // --- reject a group title that collides with a reserved section heading ---
+/** A group title may not collide with a heading klap's own help already uses. */
+class ReservedSectionTitleTest {
 
     @Test
     fun groupTitleCollidingWithReservedSectionFailsAtBuild() {

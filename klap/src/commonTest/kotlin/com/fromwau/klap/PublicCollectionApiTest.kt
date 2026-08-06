@@ -27,8 +27,7 @@ class PublicCollectionApiTest {
         val expected = Ok(Args(lines = "20", files = listOf("f")))
         // A List, the usual case.
         assertEquals(expected, greet().parse(listOf("-n", "20", "f")))
-        // A Set, which used to need a .toList() at the call site. `setOf` is a LinkedHashSet, so the
-        // insertion order argv depends on is preserved.
+        // A Set. `setOf` is a LinkedHashSet, so the insertion order argv depends on is preserved.
         assertEquals(expected, greet().parse(setOf("-n", "20", "f")))
         // An ArrayDeque, to show it is the interface that is accepted and not two blessed implementations.
         assertEquals(expected, greet().parse(ArrayDeque(listOf("-n", "20", "f"))))

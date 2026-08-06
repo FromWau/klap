@@ -53,7 +53,7 @@ private fun ValueSpec.andThenConvert(typeChanging: Boolean = false, next: (Strin
     val converted = next(declaredDefault.value as String)
     require(converted is Result.Success) {
         "$label '$name': default value '${declaredDefault.value}' is invalid: " +
-            "${(converted as Result.Error).error}"
+                (converted as Result.Error).error
     }
     cardinality = Cardinality.Default(converted.value)
 }
@@ -179,40 +179,46 @@ internal fun <E : Enum<E>> ValueSpec.applyEnum(enumName: String?, values: Array<
 }
 
 /**
- * Build-time scope of every holder transformer: converters, cardinality, validation, and help hints,
- * as member-extensions so they only compile inside a builder block ([CommandBuilder] extends this).
- * They mutate the shared [com.fromwau.klap.internal.spec.HolderSpec] in place, which is only
- * legitimate while the tree is still being built — scoping them here makes a post-build mutation
- * (through a leaked [Arg]/[Opt]/[Flag] handle) a compile error instead of a data race, mirroring how
- * [ActionScope] scopes the read side.
+ * Everything you can chain onto a declaration: type converters, how many values it takes, validation, and
+ * how it looks in help.
  *
- * The internal constructor means consumers can never conjure a scope of their own.
+ * ```kotlin
+ * val port = option("--port", "-p").int().range(1..65535).default(8080)
+ * ```
+ *
+ * These only compile inside a builder block, so a handle you kept hold of cannot be reshaped after the CLI
+ * is built.
  */
 @KlapDsl
 public abstract class ConverterScope internal constructor() {
 
     // --- Arg type converters ---
 
+    /** Parses this operand as an `Int`; anything else fails as an invalid value before your action runs. */
     public fun Arg<String>.int(): Arg<Int> {
         spec.andThenConvert(true, numeric("not an integer") { it.toIntOrNull() })
         return Arg(spec)
     }
 
+    /** Parses this operand as a `Long`; anything else fails as an invalid value before your action runs. */
     public fun Arg<String>.long(): Arg<Long> {
         spec.andThenConvert(true, numeric("not a long") { it.toLongOrNull() })
         return Arg(spec)
     }
 
+    /** Parses this operand as a `Double`; anything else fails as an invalid value before your action runs. */
     public fun Arg<String>.double(): Arg<Double> {
         spec.andThenConvert(true, numeric("not a number") { it.toDoubleOrNull() })
         return Arg(spec)
     }
 
+    /** Parses this operand as `true` or `false`; any other spelling is an invalid value. */
     public fun Arg<String>.boolean(): Arg<Boolean> {
         spec.andThenConvert(true, numeric("not a boolean (true/false)") { it.toBooleanStrictOrNull() })
         return Arg(spec)
     }
 
+    /** Parses this operand as one of [E]'s entries, matched case-insensitively and listed in `--help`. */
     public inline fun <reified E : Enum<E>> Arg<String>.enum(): Arg<E> {
         spec.applyEnum(E::class.simpleName, enumValues<E>())
         return Arg(spec)
@@ -224,6 +230,7 @@ public abstract class ConverterScope internal constructor() {
         return Arg(spec)
     }
 
+    /** Converts the raw string yourself, returning `Ok(value)` or `Err(message)` to control the error text. */
     public fun <T> Arg<String>.convert(transform: (String) -> Result<T, String>): Arg<T> {
         spec.andThenConvert(next = transform)
         return Arg(spec)
@@ -241,6 +248,7 @@ public abstract class ConverterScope internal constructor() {
 
     // --- Arg cardinality / hints ---
 
+    /** Lets this operand be left out; the accessor widens to nullable and reads null when it is. */
     public fun <T> Arg<T>.optional(): Arg<T?> {
         // Enforces at build time the no-combine invariant the type system cannot express for Arg (unlike Opt).
         require(spec.cardinality !is Cardinality.Multiple) {
@@ -264,11 +272,9 @@ public abstract class ConverterScope internal constructor() {
     }
 
     /**
-     * Optional/nullable [Arg] (e.g. after [optional], or a nullable [map]) plus a non-null default: narrows
-     * the accessor to non-null, same as [Opt]'s narrowing overload. Absence AND a converter that resolves to
-     * null both fall back to [value]. `@JvmName` because generics erase on the JVM, so this and the non-null
-     * overload above would compile to the same descriptor (a platform-declaration clash); it is inert on
-     * other targets.
+     * The nullable counterpart, for an [Arg] made optional by [optional] or a nullable [map]: the accessor
+     * narrows back to non-null, and both an absent operand and a converter that yields null fall back to
+     * [value].
      */
     @JvmName("defaultOptionalNarrowing")
     public fun <T : Any> Arg<T?>.default(value: T): Arg<T> {
@@ -280,6 +286,7 @@ public abstract class ConverterScope internal constructor() {
         return Arg(spec)
     }
 
+    /** Takes every remaining operand rather than one, requiring at least [min] of them. */
     public fun <T> Arg<T>.multiple(min: Int = 0): Arg<List<T>> {
         // Enforces at build time the no-combine invariant the type system cannot express for Arg (unlike Opt).
         require(spec.cardinality !is Cardinality.Default && spec.cardinality !is Cardinality.Optional) {
@@ -312,8 +319,7 @@ public abstract class ConverterScope internal constructor() {
     /**
      * Drops this operand's declared minimum to zero when [input] is supplied: `rm` errors with no operand
      * and `rm -f` exits 0 with none. The slot itself stays, so nothing shifts position; only the count
-     * rule relaxes. Only a `.multiple()` slot carries a minimum to relax, so this pairs with that one
-     * cardinality and is rejected on any other.
+     * rule relaxes. Only a `.multiple()` operand has a minimum to relax, so this is rejected on any other.
      */
     public fun <T> Arg<T>.requiredUnless(input: Input): Arg<T> {
         spec.relaxedWhen = input.holderSpec()
@@ -355,11 +361,17 @@ public abstract class ConverterScope internal constructor() {
     }
 
     /**
-     * Registers a runtime provider for tab-completion candidates (branch names, file lists, ...), served via
-     * the hidden `__complete` builtin since a static shell script cannot call back into Kotlin. The provider
-     * calls `candidate(value, description?)` (or `candidates(values)`) on its [CompletionScope] receiver.
-     * Candidates are prefix-filtered by the current word by default; pass `filterByPrefix = false` for fuzzy
-     * matching, doing your own filtering against `current`.
+     * Supplies tab-completion candidates for this value at the moment the user presses Tab, so they can be
+     * anything your program can compute: branch names, task ids, rows from a file.
+     *
+     * ```kotlin
+     * argument("branch").completeWith { branches().forEach { candidate(it) } }
+     * ```
+     *
+     * Call `candidate(value, description)` or `candidates(values)` on the [CompletionScope] receiver.
+     *
+     * @param filterByPrefix keeps only the candidates starting with the word being typed. Pass `false` to
+     *   match some other way, filtering against `current` yourself.
      */
     public fun <T> Arg<T>.completeWith(filterByPrefix: Boolean = true, provider: CompletionScope.() -> Unit): Arg<T> {
         spec.complete = provider
@@ -369,16 +381,19 @@ public abstract class ConverterScope internal constructor() {
 
     // --- Opt converters ---
 
+    /** Parses this option's value as an `Int`; anything else fails as an invalid value. */
     public fun Opt<String?>.int(): Opt<Int?> {
         spec.andThenConvert(true, numeric("not an integer") { it.toIntOrNull() })
         return Opt(spec)
     }
 
+    /** Parses this option's value as a `Long`; anything else fails as an invalid value. */
     public fun Opt<String?>.long(): Opt<Long?> {
         spec.andThenConvert(true, numeric("not a long") { it.toLongOrNull() })
         return Opt(spec)
     }
 
+    /** Parses this option's value as a `Double`; anything else fails as an invalid value. */
     public fun Opt<String?>.double(): Opt<Double?> {
         spec.andThenConvert(true, numeric("not a number") { it.toDoubleOrNull() })
         return Opt(spec)
@@ -390,16 +405,19 @@ public abstract class ConverterScope internal constructor() {
         return Opt(spec)
     }
 
+    /** Parses this option's value as `true` or `false`; any other spelling is an invalid value. */
     public fun Opt<String?>.boolean(): Opt<Boolean?> {
         spec.andThenConvert(true, numeric("not a boolean (true/false)") { it.toBooleanStrictOrNull() })
         return Opt(spec)
     }
 
+    /** Parses this option's value as one of [E]'s entries, matched case-insensitively and listed in `--help`. */
     public inline fun <reified E : Enum<E>> Opt<String?>.enum(): Opt<E?> {
         spec.applyEnum(E::class.simpleName, enumValues<E>())
         return Opt(spec)
     }
 
+    /** Converts the raw string yourself, returning `Ok(value)` or `Err(message)` to control the error text. */
     public fun <T> Opt<String?>.convert(transform: (String) -> Result<T, String>): Opt<T?> {
         spec.andThenConvert(next = transform)
         return Opt(spec)
@@ -414,6 +432,7 @@ public abstract class ConverterScope internal constructor() {
         return Opt(spec)
     }
 
+    /** Makes this option mandatory: leaving it out is a usage error, and the accessor narrows to non-null. */
     public fun <T> Opt<T?>.required(): Opt<T> {
         // Opt's narrowing return types normally block a bad chain (.multiple()/.default() are not declared
         // on the Opt<T> this returns), but aliasing one pre-narrowed Opt<T?> into two cardinality calls
@@ -427,16 +446,14 @@ public abstract class ConverterScope internal constructor() {
     }
 
     /**
-     * Requires this option only when [flag] was given: `option("--token").requiredIf(remote)` is optional
-     * on its own and a usage error alongside `--remote`. Checked after binding, so the condition reads
-     * what the user actually supplied.
+     * Requires this option only when [flag] was given: `option("--token").requiredIf(remote)` is optional on
+     * its own and a usage error alongside `--remote`. The rule reads what your user actually typed.
      *
-     * Takes a [Flag] handle rather than a `() -> Boolean`, for the same reason [requireExactlyOne] takes
-     * handles: a handle is inspectable, so `--help` can render `(required when --remote)` and the reader
-     * learns the rule without running into it. A lambda could never say that.
+     * Because it takes the [Flag] handle rather than a condition of your own, `--help` can state the rule as
+     * `(required when --remote)` instead of leaving it to be discovered by hitting it.
      *
-     * The accessor stays nullable — the option genuinely binds null whenever [flag] is absent, and
-     * narrowing it would be a lie in exactly the case the rule permits.
+     * The accessor stays nullable, since the option really does bind null on every line where [flag] is
+     * absent.
      */
     public fun <T> Opt<T>.requiredIf(flag: Flag): Opt<T> {
         require(spec.cardinality !is Cardinality.Required) {
@@ -460,9 +477,9 @@ public abstract class ConverterScope internal constructor() {
      *
      * [whenBare] is a RAW value: it runs through this option's own converter and validation, so
      * `.optionalValue("0").int()` binds the Int `0`. When a choice set is already declared (`.choice()` or
-     * `.enum<E>()`), [whenBare] must be one of it — checked here at construction, not at parse, matching
-     * case-insensitively like the choice set itself; the same check runs in the other declaration order,
-     * when `.choice()`/`.enum<E>()` follows an existing `.optionalValue()`.
+     * `.enum<E>()`), [whenBare] must be one of them. That is rejected when the CLI is built rather than
+     * when someone types it, matched case-insensitively like the choice set itself, and it holds in either
+     * declaration order.
      */
     public fun <T> Opt<T>.optionalValue(whenBare: String): Opt<T> {
         require(whenBare.isNotBlank()) {
@@ -478,9 +495,8 @@ public abstract class ConverterScope internal constructor() {
     }
 
     /**
-     * Non-null default: the accessor stays narrowed to non-null. Absence AND a converter that resolves
-     * to null (e.g. a `.map { it.toIntOrNull() }` on bad input) both fall back to [value]; see
-     * [bindFlagsAndOptions]'s "?: default" bind.
+     * Gives this option a value for when it is absent, and keeps the accessor non-null. A converter that
+     * yields null (a `.map { it.toIntOrNull() }` on bad input, say) falls back to [value] too.
      */
     public fun <T : Any> Opt<T?>.default(value: T): Opt<T> {
         // Same aliasing hole as .required(): a sibling wrapper over the same shared spec may have already
@@ -547,11 +563,11 @@ public abstract class ConverterScope internal constructor() {
     }
 
     /**
-     * Registers a runtime provider for tab-completion candidates (branch names, file lists, ...), served via
-     * the hidden `__complete` builtin since a static shell script cannot call back into Kotlin. The provider
-     * calls `candidate(value, description?)` (or `candidates(values)`) on its [CompletionScope] receiver.
-     * Candidates are prefix-filtered by the current word by default; pass `filterByPrefix = false` for fuzzy
-     * matching, doing your own filtering against `current`.
+     * The option's counterpart of [Arg.completeWith]: supplies this option's tab-completion candidates when
+     * the user presses Tab, computed there and then.
+     *
+     * @param filterByPrefix keeps only the candidates starting with the word being typed. Pass `false` to
+     *   match some other way, filtering against `current` yourself.
      */
     public fun <T> Opt<T>.completeWith(filterByPrefix: Boolean = true, provider: CompletionScope.() -> Unit): Opt<T> {
         spec.complete = provider
@@ -587,10 +603,9 @@ public abstract class ConverterScope internal constructor() {
      * short can turn the flag off (`cp -L`/`-P`, `ssh -A`/`-a`) and an asymmetric pair keeps both real
      * names (`git --paginate`/`--no-pager`).
      *
-     * The explicit list REPLACES the generated form rather than adding to it: a tool that spells its
-     * negative half differently also rejects the generated one, and answering to both would make klap
-     * looser than the tool it models. Write the generated spelling out when you want it kept, as
-     * `.negatable("--no-dereference", "-P")` does.
+     * The list REPLACES the generated form rather than adding to it, so `--no-<long>` stops being
+     * recognized. Write it out yourself when you want it kept, as `.negatable("--no-dereference", "-P")`
+     * does.
      *
      * Each spelling carries its own dashes and is validated exactly like a positive one, and none of them
      * may collide with a declared option/flag spelling or with another flag's negation.

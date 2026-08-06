@@ -211,7 +211,7 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
     // later positionals but has no notion of a mid-stream sentinel, so the closest expressible thing
     // is one word per occurrence with no terminator: `-exec rm -rf {} ;` becomes
     // `--exec rm --exec=-rf --exec '{}'`.
-    val execAction = option("--exec", help = "one word of the command to run (see KLAP-GAP above)")
+    val execAction = option("--exec", help = "one word of the command to run; repeat for each word")
         .multiple()
 
     // `validatePositionals` (BuilderValidation.kt) allows at most one variadic argument, so find's

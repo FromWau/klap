@@ -214,6 +214,9 @@ internal fun NamedSpec.helpRow(): InputRow = InputRow(
  */
 internal fun Command.commandRowName(): String = (listOf(name) + aliases).joinToString(", ")
 
+/** A subcommand's help row, the [NamedSpec.helpRow] counterpart for the Commands and group blocks. */
+internal fun Command.helpRow(): InputRow = InputRow(commandRowName(), description)
+
 /**
  * A constraint's usage-line group: `(-c|-x|-t)` when one member is required, `[-z|-j]` when it is merely
  * allowed, each member named the compact way its help row's note names it ([constraintHintToken], since the
@@ -296,7 +299,7 @@ internal fun Command.helpSections(
     // get a Commands heading rather than floating unlabeled in the default block above the options.
     val commands = subcommands
         .filter { !it.hidden && it.section == null }
-        .map { InputRow(it.commandRowName(), it.description) }
+        .map { it.helpRow() }
     if (commands.isNotEmpty()) sections += HelpSection("Commands", commands)
 
     val groupTitles = LinkedHashSet<String>()
@@ -313,7 +316,7 @@ internal fun Command.helpSections(
         namedInputs.filter { !it.hidden && it.section == title }.forEach { rows += it.helpRow() }
         subcommands
             .filter { !it.hidden && it.section == title }
-            .forEach { rows += InputRow(it.commandRowName(), it.description) }
+            .forEach { rows += it.helpRow() }
         if (rows.isNotEmpty()) sections += HelpSection(title, rows)
     }
 

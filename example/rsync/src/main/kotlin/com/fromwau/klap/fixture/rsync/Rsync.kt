@@ -3,7 +3,7 @@ package com.fromwau.klap.fixture.rsync
 import com.fromwau.klap.CountFlag
 import com.fromwau.klap.Err
 import com.fromwau.klap.Flag
-import com.fromwau.klap.Inference
+import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Ok
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
@@ -33,7 +33,7 @@ import com.fromwau.klap.projection
  */
 public fun rsyncCli(): TypedCli<RsyncInputs> = cliOf("rsync") {
     // rsync matches long options exactly: `--compr` and `--dele` both answer "unknown option" (verified).
-    inference = Inference.None
+    abbreviation = Abbreviation.None
     description = "A fast, versatile, remote (and local) file-copying tool."
     version = "3.4.4"
     epilogue = "The ':' usages connect via remote shell, while '::' & 'rsync://' usages connect to an " +

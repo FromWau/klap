@@ -18,11 +18,10 @@ public sealed interface Invocation {
     ) : Invocation {
         /**
          * The bound inputs, readable without running the action: `with(exec.inputs) { name() }`. This is
-         * what makes a consumer's own parsing testable — assert that an argv binds the values you expect,
-         * with no action, no output and no exit.
+         * what makes your own parsing testable — assert that an argv binds the values you expect, with no
+         * action, no output and no exit.
          *
-         * Typed as [ValueScope] rather than [ActionScope] so the style operators an action receives do not
-         * leak into a caller that only wants to read values.
+         * You get the reading half of an action's scope, not its colour operators, since nothing prints here.
          */
         public val inputs: ValueScope get() = scope
     }
