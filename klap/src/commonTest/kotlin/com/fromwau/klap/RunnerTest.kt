@@ -221,6 +221,43 @@ class RunnerTest {
     }
 
     @Test
+    fun anActionReadsWhetherThisRunRendersJson() {
+        val seen = mutableListOf<Boolean>()
+        val tree = cli("app") { command("go") { action { seen += json; Ok("done") } } }
+        tree.run(arrayOf("go"), RecordingTerminal())
+        tree.run(arrayOf("--json", "go"), RecordingTerminal())
+        assertEquals(listOf(false, true), seen)
+    }
+
+    @Test
+    fun theOutputModeReachesAnActionDrivenThroughRunAction() {
+        // Resolved where parse() freezes the scope, not where run() resolves the palette, so the embedding
+        // hatch is not a blind spot: a streaming action holds back the same output on either path.
+        val seen = mutableListOf<Boolean>()
+        val tree = cli("app") { command("go") { action { seen += json; Ok("done") } } }
+        assertIs<Invocation.Execute>(
+            assertIs<Result.Success<Invocation>>(tree.parse(listOf("--json", "go"))).value,
+        ).runAction()
+        assertEquals(listOf(true), seen)
+    }
+
+    @Test
+    fun decliningTheJsonBuiltinPinsTheActionsOutputModeToText() {
+        // The name is freed for the app's own option, so `--json` here binds that option and must not also
+        // flip the run into structured output.
+        val seen = mutableListOf<Boolean>()
+        val tree = cli("app") {
+            builtins { json = false }
+            command("go") {
+                option("--json", help = "post this JSON body")
+                action { seen += json; Ok("done") }
+            }
+        }
+        tree.run(arrayOf("go", "--json", "{}"), RecordingTerminal())
+        assertEquals(listOf(false), seen)
+    }
+
+    @Test
     fun nestedHelpShowsFullPath() {
         val vcs = cli("vcs") {
             command("remote") {

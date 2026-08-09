@@ -88,6 +88,20 @@ class StructuredJsonTest {
     }
 
     @Test
+    fun anEmptySuccessValuePrintsNothingPlainButEncodesAsAJsonString() {
+        // Two different "nothings": run() suppresses the line for an empty rendering, but "" is a legal
+        // value that --json must encode. So an action cannot lean on Ok("") to stay quiet on both paths.
+        val quiet = cli("quiet") { action { Ok("") } }
+        val plain = RecordingTerminal()
+        assertEquals(0, quiet.run(emptyArray(), plain))
+        assertEquals("", plain.out.toString())
+
+        val machine = RecordingTerminal()
+        assertEquals(0, quiet.run(arrayOf("--json"), machine))
+        assertEquals("\"\"\n", machine.out.toString())
+    }
+
+    @Test
     fun json_stringValueSerializesToBareJsonString() {
         val t = RecordingTerminal()
         val code = geo().run(arrayOf("greet", "--json"), t)
