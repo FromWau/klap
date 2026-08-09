@@ -398,7 +398,9 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
             when (val invocation = outcome.value) {
                 is Invocation.Execute -> {
                     // Freeze the completed sink (command inputs + globals) into the Execute's read snapshot.
-                    val exec = invocation.copy(scope = ActionScope(sink))
+                    // Output mode resolves here, not in run() where the color switch waits for a terminal, so
+                    // an embedder driving parse() + runAction() reads the same mode the terminal path gives.
+                    val exec = invocation.copy(scope = ActionScope(sink, json = invocation.globals.json))
                     deferredGlobalErrors.firstOrNull()?.let { Result.Error(it) } ?: Result.Success(
                         exec
                     )

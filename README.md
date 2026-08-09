@@ -28,6 +28,9 @@ dependencies {
 Add `kotlin("plugin.serialization")` only if an action returns an `@Serializable` type. The JSON runtime
 is exposed as `api`, so it arrives transitively. KMP consumers put the dependency in `commonMain`.
 
+Sources are published for every target, so an API question is answered by your IDE's own quick-doc and
+step-into rather than by reading a decompiled stub.
+
 **Toolchain floor.** The JVM and Android artifacts are Java 25 bytecode. The JVM variant declares that as
 `org.gradle.jvm.version`, so Gradle reports an unmet requirement instead of letting it surface later as a
 `class file has wrong version` error from `javac`. The Android side has no equivalent attribute — what
@@ -91,9 +94,10 @@ collection klap hands back is a `List`.
 - **[The guide](docs/guide.md)** is the full reference: converters and validators, flags, cross-input
   constraints, global options, typed errors, `--json`, color, subcommand trees, help layout, completion,
   generated docs, and the escape hatch.
-- **[`example/`](example/README.md)** is runnable code to copy from: an installable task-manager CLI, and
-  fifteen real tools (`pacman`, `git`, `tar`, `find`, `dd`, ...) reproduced in klap. It is indexed by
-  behaviour, so "how do I get an operation mode like pacman's `-S`" is a table lookup.
+- **[`example/`](example/README.md)** is a behaviour index: "how do I get an operation mode like pacman's
+  `-S`" is a table lookup that names the tool doing it. Behind the table are an installable task-manager
+  CLI and fifteen real tools (`pacman`, `git`, `tar`, `find`, `dd`, ...) reproduced in klap, so every
+  answer is runnable code to copy from.
 
 ## POSIX conformance
 

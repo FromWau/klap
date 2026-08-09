@@ -3,6 +3,10 @@
 The complete reference for [klap](../README.md). Start at the [README](../README.md) for what klap is and
 how to add it; start at [`example/`](../example/README.md) for runnable programs to copy from.
 
+**This guide tracks `master`, which can be ahead of the published artifact.** A rename lands here before it
+ships, so if you are building against a release, read this file at that release's tag
+([`v0.1.0`](https://github.com/FromWau/klap/blob/v0.1.0/docs/guide.md), and so on) rather than here.
+
 | | |
 |---|---|
 | [Quick start](#quick-start) | the builder DSL, the three receivers, sharing a declaration |
@@ -12,7 +16,7 @@ how to add it; start at [`example/`](../example/README.md) for runnable programs
 | [Cross-input constraints](#cross-input-constraints) | `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `requiredIf` |
 | [Global / persistent options](#global--persistent-options) | options shared by every subcommand, and declining a built-in |
 | [Typed results and errors](#typed-results-and-errors) | `Result`, `CliError`, exit codes, did-you-mean |
-| [Structured `--json`](#structured---json) | one `Ok(value)`, two renderings |
+| [Structured `--json`](#structured---json) | one `Ok(value)`, two renderings, actions that print as they go |
 | [Color output](#color-output) | styles, `ColorScope`, `NO_COLOR`, `--color` |
 | [Command groups and nesting](#command-groups-and-nesting) | subcommand trees and help sections |
 | [Help output](#help-output) | layout, wrapping, examples, epilogue |
@@ -245,8 +249,8 @@ val files   = argument("files").file().multiple(min = 1)           //  List<Stri
 | `.choice("a", "b")` | argument, option | the raw string, restricted to the given set (matched case-insensitively, returns the declared spelling) |
 | `.map { raw -> T }` | argument, option | any type; a thrown exception becomes a clean parse error |
 | `.convert { raw -> Result }` | argument, option | any type, with your own error message |
-| `.validate("msg") { it > 0 }` | argument, option | same type; fails with `BadValue` when the predicate is false |
-| `.range(1..65535)` | argument, option (`Comparable`) | same type, bounds-checked; shows the range in help |
+| `.validate("msg") { it > 0 }` | argument, option | same type; fails with `BadValue` when the predicate is false. The predicate always runs per element, so declare it *before* `.multiple()`: a chain that puts it after fails at parse instead of validating |
+| `.range(1..65535)` | argument, option (`Comparable`) | same type, bounds-checked; shows the range in help. Sugar over `.validate()`, with the same ordering |
 | `.optional()` | argument | makes a positional nullable (options are already nullable) |
 | `.default(v)` | argument, option | binds `v` whenever the value would be null (absent, or a converter that resolved to `null`). Declared *before* a converter, it runs through that too, so `.default("0").int()` binds `0`; one the converter rejects fails at construction. A `.choice()` set is checked in either order, but `.validate()` / `.range()` predicates never run against a default. |
 | `.required()` | option | fails if the option is missing |
@@ -259,6 +263,11 @@ val files   = argument("files").file().multiple(min = 1)           //  List<Stri
 | `.file()` | argument, option | marks a path for shell file-completion (completion only; does not check the path exists or is a file) |
 | `.hidden()` | argument, option, flag | still parses, but omitted from help, completion, and docs |
 | `.completeWith { ... }` | argument, option | supply completion candidates at runtime via `candidate()` / `candidates()` / `completeFiles()` (see below) |
+
+`.placeholder()`, `.file()`, `.hidden()` and `.completeWith { }` set display and completion metadata
+instead of transforming the value, so they are order-free: `.placeholder("SEED").long()` and
+`.long().placeholder("SEED")` declare the same input. The rest of the table reads the value or its
+cardinality, so order matters there.
 
 `.convert { }` reads the raw string and returns `Result<T, String>` yourself (`Ok(value)` or
 `Err("message")`), when you want to control the error text instead of letting `.map` derive one from a
@@ -894,6 +903,39 @@ class moves package. To keep the discriminator at all, the action must return th
 concrete subtype: `action<Shape> { Ok(Shape.Circle(2.0)) }`. A bare `action { Ok(Shape.Circle(2.0)) }`
 infers `T` as `Shape.Circle` and serializes it without the `"type"` field.
 
+### Actions that print their own output
+
+`--json` is a property of the program, not of a command. There is no per-command opt-out, and that is
+deliberate: a caller writing `app ... --json | jq` needs the flag to mean one thing everywhere, and a flag
+honored by some subcommands and not others is worse than no flag at all. So either every command in the
+tree has a structured form, or the tree declines the built-in with `builtins { json = false }`.
+
+That leaves one case to answer: a command that writes as it goes (a progress line per tick, a table
+streamed row by row, a prompt), where the printed output is not the value the action returns.
+`ActionScope` exposes the resolved mode as `json`, so the action holds back its human half itself and
+returns the structured value either way:
+
+```kotlin
+command("run") {
+    action(human = { "ticked ${it.ticks} times" }) {
+        val ticks = 100
+        repeat(ticks) { tick ->
+            if (!json) println("tick $tick")   // the human half: suppressed under --json
+        }
+        Ok(Summary(ticks))                     // the value: rendered by human, or serialized
+    }
+}
+```
+
+Read `json` only to decide what you print yourself. You never need it to build the JSON, since klap
+serializes whatever you return either way, and you never need it for the plain rendering either, since
+that is what `human` is for.
+
+A CLI that declined `--json` has a simpler answer, because nothing has to serialize: an action that prints
+everything itself returns `Ok("")`, and klap writes no line for an empty success value. That shortcut does
+not carry over to a CLI that offers `--json`, where an empty `String` is a perfectly good value and
+serializes to `""` rather than to nothing.
+
 ## Color output
 
 klap has one color story: its own help chrome and anything your action colors itself resolve a style
@@ -920,7 +962,9 @@ form work), and compose several with `+`, opening both and closing with a single
 
 The palette resolves against the same color switch as klap's help chrome: colored when color is on,
 plain text when off, so you never branch on it yourself. It is additionally forced off under `--json`,
-even with `--color=always`, so machine output never carries escape codes.
+even with `--color=always`, so machine output never carries escape codes. Output mode is the one switch
+you do read yourself, since only your action knows what its printed half should become under `--json`; see
+[Actions that print their own output](#actions-that-print-their-own-output).
 
 The operators come from `ColorScope`, the capability `ActionScope` implements — so a formatting helper can
 take that as its receiver instead of the whole action scope, and gets style resolution and nothing else:
