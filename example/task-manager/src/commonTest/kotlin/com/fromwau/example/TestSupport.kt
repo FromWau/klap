@@ -1,7 +1,7 @@
 package com.fromwau.example
 
+import com.fromwau.kern.terminal.Terminal
 import com.fromwau.klap.Cli
-import com.fromwau.klap.Terminal
 import com.fromwau.klap.run
 import kotlin.random.Random
 import kotlinx.io.files.Path

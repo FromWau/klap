@@ -1,5 +1,6 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.terminal.red
 import com.fromwau.klap.internal.render.Candidate
 import com.fromwau.klap.internal.spec.HolderSpec
 
