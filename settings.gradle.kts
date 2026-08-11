@@ -29,6 +29,8 @@ dependencyResolutionManagement {
             }
         }
         mavenCentral()
+        // TEMPORARY: kern:terminal is not published yet. Remove once it is released.
+        mavenLocal { mavenContent { includeGroupAndSubgroups("com.fromwau.kern") } }
         maven("https://maven.frommhund.xyz/releases") {
             mavenContent { includeGroupAndSubgroups("com.fromwau") }
         }

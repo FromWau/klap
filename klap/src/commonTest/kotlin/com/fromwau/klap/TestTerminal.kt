@@ -1,5 +1,7 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.terminal.Terminal
+
 /** Collects written text so tests can assert output without touching real stdio. */
 class RecordingTerminal : Terminal {
     val out = StringBuilder()

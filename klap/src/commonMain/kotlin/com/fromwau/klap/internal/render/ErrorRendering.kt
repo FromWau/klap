@@ -1,8 +1,8 @@
 package com.fromwau.klap.internal.render
 
+import com.fromwau.kern.terminal.Terminal
 import com.fromwau.klap.CliError
 import com.fromwau.klap.ConversionError
-import com.fromwau.klap.Terminal
 import com.fromwau.klap.internal.spec.ActionError
 import kotlin.text.iterator
 

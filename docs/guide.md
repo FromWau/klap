@@ -1035,13 +1035,13 @@ command("build") {
 }
 ```
 
-`action { }`'s receiver (`ActionScope`) exposes a small style palette: colors `black red green yellow
-blue magenta cyan white` and attributes `bold dim italic underline`, each a public `Style` constant in
-`com.fromwau.klap`. Like the entry points in Quick start, these are top-level declarations, not
-builder-scoped members, so a consumer using named imports imports each one used (`import
-com.fromwau.klap.yellow` above), plus `import com.fromwau.klap.plus` for the `+` composition operator
-below. Apply one with `yellow { "done" }` or `red("failed")` (both a lazy block form and a direct string
-form work), and compose several with `+`, opening both and closing with a single reset:
+`action { }`'s receiver (`ActionScope`) applies a style palette that comes from
+[`com.fromwau.kern:terminal`](https://github.com/FromWau/kern/blob/master/terminal/README.md), which klap
+exposes as an `api` dependency: colors `black red green yellow blue magenta cyan white brightBlack` and
+attributes `bold dim italic underline`. They are top-level declarations, so a consumer using named imports
+imports each one used (`import com.fromwau.kern.terminal.yellow` above); `+` needs no import, being a
+member of `Style`. Apply one with `yellow { "done" }` or `red("failed")` (both a lazy block form and a
+direct string form work), and compose several with `+`, opening both and closing with a single reset:
 `(bold + red)("error")`.
 
 The palette resolves against the same color switch as klap's help chrome: colored when color is on,
@@ -1380,7 +1380,7 @@ klap's rendering is a thin layer over pure functions. Reach past it when you nee
   testing easy:
 
 ```kotlin
-import com.fromwau.klap.Terminal
+import com.fromwau.kern.terminal.Terminal
 import com.fromwau.klap.run   // `run` is an extension on Cli; without this import `cli.run(a, b)`
                               // resolves to stdlib `T.run` and fails to compile
 

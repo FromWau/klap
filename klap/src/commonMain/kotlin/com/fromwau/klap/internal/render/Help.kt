@@ -1,14 +1,14 @@
 package com.fromwau.klap.internal.render
 
+import com.fromwau.kern.terminal.bold
 import com.fromwau.klap.Builtins
 import com.fromwau.klap.COLOR_MODE_NAMES
 import com.fromwau.klap.COMPLETION_SHELL_NAMES
 import com.fromwau.klap.Cli
-import com.fromwau.klap.Command
 import com.fromwau.klap.ColorScope
+import com.fromwau.klap.Command
 import com.fromwau.klap.DOC_FORMAT_NAMES
 import com.fromwau.klap.Palette
-import com.fromwau.klap.bold
 import com.fromwau.klap.internal.spec.ArgumentSpec
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.ConstraintArity
@@ -24,7 +24,6 @@ import com.fromwau.klap.internal.spec.negativeLongs
 import com.fromwau.klap.internal.spec.negativeShorts
 import com.fromwau.klap.internal.spec.shorts
 import com.fromwau.klap.internal.spec.token
-import com.fromwau.klap.render
 
 // --- Reusable row/section model ---
 // helpText() renders through this model; the docs renderer consumes the same assembly, so the model and
