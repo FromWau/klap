@@ -12,7 +12,7 @@ no annotation processing.
 
 Releases are published as `com.fromwau:klap` to
 [maven.frommhund.xyz](https://maven.frommhund.xyz/#/releases/com/fromwau/klap), which needs no
-credentials to read. The current version is `0.1.0`.
+credentials to read and lists every published version.
 
 ```kotlin
 repositories {
@@ -21,7 +21,7 @@ repositories {
 }
 
 dependencies {
-    implementation("com.fromwau:klap:0.1.0")
+    implementation("com.fromwau:klap:$klapVersion")
 }
 ```
 
