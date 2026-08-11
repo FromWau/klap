@@ -1,5 +1,7 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
 import com.fromwau.klap.internal.parse.suggest
 import kotlin.test.Test
 import kotlin.test.assertEquals

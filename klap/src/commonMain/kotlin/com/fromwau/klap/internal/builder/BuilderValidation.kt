@@ -278,6 +278,23 @@ private fun requireNoAliasCollisions(name: String, subs: List<Command>) {
 }
 
 /**
+ * A command declaring neither an action nor subcommands can never do anything: nothing to run, and nothing
+ * to dispatch to. It would otherwise parse cleanly and exit 0, which reads as success. Built-ins are exempt
+ * because they carry no action by design and the parser answers them from its own `Invocation` cases.
+ */
+internal fun validateCanActOrDispatch(
+    name: String,
+    hasAction: Boolean,
+    hasSubcommands: Boolean,
+    isBuiltin: Boolean = false,
+) {
+    require(hasAction || hasSubcommands || isBuiltin) {
+        "command '$name': declares neither an action { } nor subcommands, so it can never run; give " +
+                "'$name' an action { }, or a subcommand for it to dispatch to"
+    }
+}
+
+/**
  * A command with no action only routes to subcommands or renders `--help`; it never reads its own
  * inputs. A locally declared option/flag on such a command would render in `--help` yet stay forever
  * unparseable, and reading its accessor would crash at runtime ("holder read before parse"). A declared

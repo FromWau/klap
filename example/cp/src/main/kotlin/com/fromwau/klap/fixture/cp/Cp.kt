@@ -1,10 +1,10 @@
 package com.fromwau.klap.fixture.cp
 
-import com.fromwau.klap.CliError
-import com.fromwau.klap.Err
-import com.fromwau.klap.Flag
+import com.fromwau.kern.result.Err
+import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Abbreviation
-import com.fromwau.klap.Ok
+import com.fromwau.klap.CliError
+import com.fromwau.klap.Flag
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.cliOf

@@ -1,8 +1,10 @@
 package com.fromwau.klap.fixture.ssh
 
-import com.fromwau.klap.Err
-import com.fromwau.klap.Ok
-import com.fromwau.klap.Result
+import com.fromwau.kern.result.Err
+import com.fromwau.kern.result.IError
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
+import com.fromwau.klap.ConversionError
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
@@ -11,9 +13,9 @@ import com.fromwau.klap.projection
  * One `-o KEY=VALUE` occurrence. Split at the FIRST `=` so a value may itself contain `=`
  * (`-o ProxyCommand=nc -X connect %h %p` style values do).
  */
-private fun sshOptionKeyValue(raw: String): Result<Pair<String, String>, String> {
+private fun sshOptionKeyValue(raw: String): Result<Pair<String, String>, ConversionError> {
     val split = raw.indexOf('=')
-    return if (split <= 0) Err("expected KEY=VALUE, got '$raw'")
+    return if (split <= 0) Err(ConversionError.Domain(NotKeyValue, "expected KEY=VALUE, got '$raw'"))
     else Ok(raw.substring(0, split) to raw.substring(split + 1))
 }
 
@@ -254,3 +256,6 @@ public val NOTHING_BOUND: SshInputs = SshInputs(
     destination = "",
     remoteCommand = emptyList(),
 )
+
+/** A `-o` occurrence that is not `KEY=VALUE`. */
+private data object NotKeyValue : IError

@@ -1,9 +1,9 @@
 package com.fromwau.klap.fixture.pacman
 
+import com.fromwau.kern.result.Ok
+import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.CountFlag
 import com.fromwau.klap.Flag
-import com.fromwau.klap.Abbreviation
-import com.fromwau.klap.Ok
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.cliOf

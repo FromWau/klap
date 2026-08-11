@@ -1,7 +1,7 @@
 package com.fromwau.klap.fixture.find
 
+import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Flag
-import com.fromwau.klap.Ok
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.cliOf

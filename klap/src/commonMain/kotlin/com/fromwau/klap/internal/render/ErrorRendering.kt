@@ -1,6 +1,7 @@
 package com.fromwau.klap.internal.render
 
 import com.fromwau.klap.CliError
+import com.fromwau.klap.ConversionError
 import com.fromwau.klap.Terminal
 import com.fromwau.klap.internal.spec.ActionError
 import kotlin.text.iterator
@@ -120,4 +121,23 @@ internal fun renderError(error: CliError, json: Boolean, terminal: Terminal): In
     val rendered = stripTerminalEscapes(error.message(), allowWhitespace = authored)
     terminal.err(if (json) jsonErrorEnvelope(rendered, code) + "\n" else "error: $rendered\n")
     return code
+}
+
+/**
+ * The words for a conversion failure. They live here rather than on [ConversionError] so the cases stay
+ * data a caller can branch on, and this render layer stays the only place that picks English.
+ *
+ * Phrased as a fragment: [CliError.BadValue]'s rendering supplies the input's name and the offending token
+ * around it, printing `invalid value 'abc' for --port: not an integer`.
+ */
+internal fun ConversionError.reason(): String = when (this) {
+    ConversionError.NotAnInteger -> "not an integer"
+    ConversionError.NotALong -> "not a long"
+    ConversionError.NotADouble -> "not a number"
+    ConversionError.NotABoolean -> "not a boolean (true/false)"
+    is ConversionError.NotOneOf -> "not one of ${choices.joinToString(", ")}"
+    // Kotlin/Native's toInt() throws with a null message; the fallback must not say "invalid value"
+    // again, since BadValue's rendering above already prefixes it.
+    is ConversionError.Threw -> thrown.message?.takeIf { it.isNotBlank() } ?: "conversion failed"
+    is ConversionError.Domain -> detail
 }

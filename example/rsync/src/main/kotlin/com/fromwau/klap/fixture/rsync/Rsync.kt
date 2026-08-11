@@ -1,10 +1,12 @@
 package com.fromwau.klap.fixture.rsync
 
-import com.fromwau.klap.CountFlag
-import com.fromwau.klap.Err
-import com.fromwau.klap.Flag
+import com.fromwau.kern.result.Err
+import com.fromwau.kern.result.IError
+import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Abbreviation
-import com.fromwau.klap.Ok
+import com.fromwau.klap.ConversionError
+import com.fromwau.klap.CountFlag
+import com.fromwau.klap.Flag
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.cliOf
@@ -121,7 +123,9 @@ public fun rsyncCli(): TypedCli<RsyncInputs> = cliOf("rsync") {
         // while `bogus`, `1x`, `-1` and `+1` are all "is invalid" (each verified). `.convert { }` rather
         // than `.map { }` so the message is rsync's own wording instead of a derived one.
         bwlimit = option("--bwlimit", help = "limit socket I/O bandwidth")
-            .convert { raw -> if (RATE.matches(raw)) Ok(raw) else Err("is invalid") }
+            .convert { raw ->
+                if (RATE.matches(raw)) Ok(raw) else Err(ConversionError.Domain(RateInvalid, "is invalid"))
+            }
             .placeholder("RATE")
     }
 
@@ -232,3 +236,6 @@ public val NOTHING_BOUND: RsyncInputs = RsyncInputs(
     bwlimit = null,
     paths = emptyList(),
 )
+
+/** `--bwlimit` was given something that is not an rsync size. */
+private data object RateInvalid : IError

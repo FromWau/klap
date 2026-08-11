@@ -1,5 +1,6 @@
 package com.fromwau.klap
 
+import com.fromwau.klap.internal.spec.Action
 import com.fromwau.klap.internal.spec.NamedSpec
 
 /** Globally-scoped, position-independent flags resolved before dispatch. */
@@ -14,6 +15,9 @@ public sealed interface Invocation {
     public data class Execute internal constructor(
         val command: Command,
         val globals: Globals,
+        // Non-null by construction, so running it needs no check: a group resolves to ShowHelp, and a
+        // command with neither an action nor subcommands is rejected when the tree is built.
+        internal val action: Action,
         internal val scope: ActionScope,
     ) : Invocation {
         /**

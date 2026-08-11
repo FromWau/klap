@@ -1,17 +1,21 @@
 package com.fromwau.klap.internal.parse
 
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.getOrElse
+import com.fromwau.kern.result.getOrNull
+import com.fromwau.kern.result.map
+import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.ActionScope
 import com.fromwau.klap.Builtins
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Command
+import com.fromwau.klap.ConversionError
 import com.fromwau.klap.Globals
-import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Invocation
-import com.fromwau.klap.Result
 import com.fromwau.klap.SubcommandMatch
 import com.fromwau.klap.builtinLongs
-import com.fromwau.klap.getOrElse
+import com.fromwau.klap.internal.render.reason
 import com.fromwau.klap.internal.spec.ArgumentSpec
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.ConstraintArity
@@ -154,7 +158,10 @@ internal fun Command.bind(
         .getOrElse { return Result.Error(it) }
     checkConditionalRequirements(sifted, globalAcc)?.let { return Result.Error(it) }
     // Placeholder scope: parse() attaches the completed snapshot (command inputs + globals) via copy().
-    return Result.Success(Invocation.Execute(this, globals, ActionScope(emptyMap())))
+    // Unreachable: a group returned through the isGroup branch above, and a command with neither an
+    // action nor subcommands is rejected at build. Help keeps parse() total rather than throwing.
+    val resolved = action ?: return Result.Success(Invocation.ShowHelp(this, qualifiedName))
+    return Result.Success(Invocation.Execute(this, globals, resolved, ActionScope(emptyMap())))
 }
 
 /**
@@ -573,9 +580,10 @@ private fun ValueSpec.convertOne(raw: String, inferValues: Boolean): Result<Any?
     val converted = try {
         convert(resolved)
     } catch (e: Exception) {
-        return Result.Error(CliError.BadValue(name, raw, e.message?.takeIf { it.isNotBlank() } ?: "conversion failed"))
+        val threw = ConversionError.Threw(e)
+        return Result.Error(CliError.BadValue(name, raw, threw.reason(), threw))
     }
-    val value = converted.getOrElse { reason ->
+    val value = converted.getOrElse { cause ->
         return Result.Error(
             if (choices != null) {
                 // Choice-restricted matching is case-insensitive (.choice()/.enum()), so the "did you
@@ -585,7 +593,7 @@ private fun ValueSpec.convertOne(raw: String, inferValues: Boolean): Result<Any?
                     suggest(raw, choices!!, ignoreCase = true),
                 )
             } else {
-                CliError.BadValue(name, raw, reason)
+                CliError.BadValue(name, raw, cause.reason(), cause)
             },
         )
     }

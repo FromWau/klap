@@ -1,5 +1,10 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.Err
+import com.fromwau.kern.result.IError
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.map
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.render.message
 import kotlin.test.Test
@@ -75,8 +80,27 @@ class ParseOptionsTest {
 
     @Test
     fun badIntValueIsRejected() {
+        // A built-in converter has no payload, so cause is the reason-only case and restates reason.
         val err = assertIs<Result.Error<CliError>>(optTree().parse(listOf("call", "--port", "abc"))).error
-        assertEquals(CliError.BadValue("--port", "abc", "not an integer"), err)
+        assertEquals(CliError.BadValue("--port", "abc", "not an integer", ConversionError.NotAnInteger), err)
+    }
+
+    @Test
+    fun convertersOwnErrorTypeSurvivesToTheParseCaller() {
+        // The point of the typed converter error: the payload reaches a parse() caller intact, so it can
+        // match on its own type instead of re-parsing the rendered sentence to recover what it already knew.
+        val tree = cli("net") {
+            option("--port").convert { raw ->
+                raw.toIntOrNull()?.takeIf { it in 1..65535 }?.let(::Ok)
+                    ?: Err(ConversionError.Domain(PortRejected(raw), "$raw is outside 1..65535"))
+            }
+            action { Ok("ok") }
+        }
+
+        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--port", "70000"))).error
+        val bad = assertIs<CliError.BadValue>(err)
+        assertEquals("70000 is outside 1..65535", bad.reason)
+        assertEquals(PortRejected("70000"), assertIs<ConversionError.Domain>(bad.cause).error)
     }
 
     @Test
@@ -422,7 +446,7 @@ class RepeatedAndDefaultedValueTest {
             }
         }
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("call", "-n", "1", "-n", "abc"))).error
-        assertEquals(CliError.BadValue("--num", "abc", "not an integer"), err)
+        assertEquals(CliError.BadValue("--num", "abc", "not an integer", ConversionError.NotAnInteger), err)
     }
 
     @Test
@@ -438,6 +462,8 @@ class RepeatedAndDefaultedValueTest {
         }
         assertEquals("1,2\n", tree.execAndCapture(listOf("call", "-n", "1", "-n", "2")))
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("call", "-n", "1", "-n", "x"))).error
+        // The converter SUCCEEDED with null rather than throwing, so there is no ConversionError
+        // behind this: cause stays null even though the wording matches the thrown-converter case.
         assertEquals(CliError.BadValue("--num", "x", "conversion failed"), err)
     }
 
@@ -1159,7 +1185,7 @@ class DefaultSubstitutionTest {
             }
         }
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("dial", "--port", "abc"))).error
-        assertEquals(CliError.BadValue("--port", "abc", "not an integer"), err)
+        assertEquals(CliError.BadValue("--port", "abc", "not an integer", ConversionError.NotAnInteger), err)
         assertEquals("5\n", tree.execAndCapture(listOf("dial", "--port", "5")))
         assertEquals("0\n", tree.execAndCapture(listOf("dial")))
     }
@@ -1893,7 +1919,7 @@ class OptionalValueTest {
             action { Ok(depth().toString()) }
         }
         assertEquals(
-            CliError.BadValue("--depth", "abc", "not an integer"),
+            CliError.BadValue("--depth", "abc", "not an integer", ConversionError.NotAnInteger),
             assertIs<Result.Error<CliError>>(tree.parse(listOf("--depth=abc"))).error,
         )
     }
@@ -1940,3 +1966,6 @@ class OptionalValueTest {
         assertEquals("/opt/git\n", tree.execAndCapture(listOf("-e/opt/git", "log")))
     }
 }
+
+/** A converter error with a payload the rendered sentence drops, for [ParseOptionsTest]. */
+private data class PortRejected(val given: String) : IError

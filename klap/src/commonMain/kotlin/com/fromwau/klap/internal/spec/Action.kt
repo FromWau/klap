@@ -1,10 +1,12 @@
 package com.fromwau.klap.internal.spec
 
+import com.fromwau.kern.result.Err
+import com.fromwau.kern.result.IError
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.fold
 import com.fromwau.klap.ActionScope
 import com.fromwau.klap.CliError
-import com.fromwau.klap.Result
-import com.fromwau.klap.Result.*
-import com.fromwau.klap.fold
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -12,7 +14,7 @@ import kotlinx.serialization.json.Json
 private val klapJson = Json { encodeDefaults = true }
 
 /** Why [Action.renderOutput] could not produce output: the action's own error, or a klap-side render/encode failure. */
-internal sealed interface ActionError {
+internal sealed interface ActionError : IError {
     data class Failed(val error: CliError) : ActionError
     data object NotSerializable : ActionError
     data class EncodeFailed(val message: String?) : ActionError
@@ -47,7 +49,7 @@ internal class ActionSpec<T>(
 ) : Action {
     override fun renderOutput(scope: ActionScope, json: Boolean): Result<String, ActionError> =
         scope.block().fold(
-            onError = { error -> Error(ActionError.Failed(error)) },
+            onError = { error -> Err(ActionError.Failed(error)) },
             onSuccess = { value -> if (json) renderJson(value) else renderHuman(scope, value) },
         )
 
@@ -55,20 +57,20 @@ internal class ActionSpec<T>(
         val resolved = try {
             serializer()
         } catch (_: SerializationException) {
-            return Error(ActionError.NotSerializable)
+            return Err(ActionError.NotSerializable)
         }
 
         return try {
-            Success(klapJson.encodeToString(resolved, value))
+            Ok(klapJson.encodeToString(resolved, value))
         } catch (e: Exception) {
-            Error(ActionError.EncodeFailed(e.message))
+            Err(ActionError.EncodeFailed(e.message))
         }
     }
 
     private fun renderHuman(scope: ActionScope, value: T): Result<String, ActionError> = try {
-        Success(human?.invoke(scope, value) ?: value?.toString().orEmpty())
+        Ok(human?.invoke(scope, value) ?: value?.toString().orEmpty())
     } catch (e: Exception) {
-        Error(ActionError.RenderFailed(e.message))
+        Err(ActionError.RenderFailed(e.message))
     }
 
     override fun evaluate(scope: ActionScope): Result<Any?, CliError> = scope.block()
