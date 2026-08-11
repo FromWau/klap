@@ -1,5 +1,7 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.fold
 import com.fromwau.klap.internal.platform.defaultTerminal
 import com.fromwau.klap.internal.platform.platformExit
 import com.fromwau.klap.internal.render.Candidate
@@ -80,17 +82,15 @@ private fun Invocation.render(style: HelpStyle, terminal: Terminal): Int = when 
     is Invocation.Execute -> executeAndRender(terminal)
 }
 
-/** Run the resolved action against its parsed [scope] and render the outcome; a null action is a pure group (exit 0). */
-private fun Invocation.Execute.executeAndRender(terminal: Terminal): Int {
-    val action = command.action ?: return 0
-    return action.renderOutput(scope, globals.json).fold(
+/** Run the resolved action against its parsed [scope] and render the outcome. */
+private fun Invocation.Execute.executeAndRender(terminal: Terminal): Int =
+    action.renderOutput(scope, globals.json).fold(
         onError = { renderActionError(it, globals.json, terminal) },
         onSuccess = { text ->
             if (text.isNotEmpty()) terminal.out(text + "\n")
             0
         },
     )
-}
 
 /** Write [text] as a line to stdout; the exit code for a successful print is 0. */
 private fun Terminal.outputLine(text: String): Int {
@@ -100,15 +100,11 @@ private fun Terminal.outputLine(text: String): Int {
 
 /**
  * Runs the resolved action and hands back its own `Ok(value)` or typed failure, instead of the rendered
- * output and exit code `run` produces. Writes nothing, exits nothing, and answers null when the command is
- * a group with no action of its own.
+ * output and exit code `run` produces. Writes nothing and exits nothing.
  *
  * The value arrives as `Any?`, so cast it to what your action returns.
  */
-public fun Invocation.Execute.runAction(): Result<Any?, CliError>? {
-    val action = command.action ?: return null
-    return action.evaluate(scope)
-}
+public fun Invocation.Execute.runAction(): Result<Any?, CliError> = action.evaluate(scope)
 
 /** [run] over the `Array` that Kotlin's own `main` hands you. */
 public fun Cli.run(argv: Array<String>, terminal: Terminal): Int = run(argv.toList(), terminal)

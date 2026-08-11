@@ -1,17 +1,19 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
 import com.fromwau.klap.internal.render.jsonErrorEnvelope
 import com.fromwau.klap.internal.render.message
 import com.fromwau.klap.internal.render.renderError
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
 
 /** `@Serializable`, but throws mid-encode with a DEL (0x7F) embedded in the message. */
 @Serializable(with = ExplodingWithControlCharSerializer::class)
@@ -266,7 +268,9 @@ class ErrorRenderingTest {
             }
         }
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("go", "somevalue"))).error
-        assertEquals(CliError.BadValue("n", "somevalue", "conversion failed"), err)
+        val bad = assertIs<CliError.BadValue>(err)
+        assertEquals("conversion failed", bad.reason)
+        assertIs<IllegalStateException>(assertIs<ConversionError.Threw>(bad.cause).thrown)
         assertEquals("invalid value 'somevalue' for n: conversion failed", err.message())
     }
 }

@@ -1,10 +1,13 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.map
+import com.fromwau.klap.internal.render.argSummary
+import com.fromwau.klap.internal.render.helpText
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
-import com.fromwau.klap.internal.render.argSummary
-import com.fromwau.klap.internal.render.helpText
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -74,7 +77,7 @@ class ParsePositionalsTest {
     @Test
     fun badPositionalValueIsRejected() {
         val err = assertIs<Result.Error<CliError>>(posTree().parse(listOf("sum", "abc"))).error
-        assertEquals(CliError.BadValue("nums", "abc", "not an integer"), err)
+        assertEquals(CliError.BadValue("nums", "abc", "not an integer", ConversionError.NotAnInteger), err)
     }
 
     @Test

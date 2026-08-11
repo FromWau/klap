@@ -1,19 +1,20 @@
 package com.fromwau.klap.internal.builder
 
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.map
+import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Arg
 import com.fromwau.klap.Builtins
 import com.fromwau.klap.BuiltinsBuilder
 import com.fromwau.klap.CliBuilder
 import com.fromwau.klap.Command
 import com.fromwau.klap.CommandBuilder
+import com.fromwau.klap.ConversionError
 import com.fromwau.klap.Flag
-import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Input
 import com.fromwau.klap.Opt
 import com.fromwau.klap.Projection
-import com.fromwau.klap.Result
 import com.fromwau.klap.holderSpec
-import com.fromwau.klap.resolve
 import com.fromwau.klap.internal.render.HelpExample
 import com.fromwau.klap.internal.spec.ArgumentSpec
 import com.fromwau.klap.internal.spec.Builtin
@@ -28,9 +29,10 @@ import com.fromwau.klap.internal.spec.constraintToken
 import com.fromwau.klap.internal.spec.hint
 import com.fromwau.klap.internal.spec.requireValidName
 import com.fromwau.klap.internal.spec.token
+import com.fromwau.klap.resolve
 
 /** Identity converter: a raw string passes through unchanged until a type transformer replaces it. */
-private val passthrough: (String) -> Result<Any?, String> = { Result.Success(it) }
+private val passthrough: (String) -> Result<Any?, ConversionError> = { Result.Success(it) }
 
 /**
  * The single implementation behind both builder classes: it accumulates the DSL calls into spec lists,
@@ -219,6 +221,7 @@ internal class BuilderImpl(
         validateLastWinsMembers(name, constraints)
         validateConditionalOperandTriggers(name, specs)
         validateRequiredIfTriggers(name, specs, reachableGlobalSpecs)
+        validateCanActOrDispatch(name, actionSpec != null, subs.isNotEmpty(), builtinKind != null)
         val built = Command(
             name = name,
             aliases = aliases.toList(),

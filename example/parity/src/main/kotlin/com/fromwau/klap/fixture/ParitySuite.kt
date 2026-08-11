@@ -1,7 +1,8 @@
 package com.fromwau.klap.fixture
 
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.map
 import com.fromwau.klap.Invocation
-import com.fromwau.klap.Result
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.parse
 import kotlin.test.fail

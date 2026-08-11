@@ -1,14 +1,67 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.IError
+
 /** POSIX convention: a command-line usage error exits 2. */
 public const val USAGE_ERROR_EXIT: Int = 2
+
+/**
+ * Why a raw token could not become a value: the case, not the sentence. klap writes the words for its own
+ * cases; [Domain] is how a `.convert { }` of yours contributes both an error of its own and the words for
+ * it.
+ *
+ * The token that failed is not repeated here, since [CliError.BadValue.value] already carries it.
+ */
+public sealed interface ConversionError : IError {
+    /** `.int()` was given something `toIntOrNull` rejects. */
+    public data object NotAnInteger : ConversionError
+
+    /** `.long()` was given something `toLongOrNull` rejects, including an integer past `Long`'s range. */
+    public data object NotALong : ConversionError
+
+    /** `.double()` was given something `toDoubleOrNull` rejects. */
+    public data object NotADouble : ConversionError
+
+    /** `.boolean()` was given anything other than exactly `true` or `false`. */
+    public data object NotABoolean : ConversionError
+
+    /**
+     * `.choice(...)` or `.enum<E>()` was given a value outside its set. [choices] are the declared spellings
+     * in declaration order, lowercased for an enum, and matching ignores case.
+     */
+    public data class NotOneOf(val choices: List<String>) : ConversionError
+
+    /** A `.map { }` transform threw. klap catches it rather than letting a bad value crash the parse. */
+    public data class Threw(val thrown: Throwable) : ConversionError
+
+    /**
+     * Your own error from a `.convert { }`, carried through with its payload intact, plus the [detail] klap
+     * should print for it. Mirrors [CliError.Domain] one level down: klap never inspects [error], so your
+     * hierarchy keeps its own sealed root and a `parse` caller can match on it.
+     *
+     * ```kotlin
+     * sealed interface PortError : IError {
+     *     data class NotANumber(val given: String) : PortError
+     *     data class OutOfRange(val given: Int) : PortError
+     * }
+     *
+     * option("--port").convert { raw ->
+     *     val n = raw.toIntOrNull()
+     *         ?: return@convert Err(ConversionError.Domain(PortError.NotANumber(raw), "not a number"))
+     *     if (n in 1..65535) Ok(n)
+     *     else Err(ConversionError.Domain(PortError.OutOfRange(n), "must be in 1..65535"))
+     * }
+     * ```
+     */
+    public data class Domain(val error: IError, val detail: String) : ConversionError
+}
 
 /**
  * Why a command line was refused, or why an action failed, carried as data rather than as a sentence: klap
  * writes the words. Return [Usage], [Failure] or [Domain] from an action; the rest describe parse failures
  * you can match on after calling `parse`.
  */
-public sealed interface CliError {
+public sealed interface CliError : IError {
     public val exitCode: Int get() = USAGE_ERROR_EXIT
 
     public data class UnknownSubcommand(
@@ -54,7 +107,17 @@ public sealed interface CliError {
      */
     public data class FlagTakesNoValue(val flag: String, val negationHint: String? = null) : CliError
 
-    public data class BadValue(val name: String, val value: String, val reason: String) : CliError
+    /**
+     * [reason] is the text klap prints; [cause] is the case behind it, so a converter failure stays
+     * matchable instead of flattening into a string. [cause] is null for the failures klap raises without
+     * running a converter, notably a `.validate()`/`.range()` rejection.
+     */
+    public data class BadValue(
+        val name: String,
+        val value: String,
+        val reason: String,
+        val cause: ConversionError? = null,
+    ) : CliError
 
     public data class InvalidChoice(
         val name: String,
@@ -109,10 +172,11 @@ public sealed interface CliError {
      * [exitCode] exactly as for [Failure]; what it adds is that a `parse` caller can recover [error] and
      * match on it, so your error hierarchy survives instead of flattening to a sentence.
      *
-     * [error] is `Any` because klap never looks inside it; your hierarchy keeps its own root.
+     * klap never looks inside [error]; [IError] is the only thing asked of it, so your hierarchy keeps its
+     * own sealed root and stays exhaustive at the `when` that unwraps it.
      */
     public data class Domain(
-        val error: Any,
+        val error: IError,
         val detail: String,
         override val exitCode: Int = 1,
     ) : CliError

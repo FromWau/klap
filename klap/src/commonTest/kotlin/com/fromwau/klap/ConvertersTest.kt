@@ -1,5 +1,9 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.IError
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.map
 import com.fromwau.klap.internal.spec.ArgumentSpec
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.HolderSpec
@@ -36,7 +40,7 @@ class ConvertersTest : ConverterScope() {
         assertEquals(spec, typed.spec)
         val converted = spec.convert("42")
         assertEquals(Result.Success(42), converted)
-        assertIs<Result.Error<String>>(spec.convert("nope"))
+        assertIs<Result.Error<ConversionError>>(spec.convert("nope"))
     }
 
     @Test
@@ -45,7 +49,7 @@ class ConvertersTest : ConverterScope() {
         val opt = Opt<String?>(spec).map { it.toInt().seconds }
         assertEquals(Result.Success(5.seconds), spec.convert("5"))
         // A thrown parse exception becomes a clean error, not a crash.
-        assertIs<Result.Error<String>>(spec.convert("abc"))
+        assertIs<Result.Error<ConversionError>>(spec.convert("abc"))
         boundTo(spec, 5.seconds) { assertEquals(5.seconds, opt()) }
     }
 
@@ -74,7 +78,8 @@ class ConvertersTest : ConverterScope() {
         assertEquals(listOf("red", "green"), spec.choices)
         assertEquals(Result.Success(Color.GREEN), spec.convert("green"))
         assertEquals(Result.Success(Color.GREEN), spec.convert("GREEN"))
-        assertIs<Result.Error<String>>(spec.convert("blue"))
+        // The case carries the declared choices, so a caller can offer them without re-parsing the message.
+        assertEquals(Result.Error(ConversionError.NotOneOf(listOf("red", "green"))), spec.convert("blue"))
         boundTo(spec, Color.RED) { assertEquals(Color.RED, arg()) }
     }
 
@@ -95,7 +100,7 @@ class ConvertersTest : ConverterScope() {
         assertEquals(Result.Success("fast"), spec.convert("FAST"))
         assertEquals(Result.Success("fast"), spec.convert("Fast"))
         assertEquals(Result.Success("fast"), spec.convert("fast"))
-        assertIs<Result.Error<String>>(spec.convert("quick"))
+        assertIs<Result.Error<ConversionError>>(spec.convert("quick"))
         boundTo(spec, "fast") { assertEquals("fast", arg()) }
     }
 
@@ -105,7 +110,7 @@ class ConvertersTest : ConverterScope() {
         val opt = Opt<String?>(spec).choice("fast", "slow")
         assertEquals(listOf("fast", "slow"), spec.choices)
         assertEquals(Result.Success("fast"), spec.convert("FAST"))
-        assertIs<Result.Error<String>>(spec.convert("quick"))
+        assertIs<Result.Error<ConversionError>>(spec.convert("quick"))
         boundTo(spec, "fast") { assertEquals("fast", opt()) }
     }
 
@@ -288,7 +293,7 @@ class ConvertersTest : ConverterScope() {
         val spec = optSpec()
         Opt<String?>(spec).boolean()
         assertEquals(Result.Success(true), spec.convert("true"))
-        assertIs<Result.Error<String>>(spec.convert("yes"))
+        assertIs<Result.Error<ConversionError>>(spec.convert("yes"))
     }
 
     @Test
@@ -298,8 +303,8 @@ class ConvertersTest : ConverterScope() {
         assertEquals(Result.Success(true), spec.convert("true"))
         assertEquals(Result.Success(false), spec.convert("false"))
         // toBooleanStrictOrNull accepts only exact lowercase "true"/"false".
-        assertEquals(Result.Error("not a boolean (true/false)"), spec.convert("TRUE"))
-        assertEquals(Result.Error("not a boolean (true/false)"), spec.convert("1"))
+        assertEquals(Result.Error(ConversionError.NotABoolean), spec.convert("TRUE"))
+        assertEquals(Result.Error(ConversionError.NotABoolean), spec.convert("1"))
     }
 
     @Test
@@ -309,8 +314,8 @@ class ConvertersTest : ConverterScope() {
         assertEquals(spec, typed.spec)
         assertEquals(Result.Success(42L), spec.convert("42"))
         // Overflows Long, and a decimal is not an integer: both fail toLongOrNull.
-        assertEquals(Result.Error("not a long"), spec.convert("99999999999999999999"))
-        assertEquals(Result.Error("not a long"), spec.convert("1.5"))
+        assertEquals(Result.Error(ConversionError.NotALong), spec.convert("99999999999999999999"))
+        assertEquals(Result.Error(ConversionError.NotALong), spec.convert("1.5"))
     }
 
     @Test
@@ -318,8 +323,8 @@ class ConvertersTest : ConverterScope() {
         val spec = optSpec()
         Opt<String?>(spec).long()
         assertEquals(Result.Success(42L), spec.convert("42"))
-        assertEquals(Result.Error("not a long"), spec.convert("99999999999999999999"))
-        assertEquals(Result.Error("not a long"), spec.convert("1.5"))
+        assertEquals(Result.Error(ConversionError.NotALong), spec.convert("99999999999999999999"))
+        assertEquals(Result.Error(ConversionError.NotALong), spec.convert("1.5"))
     }
 
     @Test
@@ -328,7 +333,7 @@ class ConvertersTest : ConverterScope() {
         val typed: Arg<Double> = Arg<String>(spec).double()
         assertEquals(spec, typed.spec)
         assertEquals(Result.Success(3.14), spec.convert("3.14"))
-        assertEquals(Result.Error("not a number"), spec.convert("x"))
+        assertEquals(Result.Error(ConversionError.NotADouble), spec.convert("x"))
     }
 
     @Test
@@ -336,7 +341,7 @@ class ConvertersTest : ConverterScope() {
         val spec = optSpec()
         Opt<String?>(spec).double()
         assertEquals(Result.Success(3.14), spec.convert("3.14"))
-        assertEquals(Result.Error("not a number"), spec.convert("x"))
+        assertEquals(Result.Error(ConversionError.NotADouble), spec.convert("x"))
     }
 
     @Test
@@ -369,9 +374,11 @@ class ConvertersTest : ConverterScope() {
     @Test
     fun opt_convert_customReason() {
         val spec = optSpec()
-        Opt<String?>(spec).convert { s -> if (s == "ok") Result.Success(1) else Result.Error("bad") }
+        Opt<String?>(spec).convert { s ->
+            if (s == "ok") Result.Success(1) else Result.Error(ConversionError.Domain(Rejected, "bad"))
+        }
         assertEquals(Result.Success(1), spec.convert("ok"))
-        assertIs<Result.Error<String>>(spec.convert("no"))
+        assertIs<Result.Error<ConversionError>>(spec.convert("no"))
     }
 
     @Test
@@ -435,7 +442,7 @@ class ConvertersTest : ConverterScope() {
         // Case-insensitive choice still applies before the map stage runs.
         assertEquals(Result.Success("A"), spec.convert("A"))
         // Choice validation must not be bypassed by the later .map().
-        assertIs<Result.Error<String>>(spec.convert("z"))
+        assertIs<Result.Error<ConversionError>>(spec.convert("z"))
     }
 
     @Test
@@ -452,7 +459,7 @@ class ConvertersTest : ConverterScope() {
         Arg<String>(spec).choice("1", "2").int()
         assertEquals(Result.Success(1), spec.convert("1"))
         // Not one of the choices: rejected before int-parsing ever runs.
-        assertIs<Result.Error<String>>(spec.convert("9"))
+        assertIs<Result.Error<ConversionError>>(spec.convert("9"))
     }
 
     @Test
@@ -536,7 +543,7 @@ class ConvertersTest : ConverterScope() {
         val spec = optSpec()
         Opt<String?>(spec).choice("a", "b").map { it.uppercase() }
         assertEquals(Result.Success("A"), spec.convert("a"))
-        assertIs<Result.Error<String>>(spec.convert("z"))
+        assertIs<Result.Error<ConversionError>>(spec.convert("z"))
     }
 
     @Test
@@ -672,3 +679,6 @@ class ConvertersTest : ConverterScope() {
         assertEquals("option '--opt': default value 'bogus' is invalid: not one of fast, slow", ex.message)
     }
 }
+
+/** A converter failure with no payload beyond the fact that it happened. */
+private data object Rejected : IError

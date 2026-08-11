@@ -1,5 +1,8 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.map
 import com.fromwau.klap.internal.render.completeCandidates
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.render.message

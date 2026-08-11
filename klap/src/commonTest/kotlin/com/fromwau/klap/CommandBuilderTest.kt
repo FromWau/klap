@@ -1,10 +1,13 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.spec.shorts
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -975,5 +978,30 @@ class ReservedSectionTitleTest {
             action { Ok("") }
         }
         assertEquals("app", cmd.name)
+    }
+}
+
+class CommandCanActOrDispatchTest {
+
+    @Test
+    fun aCommandDeclaringNeitherAnActionNorSubcommandsIsRejected() {
+        // Not a parse error: such a command would parse fine and silently exit 0, which reads as success.
+        // A command with inputs but no action is already caught by its own check, so this is the bare case.
+        val ex = assertFailsWith<IllegalArgumentException> {
+            cli("app") { command("dead") { description = "does nothing" } }
+        }
+        assertTrue("can never run" in ex.message.orEmpty(), ex.message)
+    }
+
+    @Test
+    fun aGroupNeedsNoActionOfItsOwn() {
+        val tree = cli("app") { command("group") { command("leaf") { action { Ok("ran") } } } }
+        assertIs<Invocation.ShowHelp>(assertIs<Result.Success<Invocation>>(tree.parse(listOf("group"))).value)
+        assertEquals(
+            Result.Success("ran"),
+            assertIs<Invocation.Execute>(
+                assertIs<Result.Success<Invocation>>(tree.parse(listOf("group", "leaf"))).value,
+            ).runAction(),
+        )
     }
 }

@@ -59,6 +59,7 @@ kotlin {
         commonMain {
             resources.srcDir(licenseResource.map { it.destinationDir.parentFile })
             dependencies {
+                api(libs.kern.result)
                 api(libs.kotlinx.serialization.json)
             }
         }

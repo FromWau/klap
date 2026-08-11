@@ -28,6 +28,12 @@ dependencies {
 Add `kotlin("plugin.serialization")` only if an action returns an `@Serializable` type. The JSON runtime
 is exposed as `api`, so it arrives transitively. KMP consumers put the dependency in `commonMain`.
 
+klap's `Result<S, E>` is not its own: it is
+[`com.fromwau.kern:result`](https://github.com/FromWau/kern/blob/master/result/README.md), also exposed as
+`api` and published to the same repository, so it needs no separate dependency line. Import it from
+`com.fromwau.kern.result`. An error type is anything implementing kern's `IError` marker, `CliError`
+included.
+
 Sources are published for every target, so an API question is answered by your IDE's own quick-doc and
 step-into rather than by reading a decompiled stub.
 
