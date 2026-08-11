@@ -121,4 +121,4 @@ the one switch that trades an extension back, is in [the guide](docs/guide.md#po
 
 ## License
 
-GPL-3.0-or-later. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).

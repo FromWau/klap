@@ -83,8 +83,8 @@ publishing {
             url = repoUrl
             licenses {
                 license {
-                    name = "GNU General Public License v3.0 or later"
-                    url = "https://www.gnu.org/licenses/gpl-3.0.txt"
+                    name = "The Apache License, Version 2.0"
+                    url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
                     distribution = "repo"
                 }
             }
