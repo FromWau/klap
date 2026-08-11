@@ -25,7 +25,7 @@ private fun todo(): Cli = cli("todo") {
 class EndToEndTest {
 
     @Test
-    fun addWithOptionsAndVariadic() {
+    fun `add with options and variadic`() {
         val t = RecordingTerminal()
         val code = todo().run(arrayOf("add", "-p", "5", "-d", "buy", "milk"), t)
         assertEquals(0, code)
@@ -33,7 +33,7 @@ class EndToEndTest {
     }
 
     @Test
-    fun rootHelpFallsBackWhenNoSubcommand() {
+    fun `root help falls back when no subcommand`() {
         val t = RecordingTerminal()
         val code = todo().run(arrayOf(), t)
         assertEquals(0, code)
@@ -41,7 +41,7 @@ class EndToEndTest {
     }
 
     @Test
-    fun aParsedInvocationExposesItsBoundValuesWithoutRunningTheAction() {
+    fun `a parsed invocation exposes its bound values without running the action`() {
         // The escape hatch that makes a consumer's own parsing testable: assert an argv binds what you
         // expect, with no action, no output and no exit. Reading a value must not have side effects.
         var ran = false

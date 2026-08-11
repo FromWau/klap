@@ -12,7 +12,7 @@ class HeadParityTest {
     private val parity = ParitySuite(head)
 
     @Test
-    fun bindsCountsFlagsAndTheOptionalOperandList() {
+    fun `binds counts flags and the optional operand list`() {
         parity.binds("-n", "20", "notes.txt", expected = NOTHING_BOUND.copy(lines = "20", files = listOf("notes.txt")))
         parity.binds("--lines=20", "notes.txt", expected = NOTHING_BOUND.copy(lines = "20", files = listOf("notes.txt")))
         parity.binds("-c", "512", "image.bin", expected = NOTHING_BOUND.copy(bytes = "512", files = listOf("image.bin")))
@@ -48,7 +48,7 @@ class HeadParityTest {
     }
 
     @Test
-    fun rejectsWhatRealHeadRejects() {
+    fun `rejects what real head rejects`() {
         parity.rejects("--zzz", because = "real head: unrecognized option '--zzz'")
         parity.rejects("-Q", "f", because = "real head: invalid option -- 'Q'")
         parity.rejects("-n", because = "real head: option requires an argument -- 'n'")
@@ -67,7 +67,7 @@ class HeadParityTest {
     }
 
     @Test
-    fun theHelpAbbreviationsRealHeadAcceptsReachHelpHereToo() {
+    fun `the help abbreviations real head accepts reach help here too`() {
         // `--help` is the only long real head has starting with `h`, so it answers all three of these with
         // its help text. klap injects `--help-all` into every tree on top of that, and were the injected
         // name to take part in prefix resolution, all three would turn ambiguous on a tool whose author
@@ -78,14 +78,14 @@ class HeadParityTest {
     }
 
     @Test
-    fun aBuiltInBindsNothingBecauseNoCommandRan() {
+    fun `a built in binds nothing because no command ran`() {
         // Help answers before any command is reached, so there is no binding to project. Distinct from a
         // rejection, which comes back as `Result.Error`.
         assertEquals(Ok(null), head.parse(listOf("--help")))
     }
 
     @Test
-    fun knownDivergenceFromRealHead() {
+    fun `known divergence from real head`() {
         // `head -5 f` is the obsolete spelling of `head -n 5 f`, which real head accepts; `numericAlias`
         // binds it through `lines`, for any N.
         parity.binds("-5", "f", expected = NOTHING_BOUND.copy(lines = "5", files = listOf("f")))

@@ -8,7 +8,7 @@ class LsParityTest {
     private val parity = ParitySuite(lsCli())
 
     @Test
-    fun bindsClustersFormatOptionsAndTheOptionalOperandList() {
+    fun `binds clusters format options and the optional operand list`() {
         parity.binds("-la", expected = NOTHING_BOUND.copy(all = true, longFormat = true))
         parity.binds(
             "-lhS", "src",
@@ -112,7 +112,7 @@ class LsParityTest {
     }
 
     @Test
-    fun rejectsWhatRealLsRejects() {
+    fun `rejects what real ls rejects`() {
         parity.rejects("--zzz", because = "real ls: unrecognized option '--zzz'")
         parity.rejects("--colour=never", because = "real ls: unrecognized option '--colour=never'")
         parity.rejects("-Q", "f", because = "real ls: invalid option -- 'Q'")
@@ -131,7 +131,7 @@ class LsParityTest {
     }
 
     @Test
-    fun knownDivergenceFromRealLs() {
+    fun `known divergence from real ls`() {
         // klap's --json is position-independent and stripped before the walk, so a tool that never had
         // it accepts the token silently. Real ls: "unrecognized option '--json'".
         parity.bindsLoosely(

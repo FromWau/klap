@@ -19,23 +19,23 @@ class ConditionalOperandTest {
     }
 
     @Test
-    fun theSlotBindsNormallyWhenTheTriggerIsAbsent() {
+    fun `the slot binds normally when the trigger is absent`() {
         assertEquals("mode=755 files=[a, b]", chmodLike().bindText("755", "a", "b"))
     }
 
     @Test
-    fun theSlotDisappearsWhenTheTriggerIsGiven() {
+    fun `the slot disappears when the trigger is given`() {
         assertEquals("mode=null files=[a, b]", chmodLike().bindText("--reference=r", "a", "b"))
     }
 
     @Test
-    fun theFirstOperandIsNotSwallowedIntoTheAbsentSlot() {
+    fun `the first operand is not swallowed into the absent slot`() {
         // The bug .optional() produces: it builds cleanly and then eats the first FILE.
         assertEquals("mode=null files=[notes.txt]", chmodLike().bindText("--reference=r", "notes.txt"))
     }
 
     @Test
-    fun aMissingRequiredSlotStillErrorsWhenTheTriggerIsAbsent() {
+    fun `a missing required slot still errors when the trigger is absent`() {
         // "a" fills mode, so the file operand is left an EMPTY slice rather than a short one, which klap
         // reports as MissingArgument (see bindPositionals' own "keyed on min alone" note).
         val err = assertIs<Result.Error<CliError>>(chmodLike().parse(listOf("a"))).error
@@ -49,14 +49,14 @@ class ConditionalOperandTest {
     }
 
     @Test
-    fun aMinimumHoldsWhenTheTriggerIsAbsent() {
+    fun `a minimum holds when the trigger is absent`() {
         val err = assertIs<Result.Error<CliError>>(rmLike().parse(emptyList())).error
         assertEquals(CliError.MissingArgument("rm", "file"), err)
         assertEquals(USAGE_ERROR_EXIT, err.exitCode)
     }
 
     @Test
-    fun aMinimumRelaxesToZeroWhenTheTriggerIsGiven() {
+    fun `a minimum relaxes to zero when the trigger is given`() {
         assertEquals("files=[]", rmLike().bindText("-f"))
     }
 
@@ -68,14 +68,14 @@ class ConditionalOperandTest {
         first { word in it && !it.startsWith("usage:") }
 
     @Test
-    fun theUsageLineAndTheArgumentRowBothSayWhenTheSlotDisappears() {
+    fun `the usage line and the argument row both say when the slot disappears`() {
         val lines = chmodLike().helpLines()
         assertEquals("usage: chmod [<mode>] <file>... [options]", lines.first())
         assertEquals("[<mode>]  (absent with --reference)", lines.rowMentioning("mode"))
     }
 
     @Test
-    fun theUsageLineAndTheArgumentRowBothSayWhenTheMinimumRelaxes() {
+    fun `the usage line and the argument row both say when the minimum relaxes`() {
         val lines = rmLike().helpLines()
         // `[file...]` is real rm's own synopsis (`rm [OPTION]... [FILE]...`), so the relaxed minimum has to
         // reach the usage line for the two to agree.
@@ -84,7 +84,7 @@ class ConditionalOperandTest {
     }
 
     @Test
-    fun aVariadicSlotCannotDisappear() {
+    fun `a variadic slot cannot disappear`() {
         // Declared AFTER .absentWhen(), when the cardinality it rejects is not set yet: the rule has to
         // hold at build time, or the whole variadic silently vanishes on a line that names the trigger.
         val e = assertFailsWith<IllegalArgumentException> {
@@ -98,7 +98,7 @@ class ConditionalOperandTest {
     }
 
     @Test
-    fun aSlotWithNoDeclaredMinimumCannotRelaxOne() {
+    fun `a slot with no declared minimum cannot relax one`() {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 val force = flag("--force", "-f")
@@ -121,14 +121,14 @@ class ConditionalOperandTest {
     }
 
     @Test
-    fun aTriggerThatLostItsOverrideSetLeavesTheSlotInPlace() {
+    fun `a trigger that lost its override set leaves the slot in place`() {
         // -T overrode -t, so -t reads back absent; a slot removed by a trigger that no longer holds would
         // silently swallow `b` into the variadic.
         assertEquals("t=null T=true src=[a] dest=b", cpLike().bindText("-t", "dir", "-T", "a", "b"))
     }
 
     @Test
-    fun aTriggerThatWonItsOverrideSetStillRemovesTheSlot() {
+    fun `a trigger that won its override set still removes the slot`() {
         assertEquals("t=dir T=false src=[a, b] dest=null", cpLike().bindText("-T", "-t", "dir", "a", "b"))
     }
 
@@ -141,7 +141,7 @@ class ConditionalOperandTest {
     }
 
     @Test
-    fun aTriggerThatLostItsOverrideSetLeavesTheMinimumStanding() {
+    fun `a trigger that lost its override set leaves the minimum standing`() {
         // The same shape as the removed slot above: relaxing the minimum here would accept `rm -f -i`
         // with no operand while force() reads false, a line neither reading of it allows.
         val err = assertIs<Result.Error<CliError>>(rmLikeWithOverride().parse(listOf("-f", "-i"))).error
@@ -149,12 +149,12 @@ class ConditionalOperandTest {
     }
 
     @Test
-    fun aTriggerThatWonItsOverrideSetStillRelaxesTheMinimum() {
+    fun `a trigger that won its override set still relaxes the minimum`() {
         assertEquals("force=true files=[]", rmLikeWithOverride().bindText("-i", "-f"))
     }
 
     @Test
-    fun aTriggerDeclaredOnAnotherCommandIsRejected() {
+    fun `a trigger declared on another command is rejected`() {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 var foreign: Opt<String?>? = null
@@ -172,7 +172,7 @@ class ConditionalOperandTest {
     }
 
     @Test
-    fun aGlobalTriggerIsRejected() {
+    fun `a global trigger is rejected`() {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 val force = globalFlag("--force", "-f")

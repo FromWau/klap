@@ -75,7 +75,7 @@ class SubcommandProjectionTest {
     }
 
     @Test
-    fun eachCommandProjectsToItsOwnVariant() {
+    fun `each command projects to its own variant`() {
         assertEquals(
             Ok(GitArgs.Commit(gitDir = ".git", message = listOf("hello"), amend = false)),
             git().parse(listOf("commit", "-m", "hello")),
@@ -87,7 +87,7 @@ class SubcommandProjectionTest {
     }
 
     @Test
-    fun aNestedLeafProjectsRatherThanItsParentGroup() {
+    fun `a nested leaf projects rather than its parent group`() {
         assertEquals(
             Ok(GitArgs.RemoteAdd(gitDir = ".git", name = "origin", url = "git@example.com:x.git")),
             git().parse(listOf("remote", "add", "origin", "git@example.com:x.git")),
@@ -99,7 +99,7 @@ class SubcommandProjectionTest {
     }
 
     @Test
-    fun aRootGlobalReachesEveryVariantIncludingANestedOne() {
+    fun `a root global reaches every variant including a nested one`() {
         assertEquals(
             Ok(GitArgs.Status(gitDir = "/tmp/x", short = false)),
             git().parse(listOf("--git-dir", "/tmp/x", "status")),
@@ -111,7 +111,7 @@ class SubcommandProjectionTest {
     }
 
     @Test
-    fun theResultIsExhaustivelyMatchableByTheCaller() {
+    fun `the result is exhaustively matchable by the caller`() {
         val described = when (val args = git().parse(listOf("remote", "add", "o", "u")).getOrElse { null }) {
             is GitArgs.Commit -> "commit"
             is GitArgs.Status -> "status"
@@ -123,19 +123,19 @@ class SubcommandProjectionTest {
     }
 
     @Test
-    fun aBuiltInAnswersWithNullBecauseNoCommandRan() {
+    fun `a built in answers with null because no command ran`() {
         assertEquals(Ok(null), git().parse(listOf("--help")))
         assertEquals(Ok(null), git().parse(listOf("commit", "--help")))
     }
 
     @Test
-    fun aParseErrorStaysTypedAndNeverReachesAProjection() {
+    fun `a parse error stays typed and never reaches a projection`() {
         assertIs<Result.Error<CliError>>(git().parse(listOf("commit", "--zzz")))
         assertIs<Result.Error<CliError>>(git().parse(listOf("nosuchcommand")))
     }
 
     @Test
-    fun anExecutableCommandWithNoProjectionFailsAtConstruction() {
+    fun `an executable command with no projection fails at construction`() {
         val failure = try {
             cliOf("git") {
                 val status = command("status") {
@@ -185,12 +185,12 @@ class ActingGroupProjectionTest {
     }
 
     @Test
-    fun theGroupsOwnProjectionAnswersWhenNoChildRan() {
+    fun `the groups own projection answers when no child ran`() {
         assertEquals(Ok(R.Group(verbose = true)), cli().parse(listOf("remote", "-v")))
     }
 
     @Test
-    fun theChildsProjectionStillAnswersWhenItRuns() {
+    fun `the childs projection still answers when it runs`() {
         assertEquals(Ok(R.Add(name = "origin")), cli().parse(listOf("remote", "add", "origin")))
     }
 }

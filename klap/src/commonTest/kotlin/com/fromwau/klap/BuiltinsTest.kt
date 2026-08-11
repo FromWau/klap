@@ -42,12 +42,12 @@ private fun taggedDispatcher(infer: Abbreviation = Abbreviation.None): Cli = cli
 class BuiltinsTest {
 
     @Test
-    fun completionCommandIsAutoAdded() {
+    fun `completion command is auto added`() {
         assertNotNull(app().subcommand("completion"))
     }
 
     @Test
-    fun completionPrintsFishScript() {
+    fun `completion prints fish script`() {
         val t = RecordingTerminal()
         val code = app().run(arrayOf("completion", "fish"), t)
         assertEquals(0, code)
@@ -55,7 +55,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun completionRejectsUnknownShell() {
+    fun `completion rejects unknown shell`() {
         val t = RecordingTerminal()
         val code = app().run(arrayOf("completion", "ksh"), t)
         assertEquals(2, code)
@@ -64,14 +64,14 @@ class BuiltinsTest {
     }
 
     @Test
-    fun completionScriptIncludesTheCompletionCommandItself() {
+    fun `completion script includes the completion command itself`() {
         // `completion` is self-referential and must offer itself for tab completion.
         val candidates = app().completeCandidates(listOf("")).map { it.value }
         assertTrue("completion" in candidates, candidates.toString())
     }
 
     @Test
-    fun requiredGlobalDoesNotBlockBuiltinsButStillGuardsALeaf() {
+    fun `required global does not block builtins but still guards a leaf`() {
         val tree = appWithRequiredGlobal()
 
         // Direct render escape hatches must not throw with the required global unset.
@@ -95,7 +95,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun singleCommandToolCompletionMetaOptionPrintsScript() {
+    fun `single command tool completion meta option prints script`() {
         val tree = greet()
         val t = RecordingTerminal()
         assertEquals(0, tree.run(arrayOf("--completion", "bash"), t))
@@ -103,7 +103,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun singleCommandToolDocsMetaOptionPrintsDocs() {
+    fun `single command tool docs meta option prints docs`() {
         val tree = greet()
         val t = RecordingTerminal()
         assertEquals(0, tree.run(arrayOf("--docs", "man"), t))
@@ -111,21 +111,21 @@ class BuiltinsTest {
     }
 
     @Test
-    fun completionMetaOptionRejectsUnknownShellWithSuggestion() {
+    fun `completion meta option rejects unknown shell with suggestion`() {
         val tree = greet()
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--completion", "bsh"))).error
         assertEquals(CliError.InvalidChoice("--completion", "bsh", COMPLETION_SHELL_NAMES, "bash"), err)
     }
 
     @Test
-    fun completionMetaOptionMissingValueReportsMissingOptionValue() {
+    fun `completion meta option missing value reports missing option value`() {
         val tree = greet()
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--completion"))).error
         assertEquals(CliError.MissingOptionValue("--completion"), err)
     }
 
     @Test
-    fun completionMetaOptionAcceptsEqualsForm() {
+    fun `completion meta option accepts equals form`() {
         val tree = greet()
         val t = RecordingTerminal()
         assertEquals(0, tree.run(arrayOf("--completion=bash"), t))
@@ -133,7 +133,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun endOfOptionsEscapesTheCompletionMetaOption() {
+    fun `end of options escapes the completion meta option`() {
         val tree = cli("greet") {
             argument("name").multiple(min = 1)
             action { Ok("") }
@@ -143,14 +143,14 @@ class BuiltinsTest {
     }
 
     @Test
-    fun completionMetaOptionTreatsAFlagLikeNextTokenAsMissingValue() {
+    fun `completion meta option treats a flag like next token as missing value`() {
         val tree = greet()
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--completion", "--foo"))).error
         assertEquals(CliError.MissingOptionValue("--completion"), err)
     }
 
     @Test
-    fun jsonInterleavedWithCompletionMetaOptionDoesNotConsumeTheShellValue() {
+    fun `json interleaved with completion meta option does not consume the shell value`() {
         // --json is position-independent and stripped before the meta-option scan, so a --json sitting
         // between --completion and its shell value must not be mistaken for that value; this resolves
         // identically to --json appearing before --completion.
@@ -165,14 +165,14 @@ class BuiltinsTest {
     }
 
     @Test
-    fun helpOutranksCompletionMetaOption() {
+    fun `help outranks completion meta option`() {
         val tree = greet()
         val inv = assertIs<Result.Success<Invocation>>(tree.parse(listOf("--help", "--completion", "bash"))).value
         assertIs<Invocation.ShowHelp>(inv)
     }
 
     @Test
-    fun singleCommandToolHasNoCompletionOrDocsSubcommandButKeepsComplete() {
+    fun `single command tool has no completion or docs subcommand but keeps complete`() {
         val tree = cli("wc") {
             argument("files").multiple(min = 1)
             action { Ok("") }
@@ -183,14 +183,14 @@ class BuiltinsTest {
     }
 
     @Test
-    fun dispatcherStillHasCompletionAndDocsSubcommands() {
+    fun `dispatcher still has completion and docs subcommands`() {
         val tree = cli("app") { command("build") { action { Ok("") } } }
         assertNotNull(tree.subcommand("completion"))
         assertNotNull(tree.subcommand("docs"))
     }
 
     @Test
-    fun singleCommandToolDoesNotShadowAPositionalNamedDocs() {
+    fun `single command tool does not shadow a positional named docs`() {
         var seen: List<String>? = null
         val tree = cli("wc") {
             val files = argument("files").multiple(min = 1)
@@ -204,7 +204,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun completionSubcommandRejectsExtraArguments() {
+    fun `completion subcommand rejects extra arguments`() {
         // The injected `completion <shell>` declares exactly one argument; a surplus operand must be
         // rejected like any user command's, not silently dropped (a builtin routes before positional binding).
         val err = assertIs<Result.Error<CliError>>(app().parse(listOf("completion", "bash", "extra"))).error
@@ -212,14 +212,14 @@ class BuiltinsTest {
     }
 
     @Test
-    fun docsSubcommandRejectsExtraArguments() {
+    fun `docs subcommand rejects extra arguments`() {
         val tree = cli("app") { command("build") { action { Ok("") } } }
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("docs", "man", "extra"))).error
         assertEquals(CliError.TooManyArguments("docs", listOf("extra")), err)
     }
 
     @Test
-    fun badColorValueIsInvalidChoiceAndBareColorIsMissingValue() {
+    fun `bad color value is invalid choice and bare color is missing value`() {
         val tree = cli("app") { command("go") { action { Ok("") } } }
 
         // Attached bad value.
@@ -241,7 +241,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun badColorValueOutranksVersionShortCircuit() {
+    fun `bad color value outranks version short circuit`() {
         // A malformed rendering modifier is reported even when --version is present, matching
         // builtinInlineValueError's precedence over the version short-circuit.
         val tree = cli("app") {
@@ -263,7 +263,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun jsonBetweenSpaceFormColorAndItsValueStillResolvesToThatValue() {
+    fun `json between space form color and its value still resolves to that value`() {
         // colorMode() must see the same token view parse() does: --json stripped first. Before the fix,
         // colorMode() read the raw argv, saw "--color --json always", treated "--json" as color's would-be
         // value, found it flag-like, and silently fell back to AUTO instead of ALWAYS.
@@ -279,7 +279,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun colorGivenTwiceResolvesToTheLastOccurrence() {
+    fun `color given twice resolves to the last occurrence`() {
         // --color follows the documented last-occurrence-wins rule for value options, same as
         // --completion/--docs.
         assertEquals(ColorMode.NEVER, listOf("--color=always", "--color=never").colorMode())
@@ -299,7 +299,7 @@ class BuiltinsTest {
     // it, in both directions: what a value slot hides from the scans, and what it must NOT hide.
 
     @Test
-    fun builtinInAValueSlotKeepsItsAttachedFormsLiteralToo() {
+    fun `builtin in a value slot keeps its attached forms literal too`() {
         val tree = grep()
 
         // `--json=x` on its own is a usage error (a boolean built-in takes no value); in a value slot it
@@ -311,14 +311,14 @@ class BuiltinsTest {
     }
 
     @Test
-    fun builtinAfterAClusterEndingInAValueTakingShortIsThatShortsValue() {
+    fun `builtin after a cluster ending in a value taking short is that shorts value`() {
         // Guideline 5's group: the flags come first and the one option that takes an argument ends the
         // cluster, so `-ve` reaches for the next token exactly as a bare `-e` does.
         assertEquals("v=true e=--json files=[f.txt]", grepWithFlag().bindText("-ve", "--json", "f.txt"))
     }
 
     @Test
-    fun aSubcommandsOwnOptionClaimsItsValueSlotToo() {
+    fun `a subcommands own option claims its value slot too`() {
         // The scans run before the walk, so covering this needed the target command resolved first: the
         // options in scope at `--json` are `sub`'s, and only `sub` knows that `-e` takes a value.
         val tree = cliOf("app") {
@@ -336,7 +336,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun builtinInAGlobalOptionsValueSlotIsThatGlobalsValue() {
+    fun `builtin in a global options value slot is that globals value`() {
         // The pre-strip that pulls globals out of argv runs AFTER the built-in strips, so `--json` used to
         // be gone by the time `--dsn` reached for its value and the subcommand token took its place.
         val tree = cliOf("app") {
@@ -353,7 +353,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun builtinOutsideAValueSlotStillAnswersAtEveryDepth() {
+    fun `builtin outside a value slot still answers at every depth`() {
         val tree = cli("app") {
             command("sub") {
                 option("--regexp", "-e")
@@ -371,7 +371,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun helpIsNoExceptionAndBindsAsAValueLikeAnyOtherToken() {
+    fun `help is no exception and binds as a value like any other token`() {
         // One rule, no carve-out: `grep -e --help` searches for the string "--help", as GNU grep does.
         assertEquals("e=--help files=[f.txt]", grep().bindText("-e", "--help", "f.txt"))
         assertEquals("e=-h files=[f.txt]", grep().bindText("-e", "-h", "f.txt"))
@@ -380,7 +380,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun helpInASubcommandsValueSlotBindsThereToo() {
+    fun `help in a subcommands value slot binds there too`() {
         // --help and --help-all are matched AFTER the walk, against the reached command's own pool, so the
         // slot has to reach them on their own path as well as on the pre-walk one.
         val tree = cliOf("app") {
@@ -399,7 +399,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun anOptionalValueOptionClaimsNoSlotSoTheBuiltinAfterItStillAnswers() {
+    fun `an optional value option claims no slot so the builtin after it still answers`() {
         // `.optionalValue()` never reaches for the next token — it cannot tell its value from an operand —
         // so the arity rule must not start skipping one on its behalf.
         val tree = cli("ls") {
@@ -413,7 +413,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun aBuiltinSpellingAfterTheDelimiterIsStillAnOperand() {
+    fun `a builtin spelling after the delimiter is still an operand`() {
         // Guideline 10 already put these out of every scan's reach; the arity rule leaves that alone.
         assertEquals("e=null files=[--json, f.txt]", grep().bindText("--", "--json", "f.txt"))
         assertEquals(false, executeOf(grep(), "--", "--json", "f.txt").globals.json)
@@ -425,7 +425,7 @@ class BuiltinsTest {
     // leftover, or an abbreviation, is untouched.
 
     @Test
-    fun unknownSubcommandWithHelpErrorsIdenticallyToWithoutHelp() {
+    fun `unknown subcommand with help errors identically to without help`() {
         val tree = app()
         val bare = assertIs<Result.Error<CliError>>(tree.parse(listOf("zzz"))).error
         val withHelp = assertIs<Result.Error<CliError>>(tree.parse(listOf("zzz", "--help"))).error
@@ -434,7 +434,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun unknownSubcommandWithHelpAllErrorsTheSameWayAsHelp() {
+    fun `unknown subcommand with help all errors the same way as help`() {
         val tree = app()
         val withHelp = assertIs<Result.Error<CliError>>(tree.parse(listOf("zzz", "--help"))).error
         val withHelpAll = assertIs<Result.Error<CliError>>(tree.parse(listOf("zzz", "--help-all"))).error
@@ -442,7 +442,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun unknownSubcommandAtANestedGroupWithHelpErrorsTheSameWay() {
+    fun `unknown subcommand at a nested group with help errors the same way`() {
         val tree = taggedDispatcher()
         val bare = assertIs<Result.Error<CliError>>(tree.parse(listOf("tag", "zzz"))).error
         val withHelp = assertIs<Result.Error<CliError>>(tree.parse(listOf("tag", "zzz", "--help"))).error
@@ -451,7 +451,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun groupReachedWithNoLeftoverStillShowsItsOwnHelp() {
+    fun `group reached with no leftover still shows its own help`() {
         // Must-keep-working: a group with nothing left over is a genuine help request, not a typo.
         val tree = taggedDispatcher()
         val inv = assertIs<Result.Success<Invocation>>(tree.parse(listOf("tag", "--help"))).value
@@ -459,7 +459,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun leafReachedWithNoLeftoverStillShowsItsOwnHelp() {
+    fun `leaf reached with no leftover still shows its own help`() {
         // Must-keep-working: the walk consumed every token reaching a leaf, so --help is that leaf's own.
         val tree = taggedDispatcher()
         val inv = assertIs<Result.Success<Invocation>>(tree.parse(listOf("list", "--help"))).value
@@ -467,7 +467,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun anAbbreviatedSubcommandPlusHelpShowsThatCommandsHelp() {
+    fun `an abbreviated subcommand plus help shows that commands help`() {
         // Must-keep-working: an inferred prefix resolves to a real child during the walk itself, so it never
         // reaches the new unknown-subcommand check at all.
         val tree = taggedDispatcher(Abbreviation.All)
@@ -476,7 +476,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun aBadValueOnARealCommandPlusHelpStillShowsThatCommandsHelp() {
+    fun `a bad value on a real command plus help still shows that commands help`() {
         // Scope boundary: "show" is a real command and "abc" is merely a value for it (its "id" argument),
         // not an unknown subcommand, so --help must still win here. "show" has no children, so it is never a
         // Command.isGroup and the new check never even looks at its leftover tokens.
@@ -486,7 +486,7 @@ class BuiltinsTest {
     }
 
     @Test
-    fun unknownSubcommandWithHelpNeverSuggestsAHiddenChild() {
+    fun `unknown subcommand with help never suggests a hidden child`() {
         // Mirrors ParseResolutionTest's unknownSubcommandNeverSuggestsAHiddenSubcommand through the --help
         // path: the fix's own candidate list must exclude hidden children too.
         val tree = cli("app") {

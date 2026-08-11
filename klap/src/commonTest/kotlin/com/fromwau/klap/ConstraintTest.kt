@@ -42,14 +42,14 @@ private fun Cli.out(argv: List<String>): String {
 class RequireExactlyOneTest {
 
     @Test
-    fun noneGivenIsAnError() {
+    fun `none given is an error`() {
         val error = tarTree().err(listOf("run", "-f", "a.tar"))
         assertEquals(CliError.ExactlyOneRequired(listOf("--create", "--extract", "--list")), error)
         assertEquals("exactly one of --create, --extract, --list is required", error.message())
     }
 
     @Test
-    fun exactlyOneGivenParses() {
+    fun `exactly one given parses`() {
         assertEquals(
             "c=false x=true t=false z=false j=false f=a.tar\n",
             tarTree().out(listOf("run", "-x", "-f", "a.tar")),
@@ -57,21 +57,21 @@ class RequireExactlyOneTest {
     }
 
     @Test
-    fun twoGivenIsAnError() {
+    fun `two given is an error`() {
         val error = tarTree().err(listOf("run", "-c", "-x", "-f", "a.tar"))
         assertEquals(CliError.MutuallyExclusive(listOf("--create", "--extract")), error)
         assertEquals("--create and --extract are mutually exclusive", error.message())
     }
 
     @Test
-    fun threeGivenIsAnErrorNamingAllThree() {
+    fun `three given is an error naming all three`() {
         val error = tarTree().err(listOf("run", "-c", "-x", "-t", "-f", "a.tar"))
         // Comma-then-"and", so a three-way conflict does not read as "a and b and c".
         assertEquals("--create, --extract and --list are mutually exclusive", error.message())
     }
 
     @Test
-    fun aViolationExitsWithTheUsageErrorCode() {
+    fun `a violation exits with the usage error code`() {
         val term = RecordingTerminal()
         val code = tarTree().run(arrayOf("run", "-c", "-x", "-f", "a.tar"), term)
         assertEquals(USAGE_ERROR_EXIT, code)
@@ -83,7 +83,7 @@ class RequireExactlyOneTest {
 class RequireAtMostOneTest {
 
     @Test
-    fun noneGivenIsFine() {
+    fun `none given is fine`() {
         assertEquals(
             "c=true x=false t=false z=false j=false f=a.tar\n",
             tarTree().out(listOf("run", "-c", "-f", "a.tar")),
@@ -91,7 +91,7 @@ class RequireAtMostOneTest {
     }
 
     @Test
-    fun oneGivenIsFine() {
+    fun `one given is fine`() {
         assertEquals(
             "c=true x=false t=false z=true j=false f=a.tar\n",
             tarTree().out(listOf("run", "-c", "-z", "-f", "a.tar")),
@@ -99,7 +99,7 @@ class RequireAtMostOneTest {
     }
 
     @Test
-    fun twoGivenIsAnError() {
+    fun `two given is an error`() {
         val error = tarTree().err(listOf("run", "-c", "-z", "-j", "-f", "a.tar"))
         assertEquals(CliError.MutuallyExclusive(listOf("--gzip", "--bzip2")), error)
         assertEquals("--gzip and --bzip2 are mutually exclusive", error.message())
@@ -109,7 +109,7 @@ class RequireAtMostOneTest {
 class ConstraintOrderingTest {
 
     @Test
-    fun aModeConflictOutranksAMissingRequiredOption() {
+    fun `a mode conflict outranks a missing required option`() {
         // The whole reason the check runs before binding: `-f` is required and absent here, so the bind
         // would report `missing required option --file` and bury the real mistake. GNU tar reports the
         // mode conflict, and so does this.
@@ -118,13 +118,13 @@ class ConstraintOrderingTest {
     }
 
     @Test
-    fun aMissingModeOutranksAMissingRequiredOption() {
+    fun `a missing mode outranks a missing required option`() {
         val error = tarTree().err(listOf("run"))
         assertIs<CliError.ExactlyOneRequired>(error)
     }
 
     @Test
-    fun aMalformedTokenStillOutranksAConstraint() {
+    fun `a malformed token still outranks a constraint`() {
         // sifted.error keeps its place at the head of the queue: an unknown option is a syntax mistake,
         // and reporting a constraint against a segment we failed to read would be guesswork.
         val error = tarTree().err(listOf("run", "--nope"))
@@ -132,7 +132,7 @@ class ConstraintOrderingTest {
     }
 
     @Test
-    fun theFirstDeclaredConstraintWins() {
+    fun `the first declared constraint wins`() {
         val tree = cli("app") {
             command("go") {
                 val a = flag("--alpha", "-a")
@@ -161,32 +161,32 @@ class ConstraintReadsSuppliedNessTest {
     }
 
     @Test
-    fun aDefaultedOptionDoesNotCountAsSuppliedWhenItIsMerelyDefaulted() {
+    fun `a defaulted option does not count as supplied when it is merely defaulted`() {
         // Reading the BOUND values would see format = "json" here and call the set satisfied.
         val error = defaultedTree().err(listOf("go"))
         assertEquals(CliError.ExactlyOneRequired(listOf("--format", "--raw")), error)
     }
 
     @Test
-    fun aDefaultedOptionCountsAsSuppliedWhenItIsActuallyGiven() {
+    fun `a defaulted option counts as supplied when it is actually given`() {
         assertEquals("format=yaml raw=false\n", defaultedTree().out(listOf("go", "--format", "yaml")))
     }
 
     @Test
-    fun theDefaultStillFillsInWhenAnotherMemberSatisfiesTheSet() {
+    fun `the default still fills in when another member satisfies the set`() {
         // The constraint is satisfied by --raw, and --format still binds its default: the check never
         // touches binding, it only decides whether binding may proceed.
         assertEquals("format=json raw=true\n", defaultedTree().out(listOf("go", "-r")))
     }
 
     @Test
-    fun aDefaultedOptionGivenAlongsideAnotherMemberConflicts() {
+    fun `a defaulted option given alongside another member conflicts`() {
         val error = defaultedTree().err(listOf("go", "--format", "yaml", "-r"))
         assertEquals(CliError.MutuallyExclusive(listOf("--format", "--raw")), error)
     }
 
     @Test
-    fun aNegatedFlagIsNotASelection() {
+    fun `a negated flag is not a selection`() {
         // `--no-fancy` asks to turn fancy OFF; counting it as "fancy was chosen" would make
         // `--no-fancy --plain` a conflict between an opt-out and an opt-in.
         val tree = cli("app") {
@@ -203,7 +203,7 @@ class ConstraintReadsSuppliedNessTest {
     }
 
     @Test
-    fun aPositionalCountsOnlyWhenItsOperandIsGiven() {
+    fun `a positional counts only when its operand is given`() {
         // cp's `-T DEST` vs. a trailing DEST operand: the one shape a constraint over a positional buys.
         val tree = cli("app") {
             command("go") {
@@ -225,7 +225,7 @@ class ConstraintReadsSuppliedNessTest {
 class ConstraintConstructionTest {
 
     @Test
-    fun aSingleInputIsRejected() {
+    fun `a single input is rejected`() {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
@@ -239,7 +239,7 @@ class ConstraintConstructionTest {
     }
 
     @Test
-    fun anEmptySetIsRejected() {
+    fun `an empty set is rejected`() {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
@@ -253,7 +253,7 @@ class ConstraintConstructionTest {
     }
 
     @Test
-    fun aRepeatedInputIsRejected() {
+    fun `a repeated input is rejected`() {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
@@ -268,7 +268,7 @@ class ConstraintConstructionTest {
     }
 
     @Test
-    fun theSameInputReachedThroughTwoHandlesIsStillARepeat() {
+    fun `the same input reached through two handles is still a repeat`() {
         // A transformer returns a fresh handle around the SAME spec, so identity on the handle would miss
         // this; membership is compared on the spec for exactly that reason.
         val e = assertFailsWith<IllegalArgumentException> {
@@ -286,7 +286,7 @@ class ConstraintConstructionTest {
     }
 
     @Test
-    fun anInputDeclaredOnAnotherCommandIsRejected() {
+    fun `an input declared on another command is rejected`() {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 var foreign: Flag? = null
@@ -308,7 +308,7 @@ class ConstraintConstructionTest {
     }
 
     @Test
-    fun aGlobalCannotJoinAConstraint() {
+    fun `a global cannot join a constraint`() {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 val verbose = globalFlag("--verbose", "-v")
@@ -326,7 +326,7 @@ class ConstraintConstructionTest {
     }
 
     @Test
-    fun aConstraintDeclaredInsideAGroupIsAccepted() {
+    fun `a constraint declared inside a group is accepted`() {
         // group() is a help heading and nothing else; it neither creates nor blocks a constraint.
         val tree = cli("app") {
             command("go") {
@@ -343,7 +343,7 @@ class ConstraintConstructionTest {
     }
 
     @Test
-    fun aConstraintOnTheRootsOwnInputsWorks() {
+    fun `a constraint on the roots own inputs works`() {
         val tree = cli("app") {
             val a = flag("--alpha", "-a")
             val b = flag("--beta", "-b")
@@ -358,7 +358,7 @@ class ConstraintConstructionTest {
 class ConstraintHelpTest {
 
     @Test
-    fun everyExactlyOneMemberRowNamesTheWholeSet() {
+    fun `every exactly one member row names the whole set`() {
         val help = tarTree().subcommand("run")!!.helpText("tar run")
         assertTrue("create a new archive (one of -c, -x, -t; required)" in help, help)
         assertTrue("extract files from an archive (one of -c, -x, -t; required)" in help, help)
@@ -366,20 +366,20 @@ class ConstraintHelpTest {
     }
 
     @Test
-    fun everyAtMostOneMemberRowNamesTheWholeSet() {
+    fun `every at most one member row names the whole set`() {
         val help = tarTree().subcommand("run")!!.helpText("tar run")
         assertTrue("filter through gzip (at most one of -z, -j)" in help, help)
         assertTrue("filter through bzip2 (at most one of -z, -j)" in help, help)
     }
 
     @Test
-    fun anUnconstrainedRowInTheSameCommandIsUntouched() {
+    fun `an unconstrained row in the same command is untouched`() {
         val help = tarTree().subcommand("run")!!.helpText("tar run")
         assertTrue("archive to operate on (required)" in help, help)
     }
 
     @Test
-    fun aConstrainedOptionDropsTheContradictoryOptionalWord() {
+    fun `a constrained option drops the contradictory optional word`() {
         val tree = cli("app") {
             command("go") {
                 val a = option("--alpha", "-a", help = "the alpha")
@@ -394,7 +394,7 @@ class ConstraintHelpTest {
     }
 
     @Test
-    fun aShortlessMemberIsNamedByItsLongForm() {
+    fun `a shortless member is named by its long form`() {
         val tree = cli("app") {
             command("go") {
                 val a = flag("--alpha", help = "the alpha")
@@ -408,7 +408,7 @@ class ConstraintHelpTest {
     }
 
     @Test
-    fun anInputInTwoSetsCarriesBothNotes() {
+    fun `an input in two sets carries both notes`() {
         val tree = cli("app") {
             command("go") {
                 val a = flag("--alpha", "-a", help = "the alpha")
@@ -424,7 +424,7 @@ class ConstraintHelpTest {
     }
 
     @Test
-    fun anUnconstrainedInputCarriesNoNoteButKeepsItsOwnAnnotations() {
+    fun `an unconstrained input carries no note but keeps its own annotations`() {
         val tree = cli("app") {
             command("go") {
                 flag("--plain", "-p", help = "a plain flag")
@@ -445,7 +445,7 @@ class ConstraintHelpTest {
     }
 
     @Test
-    fun theNoteReachesGeneratedDocsToo() {
+    fun `the note reaches generated docs too`() {
         // markdown/man render from the same helpSections rows, so the annotation cannot drift from --help.
         val markdown = tarTree().renderDocs(DocFormat.MARKDOWN)
         assertTrue("(one of \\-c, \\-x, \\-t; required)" in markdown || "(one of -c, -x, -t; required)" in markdown, markdown)
@@ -457,18 +457,18 @@ class ConstraintUsageLineTest {
     private fun Cli.runUsage(): String = subcommand("run")!!.usageLine("tar run")
 
     @Test
-    fun bothAritiesRenderInDeclarationOrder() {
+    fun `both arities render in declaration order`() {
         assertEquals("usage: tar run (-c|-x|-t) [-z|-j] --file <value> [options]", tarTree().runUsage())
     }
 
     @Test
-    fun theUsageLineStillHeadsTheHelpPage() {
+    fun `the usage line still heads the help page`() {
         val help = tarTree().subcommand("run")!!.helpText("tar run")
         assertEquals("usage: tar run (-c|-x|-t) [-z|-j] --file <value> [options]", help.lineSequence().first())
     }
 
     @Test
-    fun groupsPrecedeThePositionals() {
+    fun `groups precede the positionals`() {
         val tree = cli("tar") {
             command("run") {
                 val create = flag("--create", "-c")
@@ -482,7 +482,7 @@ class ConstraintUsageLineTest {
     }
 
     @Test
-    fun aShortlessMemberRendersItsLongForm() {
+    fun `a shortless member renders its long form`() {
         val tree = cli("tar") {
             command("run") {
                 val create = flag("--create")
@@ -495,7 +495,7 @@ class ConstraintUsageLineTest {
     }
 
     @Test
-    fun anAllHiddenGroupRendersNothing() {
+    fun `an all hidden group renders nothing`() {
         val tree = cli("tar") {
             command("run") {
                 val create = flag("--create", "-c").hidden()
@@ -509,7 +509,7 @@ class ConstraintUsageLineTest {
     }
 
     @Test
-    fun aPartlyHiddenGroupRendersOnlyItsVisibleMembers() {
+    fun `a partly hidden group renders only its visible members`() {
         val tree = cli("tar") {
             command("run") {
                 val create = flag("--create", "-c")
@@ -523,7 +523,7 @@ class ConstraintUsageLineTest {
     }
 
     @Test
-    fun anUnconstrainedCommandsUsageLineCarriesNoGroup() {
+    fun `an unconstrained commands usage line carries no group`() {
         val tree = cli("app") {
             command("go") {
                 argument("name")
@@ -556,35 +556,35 @@ private fun Cli.names(vararg words: String): List<String> =
 class ConstraintCompletionTest {
 
     @Test
-    fun aSuppliedModeDropsItsSiblings() {
+    fun `a supplied mode drops its siblings`() {
         val names = tarCompletionTree().names("run", "-c", "-")
         assertTrue("-x" !in names, "$names")
         assertTrue("-t" !in names, "$names")
     }
 
     @Test
-    fun theLongFormsAreDroppedToo() {
+    fun `the long forms are dropped too`() {
         val names = tarCompletionTree().names("run", "-c", "-")
         assertTrue("--extract" !in names, "$names")
         assertTrue("--list" !in names, "$names")
     }
 
     @Test
-    fun theSuppliedMemberItselfIsStillOffered() {
+    fun `the supplied member itself is still offered`() {
         val names = tarCompletionTree().names("run", "-c", "-")
         assertTrue("-c" in names, "$names")
         assertTrue("--create" in names, "$names")
     }
 
     @Test
-    fun anUnrelatedFlagIsUntouched() {
+    fun `an unrelated flag is untouched`() {
         val names = tarCompletionTree().names("run", "-c", "-")
         assertTrue("-v" in names, "$names")
         assertTrue("--verbose" in names, "$names")
     }
 
     @Test
-    fun nothingSuppliedYetOffersEveryMember() {
+    fun `nothing supplied yet offers every member`() {
         val names = tarCompletionTree().names("run", "-")
         listOf("-c", "-x", "-t", "--create", "--extract", "--list").forEach {
             assertTrue(it in names, "$it missing from $names")
@@ -592,14 +592,14 @@ class ConstraintCompletionTest {
     }
 
     @Test
-    fun aMemberSuppliedByItsLongFormFiltersJustTheSame() {
+    fun `a member supplied by its long form filters just the same`() {
         val names = tarCompletionTree().names("run", "--create", "-")
         assertTrue("-x" !in names, "$names")
         assertTrue("--extract" !in names, "$names")
     }
 
     @Test
-    fun atMostOneFiltersTheSameWay() {
+    fun `at most one filters the same way`() {
         val names = tarCompletionTree().names("run", "-z", "-")
         assertTrue("-j" !in names, "$names")
         assertTrue("--bzip2" !in names, "$names")
@@ -609,7 +609,7 @@ class ConstraintCompletionTest {
     }
 
     @Test
-    fun aNegatedMemberIsNotASelection() {
+    fun `a negated member is not a selection`() {
         // Filtering reads the same predicate the parse enforces with, so `--no-fancy` (an opt-out, not a
         // choice) must leave its siblings on offer, exactly as it leaves the constraint unsatisfied.
         val tree = cli("app") {
@@ -624,7 +624,7 @@ class ConstraintCompletionTest {
     }
 
     @Test
-    fun aCommandWithNoConstraintsOffersExactlyWhatItDidBefore() {
+    fun `a command with no constraints offers exactly what it did before`() {
         val tree = cli("app") {
             command("go") {
                 flag("--alpha", "-a")
@@ -655,33 +655,33 @@ class LastWinsTest {
     }
 
     @Test
-    fun theLastSuppliedMemberIsTheOnlyOneSet() {
+    fun `the last supplied member is the only one set`() {
         assertEquals("force", run("-i", "-f"))
         assertEquals("interactive", run("-f", "-i"))
         assertEquals("neither", run())
     }
 
     @Test
-    fun bothSpellingsOfAMemberCarryTheSamePosition() {
+    fun `both spellings of a member carry the same position`() {
         assertEquals("force", run("--interactive", "--force"))
         assertEquals("interactive", run("--force", "--interactive"))
     }
 
     @Test
-    fun lastWinsResolvesInsideOneCluster() {
+    fun `last wins resolves inside one cluster`() {
         // `-if` and `-fi` are one token each; the character order inside the cluster decides.
         assertEquals("force", run("-if"))
         assertEquals("interactive", run("-fi"))
     }
 
     @Test
-    fun aRepeatedMemberStillLosesToALaterOne() {
+    fun `a repeated member still loses to a later one`() {
         assertEquals("interactive", run("-f", "-f", "-i"))
         assertEquals("force", run("-i", "-i", "-f"))
     }
 
     @Test
-    fun aSuppliedSetDoesNotSwallowTheOperandsAroundIt() {
+    fun `a supplied set does not swallow the operands around it`() {
         lateinit var files: Arg<List<String>>
         lateinit var force: Flag
         lateinit var interactive: Flag
@@ -701,14 +701,14 @@ class LastWinsTest {
     }
 
     @Test
-    fun everyMemberRowNamesTheSetAndTheUsageLineGroupsIt() {
+    fun `every member row names the set and the usage line groups it`() {
         val help = tree().helpText()
         assertTrue("last of -i, -f wins" in help, help)
         assertTrue("[-i|-f]" in help, help)
     }
 
     @Test
-    fun aSetOfFewerThanTwoFlagsFailsAtBuild() {
+    fun `a set of fewer than two flags fails at build`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("rm") {
                 val force = flag("--force", "-f")
@@ -720,7 +720,7 @@ class LastWinsTest {
     }
 
     @Test
-    fun aGlobalFlagCannotJoinASet() {
+    fun `a global flag cannot join a set`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("rm") {
                 val quiet = globalFlag("--quiet", "-q")
@@ -733,7 +733,7 @@ class LastWinsTest {
     }
 
     @Test
-    fun lastWinsResolvesTwoOptions() {
+    fun `last wins resolves two options`() {
         fun tree() = cli("head") {
             val lines = option("--lines", "-n")
             val bytes = option("--bytes", "-c")
@@ -746,7 +746,7 @@ class LastWinsTest {
     }
 
     @Test
-    fun aLosingOptionFallsBackToItsDeclaredDefault() {
+    fun `a losing option falls back to its declared default`() {
         fun tree() = cli("t") {
             val a = option("--alpha").default("A")
             val b = option("--beta")
@@ -758,7 +758,7 @@ class LastWinsTest {
     }
 
     @Test
-    fun lastWinsResolvesAMixedFlagAndOptionSet() {
+    fun `last wins resolves a mixed flag and option set`() {
         // ls spells one setting two ways: `-S` is a flag, `--sort=WORD` an option, last one wins.
         fun tree() = cli("ls") {
             val bySize = flag("--sort-size", "-S")
@@ -783,7 +783,7 @@ class LastWinsTest {
     }
 
     @Test
-    fun aLosingCountFlagResetsToZero() {
+    fun `a losing count flag resets to zero`() {
         fun tree() = cli("t") {
             val v = flag("--verbose", "-v").count()
             val q = flag("--quiet", "-q")
@@ -795,7 +795,7 @@ class LastWinsTest {
     }
 
     @Test
-    fun aPositionalCannotJoinALastWinsSet() {
+    fun `a positional cannot join a last wins set`() {
         val failure = assertFailsWith<IllegalArgumentException> {
             cli("t") {
                 val f = flag("--force")
@@ -808,7 +808,7 @@ class LastWinsTest {
     }
 
     @Test
-    fun aRequiredOptionCannotJoinALastWinsSet() {
+    fun `a required option cannot join a last wins set`() {
         val failure = assertFailsWith<IllegalArgumentException> {
             cli("t") {
                 val a = option("--alpha").required()
@@ -821,7 +821,7 @@ class LastWinsTest {
     }
 
     @Test
-    fun aMultipleOptionCannotJoinALastWinsSet() {
+    fun `a multiple option cannot join a last wins set`() {
         val failure = assertFailsWith<IllegalArgumentException> {
             cli("t") {
                 val a = option("--alpha").multiple()
@@ -834,7 +834,7 @@ class LastWinsTest {
     }
 
     @Test
-    fun aCardinalityDeclaredAfterTheSetIsRejectedJustTheSame() {
+    fun `a cardinality declared after the set is rejected just the same`() {
         // .required()/.multiple() mutate the shared spec, so either may legally run below the lastWins
         // line; a check at the call site would pass here and leave the action reading a null.
         val failure = assertFailsWith<IllegalArgumentException> {
@@ -850,7 +850,7 @@ class LastWinsTest {
     }
 
     @Test
-    fun aCardinalityMutatedFromASiblingCommandIsRejectedJustTheSame() {
+    fun `a cardinality mutated from a sibling command is rejected just the same`() {
         // Unlike the case above, "a"'s own build() already ran and passed (alpha/beta were both still
         // Optional) the instant command("a") { } returned; "b" reaches alpha only through a captured
         // handle, after "a" is already frozen into a Command, so the guard above alone would miss this.
@@ -883,30 +883,30 @@ class RequiredIfTest {
     }
 
     @Test
-    fun theOptionIsOptionalWhileTheConditionIsAbsent() {
+    fun `the option is optional while the condition is absent`() {
         assertEquals("local\n", tree().out(listOf()))
     }
 
     @Test
-    fun theOptionBindsNormallyWhenBothAreGiven() {
+    fun `the option binds normally when both are given`() {
         assertEquals("abc\n", tree().out(listOf("--remote", "--token", "abc")))
     }
 
     @Test
-    fun theConditionWithoutTheOptionIsAUsageError() {
+    fun `the condition without the option is a usage error`() {
         val error = tree().err(listOf("--remote"))
         assertEquals(CliError.MissingRequiredOption("--token"), error)
         assertEquals("missing required option --token", error.message())
     }
 
     @Test
-    fun theHelpRowStatesTheRuleRatherThanLeavingItToBeDiscovered() {
+    fun `the help row states the rule rather than leaving it to be discovered`() {
         val help = tree().helpText()
         assertTrue("required when --remote" in help, help)
     }
 
     @Test
-    fun aDefaultedOptionSatisfiesTheRuleOnlyWhenActuallyGiven() {
+    fun `a defaulted option satisfies the rule only when actually given`() {
         // Same supplied-ness reading the constraint checks use: a default always binds, so reading the
         // BOUND value here would call the rule satisfied on every line.
         val tree = cli("app") {
@@ -920,7 +920,7 @@ class RequiredIfTest {
     }
 
     @Test
-    fun combiningItWithAnUnconditionalRequiredFailsAtBuild() {
+    fun `combining it with an unconditional required fails at build`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 val remote = flag("--remote")
@@ -932,7 +932,7 @@ class RequiredIfTest {
     }
 
     @Test
-    fun aNegatableGlobalConditionFiresOnlyOnItsPositiveSpelling() {
+    fun `a negatable global condition fires only on its positive spelling`() {
         // The one cell where the accumulator reads polarity rather than a hit count: a global condition and
         // a negatable one at once. Both halves of that read are exercised here, since nothing else is.
         val tree = cli("app") {
@@ -950,7 +950,7 @@ class RequiredIfTest {
     }
 
     @Test
-    fun aTriggerDeclaredOnAnotherCommandFailsAtBuild() {
+    fun `a trigger declared on another command fails at build`() {
         // checkConditionalRequirements only ever asks THIS command's own sift plus globals whether the
         // trigger fired, so a flag belonging to sibling "a" is invisible to "b"'s check and the rule could
         // never fire, no matter what --help renders for it.
@@ -976,7 +976,7 @@ class RequiredIfTest {
     }
 
     @Test
-    fun aTriggerDeclaredAsAGlobalStillBuildsAndFires() {
+    fun `a trigger declared as a global still builds and fires`() {
         val tree = cli("app") {
             val remote = globalFlag("--remote")
             command("push") {

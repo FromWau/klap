@@ -9,7 +9,7 @@ import kotlin.test.assertEquals
 class EnumChoiceValidationTest {
 
     @Test
-    fun addRejectsAnUnknownPriorityNamingTheOption() = withTempStore { path ->
+    fun `add rejects an unknown priority naming the option`() = withTempStore { path ->
         val result = taskManagerCli().captureWithFile(path, "add", "Ship it", "--priority", "urgent")
         assertEquals(USAGE_ERROR_EXIT, result.exitCode, result.err)
         assertContains(result.err, "--priority")
@@ -17,7 +17,7 @@ class EnumChoiceValidationTest {
     }
 
     @Test
-    fun listRejectsAnUnknownStatusNamingTheOption() = withTempStore { path ->
+    fun `list rejects an unknown status naming the option`() = withTempStore { path ->
         val result = taskManagerCli().captureWithFile(path, "list", "--status", "archived")
         assertEquals(USAGE_ERROR_EXIT, result.exitCode, result.err)
         assertContains(result.err, "--status")

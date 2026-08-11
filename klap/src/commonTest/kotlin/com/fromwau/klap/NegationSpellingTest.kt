@@ -17,7 +17,7 @@ class NegationSpellingTest {
     }
 
     @Test
-    fun theGeneratedFormIsStillTheDefaultWithNoSpellings() {
+    fun `the generated form is still the default with no spellings`() {
         // Not `--color`: klap reserves that long name for its own built-in (BuilderValidation.kt's
         // reservedLongNames), which is orthogonal to what this test is checking.
         val tree = cli("t") {
@@ -29,13 +29,13 @@ class NegationSpellingTest {
     }
 
     @Test
-    fun anExplicitShortReachesTheNegativeHalf() {
+    fun `an explicit short reaches the negative half`() {
         assertEquals("deref=false", cpLike().bindText("-P", "f"))
         assertEquals("deref=true", cpLike().bindText("-L", "f"))
     }
 
     @Test
-    fun anExplicitShortNegationWorksInsideACluster() {
+    fun `an explicit short negation works inside a cluster`() {
         val tree = cli("t") {
             val v = flag("--verbose", "-v")
             val deref = flag("--dereference", "-L").negatable("-P")
@@ -46,7 +46,7 @@ class NegationSpellingTest {
     }
 
     @Test
-    fun explicitSpellingsReplaceTheGeneratedForm() {
+    fun `explicit spellings replace the generated form`() {
         // git spells the negative half `--no-pager` against `--paginate`, and rejects `--no-paginate`.
         val tree = cli("git") {
             val paginate = flag("--paginate", "-p").negatable("--no-pager", "-P")
@@ -58,7 +58,7 @@ class NegationSpellingTest {
     }
 
     @Test
-    fun aNegativeSpellingCollidingWithADeclaredNameIsRejectedAtConstruction() {
+    fun `a negative spelling colliding with a declared name is rejected at construction`() {
         val failure = assertFailsWith<IllegalArgumentException> {
             cli("t") {
                 flag("--quiet", "-q")
@@ -70,13 +70,13 @@ class NegationSpellingTest {
     }
 
     @Test
-    fun helpShowsTheRealNegativeSpellingsRatherThanTheGeneratedOne() {
+    fun `help shows the real negative spellings rather than the generated one`() {
         val text = cpLike().helpText()
         assertTrue("-L, -P, --dereference, --no-dereference" in text, text)
     }
 
     @Test
-    fun aNegativeSpellingReservedByABuiltinIsRejectedAtConstruction() {
+    fun `a negative spelling reserved by a builtin is rejected at construction`() {
         val failure = assertFailsWith<IllegalArgumentException> {
             cli("t") {
                 flag("--verbose", "-v").negatable("-h")
