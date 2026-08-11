@@ -9,7 +9,7 @@ import kotlinx.serialization.json.Json
 class AddListRoundTripTest {
 
     @Test
-    fun addThenListRoundTripsATask() = withTempStore { path ->
+    fun `add then list round trips a task`() = withTempStore { path ->
         val cli = taskManagerCli()
 
         val added = cli.captureWithFile(path, "add", "Buy milk", "--priority", "high", "--tag", "errands")
@@ -24,7 +24,7 @@ class AddListRoundTripTest {
     }
 
     @Test
-    fun jsonEmitsTheSameTaskAsRealStructuredJson() = withTempStore { path ->
+    fun `json emits the same task as real structured json`() = withTempStore { path ->
         val cli = taskManagerCli()
         cli.captureWithFile(path, "add", "Buy milk", "--priority", "high", "--tag", "errands")
 
@@ -42,7 +42,7 @@ class AddListRoundTripTest {
     }
 
     @Test
-    fun listingAnEmptyStoreSaysSoRatherThanPrintingNothing() = withTempStore { path ->
+    fun `listing an empty store says so rather than printing nothing`() = withTempStore { path ->
         val result = taskManagerCli().captureWithFile(path, "list")
         assertEquals(0, result.exitCode, result.err)
         assertEquals("no tasks", result.out.trim())

@@ -30,7 +30,7 @@ import com.fromwau.klap.projection
  */
 public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
     // Real git abbreviates a subcommand's long options (`git commit --am` reaches `--amend`) but never a
-    // top-level one; klap's switch is root-only, so it abbreviates both (see knownDivergenceFromRealGit).
+    // top-level one; klap's switch is root-only, so it abbreviates both (see `known divergence from real git`).
     abbreviation = Abbreviation.Options
     description = "the stupid content tracker"
     version = "2.55.0"
@@ -63,7 +63,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
     // form leaves the next token alone, so `git --exec-path log` routes to `log` rather than swallowing
     // it as the path. Real git's bare form is actually print-and-exit (verified against 2.55.0), which
     // klap has no way to express for a single option — it binds and continues instead, so `log` runs here
-    // where real git never gets that far. Pinned in knownDivergenceFromRealGit below.
+    // where real git never gets that far. Pinned in `known divergence from real git` below.
     val execPath = globalOption("--exec-path", help = "path to where your core git programs are installed")
         .file()
         .optionalValue("/usr/lib/git-core")

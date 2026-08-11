@@ -42,7 +42,7 @@ class BuiltinsOptOutTest {
     // --- default: a CLI that never calls builtins { } offers all of them ---
 
     @Test
-    fun defaultCliStillOffersEveryBuiltin() {
+    fun `default cli still offers every builtin`() {
         val tree = cli("app") {
             command("go") { action { Ok("") } }
         }
@@ -82,7 +82,7 @@ class BuiltinsOptOutTest {
     // --- json ---
 
     @Test
-    fun headlineCurlShapedJsonOptionBindsItsBodyAndTheUrl() {
+    fun `headline curl shaped json option binds its body and the url`() {
         // F3's headline harm: klap's --json is position-independent and stripped before binding, so today
         // `curl --json '{"a":1}' https://x` switches the output format AND leaves the body to bind as the
         // URL, silently. With the built-in declined, both operands land where curl means them.
@@ -118,7 +118,7 @@ class BuiltinsOptOutTest {
     }
 
     @Test
-    fun disabledJsonIsNeitherParsedNorSwallowed() {
+    fun `disabled json is neither parsed nor swallowed`() {
         val tree = cli("app") {
             builtins { json = false }
             command("go") { action { Ok("") } }
@@ -133,7 +133,7 @@ class BuiltinsOptOutTest {
     }
 
     @Test
-    fun disabledJsonIsNotAdvertised() {
+    fun `disabled json is not advertised`() {
         val tree = cli("app") {
             builtins { json = false }
             command("go") { action { Ok("") } }
@@ -152,7 +152,7 @@ class BuiltinsOptOutTest {
     // --- color ---
 
     @Test
-    fun disabledColorFreesTheNameAndStopsBeingParsed() {
+    fun `disabled color frees the name and stops being parsed`() {
         var seen: String? = null
         val tree = cli("app") {
             builtins { color = false }
@@ -173,7 +173,7 @@ class BuiltinsOptOutTest {
     }
 
     @Test
-    fun disabledColorIsNotAdvertised() {
+    fun `disabled color is not advertised`() {
         val tree = cli("app") {
             builtins { color = false }
             command("go") { action { Ok("") } }
@@ -187,7 +187,7 @@ class BuiltinsOptOutTest {
     // --- completion ---
 
     @Test
-    fun disabledCompletionFreesTheNameForAnOptionAndASubcommand() {
+    fun `disabled completion frees the name for an option and a subcommand`() {
         var seen: String? = null
         val tree = cli("app") {
             builtins { completion = false }
@@ -208,7 +208,7 @@ class BuiltinsOptOutTest {
     }
 
     @Test
-    fun disabledCompletionMetaOptionIsNotParsedAndNotAdvertised() {
+    fun `disabled completion meta option is not parsed and not advertised`() {
         val tree = cli("greet") {
             builtins { completion = false }
             argument("name")
@@ -222,7 +222,7 @@ class BuiltinsOptOutTest {
     }
 
     @Test
-    fun disabledCompletionSubcommandIsGoneFromTheTreeAndItsListings() {
+    fun `disabled completion subcommand is gone from the tree and its listings`() {
         val tree = cli("app") {
             builtins { completion = false }
             command("go") { action { Ok("") } }
@@ -238,7 +238,7 @@ class BuiltinsOptOutTest {
     // --- docs ---
 
     @Test
-    fun disabledDocsFreesTheNameForAFlagAndASubcommand() {
+    fun `disabled docs frees the name for a flag and a subcommand`() {
         var seen: Boolean? = null
         val tree = cli("app") {
             builtins { docs = false }
@@ -258,7 +258,7 @@ class BuiltinsOptOutTest {
     }
 
     @Test
-    fun disabledDocsMetaOptionIsNotParsedAndNotAdvertised() {
+    fun `disabled docs meta option is not parsed and not advertised`() {
         val tree = cli("greet") {
             builtins { docs = false }
             argument("name")
@@ -272,7 +272,7 @@ class BuiltinsOptOutTest {
     }
 
     @Test
-    fun disabledDocsSubcommandIsGoneFromTheTreeAndItsListings() {
+    fun `disabled docs subcommand is gone from the tree and its listings`() {
         val tree = cli("app") {
             builtins { docs = false }
             command("go") { action { Ok("") } }
@@ -288,7 +288,7 @@ class BuiltinsOptOutTest {
     // --- helpShort ---
 
     @Test
-    fun disabledHelpShortFreesDashHForTheApp() {
+    fun `disabled help short frees dash h for the app`() {
         // `chmod -h` is the short of --no-dereference, unreachable while klap reserves -h tree-wide.
         var seen: Boolean? = null
         val chmod = cli("chmod") {
@@ -306,7 +306,7 @@ class BuiltinsOptOutTest {
     }
 
     @Test
-    fun disabledHelpShortLeavesLongHelpIntactAndUnadvertisesTheShort() {
+    fun `disabled help short leaves long help intact and unadvertises the short`() {
         val tree = cli("app") {
             builtins { helpShort = false }
             command("go") { action { Ok("") } }
@@ -327,7 +327,7 @@ class BuiltinsOptOutTest {
     // --- cross-cutting ---
 
     @Test
-    fun builtinsBlockIsOrderIndependentRelativeToSubcommandDeclarations() {
+    fun `builtins block is order independent relative to subcommand declarations`() {
         // A subcommand's own build() runs at its `command(...)` call, which may precede the builtins block;
         // the reserved-name rule must still see the declined built-in.
         var seen: String? = null
@@ -347,7 +347,7 @@ class BuiltinsOptOutTest {
     }
 
     @Test
-    fun everyBuiltinCanBeDeclinedAtOnce() {
+    fun `every builtin can be declined at once`() {
         val tree = cli("tool") {
             builtins {
                 json = false
@@ -377,7 +377,7 @@ class BuiltinsOptOutTest {
     }
 
     @Test
-    fun decliningOneBuiltinLeavesTheOthersIntact() {
+    fun `declining one builtin leaves the others intact`() {
         val tree = cli("app") {
             builtins { json = false }
             version = "1.0"
@@ -394,7 +394,7 @@ class BuiltinsOptOutTest {
     }
 
     @Test
-    fun helpAndHelpAllAndVersionStayReservedWhateverIsDeclined() {
+    fun `help and help all and version stay reserved whatever is declined`() {
         for (reserved in listOf("help", "help-all", "version")) {
             assertFailsWith<IllegalArgumentException>(reserved) {
                 cli("app") {

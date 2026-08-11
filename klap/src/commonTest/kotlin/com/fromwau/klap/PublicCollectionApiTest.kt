@@ -25,7 +25,7 @@ class PublicCollectionApiTest {
     }
 
     @Test
-    fun parseTakesAnyCollectionAndTheArrayShapeMainHandsYou() {
+    fun `parse takes any collection and the array shape main hands you`() {
         val expected = Ok(Args(lines = "20", files = listOf("f")))
         // A List, the usual case.
         assertEquals(expected, greet().parse(listOf("-n", "20", "f")))
@@ -38,7 +38,7 @@ class PublicCollectionApiTest {
     }
 
     @Test
-    fun runTakesACollectionAndAnArray() {
+    fun `run takes a collection and an array`() {
         val cli = greet().cli
         assertEquals(0, cli.run(listOf("f"), RecordingTerminal()))
         assertEquals(0, cli.run(setOf("f"), RecordingTerminal()))
@@ -56,7 +56,7 @@ class PublicCollectionApiTest {
     }
 
     @Test
-    fun aliasesAcceptsACollectionGoingInAndReadsBackAsAList() {
+    fun `aliases accepts a collection going in and reads back as a list`() {
         val cli = cli("git") {
             command("status") {
                 aliases = setOf("st", "stat")
@@ -71,7 +71,7 @@ class PublicCollectionApiTest {
     }
 
     @Test
-    fun aVariadicBindsBackAsAList() {
+    fun `a variadic binds back as a list`() {
         val parsed = greet().parse(listOf("a", "b", "c"))
         val files = (parsed as Result.Success).value?.files
         assertIs<List<String>>(files)

@@ -3,6 +3,13 @@ package com.fromwau.example
 import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.getOrElse
+import com.fromwau.kern.terminal.Style
+import com.fromwau.kern.terminal.bold
+import com.fromwau.kern.terminal.cyan
+import com.fromwau.kern.terminal.dim
+import com.fromwau.kern.terminal.green
+import com.fromwau.kern.terminal.red
+import com.fromwau.kern.terminal.yellow
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
@@ -10,17 +17,9 @@ import com.fromwau.klap.ColorScope
 import com.fromwau.klap.CompletionScope
 import com.fromwau.klap.Flag
 import com.fromwau.klap.Opt
-import com.fromwau.klap.Style
 import com.fromwau.klap.ValueScope
-import com.fromwau.klap.bold
 import com.fromwau.klap.cli
-import com.fromwau.klap.cyan
-import com.fromwau.klap.dim
-import com.fromwau.klap.green
 import com.fromwau.klap.main
-import com.fromwau.klap.plus
-import com.fromwau.klap.red
-import com.fromwau.klap.yellow
 import kotlinx.io.files.Path
 
 fun main(args: Array<String>) {

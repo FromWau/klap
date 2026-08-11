@@ -31,17 +31,17 @@ class ReadmeSnippetsTest {
     // --- "A whole program": the front-page snippet, and each claim the paragraph under it makes ---
 
     @Test
-    fun theFrontPageProgramRepeatsAndShouts() {
+    fun `the front page program repeats and shouts`() {
         assertEquals("HELLO, ADA!\nHELLO, ADA!", greetCli().render("Ada", "-n", "2", "--loud"))
     }
 
     @Test
-    fun theFrontPageProgramDefaultsToOnePoliteLine() {
+    fun `the front page program defaults to one polite line`() {
         assertEquals("Hello, Ada.", greetCli().render("Ada"))
     }
 
     @Test
-    fun theFrontPageProgramReportsAMissingOperandAndExitsNonZero() {
+    fun `the front page program reports a missing operand and exits non zero`() {
         val terminal = RecordingTerminal()
         val exit = greetCli().run(emptyArray(), terminal)
         assertTrue(exit != 0, "expected a non-zero exit, got $exit")
@@ -49,7 +49,7 @@ class ReadmeSnippetsTest {
     }
 
     @Test
-    fun theFrontPageProgramSuggestsTheClosestOptionOnATypo() {
+    fun `the front page program suggests the closest option on a typo`() {
         val terminal = RecordingTerminal()
         greetCli().run(arrayOf("Ada", "--tmies", "2"), terminal)
         assertContains(terminal.err.toString(), "--times")
@@ -61,14 +61,14 @@ class ReadmeSnippetsTest {
      * because the first draft of it claimed `greet completion bash` and this test rejected it.
      */
     @Test
-    fun theFrontPageProgramShipsACompletionScriptItNeverDeclared() {
+    fun `the front page program ships a completion script it never declared`() {
         assertContains(greetCli().render("--completion", "bash"), "_greet")
     }
 
     // --- "Reading the values from outside": the cliOf / projection snippet ---
 
     @Test
-    fun theProjectionSnippetReturnsExactlyWhatTheReadmeSaysItDoes() {
+    fun `the projection snippet returns exactly what the readme says it does`() {
         // The README prints this call with its result in a trailing comment. Both are asserted here so the
         // comment cannot quietly stop being true.
         assertEquals(
@@ -80,7 +80,7 @@ class ReadmeSnippetsTest {
     // --- "Everything lives in package com.fromwau.klap": factoring a declaration out of two commands ---
 
     @Test
-    fun aCommandBuilderExtensionSharesOneDeclarationBetweenTwoSubcommands() {
+    fun `a command builder extension shares one declaration between two subcommands`() {
         val cli = sharedDeclaration()
         // Each command gets its OWN input from the extension, which is the claim the README makes
         // about returning the handle rather than hoisting a shared `val`.
@@ -91,7 +91,7 @@ class ReadmeSnippetsTest {
     // --- "Typed results and errors": Ok/Err build, Result.Success/Result.Error match ---
 
     @Test
-    fun aParseResultIsMatchedOnTheSubtypesRatherThanTheBuilders() {
+    fun `a parse result is matched on the subtypes rather than the builders`() {
         when (val parsed = sharedDeclaration().parse(listOf("list", "-t", "work"))) {
             is Result.Success -> assertIs<Invocation.Execute>(parsed.value)
             is Result.Error -> throw AssertionError("expected a successful parse, got ${parsed.error}")
@@ -99,7 +99,7 @@ class ReadmeSnippetsTest {
     }
 
     @Test
-    fun mapErrorTurnsADomainErrorIntoACliErrorWithoutUnwrapping() {
+    fun `map error turns a domain error into a cli error without unwrapping`() {
         val result: Result<String, CliError> = TaskStore().load()
             .mapError { CliError.Failure("cannot read the store: ${it.detail}") }
             .map { tasks -> "loaded ${tasks.size} task(s)" }
@@ -107,7 +107,7 @@ class ReadmeSnippetsTest {
     }
 
     @Test
-    fun mapErrorLeavesASuccessAloneAndMapLeavesAnErrorAlone() {
+    fun `map error leaves a success alone and map leaves an error alone`() {
         val failing: Result<List<StoredTask>, TaskStoreError> = Err(TaskStoreError.DiskFull)
         val mapped: Result<String, CliError> = failing
             .mapError { CliError.Failure("cannot read the store: ${it.detail}") }
@@ -118,14 +118,14 @@ class ReadmeSnippetsTest {
     // --- "Completion": one helper shared by an action and a completion provider ---
 
     @Test
-    fun aLocalValueScopeExtensionInsideCliClosesOverAGlobalHandle() {
+    fun `a local value scope extension inside cli closes over a global handle`() {
         // The snippet's whole point: `globalOption` is a CliBuilder member, so the helper has to live
         // inside the `cli { }` lambda to see the handle it returned. At file scope it does not compile.
         assertEquals("tagged 3 in tasks.json", valueScopeHelper().render("tag", "3", "urgent"))
     }
 
     @Test
-    fun theSharedHelperResolvesTheGlobalTheSameWayFromEitherScope() {
+    fun `the shared helper resolves the global the same way from either scope`() {
         val candidates = valueScopeHelper().completeCandidates(listOf("tag", "3", ""))
         assertEquals(listOf("x", "y"), candidates.map { it.value })
     }

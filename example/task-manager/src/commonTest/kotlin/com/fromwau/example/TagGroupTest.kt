@@ -9,7 +9,7 @@ import kotlinx.serialization.json.Json
 class TagGroupTest {
 
     @Test
-    fun tagAddThenTagRmRoundTripsThroughTheNestedGroup() = withTempStore { path ->
+    fun `tag add then tag rm round trips through the nested group`() = withTempStore { path ->
         val cli = taskManagerCli()
         cli.captureWithFile(path, "add", "Ship it")
 

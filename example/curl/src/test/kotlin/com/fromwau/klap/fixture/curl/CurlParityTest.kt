@@ -8,7 +8,7 @@ class CurlParityTest {
     private val parity = ParitySuite(curlCli())
 
     @Test
-    fun bindsOptionsAndTheUrlList() {
+    fun `binds options and the url list`() {
         parity.binds(
             "https://example.com",
             expected = NOTHING_BOUND.copy(urls = listOf("https://example.com")),
@@ -87,7 +87,7 @@ class CurlParityTest {
     }
 
     @Test
-    fun rejectsWhatRealCurlRejects() {
+    fun `rejects what real curl rejects`() {
         parity.rejects("--zzz", because = "real curl: option --zzz: is unknown")
         parity.rejects("-X", because = "real curl: option -X: requires parameter")
         parity.rejects("-H", because = "real curl: option -H: requires parameter")
@@ -106,7 +106,7 @@ class CurlParityTest {
     }
 
     @Test
-    fun knownDivergenceFromRealCurl() {
+    fun `known divergence from real curl`() {
         // `--version` is always injected and `builtins { }` cannot decline it, so no short can be
         // attached to it; real curl prints its version banner for `-V`.
         parity.rejects("-V", because = "klap gap: --version has no short form, NOT real-curl behaviour")
@@ -152,7 +152,7 @@ class CurlParityTest {
     }
 
     @Test
-    fun klapAcceptsWhatRealCurlRejects() {
+    fun `klap accepts what real curl rejects`() {
         // The cross-input rule the `--url` note describes: "at least one URL across two inputs" cannot be
         // declared, so a URL-less line is a complete parse and only the action objects.
         parity.bindsLoosely(because = "real curl: (2) no URL specified", expected = NOTHING_BOUND)

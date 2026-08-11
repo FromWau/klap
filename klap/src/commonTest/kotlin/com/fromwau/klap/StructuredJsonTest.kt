@@ -65,7 +65,7 @@ private fun nonSerializableTool(): Cli = cli("nstool") {
 class StructuredJsonTest {
 
     @Test
-    fun json_emitsStructuredObject() {
+    fun `json emits structured object`() {
         val t = RecordingTerminal()
         val code = geo().run(arrayOf("point", "--json"), t)
         assertEquals(0, code)
@@ -73,7 +73,7 @@ class StructuredJsonTest {
     }
 
     @Test
-    fun plain_usesHumanRenderer() {
+    fun `plain uses human renderer`() {
         val t = RecordingTerminal()
         val code = geo().run(arrayOf("point"), t)
         assertEquals(0, code)
@@ -81,7 +81,7 @@ class StructuredJsonTest {
     }
 
     @Test
-    fun plain_fallsBackToToStringWhenHumanOmitted() {
+    fun `plain falls back to toString when human omitted`() {
         val t = RecordingTerminal()
         val code = geo().run(arrayOf("bare"), t)
         assertEquals(0, code)
@@ -89,7 +89,7 @@ class StructuredJsonTest {
     }
 
     @Test
-    fun anEmptySuccessValuePrintsNothingPlainButEncodesAsAJsonString() {
+    fun `an empty success value prints nothing plain but encodes as a json string`() {
         // Two different "nothings": run() suppresses the line for an empty rendering, but "" is a legal
         // value that --json must encode. So an action cannot lean on Ok("") to stay quiet on both paths.
         val quiet = cli("quiet") { action { Ok("") } }
@@ -103,7 +103,7 @@ class StructuredJsonTest {
     }
 
     @Test
-    fun json_stringValueSerializesToBareJsonString() {
+    fun `json string value serializes to bare json string`() {
         val t = RecordingTerminal()
         val code = geo().run(arrayOf("greet", "--json"), t)
         assertEquals(0, code)
@@ -111,7 +111,7 @@ class StructuredJsonTest {
     }
 
     @Test
-    fun json_stringValueEscapesQuotesBackslashesAndNewlines() {
+    fun `json string value escapes quotes backslashes and newlines`() {
         // kotlinx.serialization encodes the String as a JSON string literal: `"` -> \", `\` -> \\, newline -> \n.
         val t = RecordingTerminal()
         val code = cli("esc") { action { Ok("a\"b\\c\nd") } }.run(arrayOf("--json"), t)
@@ -120,7 +120,7 @@ class StructuredJsonTest {
     }
 
     @Test
-    fun json_includesFieldsLeftAtTheirDefaultValue() {
+    fun `json includes fields left at their default value`() {
         // kotlinx.serialization's default Json instance omits a field left at its default
         // (encodeDefaults = false); for a CLI's structured output that is a silently dropped field.
         val t = RecordingTerminal()
@@ -130,7 +130,7 @@ class StructuredJsonTest {
     }
 
     @Test
-    fun nonSerializableActionReturnTypeDoesNotCrashHelp() {
+    fun `non serializable action return type does not crash help`() {
         // serializer<T>() must resolve lazily, not at cli { } construction: reaching this line without
         // nonSerializableTool() throwing is itself part of what this test proves.
         val t = RecordingTerminal()
@@ -139,14 +139,14 @@ class StructuredJsonTest {
     }
 
     @Test
-    fun nonSerializableActionRunsNormallyWithoutJson() {
+    fun `non serializable action runs normally without json`() {
         val t = RecordingTerminal()
         val code = nonSerializableTool().run(arrayOf(), t)
         assertEquals(0, code)
     }
 
     @Test
-    fun nonSerializableActionJsonRendersACleanErrorInsteadOfCrashing() {
+    fun `non serializable action json renders a clean error instead of crashing`() {
         // Since --json was requested, the error must be the structured JSON envelope, not plain text.
         val t = RecordingTerminal()
         val code = nonSerializableTool().run(arrayOf("--json"), t)
@@ -161,7 +161,7 @@ class StructuredJsonTest {
     }
 
     @Test
-    fun jsonEncodeFailureReportsItsOwnErrorNotMislabeledAsNotSerializable() {
+    fun `json encode failure reports its own error not mislabeled as not serializable`() {
         // The type IS @Serializable (its serializer resolves), but throws mid-encode. That is a
         // different failure from "no serializer for the type", so it must not be reported as
         // "not @Serializable" and must surface its own diagnostic, still as a JSON envelope.
@@ -177,7 +177,7 @@ class StructuredJsonTest {
     }
 
     @Test
-    fun jsonEncodeFailureFromNonSerializationExceptionDoesNotEscapeAsAStackTrace() {
+    fun `json encode failure from non serialization exception does not escape as a stack trace`() {
         // A custom KSerializer can throw anything mid-encode, not just SerializationException. The
         // encode catch must be broad enough to still render a clean envelope instead of an uncaught
         // exception reaching the caller.

@@ -1,5 +1,6 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.terminal.Style
 import com.fromwau.klap.internal.spec.HolderSpec
 
 /**

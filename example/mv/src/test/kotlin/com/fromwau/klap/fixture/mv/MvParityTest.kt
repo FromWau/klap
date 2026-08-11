@@ -8,7 +8,7 @@ class MvParityTest {
     private val parity = ParitySuite(mvCli())
 
     @Test
-    fun bindsOptionsAndTheTwoOperandSlots() {
+    fun `binds options and the two operand slots`() {
         parity.binds(
             "old.txt", "new.txt",
             expected = NOTHING_BOUND.copy(sources = listOf("old.txt"), dest = "new.txt"),
@@ -96,7 +96,7 @@ class MvParityTest {
     }
 
     @Test
-    fun bindsEachOfRealMvsThreeOperandShapes() {
+    fun `binds each of real mvs three operand shapes`() {
         // `mv a b d` with d a directory: exit 0 (verified, coreutils 9.11).
         parity.binds("a", "b", "c", expected = NOTHING_BOUND.copy(sources = listOf("a", "b"), dest = "c"))
         // `mv -t d a`: exit 0 (verified). -t removes the DEST slot, so every operand is a source.
@@ -108,7 +108,7 @@ class MvParityTest {
     }
 
     @Test
-    fun rejectsWhatRealMvRejects() {
+    fun `rejects what real mv rejects`() {
         parity.rejects("--zzz", because = "real mv: unrecognized option '--zzz'")
         parity.rejects("-Q", "a", "b", because = "real mv: invalid option -- 'Q'")
         parity.rejects(because = "real mv: missing file operand")
@@ -121,7 +121,7 @@ class MvParityTest {
     }
 
     @Test
-    fun knownDivergenceFromRealMv() {
+    fun `known divergence from real mv`() {
         // A variadic declares a minimum and no maximum, so -T's exactly-two rule has nowhere to live
         // in the declaration and only the action can refuse the third operand.
         parity.bindsLoosely(

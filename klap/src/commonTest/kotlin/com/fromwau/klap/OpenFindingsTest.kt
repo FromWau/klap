@@ -21,7 +21,7 @@ private fun Cli.completionsFor(vararg words: String): List<String> = completeCan
 class GlobalOptionArgvOrderTest {
 
     @Test
-    fun theLastOccurrenceInArgvWins() {
+    fun `the last occurrence in argv wins`() {
         val tree = cli("app") {
             val retries = globalOption("--retries", "-r").int().default(0)
             command("build") {
@@ -35,7 +35,7 @@ class GlobalOptionArgvOrderTest {
     }
 
     @Test
-    fun aRepeatableGlobalKeepsArgvOrder() {
+    fun `a repeatable global keeps argv order`() {
         val tree = cli("app") {
             val tags = globalOption("--tag", "-t").multiple()
             command("build") {
@@ -52,7 +52,7 @@ class GlobalOptionArgvOrderTest {
 class RequiredIfTriggerReachTest {
 
     @Test
-    fun aGlobalFlagTriggersTheRequirementItAdvertises() {
+    fun `a global flag triggers the requirement it advertises`() {
         val tree = cli("app") {
             val verbose = globalFlag("--verbose")
             command("c") {
@@ -65,7 +65,7 @@ class RequiredIfTriggerReachTest {
     }
 
     @Test
-    fun theNegativeSpellingDoesNotTriggerTheRequirement() {
+    fun `the negative spelling does not trigger the requirement`() {
         val tree = cli("app") {
             command("c") {
                 val remote = flag("--remote", "-r").negatable()
@@ -80,7 +80,7 @@ class RequiredIfTriggerReachTest {
 class NumericAliasClusterTest {
 
     @Test
-    fun aMixedGlobalLocalClusterOutranksTheAlias() {
+    fun `a mixed global local cluster outranks the alias`() {
         val tree = cli("app") {
             globalFlag("--two", "-2")
             command("head") {
@@ -99,7 +99,7 @@ class NumericAliasClusterTest {
 class ArgDefaultTypeTest {
 
     @Test
-    fun aDefaultDeclaredBeforeTheConverterIsConverted() {
+    fun `a default declared before the converter is converted`() {
         val tree = cli("app") {
             command("c") {
                 val n = argument("n").default("0").int()
@@ -112,7 +112,7 @@ class ArgDefaultTypeTest {
     }
 
     @Test
-    fun absentWhenThenDefaultBindsTheDefaultNotNull() {
+    fun `absent when then default binds the default not null`() {
         val tree = cli("app") {
             command("c") {
                 val ref = option("--reference")
@@ -130,7 +130,7 @@ class ArgDefaultTypeTest {
 class RestatedChoiceSetTest {
 
     @Test
-    fun aSecondChoiceSetReplacesTheFirst() {
+    fun `a second choice set replaces the first`() {
         val tree = cli("app") {
             command("c") {
                 val m = argument("m").choice("a", "b").enum<Shade>()
@@ -147,7 +147,7 @@ class RestatedChoiceSetTest {
 class LastWinsCompletionTest {
 
     @Test
-    fun aLastWinsMemberStaysOfferedAfterItsSiblingIsTyped() {
+    fun `a last wins member stays offered after its sibling is typed`() {
         val tree = cli("rm") {
             command("go") {
                 val interactive = flag("--interactive", "-i")
@@ -164,7 +164,7 @@ class LastWinsCompletionTest {
 class VariadicThenFixedCompletionTest {
 
     @Test
-    fun theCpShapeStillOffersFileCompletion() {
+    fun `the cp shape still offers file completion`() {
         val tree = cli("cp") {
             command("go") {
                 argument("source").file().multiple(min = 1)
@@ -184,13 +184,13 @@ class VariadicThenFixedCompletionTest {
     }
 
     @Test
-    fun operandsPastTheSlotCountResolveTheWayTheBindWould() {
+    fun `operands past the slot count resolve the way the bind would`() {
         // The bind hands a line's last operand to the trailing fixed slot, so the cursor's word is dest.
         assertEquals(listOf("D1", "D2"), cpShape().completionsFor("go", "a", "b", ""))
     }
 
     @Test
-    fun theFirstOperandStillFillsTheVariadicsMinimum() {
+    fun `the first operand still fills the variadics minimum`() {
         // dest cannot claim the only operand while source still owes one, since that line does not parse.
         assertEquals(listOf("S1", "S2"), cpShape().completionsFor("go", ""))
     }
@@ -199,7 +199,7 @@ class VariadicThenFixedCompletionTest {
 class AbbreviatedOptionCompletionTest {
 
     @Test
-    fun anAbbreviatedOptionOffersItsOwnValues() {
+    fun `an abbreviated option offers its own values`() {
         val tree = cli("tool") {
             abbreviation = Abbreviation.Options
             command("go") {
@@ -215,7 +215,7 @@ class AbbreviatedOptionCompletionTest {
 class MetaOptionErrorTextTest {
 
     @Test
-    fun aMetaOptionMissingItsValueNamesTheDashedSpelling() {
+    fun `a meta option missing its value names the dashed spelling`() {
         val tree = cli("app") {
             command("c") { action { Ok("") } }
         }

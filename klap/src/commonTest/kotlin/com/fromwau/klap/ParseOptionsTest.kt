@@ -44,22 +44,22 @@ private fun Cli.execAndCapture(argv: List<String>): String {
 class ParseOptionsTest {
 
     @Test
-    fun longOptionWithValue() {
+    fun `long option with value`() {
         assertEquals("port=8080 verbose=false headers=\n", optTree().execAndCapture(listOf("call", "--port", "8080")))
     }
 
     @Test
-    fun longOptionEqualsForm() {
+    fun `long option equals form`() {
         assertEquals("port=8080 verbose=false headers=\n", optTree().execAndCapture(listOf("call", "--port=8080")))
     }
 
     @Test
-    fun shortFlagAndDefaultApply() {
+    fun `short flag and default apply`() {
         assertEquals("port=80 verbose=true headers=\n", optTree().execAndCapture(listOf("call", "-v")))
     }
 
     @Test
-    fun repeatedOptionCollectsMultiple() {
+    fun `repeated option collects multiple`() {
         assertEquals(
             "port=80 verbose=false headers=a,b\n",
             optTree().execAndCapture(listOf("call", "-H", "a", "-H", "b")),
@@ -67,26 +67,26 @@ class ParseOptionsTest {
     }
 
     @Test
-    fun clusteredFlagThenAttachedOption() {
+    fun `clustered flag then attached option`() {
         // -vp8080 = -v (flag) + -p8080 (option with attached value).
         assertEquals("port=8080 verbose=true headers=\n", optTree().execAndCapture(listOf("call", "-vp8080")))
     }
 
     @Test
-    fun unknownOptionIsRejected() {
+    fun `unknown option is rejected`() {
         val err = assertIs<Result.Error<CliError>>(optTree().parse(listOf("call", "--nope"))).error
         assertEquals(CliError.UnknownOption("--nope"), err)
     }
 
     @Test
-    fun badIntValueIsRejected() {
+    fun `bad int value is rejected`() {
         // A built-in converter has no payload, so cause is the reason-only case and restates reason.
         val err = assertIs<Result.Error<CliError>>(optTree().parse(listOf("call", "--port", "abc"))).error
         assertEquals(CliError.BadValue("--port", "abc", "not an integer", ConversionError.NotAnInteger), err)
     }
 
     @Test
-    fun convertersOwnErrorTypeSurvivesToTheParseCaller() {
+    fun `converters own error type survives to the parse caller`() {
         // The point of the typed converter error: the payload reaches a parse() caller intact, so it can
         // match on its own type instead of re-parsing the rendered sentence to recover what it already knew.
         val tree = cli("net") {
@@ -104,7 +104,7 @@ class ParseOptionsTest {
     }
 
     @Test
-    fun endOfOptionsRoutesFlagShapedTokenToPositionalOnGroup() {
+    fun `end of options routes flag shaped token to positional on group`() {
         // POSIX: after `--`, a flag-shaped token is an unconditional positional, so a group reports it
         // as an unknown subcommand rather than swallowing it as help.
         val app = cli("app") {
@@ -117,7 +117,7 @@ class ParseOptionsTest {
     }
 
     @Test
-    fun bareDashRoutesToPositional() {
+    fun `bare dash routes to positional`() {
         val app = cli("app") {
             command("grp") { command("child") { action { Ok("") } } }
         }
@@ -126,7 +126,7 @@ class ParseOptionsTest {
     }
 
     @Test
-    fun secondEndOfOptionsIsPositional() {
+    fun `second end of options is positional`() {
         val app = cli("app") {
             command("grp") { command("child") { action { Ok("") } } }
         }
@@ -140,7 +140,7 @@ class OptionValueAndChoiceTest {
 
 
     @Test
-    fun requiredOptionAbsentIsRejected() {
+    fun `required option absent is rejected`() {
         val tree = cli("net") {
             command("dial") {
                 val host = option("--host").required()
@@ -152,7 +152,7 @@ class OptionValueAndChoiceTest {
     }
 
     @Test
-    fun optionValueMissingIsRejected() {
+    fun `option value missing is rejected`() {
         val tree = cli("net") {
             command("dial") {
                 val host = option("--host")
@@ -164,7 +164,7 @@ class OptionValueAndChoiceTest {
     }
 
     @Test
-    fun invalidChoiceIsRejected() {
+    fun `invalid choice is rejected`() {
         val tree = cli("net") {
             command("dial") {
                 val mode = option("--mode").choice("tcp", "udp")
@@ -177,7 +177,7 @@ class OptionValueAndChoiceTest {
     }
 
     @Test
-    fun choiceMatchesCaseInsensitivelyAndReturnsTheCanonicalSpelling() {
+    fun `choice matches case insensitively and returns the canonical spelling`() {
         // Parity with .enum(): --mode FAST / Fast / fast all bind, and the accessor always sees the
         // declared spelling ("fast"), never the user's casing.
         val tree = cli("net") {
@@ -192,7 +192,7 @@ class OptionValueAndChoiceTest {
     }
 
     @Test
-    fun choiceStillRejectsAnUnknownValueCaseInsensitively() {
+    fun `choice still rejects an unknown value case insensitively`() {
         val tree = cli("net") {
             command("dial") {
                 val mode = option("--mode").choice("fast", "slow")
@@ -204,7 +204,7 @@ class OptionValueAndChoiceTest {
     }
 
     @Test
-    fun choiceInvalidValueSuggestionIgnoresCase() {
+    fun `choice invalid value suggestion ignores case`() {
         val tree = cli("net") {
             command("dial") {
                 val mode = option("--mode").choice("fast", "slow")
@@ -217,7 +217,7 @@ class OptionValueAndChoiceTest {
     }
 
     @Test
-    fun endOfOptionsIsNotConsumedAsOptionValue() {
+    fun `end of options is not consumed as option value`() {
         val tree = cli("net") {
             command("dial") {
                 val host = option("--host")
@@ -230,7 +230,7 @@ class OptionValueAndChoiceTest {
     }
 
     @Test
-    fun aDeclaredFlagAfterAValueTakingOptionIsStillThatOptionsValue() {
+    fun `a declared flag after a value taking option is still that options value`() {
         val tree = cli("net") {
             command("dial") {
                 val host = option("--host")
@@ -249,7 +249,7 @@ class ShortClusterErrorTest {
 
 
     @Test
-    fun unknownCharInClusterNamesThatChar() {
+    fun `unknown char in cluster names that char`() {
         val tree = cli("net") {
             command("dial") {
                 val verbose = flag("--verbose", "-v")
@@ -262,7 +262,7 @@ class ShortClusterErrorTest {
     }
 
     @Test
-    fun shortClusterEqualsAfterAFlagReportsFlagTakesNoValueNamedAsTyped() {
+    fun `short cluster equals after a flag reports flag takes no value named as typed`() {
         // -v=x: v is a boolean flag, so the `=` is the short form of `--verbose=x`; the error must name
         // the flag exactly as the user typed it (-v), never a fabricated "-=" token and never the long
         // declared name. --verbose=x separately reports the long form it was typed as.
@@ -273,7 +273,7 @@ class ShortClusterErrorTest {
     }
 
     @Test
-    fun shortAndLongBooleanFlagInlineValueRenderTheFlagAsTyped() {
+    fun `short and long boolean flag inline value render the flag as typed`() {
         val shortErr = assertIs<Result.Error<CliError>>(clusterTree().parse(listOf("run", "-v=x"))).error
         assertEquals("flag '-v' does not take a value", shortErr.message())
         val longErr = assertIs<Result.Error<CliError>>(clusterTree().parse(listOf("run", "--verbose=x"))).error
@@ -281,7 +281,7 @@ class ShortClusterErrorTest {
     }
 
     @Test
-    fun shortClusterStrayDashReportsTheWholeTokenNotAFabricatedDoubleDash() {
+    fun `short cluster stray dash reports the whole token not a fabricated double dash`() {
         // -f-y: f is a flag, then a stray '-' that names no option; the offender must be the whole
         // original token, never the phantom "--" that "-$ch" would produce for ch = '-'.
         val err = assertIs<Result.Error<CliError>>(clusterTree().parse(listOf("run", "-f-y"))).error
@@ -289,15 +289,15 @@ class ShortClusterErrorTest {
     }
 
     @Test
-    fun shortClusterUnknownLetterStillNamesJustThatChar() {
+    fun `short cluster unknown letter still names just that char`() {
         // -fz: f is a flag, z is an unknown LETTER (not a stray non-alphanumeric char), so the
-        // single-char reporting from unknownCharInClusterNamesThatChar above must still hold.
+        // single-char reporting from `unknown char in cluster names that char` above must still hold.
         val err = assertIs<Result.Error<CliError>>(clusterTree().parse(listOf("run", "-fz"))).error
         assertEquals(CliError.UnknownOption("-z"), err)
     }
 
     @Test
-    fun shortOptionEqualsFormStillTakesTheAttachedValueIncludingTheEqualsSign() {
+    fun `short option equals form still takes the attached value including the equals sign`() {
         // Documented, unchanged behavior: a short VALUE option consumes the whole attached remainder
         // before any '=' is ever reached, so -p=8080 binds the literal value "=8080".
         assertEquals("verbose=false force=false port==8080\n", clusterTree().execAndCapture(listOf("run", "-p=8080")))
@@ -309,7 +309,7 @@ class ConverterAndValidationTest {
 
 
     @Test
-    fun validateFailurePassesThroughAsBadValue() {
+    fun `validate failure passes through as bad value`() {
         val tree = cli("net") {
             command("dial") {
                 val port = option("--port").int().validate("must be positive") { it > 0 }
@@ -321,7 +321,7 @@ class ConverterAndValidationTest {
     }
 
     @Test
-    fun validateFailureOnEnumBackedOptionYieldsBadValueNotInvalidChoice() {
+    fun `validate failure on enum backed option yields bad value not invalid choice`() {
         // The key correctness point: a validate failure must never be mislabelled InvalidChoice,
         // even when the spec carries choices from .enum().
         val tree = cli("net") {
@@ -335,7 +335,7 @@ class ConverterAndValidationTest {
     }
 
     @Test
-    fun validatePassAllowsConversionThrough() {
+    fun `validate pass allows conversion through`() {
         val tree = cli("net") {
             command("dial") {
                 val mode = option("--mode").enum<Priority>().validate("must be HIGH") { it == Priority.HIGH }
@@ -346,7 +346,7 @@ class ConverterAndValidationTest {
     }
 
     @Test
-    fun rangeRejectsOutOfBoundsOption() {
+    fun `range rejects out of bounds option`() {
         val tree = cli("net") {
             command("dial") {
                 val port = option("--port").int().range(1..65535)
@@ -358,7 +358,7 @@ class ConverterAndValidationTest {
     }
 
     @Test
-    fun rangeAcceptsInBoundsOption() {
+    fun `range accepts in bounds option`() {
         val tree = cli("net") {
             command("dial") {
                 val port = option("--port").int().range(1..65535)
@@ -374,7 +374,7 @@ class RepeatedAndDefaultedValueTest {
 
 
     @Test
-    fun multipleOptionMinEnforced() {
+    fun `multiple option min enforced`() {
         val tree = cli("net") {
             command("call") {
                 val header = option("--header", "-H").multiple(min = 2)
@@ -386,7 +386,7 @@ class RepeatedAndDefaultedValueTest {
     }
 
     @Test
-    fun multipleOptionMinSatisfiedAtExactCount() {
+    fun `multiple option min satisfied at exact count`() {
         val tree = cli("net") {
             command("call") {
                 val header = option("--header", "-H").multiple(min = 2)
@@ -397,8 +397,8 @@ class RepeatedAndDefaultedValueTest {
     }
 
     @Test
-    fun multiplePositionalMinEnforced() {
-        // Mirrors multipleOptionMinEnforced above: a repeatable positional short of its min reports the
+    fun `multiple positional min enforced`() {
+        // Mirrors `multiple option min enforced` above: a repeatable positional short of its min reports the
         // same count-aware TooFewOccurrences an option's Multiple(min) branch reports, not MissingArgument.
         val tree = cli("net") {
             command("send") {
@@ -411,7 +411,7 @@ class RepeatedAndDefaultedValueTest {
     }
 
     @Test
-    fun multiplePositionalMinAbsentIsStillMissingArgument() {
+    fun `multiple positional min absent is still missing argument`() {
         // Zero occurrences is unchanged: a fully-absent mandatory positional stays MissingArgument, never
         // TooFewOccurrences, even though the spec declares a min above 1.
         val tree = cli("net") {
@@ -425,7 +425,7 @@ class RepeatedAndDefaultedValueTest {
     }
 
     @Test
-    fun repeatedTypedOptionCollectsConvertedValues() {
+    fun `repeated typed option collects converted values`() {
         // The converter runs per occurrence: the accessor is List<Int>, so each element is a real Int.
         val tree = cli("net") {
             command("call") {
@@ -437,7 +437,7 @@ class RepeatedAndDefaultedValueTest {
     }
 
     @Test
-    fun repeatedTypedOptionBadElementIsRejected() {
+    fun `repeated typed option bad element is rejected`() {
         // A bad element on any occurrence fails the converter, surfacing as BadValue like a scalar .int().
         val tree = cli("net") {
             command("call") {
@@ -450,7 +450,7 @@ class RepeatedAndDefaultedValueTest {
     }
 
     @Test
-    fun repeatedNullMappingOptionRejectsTheNullElementInsteadOfBindingIt() {
+    fun `repeated null mapping option rejects the null element instead of binding it`() {
         // .map { it.toIntOrNull() }.multiple() narrows the accessor to a non-null List<Int>, so a
         // null-success element (bad input) has no valid slot: it must surface as BadValue, not bind a null
         // the action would NPE on. Contrast the scalar .map { }.default path, where null falls back to default.
@@ -468,7 +468,7 @@ class RepeatedAndDefaultedValueTest {
     }
 
     @Test
-    fun defaultBypassesValidationOnOption() {
+    fun `default bypasses validation on option`() {
         // A .default value is trusted: it binds directly and is never routed through validate.
         val tree = cli("net") {
             command("dial") {
@@ -485,7 +485,7 @@ class CountFlagTest {
 
 
     @Test
-    fun countFlagAccumulatesClusteredOccurrences() {
+    fun `count flag accumulates clustered occurrences`() {
         val tree = cli("net") {
             command("run") {
                 val verbose = flag("--verbose", "-v").count()
@@ -496,7 +496,7 @@ class CountFlagTest {
     }
 
     @Test
-    fun countFlagAccumulatesMixedLongShortAndClusteredOccurrences() {
+    fun `count flag accumulates mixed long short and clustered occurrences`() {
         val tree = cli("net") {
             command("run") {
                 val verbose = flag("--verbose", "-v").count()
@@ -508,7 +508,7 @@ class CountFlagTest {
     }
 
     @Test
-    fun countFlagAbsentIsZero() {
+    fun `count flag absent is zero`() {
         val tree = cli("net") {
             command("run") {
                 val verbose = flag("--verbose", "-v").count()
@@ -524,7 +524,7 @@ class NegatableFlagBindingTest {
 
 
     @Test
-    fun negatableFlagLongFormSetsTrue() {
+    fun `negatable flag long form sets true`() {
         val tree = cli("net") {
             command("run") {
                 val tint = flag("--tint").negatable(default = false)
@@ -535,7 +535,7 @@ class NegatableFlagBindingTest {
     }
 
     @Test
-    fun negatableFlagNoFormSetsFalse() {
+    fun `negatable flag no form sets false`() {
         val tree = cli("net") {
             command("run") {
                 val tint = flag("--tint").negatable()
@@ -546,7 +546,7 @@ class NegatableFlagBindingTest {
     }
 
     @Test
-    fun negatableFlagAbsentUsesDefault() {
+    fun `negatable flag absent uses default`() {
         val tree = cli("net") {
             command("run") {
                 val tint = flag("--tint").negatable()
@@ -557,7 +557,7 @@ class NegatableFlagBindingTest {
     }
 
     @Test
-    fun negatableFlagLastTokenWins() {
+    fun `negatable flag last token wins`() {
         val tree = cli("net") {
             command("run") {
                 val tint = flag("--tint").negatable()
@@ -573,7 +573,7 @@ class UnknownOptionSuggestionTest {
 
 
     @Test
-    fun unknownOptionSuggestsNearestLongName() {
+    fun `unknown option suggests nearest long name`() {
         // The near-miss must not be a PREFIX of the name it suggests, here and in the sibling tests below:
         // a prefix resolves as an abbreviation and binds, so it never reaches did-you-mean at all.
         val err = assertIs<Result.Error<CliError>>(optTree().parse(listOf("call", "--verbse"))).error
@@ -581,13 +581,13 @@ class UnknownOptionSuggestionTest {
     }
 
     @Test
-    fun unknownOptionFarMissHasNoSuggestion() {
+    fun `unknown option far miss has no suggestion`() {
         val err = assertIs<Result.Error<CliError>>(optTree().parse(listOf("call", "--zzzznope"))).error
         assertEquals(CliError.UnknownOption("--zzzznope"), err)
     }
 
     @Test
-    fun unknownOptionShortSingleCharHasNoSuggestion() {
+    fun `unknown option short single char has no suggestion`() {
         // Single-char short options never get a suggestion, even next to a near-miss long flag.
         val err = assertIs<Result.Error<CliError>>(optTree().parse(listOf("call", "-z"))).error
         assertEquals(CliError.UnknownOption("-z"), err)
@@ -599,7 +599,7 @@ class GlobalReachTest {
 
 
     @Test
-    fun globalFlagReadableFromNestedSubcommandAction() {
+    fun `global flag readable from nested subcommand action`() {
         val tree = cli("app") {
             val verbose = globalFlag("--verbose", "-v", help = "enable verbose logging")
             command("deploy") {
@@ -612,7 +612,7 @@ class GlobalReachTest {
     }
 
     @Test
-    fun globalFlagParsesBeforeAndAfterTheSubcommandPath() {
+    fun `global flag parses before and after the subcommand path`() {
         val tree = cli("app") {
             val verbose = globalFlag("--verbose", "-v")
             command("build") {
@@ -626,7 +626,7 @@ class GlobalReachTest {
     }
 
     @Test
-    fun clusteredGlobalShortFlagsAreEachRecognized() {
+    fun `clustered global short flags are each recognized`() {
         val tree = cli("app") {
             val verbose = globalFlag("--verbose", "-v")
             val tint = globalFlag("--tint", "-c")
@@ -645,7 +645,7 @@ class MixedShortClusterTest {
 
 
     @Test
-    fun clusterPeelsGlobalsAndLeavesTheLocalRemainder() {
+    fun `cluster peels globals and leaves the local remainder`() {
         val tree = cli("app") {
             val verbose = globalFlag("--verbose", "-v")
             command("build") {
@@ -658,7 +658,7 @@ class MixedShortClusterTest {
     }
 
     @Test
-    fun mixedClusterBindsBothRegardlessOfOrder() {
+    fun `mixed cluster binds both regardless of order`() {
         val tree = cli("app") {
             val verbose = globalFlag("--verbose", "-v")
             command("build") {
@@ -672,7 +672,7 @@ class MixedShortClusterTest {
     }
 
     @Test
-    fun mixedClusterLocalFlagThenGlobalOptionConsumesValue() {
+    fun `mixed cluster local flag then global option consumes value`() {
         val tree = cli("app") {
             val retries = globalOption("--retries", "-r").int().default(0)
             command("build") {
@@ -687,7 +687,7 @@ class MixedShortClusterTest {
     }
 
     @Test
-    fun mixedClusterGlobalFlagThenLocalOptionConsumesAttachedValue() {
+    fun `mixed cluster global flag then local option consumes attached value`() {
         val tree = cli("app") {
             val verbose = globalFlag("--verbose", "-v")
             command("call") {
@@ -700,7 +700,7 @@ class MixedShortClusterTest {
     }
 
     @Test
-    fun mixedClusterStillRejectsATrulyUnknownChar() {
+    fun `mixed cluster still rejects a truly unknown char`() {
         val tree = cli("app") {
             globalFlag("--verbose", "-v")
             command("build") {
@@ -714,7 +714,7 @@ class MixedShortClusterTest {
     }
 
     @Test
-    fun groupClusterErrorNamesFirstOffendingCharLikeALeaf() {
+    fun `group cluster error names first offending char like a leaf`() {
         val tree = cli("app") {
             globalFlag("--verbose", "-v")
             command("build") { action { Ok("") } }
@@ -727,7 +727,7 @@ class MixedShortClusterTest {
     }
 
     @Test
-    fun mixedClusterBeforeTheSubcommandBindsBothJustLikeAfter() {
+    fun `mixed cluster before the subcommand binds both just like after`() {
         val tree = cli("app") {
             val verbose = globalFlag("--verbose", "-v")
             command("build") {
@@ -746,7 +746,7 @@ class MixedShortClusterTest {
     }
 
     @Test
-    fun unresolvedClusterWithNoGlobalCharStillStopsRoutingBeforeTheSubcommand() {
+    fun `unresolved cluster with no global char still stops routing before the subcommand`() {
         val tree = cli("app") {
             globalFlag("--verbose", "-v")
             command("build") {
@@ -762,7 +762,7 @@ class MixedShortClusterTest {
     }
 
     @Test
-    fun mixedClusterWithBuiltinHelpShortBeforeTheSubcommandStillNamesIt() {
+    fun `mixed cluster with builtin help short before the subcommand still names it`() {
         val tree = cli("app") {
             globalFlag("--verbose", "-v")
             command("build") { action { Ok("") } }
@@ -781,7 +781,7 @@ class SuggestionAcrossTheTreeTest {
 
 
     @Test
-    fun groupRootLongOptionTypoSuggestsTheVersionBuiltin() {
+    fun `group root long option typo suggests the version builtin`() {
         // A dispatcher root with no subcommand match falls into the isGroup branch; a mistyped
         // `--version` there must suggest, exactly like the same typo on a leaf already does.
         val tree = cli("app") {
@@ -793,7 +793,7 @@ class SuggestionAcrossTheTreeTest {
     }
 
     @Test
-    fun groupRootLongOptionTypoSuggestsAGlobalFlag() {
+    fun `group root long option typo suggests a global flag`() {
         val tree = cli("app") {
             globalFlag("--verbose", "-v")
             command("build") { action { Ok("") } }
@@ -803,7 +803,7 @@ class SuggestionAcrossTheTreeTest {
     }
 
     @Test
-    fun invalidChoiceSuggestsNearestChoice() {
+    fun `invalid choice suggests nearest choice`() {
         val tree = cli("app") {
             command("deploy") {
                 option("--env").choice("dev", "staging", "prod")
@@ -818,7 +818,7 @@ class SuggestionAcrossTheTreeTest {
     }
 
     @Test
-    fun subcommandAfterSeparatorIsNamedNotReportedUnknown() {
+    fun `subcommand after separator is named not reported unknown`() {
         val tree = cli("app") {
             command("build") { action { Ok("") } }
         }
@@ -829,7 +829,7 @@ class SuggestionAcrossTheTreeTest {
     }
 
     @Test
-    fun tooManyArgumentsOnASingleCommandToolSuggestsNothing() {
+    fun `too many arguments on a single command tool suggests nothing`() {
         val tree = cli("app") {
             option("--image").required()
             action { Ok("") }
@@ -844,7 +844,7 @@ class SuggestionAcrossTheTreeTest {
     }
 
     @Test
-    fun tooManyArgumentsSuggestsANearbySubcommandOnAHybridCommand() {
+    fun `too many arguments suggests a nearby subcommand on a hybrid command`() {
         val tree = cli("app") {
             action { Ok("") }
             command("build") { action { Ok("") } }
@@ -859,7 +859,7 @@ class GlobalBindPolicyTest {
 
 
     @Test
-    fun globalOptionWithConverterAndDefaultResolves() {
+    fun `global option with converter and default resolves`() {
         val tree = cli("app") {
             val retries = globalOption("--retries").int().default(3)
             command("run") {
@@ -872,7 +872,7 @@ class GlobalBindPolicyTest {
     }
 
     @Test
-    fun requiredGlobalEnforcedOnLeafExecuteButNotOnBareGroupHelp() {
+    fun `required global enforced on leaf execute but not on bare group help`() {
         val tree = cli("app") {
             val token = globalOption("--token").required()
             command("grp") {
@@ -892,7 +892,7 @@ class GlobalBindPolicyTest {
     }
 
     @Test
-    fun requiredAtLeastOnceGlobalDefersOnHelpButErrorsOnLeafExecute() {
+    fun `required at least once global defers on help but errors on leaf execute`() {
         val tree = cli("app") {
             val tags = globalOption("--tag").multiple(min = 1)
             command("grp") {
@@ -912,7 +912,7 @@ class GlobalBindPolicyTest {
     }
 
     @Test
-    fun danglingGlobalOptionReportsMissingValueNotUnknownOption() {
+    fun `dangling global option reports missing value not unknown option`() {
         val tree = cli("app") {
             val workspace = globalOption("--workspace", "-w")
             command("plan") { action { Ok(workspace() ?: "") } }
@@ -929,7 +929,7 @@ class FlagInlineValueTest {
 
 
     @Test
-    fun localBooleanFlagRejectsInlineValue() {
+    fun `local boolean flag rejects inline value`() {
         val tree = cli("app") {
             command("run") {
                 val yes = flag("--yes")
@@ -941,7 +941,7 @@ class FlagInlineValueTest {
     }
 
     @Test
-    fun negatableFlagInlineValueSuggestsTheNegation() {
+    fun `negatable flag inline value suggests the negation`() {
         val tree = cli("app") {
             command("run") {
                 val tint = flag("--tint").negatable()
@@ -953,7 +953,7 @@ class FlagInlineValueTest {
     }
 
     @Test
-    fun negatedInlineValueReportsTheNoFormWithoutANegationHint() {
+    fun `negated inline value reports the no form without a negation hint`() {
         // --no-tint=false: the negated long form itself takes no value; there is no further hint to
         // give since --no-tint is already the negation.
         val tree = cli("app") {
@@ -967,7 +967,7 @@ class FlagInlineValueTest {
     }
 
     @Test
-    fun globalBooleanFlagRejectsInlineValue() {
+    fun `global boolean flag rejects inline value`() {
         val tree = cli("app") {
             val debug = globalFlag("--debug")
             command("run") { action { Ok(debug().toString()) } }
@@ -977,7 +977,7 @@ class FlagInlineValueTest {
     }
 
     @Test
-    fun globalShortFlagClusterEqualsValueReportsFlagTakesNoValueBeforeAndAfterTheSubcommand() {
+    fun `global short flag cluster equals value reports flag takes no value before and after the subcommand`() {
         // -v=x before the subcommand goes through the position-independent global pre-strip
         // (siftGlobals), not the per-command sift; both paths must report the identical error.
         val tree = cli("myapp") {
@@ -991,7 +991,7 @@ class FlagInlineValueTest {
     }
 
     @Test
-    fun globalShortFlagClusterEqualsValueOnAnExplicitNegativeShortReportsFlagTakesNoValue() {
+    fun `global short flag cluster equals value on an explicit negative short reports flag takes no value`() {
         // -P=x, where -P is an explicit negative short rather than the flag's own positive spelling: the
         // same FlagTakesNoValue its positive counterpart gets above, on both sides of the subcommand.
         val tree = cli("myapp") {
@@ -1005,10 +1005,10 @@ class FlagInlineValueTest {
     }
 
     @Test
-    fun globalShortOptionEqualsFormStillTakesTheAttachedValueBeforeTheSubcommand() {
+    fun `global short option equals form still takes the attached value before the subcommand`() {
         // A global VALUE option's short attached form is untouched by the FlagTakesNoValue fix above:
         // -o=val binds the literal "=val", same documented behavior as a local option (see
-        // shortOptionEqualsFormStillTakesTheAttachedValueIncludingTheEqualsSign).
+        // `short option equals form still takes the attached value including the equals sign`).
         val tree = cli("myapp") {
             val out = globalOption("--output", "-o")
             command("flags") { action { Ok(out() ?: "") } }
@@ -1022,7 +1022,7 @@ class HiddenAndBuiltinSuggestionTest {
 
 
     @Test
-    fun unknownOptionNeverSuggestsAHiddenLocalOption() {
+    fun `unknown option never suggests a hidden local option`() {
         val tree = cli("net") {
             command("call") {
                 option("--visible-opt")
@@ -1037,7 +1037,7 @@ class HiddenAndBuiltinSuggestionTest {
     }
 
     @Test
-    fun unknownOptionNeverSuggestsAHiddenGlobalOption() {
+    fun `unknown option never suggests a hidden global option`() {
         val tree = cli("app") {
             globalOption("--global-secret").hidden()
             command("build") { action { Ok("") } }
@@ -1047,7 +1047,7 @@ class HiddenAndBuiltinSuggestionTest {
     }
 
     @Test
-    fun unknownOptionSuggestsAGlobalFlag() {
+    fun `unknown option suggests a global flag`() {
         val tree = cli("app") {
             globalFlag("--verbose", "-v")
             command("build") { action { Ok("") } }
@@ -1058,7 +1058,7 @@ class HiddenAndBuiltinSuggestionTest {
     }
 
     @Test
-    fun unknownOptionSuggestsTheHelpBuiltin() {
+    fun `unknown option suggests the help builtin`() {
         val tree = cli("app") {
             command("build") { action { Ok("") } }
         }
@@ -1067,7 +1067,7 @@ class HiddenAndBuiltinSuggestionTest {
     }
 
     @Test
-    fun unknownOptionSuggestsTheVersionBuiltinWhenRootIsVersioned() {
+    fun `unknown option suggests the version builtin when root is versioned`() {
         val tree = cli("app") {
             version = "1.0.0"
             command("build") { action { Ok("") } }
@@ -1082,7 +1082,7 @@ class BuiltinInlineValueTest {
 
 
     @Test
-    fun helpBuiltinGivenAnInlineValueTakesNoValue() {
+    fun `help builtin given an inline value takes no value`() {
         val tree = cli("x") {
             argument("a")
             action { Ok("") }
@@ -1092,7 +1092,7 @@ class BuiltinInlineValueTest {
     }
 
     @Test
-    fun jsonBuiltinGivenAnInlineValueTakesNoValue() {
+    fun `json builtin given an inline value takes no value`() {
         val tree = cli("x") {
             argument("a")
             action { Ok("") }
@@ -1102,7 +1102,7 @@ class BuiltinInlineValueTest {
     }
 
     @Test
-    fun versionBuiltinGivenAnInlineValueTakesNoValueWhenVersioned() {
+    fun `version builtin given an inline value takes no value when versioned`() {
         val tree = cli("x") {
             version = "1.0"
             argument("a")
@@ -1113,7 +1113,7 @@ class BuiltinInlineValueTest {
     }
 
     @Test
-    fun versionEqualsIsStillUnknownOptionWhenNotVersioned() {
+    fun `version equals is still unknown option when not versioned`() {
         // Unlike --help/--json, --version is only a built-in when the root declares a version; with no
         // version, --version=x is genuinely an unknown option and must not be reported as takes-no-value.
         val tree = cli("x") {
@@ -1125,7 +1125,7 @@ class BuiltinInlineValueTest {
     }
 
     @Test
-    fun helpShortFormGivenAnInlineValueTakesNoValue() {
+    fun `help short form given an inline value takes no value`() {
         val tree = cli("x") {
             argument("a")
             action { Ok("") }
@@ -1135,7 +1135,7 @@ class BuiltinInlineValueTest {
     }
 
     @Test
-    fun helpBuiltinGivenAnEmptyInlineValueTakesNoValue() {
+    fun `help builtin given an empty inline value takes no value`() {
         val tree = cli("x") {
             argument("a")
             action { Ok("") }
@@ -1149,7 +1149,7 @@ class BuiltinInlineValueTest {
 class DefaultSubstitutionTest {
 
     @Test
-    fun optionDefaultNonNull_stillNarrows_absentUsesDefault_presentUsesValue() {
+    fun `option default non null still narrows absent uses default present uses value`() {
         val tree = cli("net") {
             command("dial") {
                 val host = option("--host").default("d")
@@ -1161,7 +1161,7 @@ class DefaultSubstitutionTest {
     }
 
     @Test
-    fun optionMapToNullDefault_substitutesDefaultInsteadOfNpeOnBadInput() {
+    fun `option map to null default substitutes default instead of npe on bad input`() {
         // A .map { } that resolves to null on bad input is not absence, but .default must still catch it
         // via "?: default" semantics rather than let a null slip through and NPE downstream.
         val tree = cli("net") {
@@ -1176,7 +1176,7 @@ class DefaultSubstitutionTest {
     }
 
     @Test
-    fun optionIntDefault_badValueStillErrorsInsteadOfBeingMaskedByDefault() {
+    fun `option int default bad value still errors instead of being masked by default`() {
         // A converter ERROR (not a null success) must still surface as BadValue, never silently defaulted.
         val tree = cli("net") {
             command("dial") {
@@ -1191,9 +1191,9 @@ class DefaultSubstitutionTest {
     }
 
     @Test
-    fun endOfOptionsMakesABuiltinLookingTokenAPositionalNotATakesNoValueError() {
+    fun `end of options makes a builtin looking token a positional not a takes no value error`() {
         // A built-in-looking token AFTER the `--` end-of-options marker is an unconditional positional
-        // (same POSIX rule as endOfOptionsRoutesFlagShapedTokenToPositionalOnGroup above), so it must
+        // (same POSIX rule as `end of options routes flag shaped token to positional on group` above), so it must
         // never be misread as --help's takes-no-value form, nor trigger help.
         val tree = cli("x") {
             val a = argument("a")
@@ -1209,7 +1209,7 @@ class DefaultSubstitutionTest {
 class NeverThrowContractTest {
 
     @Test
-    fun nullableMapThenValidateOnBadInputSkipsValidateInsteadOfCrashing() {
+    fun `nullable map then validate on bad input skips validate instead of crashing`() {
         // .map { toIntOrNull() } resolves bad input to null, which is treated as absent, so validate is
         // never handed the null (which would NPE its non-null predicate). It binds null, no crash.
         val tree = cli("net") {
@@ -1222,7 +1222,7 @@ class NeverThrowContractTest {
     }
 
     @Test
-    fun nullableMapFeedingNullIntoALaterStringStageYieldsBadValueNotACrash() {
+    fun `nullable map feeding null into a later string stage yields bad value not a crash`() {
         // .map { ifEmpty { null } } produces null, which the following .boolean() stage casts to String;
         // that throws at parse, and the never-throw contract must turn it into BadValue, not a crash.
         val tree = cli("app") {
@@ -1241,7 +1241,7 @@ class ShortOnlyOptionTest {
 
 
     @Test
-    fun shortOnlyOptionIsDeclarableAndParses() {
+    fun `short only option is declarable and parses`() {
         val tree = cli("app") {
             command("go") {
                 val context = option("-Z", help = "lines of context")
@@ -1253,7 +1253,7 @@ class ShortOnlyOptionTest {
     }
 
     @Test
-    fun shortOnlyOptionHasNoLongForm() {
+    fun `short only option has no long form`() {
         val tree = cli("app") {
             command("go") {
                 val context = option("-Z", help = "lines of context")
@@ -1265,7 +1265,7 @@ class ShortOnlyOptionTest {
     }
 
     @Test
-    fun shortOnlyOptionIsNotSuggestedAsALongForm() {
+    fun `short only option is not suggested as a long form`() {
         // Its only spelling is `-Z`, so did-you-mean must not invent `--Z` for a nearby typo.
         val tree = cli("app") {
             command("go") {
@@ -1283,7 +1283,7 @@ class MultipleSpellingsTest {
 
 
     @Test
-    fun oneFlagAnswersToEverySpelling() {
+    fun `one flag answers to every spelling`() {
         val tree = cli("app") {
             command("go") {
                 val recursive = flag("--recursive", "-r", "-R", help = "recurse")
@@ -1297,7 +1297,7 @@ class MultipleSpellingsTest {
     }
 
     @Test
-    fun oneOptionAnswersToEverySpelling() {
+    fun `one option answers to every spelling`() {
         val tree = cli("log") {
             command("show") {
                 val since = option("--since", "--after", "-a", help = "lower time bound")
@@ -1311,7 +1311,7 @@ class MultipleSpellingsTest {
     }
 
     @Test
-    fun everyLongSpellingOfANegatableFlagGeneratesItsOwnNegation() {
+    fun `every long spelling of a negatable flag generates its own negation`() {
         val tree = cli("app") {
             command("go") {
                 val tint = flag("--tint", "--colour", "-t", help = "colourise").negatable(default = true)
@@ -1324,7 +1324,7 @@ class MultipleSpellingsTest {
     }
 
     @Test
-    fun errorTextNamesAShortOnlyOptionByTheTokenThatActuallyWorks() {
+    fun `error text names a short only option by the token that actually works`() {
         // --Z is not a spelling this option has; advertising it in an error sends the user to
         // "unknown option '--Z'".
         val tree = cli("diff") {
@@ -1340,7 +1340,7 @@ class MultipleSpellingsTest {
     }
 
     @Test
-    fun errorTextNamesTheOptionsPrimarySpellingNotItsShort() {
+    fun `error text names the options primary spelling not its short`() {
         val tree = cli("app") {
             command("run") {
                 val output = option("-o", "--output", help = "where to write").required()
@@ -1352,7 +1352,7 @@ class MultipleSpellingsTest {
     }
 
     @Test
-    fun theLongFormMissingValueErrorKeepsItsDashes() {
+    fun `the long form missing value error keeps its dashes`() {
         val tree = cli("net") {
             command("dial") {
                 val host = option("--host", help = "target host")
@@ -1364,7 +1364,7 @@ class MultipleSpellingsTest {
     }
 
     @Test
-    fun theClusterNegationHintNamesTheFlagsRealLongForm() {
+    fun `the cluster negation hint names the flags real long form`() {
         val tree = cli("app") {
             command("go") {
                 val extract = flag("-x", "--extract", help = "extract").negatable(default = false)
@@ -1376,7 +1376,7 @@ class MultipleSpellingsTest {
     }
 
     @Test
-    fun aSecondaryShortClustersLikeThePrimaryOne() {
+    fun `a secondary short clusters like the primary one`() {
         val tree = cli("app") {
             command("go") {
                 val recursive = flag("--recursive", "-r", "-R", help = "recurse")
@@ -1405,26 +1405,26 @@ private fun negatableGlobalTree(): Cli = cli("app") {
 class NegatableGlobalPolarityTest {
 
     @Test
-    fun mixedClusterBeforeTheNegationLosesToIt() {
+    fun `mixed cluster before the negation loses to it`() {
         // The bug: `-fv` is resolved by the later pass, but sits EARLIER in argv, so `--no-verbose` wins.
         assertEquals("v=false f=true\n", negatableGlobalTree().execAndCapture(listOf("go", "-fv", "--no-verbose")))
     }
 
     @Test
-    fun mixedClusterAfterTheNegationBeatsIt() {
+    fun `mixed cluster after the negation beats it`() {
         // The mirror, and why "skip an already-set polarity" is not the fix: here the cluster IS last.
         assertEquals("v=true f=true\n", negatableGlobalTree().execAndCapture(listOf("go", "--no-verbose", "-fv")))
     }
 
     @Test
-    fun theLastLongFormWins() {
+    fun `the last long form wins`() {
         val tree = negatableGlobalTree()
         assertEquals("v=false f=false\n", tree.execAndCapture(listOf("go", "--verbose", "--no-verbose")))
         assertEquals("v=true f=false\n", tree.execAndCapture(listOf("go", "--no-verbose", "--verbose")))
     }
 
     @Test
-    fun aPureGlobalShortClusterTakesPartInTheOrdering() {
+    fun `a pure global short cluster takes part in the ordering`() {
         // `-v` alone is fully global, so the pre-strip resolves it in the same pass as `--no-verbose`.
         val tree = negatableGlobalTree()
         assertEquals("v=false f=false\n", tree.execAndCapture(listOf("go", "-v", "--no-verbose")))
@@ -1433,27 +1433,27 @@ class NegatableGlobalPolarityTest {
     }
 
     @Test
-    fun negationAloneBindsOffAndAbsenceBindsTheDeclaredDefault() {
+    fun `negation alone binds off and absence binds the declared default`() {
         val tree = negatableGlobalTree()
         assertEquals("v=false f=false\n", tree.execAndCapture(listOf("go", "--no-verbose")))
         assertEquals("v=true f=false\n", tree.execAndCapture(listOf("go")))
     }
 
     @Test
-    fun negationStrippedFromAheadOfTheSubcommandStillOrdersAgainstTheCluster() {
+    fun `negation stripped from ahead of the subcommand still orders against the cluster`() {
         // The negation is consumed before the subcommand token, so it has no index in the leaf's segment at
         // all — only the raw argv index the pre-strip recorded can place it against the cluster.
         val tree = negatableGlobalTree()
         assertEquals("v=true f=true\n", tree.execAndCapture(listOf("--no-verbose", "go", "-fv")))
         // The mirror binds too, rather than erroring: a mixed cluster ahead of the subcommand is deferred to
         // `go`'s own sift exactly like the same cluster written after it, so `-fv`'s -v still loses to the
-        // later --no-verbose by the same last-occurrence-wins rule mixedClusterBeforeTheNegationLosesToIt
+        // later --no-verbose by the same last-occurrence-wins rule `mixed cluster before the negation loses to it`
         // pins entirely inside the leaf's own segment.
         assertEquals("v=false f=true\n", tree.execAndCapture(listOf("-fv", "go", "--no-verbose")))
     }
 
     @Test
-    fun negatableLocalFlagIsUnaffectedInEveryOrder() {
+    fun `negatable local flag is unaffected in every order`() {
         val tree = cli("app") {
             command("go") {
                 val tint = flag("--tint", "-t").negatable(default = true)
@@ -1468,7 +1468,7 @@ class NegatableGlobalPolarityTest {
     }
 
     @Test
-    fun countGlobalInAMixedClusterStillCounts() {
+    fun `count global in a mixed cluster still counts`() {
         // hitFlag does the counting as well as the polarity, so a count global must survive the change.
         val tree = cli("app") {
             val verbose = globalFlag("--verbose", "-v").count()
@@ -1482,7 +1482,7 @@ class NegatableGlobalPolarityTest {
     }
 
     @Test
-    fun aNegatableGlobalWithNoShortOrdersByPosition() {
+    fun `a negatable global with no short orders by position`() {
         val tree = cli("app") {
             val tint = globalFlag("--tint").negatable(default = true)
             command("go") {
@@ -1495,7 +1495,7 @@ class NegatableGlobalPolarityTest {
     }
 
     @Test
-    fun anUnclusteredShortBindsOnAndTheLongNegationBindsOff() {
+    fun `an unclustered short binds on and the long negation binds off`() {
         val tree = negatableGlobalTree()
         assertEquals("v=true f=false\n", tree.execAndCapture(listOf("go", "-v")))
         assertEquals("v=false f=false\n", tree.execAndCapture(listOf("--no-verbose", "go")))
@@ -1558,13 +1558,13 @@ private fun globalNegatableDispatcher(): TypedCli<String> = cliOf("app") {
 class DashLedOptionValueTest {
 
     @Test
-    fun aDashLedTokenBindsAsAnOptionValue() {
+    fun `a dash led token binds as an option value`() {
         assertEquals("-weird\n", messageTree().execAndCapture(listOf("-m", "-weird")))
         assertEquals("--verbose\n", messageTree().execAndCapture(listOf("--message", "--verbose")))
     }
 
     @Test
-    fun aDashLedTokenBindsThroughAShortClusterToo() {
+    fun `a dash led token binds through a short cluster too`() {
         val tree = cli("app") {
             val verbose = flag("--verbose", "-v")
             val message = option("--message", "-m").required()
@@ -1574,7 +1574,7 @@ class DashLedOptionValueTest {
     }
 
     @Test
-    fun aDashLedTokenBindsToAGlobalBeforeTheSubcommandResolves() {
+    fun `a dash led token binds to a global before the subcommand resolves`() {
         val tree = cli("app") {
             val message = globalOption("--message", "-m").required()
             command("go") { action { Ok(message()) } }
@@ -1584,21 +1584,21 @@ class DashLedOptionValueTest {
     }
 
     @Test
-    fun aTrailingValueLessOptionStillReportsMissingValue() {
+    fun `a trailing value less option still reports missing value`() {
         // The one case the greedy rule must NOT swallow: there is no next token at all.
         val err = assertIs<Result.Error<CliError>>(messageTree().parse(listOf("--message"))).error
         assertEquals(CliError.MissingOptionValue("--message"), err)
     }
 
     @Test
-    fun endOfOptionsStillTerminatesRatherThanBindingAsAValue() {
+    fun `end of options still terminates rather than binding as a value`() {
         // `--` is structural, not a value: `app --message -- x` must not bind "--" as the message.
         val err = assertIs<Result.Error<CliError>>(messageTree().parse(listOf("--message", "--"))).error
         assertEquals(CliError.MissingOptionValue("--message"), err)
     }
 
     @Test
-    fun anUnknownOptionAfterAValueTakingOneIsSwallowedAsItsValue() {
+    fun `an unknown option after a value taking one is swallowed as its value`() {
         // The accepted cost of the rule, pinned so it is a decision rather than a surprise: klap cannot
         // tell a mistyped option from a dash-led value, and every tool that accepts `-m -x` pays this.
         assertEquals("--nope\n", messageTree().execAndCapture(listOf("-m", "--nope")))
@@ -1611,7 +1611,7 @@ class DashLedOptionValueTest {
     // value and does not bind. Each test pairs the shielded line with the one that must still bind.
 
     @Test
-    fun aLongGlobalInALocalOptionsValueSlotIsThatOptionsValue() {
+    fun `a long global in a local options value slot is that options value`() {
         assertEquals(
             Ok("e=--tag gopt=null files=[f.txt]"),
             globalGrep().parse(listOf("-e", "--tag", "f.txt")),
@@ -1633,7 +1633,7 @@ class DashLedOptionValueTest {
     }
 
     @Test
-    fun aFullyGlobalShortClusterInAValueSlotIsTheOptionsLiteralValue() {
+    fun `a fully global short cluster in a value slot is the options literal value`() {
         // An all-global cluster is the one shape the pre-strip claims whole, so it is the shape most at
         // risk here: `-vq` must arrive as `-e`'s value with both globals still at their defaults.
         assertEquals(
@@ -1649,7 +1649,7 @@ class DashLedOptionValueTest {
     }
 
     @Test
-    fun aGlobalStillTakesItsOwnValueOutsideASlotAtEveryDepth() {
+    fun `a global still takes its own value outside a slot at every depth`() {
         assertEquals(
             Ok("e=null gopt=v files=[f.txt]"),
             globalDispatcher().parse(listOf("--tag", "v", "sub", "f.txt")),
@@ -1676,7 +1676,7 @@ class DashLedOptionValueTest {
     }
 
     @Test
-    fun aNegatableGlobalsNegationSpellingsAreOrdinaryValuesInASlot() {
+    fun `a negatable globals negation spellings are ordinary values in a slot`() {
         val tree = globalNegatableDispatcher()
         // Both halves of the negation surface: the generated `--no-<long>` and an explicit short.
         assertEquals(Ok("e=--no-verbose verbose=true files=[f.txt]"), tree.parse(listOf("sub", "-e", "--no-verbose", "f.txt")))
@@ -1688,7 +1688,7 @@ class DashLedOptionValueTest {
     }
 
     @Test
-    fun aGlobalOutsideAValueSlotStillBindsPastAnOperandAndPastTheSwitch() {
+    fun `a global outside a value slot still binds past an operand and past the switch`() {
         // Permuting (the default): an operand does not end options, so a later global binds normally.
         assertEquals(
             Ok("e=null gopt=v files=[f.txt]"),
@@ -1714,7 +1714,7 @@ class DashLedOptionValueTest {
 class DigitShortTest {
 
     @Test
-    fun aDigitShortIsDeclarableAndParses() {
+    fun `a digit short is declarable and parses`() {
         val tree = cli("curl") {
             val ipv4 = flag("-4", help = "resolve names to IPv4 addresses only")
             val ipv6 = flag("-6", help = "resolve names to IPv6 addresses only")
@@ -1725,7 +1725,7 @@ class DigitShortTest {
     }
 
     @Test
-    fun anUndeclaredDigitTokenIsAnUnknownOptionRatherThanAnOperand() {
+    fun `an undeclared digit token is an unknown option rather than an operand`() {
         // Real `ls -5` and `sleep -1` both reject, and so does klap: a dash-led token is an option token
         // whatever follows the dash, and only a declaration makes it mean anything.
         val tree = cli("app") {
@@ -1736,7 +1736,7 @@ class DigitShortTest {
     }
 
     @Test
-    fun aNegativeNumberOperandIsWrittenAfterTheEndOfOptionsMarker() {
+    fun `a negative number operand is written after the end of options marker`() {
         // The escape, and the reason error-by-default costs little: `--` is how every POSIX tool says
         // "operand", and an option VALUE needs no escape at all.
         val tree = cli("app") {
@@ -1749,7 +1749,7 @@ class DigitShortTest {
     }
 
     @Test
-    fun aDeclaredDigitShortIsJustAnotherClusterChar() {
+    fun `a declared digit short is just another cluster char`() {
         val tree = cli("app") {
             val one = flag("-1", help = "one file per line")
             val rest = argument("n").multiple(min = 0)
@@ -1760,7 +1760,7 @@ class DigitShortTest {
     }
 
     @Test
-    fun aGlobalDigitShortIsStrippedBeforeTheSubcommandResolves() {
+    fun `a global digit short is stripped before the subcommand resolves`() {
         val tree = cli("app") {
             val ipv4 = globalFlag("-4", help = "IPv4 only")
             command("go") { action { Ok(ipv4().toString()) } }
@@ -1770,7 +1770,7 @@ class DigitShortTest {
     }
 
     @Test
-    fun aDigitShortStillClustersWithItsNeighbours() {
+    fun `a digit short still clusters with its neighbours`() {
         val tree = cli("app") {
             val ipv4 = flag("-4", help = "IPv4 only")
             val verbose = flag("--verbose", "-v", help = "chatty")
@@ -1792,7 +1792,7 @@ class NumericAliasTest {
     }
 
     @Test
-    fun aNumericAliasBindsThroughTheOptionItAliases() {
+    fun `a numeric alias binds through the option it aliases`() {
         assertEquals("5:[f]\n", headTree().execAndCapture(listOf("-5", "f")))
         assertEquals("5:[f]\n", headTree().execAndCapture(listOf("-n", "5", "f")))
         // Any N, not a fixed set of declared shorts.
@@ -1800,7 +1800,7 @@ class NumericAliasTest {
     }
 
     @Test
-    fun aNumericAliasFeedsTheOptionsOwnConverterAndValidation() {
+    fun `a numeric alias feeds the options own converter and validation`() {
         val tree = cli("head") {
             val lines = option("--lines", "-n").int().range(1..10)
             numericAlias(lines)
@@ -1813,7 +1813,7 @@ class NumericAliasTest {
     }
 
     @Test
-    fun aDeclaredDigitShortWinsOverTheNumericAlias() {
+    fun `a declared digit short wins over the numeric alias`() {
         val tree = cli("app") {
             val ipv4 = flag("-4", help = "IPv4 only")
             val lines = option("--lines", "-n").int()
@@ -1825,7 +1825,7 @@ class NumericAliasTest {
     }
 
     @Test
-    fun aDigitTokenIsAnUnknownOptionWithoutANumericAlias() {
+    fun `a digit token is an unknown option without a numeric alias`() {
         // Real `ls -5` and `sleep -1` both reject. A tree that declares no numeric alias must too, rather
         // than silently binding a file named "-5".
         val tree = cli("ls") {
@@ -1836,7 +1836,7 @@ class NumericAliasTest {
     }
 
     @Test
-    fun aNumericAliasClaimsOnlyAnAllDigitToken() {
+    fun `a numeric alias claims only an all digit token`() {
         // `-5x` is not a number, so the alias must not take it; it stays a short cluster.
         assertEquals(
             CliError.UnknownOption("-5"),
@@ -1845,7 +1845,7 @@ class NumericAliasTest {
     }
 
     @Test
-    fun theAliasedOptionsHelpRowAdvertisesTheNumericForm() {
+    fun `the aliased options help row advertises the numeric form`() {
         assertTrue("-NUM" in headTree().helpText(), headTree().helpText())
     }
 }
@@ -1865,29 +1865,29 @@ class OptionalValueTest {
     private fun run(vararg argv: String): String = tree().execAndCapture(argv.toList())
 
     @Test
-    fun theAttachedFormBindsItsOwnValue() {
+    fun `the attached form binds its own value`() {
         assertEquals("color=never files=[]\n", run("--color=never"))
     }
 
     @Test
-    fun aBareOccurrenceBindsTheDeclaredBareValue() {
+    fun `a bare occurrence binds the declared bare value`() {
         assertEquals("color=always files=[]\n", run("--color"))
     }
 
     @Test
-    fun theSpaceFormLeavesTheNextTokenAsAnOperand() {
+    fun `the space form leaves the next token as an operand`() {
         // The rule guideline 7 exists for: an optional-value option cannot tell its value from the next
         // operand, so it never takes one. GNU does the same, and `ls --color src` colours `src`'s listing.
         assertEquals("color=always files=[src]\n", run("--color", "src"))
     }
 
     @Test
-    fun anAbsentOccurrenceStillBindsNull() {
+    fun `an absent occurrence still binds null`() {
         assertEquals("color=null files=[f]\n", run("f"))
     }
 
     @Test
-    fun aShortFormBindsAttachedAndBareTheSameWay() {
+    fun `a short form binds attached and bare the same way`() {
         val tree = cli("git") {
             val verbose = flag("--verbose", "-v")
             val sign = option("--gpg-sign", "-S").optionalValue("default-key")
@@ -1903,7 +1903,7 @@ class OptionalValueTest {
     }
 
     @Test
-    fun theBareValueRunsThroughTheOptionsOwnConverter() {
+    fun `the bare value runs through the options own converter`() {
         val tree = cli("app") {
             val depth = option("--depth").optionalValue("1").int()
             action { Ok(depth().toString()) }
@@ -1913,7 +1913,7 @@ class OptionalValueTest {
     }
 
     @Test
-    fun aBadAttachedValueIsStillRejected() {
+    fun `a bad attached value is still rejected`() {
         val tree = cli("app") {
             val depth = option("--depth").optionalValue("1").int()
             action { Ok(depth().toString()) }
@@ -1925,7 +1925,7 @@ class OptionalValueTest {
     }
 
     @Test
-    fun anOptionWithoutTheOptInStillDemandsItsValue() {
+    fun `an option without the opt in still demands its value`() {
         // The conformance guarantee: nothing about an ordinary option changes.
         val tree = cli("app") {
             val out = option("--out").required()
@@ -1939,13 +1939,13 @@ class OptionalValueTest {
     }
 
     @Test
-    fun aBareOccurrenceAtTheEndOfArgvBinds() {
+    fun `a bare occurrence at the end of argv binds`() {
         // A bare occurrence at the end of argv has no next token to reach for at all.
         assertEquals("color=always files=[f]\n", run("f", "--color"))
     }
 
     @Test
-    fun aGlobalOptionalValueOptionBehavesTheSameBeforeAndAfterTheSubcommand() {
+    fun `a global optional value option behaves the same before and after the subcommand`() {
         val tree = cli("git") {
             val execPath = globalOption("--exec-path", "-e").optionalValue("/usr/lib/git-core")
             command("log") { action { Ok(execPath() ?: "none") } }
@@ -1956,7 +1956,7 @@ class OptionalValueTest {
     }
 
     @Test
-    fun aGlobalOptionalValueOptionBindsThroughTheShortClusterPath() {
+    fun `a global optional value option binds through the short cluster path`() {
         val tree = cli("git") {
             val execPath = globalOption("--exec-path", "-e").optionalValue("/usr/lib/git-core")
             command("log") { action { Ok(execPath() ?: "none") } }

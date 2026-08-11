@@ -15,7 +15,7 @@ import kotlinx.serialization.json.Json
 class ClusteredShortFlagsTest {
 
     @Test
-    fun aPureBooleanClusterSetsBothReverseAndLong() = withTempStore { path ->
+    fun `a pure boolean cluster sets both reverse and long`() = withTempStore { path ->
         val cli = taskManagerCli()
         cli.captureWithFile(path, "add", "First task", "--due", "2026-01-01", "--tag", "alpha")
         cli.captureWithFile(path, "add", "Second task", "--due", "2026-02-02", "--tag", "beta")
@@ -35,7 +35,7 @@ class ClusteredShortFlagsTest {
     }
 
     @Test
-    fun aClusterEndingInAValueTakerBindsTheNextTokenAsThatValue() = withTempStore { path ->
+    fun `a cluster ending in a value taker binds the next token as that value`() = withTempStore { path ->
         val cli = taskManagerCli()
         for (n in 1..7) cli.captureWithFile(path, "add", "Task $n")
 
@@ -55,7 +55,7 @@ class ClusteredShortFlagsTest {
     }
 
     @Test
-    fun theSameClusterShapeOnAddBindsAFlagThenAnOptionsValue() = withTempStore { path ->
+    fun `the same cluster shape on add binds a flag then an options value`() = withTempStore { path ->
         val cli = taskManagerCli()
         // -D takes no value; -p is last, so "high" is its value, exactly like -rln above but on `add`.
         val added = cli.captureWithFile(path, "add", "Ship it", "-Dp", "high")
@@ -68,7 +68,7 @@ class ClusteredShortFlagsTest {
     }
 
     @Test
-    fun aCountedGlobalBeforeTheSubcommandAndAClusteredLocalAfterBothBind() = withTempStore { path ->
+    fun `a counted global before the subcommand and a clustered local after both bind`() = withTempStore { path ->
         val cli = taskManagerCli()
         cli.captureWithFile(path, "add", "First task", "--due", "2026-01-01")
         cli.captureWithFile(path, "add", "Second task", "--due", "2026-02-02")
@@ -86,7 +86,7 @@ class ClusteredShortFlagsTest {
     }
 
     @Test
-    fun aValueTakerNotLastInAClusterConsumesTheRestOfTheTokenAsItsValue() = withTempStore { path ->
+    fun `a value taker not last in a cluster consumes the rest of the token as its value`() = withTempStore { path ->
         // "-rnl": -r is a flag, but -n is a value-taking option, so IT consumes the rest of the token ("l")
         // as ITS raw value rather than letting -l parse as a third flag. "l" is not an integer, so --limit
         // rejects it. This is the rule readers get wrong: only the LAST option in a cluster may take a value.
@@ -96,7 +96,7 @@ class ClusteredShortFlagsTest {
     }
 
     @Test
-    fun listHelpShowsTheNewClusterableFlags() {
+    fun `list help shows the new clusterable flags`() {
         val result = taskManagerCli().capture("list", "--help")
         assertEquals(0, result.exitCode, result.err)
         assertContains(result.out, "-r, --reverse")
@@ -104,14 +104,14 @@ class ClusteredShortFlagsTest {
     }
 
     @Test
-    fun addHelpShowsTheDoneShort() {
+    fun `add help shows the done short`() {
         val result = taskManagerCli().capture("add", "--help")
         assertEquals(0, result.exitCode, result.err)
         assertContains(result.out, "-D, --done")
     }
 
     @Test
-    fun rootHelpShowsAClusteredExample() {
+    fun `root help shows a clustered example`() {
         val result = taskManagerCli().capture("--help")
         assertEquals(0, result.exitCode, result.err)
         assertContains(result.out, "-Dp high")

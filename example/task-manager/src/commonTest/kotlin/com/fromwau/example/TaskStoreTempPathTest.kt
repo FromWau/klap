@@ -16,7 +16,7 @@ import kotlinx.io.files.SystemFileSystem
 class TaskStoreTempPathTest {
 
     @Test
-    fun twoStoresForTheSameFileNeverShareATempPath() = withTempStore { path ->
+    fun `two stores for the same file never share a temp path`() = withTempStore { path ->
         val first = TaskStore(Path(path))
         val second = TaskStore(Path(path))
 
@@ -24,7 +24,7 @@ class TaskStoreTempPathTest {
     }
 
     @Test
-    fun aCompletedSaveLeavesNoTempFileBehind() = withTempStore { path ->
+    fun `a completed save leaves no temp file behind`() = withTempStore { path ->
         val store = TaskStore(Path(path))
 
         val result = store.save(listOf(Task(id = 1, title = "Buy milk")))

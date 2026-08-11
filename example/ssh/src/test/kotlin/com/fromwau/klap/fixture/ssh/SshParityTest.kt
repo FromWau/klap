@@ -8,7 +8,7 @@ class SshParityTest {
     private val parity = ParitySuite(sshCli())
 
     @Test
-    fun bindsConnectionOptionsAndTheOptionalRemoteCommand() {
+    fun `binds connection options and the optional remote command`() {
         parity.binds(
             "-p", "2222", "-i", "/home/u/.ssh/id_ed25519", "admin@web1",
             expected = NOTHING_BOUND.copy(
@@ -69,7 +69,7 @@ class SshParityTest {
     }
 
     @Test
-    fun rejectsWhatRealSshRejects() {
+    fun `rejects what real ssh rejects`() {
         parity.rejects("--zzz", "web1", because = "real ssh: unknown option -- -")
         parity.rejects("-Z", "web1", because = "real ssh: unknown option -- Z")
         parity.rejects(because = "real ssh: usage: ssh ... destination")
@@ -82,7 +82,7 @@ class SshParityTest {
     }
 
     @Test
-    fun knownDivergenceFromRealSsh() {
+    fun `known divergence from real ssh`() {
         // `optionsEndAtFirstOperand` (set in sshCli) stops option parsing at the destination, so an
         // undeclared short reaches the remote instead of erroring, and a declared one is not stolen either.
         parity.binds(
@@ -96,7 +96,7 @@ class SshParityTest {
 
         // klap's own `--json` is recognized before the tree knows which command it will reach at all, so
         // it is stripped from the remote command wherever it sits ahead of a literal `--` (see
-        // bindsConnectionOptionsAndTheOptionalRemoteCommand for the line that shields it).
+        // `binds connection options and the optional remote command` for the line that shields it).
         parity.binds(
             "web1", "echo", "--json",
             expected = NOTHING_BOUND.copy(destination = "web1", remoteCommand = listOf("echo")),
@@ -135,7 +135,7 @@ class SshParityTest {
     }
 
     @Test
-    fun acceptsSurfaceRealSshDoesNotHave() {
+    fun `accepts surface real ssh does not have`() {
         // Real ssh has no long options at all, so every long spelling below is invented and the real tool
         // answers `unknown option -- -` to all of them.
         parity.bindsLoosely(

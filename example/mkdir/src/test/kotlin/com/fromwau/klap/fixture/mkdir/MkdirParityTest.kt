@@ -8,7 +8,7 @@ class MkdirParityTest {
     private val parity = ParitySuite(mkdirCli())
 
     @Test
-    fun bindsFlagsOptionsAndOperands() {
+    fun `binds flags options and operands`() {
         parity.binds("-p", "a/b/c", expected = NOTHING_BOUND.copy(parents = true, directories = listOf("a/b/c")))
         parity.binds("--mode", "755", "d", expected = NOTHING_BOUND.copy(mode = "755", directories = listOf("d")))
         // -Z has no long form, so this is the whole spelling real mkdir offers for it.
@@ -35,7 +35,7 @@ class MkdirParityTest {
     }
 
     @Test
-    fun rejectsWhatRealMkdirRejects() {
+    fun `rejects what real mkdir rejects`() {
         parity.rejects("--zzz", because = "real mkdir: unrecognized option '--zzz'")
         parity.rejects(because = "real mkdir: missing operand")
         parity.rejects("--mode", because = "real mkdir: option '--mode' requires an argument")
@@ -44,7 +44,7 @@ class MkdirParityTest {
     }
 
     @Test
-    fun knownDivergenceFromRealMkdir() {
+    fun `known divergence from real mkdir`() {
         // The dash-led value reaches `mode`; this fixture's octal-only validator rejects it here, though
         // real mkdir would accept it as a symbolic mode and create `d`.
         parity.rejects("--mode", "-w", "d", because = "this fixture's octal-only mode, NOT real-mkdir behaviour")

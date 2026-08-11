@@ -7,13 +7,14 @@ android-minSdk = "24"
 jdk = "25"
 
 dotenv = "4.0.0"
-kern = "0.1.0"
+kern = "0.2.0"
 kotlin = "2.4.10"
 kotlinx-io = "0.9.1"
 kotlinx-serialization = "1.11.0"
 
 [libraries]
 kern-result = { module = "com.fromwau.kern:result", version.ref = "kern" }
+kern-terminal = { module = "com.fromwau.kern:terminal", version.ref = "kern" }
 kotlin-gradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }

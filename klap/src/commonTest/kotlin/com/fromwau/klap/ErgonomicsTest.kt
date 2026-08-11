@@ -10,7 +10,7 @@ import kotlin.test.assertEquals
 class GroupCapturesItsDeclarationsTest {
 
     @Test
-    fun aHandleDeclaredInsideGroupBindsToAPlainVal() {
+    fun `a handle declared inside group binds to a plain val`() {
         // The point of the contract: no `lateinit var`, no hand-written type. Before this, capturing a
         // grouped handle meant hoisting it out and spelling Opt<List<String>> yourself.
         val tree = cli("app") {
@@ -30,7 +30,7 @@ class GroupCapturesItsDeclarationsTest {
     }
 
     @Test
-    fun groupReturnsItsBlocksValue() {
+    fun `group returns its blocks value`() {
         val tree = cli("app") {
             command("build") {
                 val jobs = group("Tuning") { option("--jobs", "-j", help = "parallelism").int().default(1) }
@@ -43,7 +43,7 @@ class GroupCapturesItsDeclarationsTest {
     }
 
     @Test
-    fun groupStillScopesTheHelpHeading() {
+    fun `group still scopes the help heading`() {
         val cmd = cli("app") {
             command("build") {
                 group("Tuning") { option("--jobs", "-j", help = "parallelism") }
@@ -57,7 +57,7 @@ class GroupCapturesItsDeclarationsTest {
     }
 
     @Test
-    fun aThrowingGroupBlockDoesNotStrandLaterInputsInThatSection() {
+    fun `a throwing group block does not strand later inputs in that section`() {
         // try/finally: the section must be restored even if the block blows up mid-declaration.
         val cmd = cli("app") {
             command("build") {
@@ -73,7 +73,7 @@ class GroupCapturesItsDeclarationsTest {
 class MetavarTest {
 
     @Test
-    fun placeholderNamesAnOptionsValueInHelp() {
+    fun `placeholder names an options value in help`() {
         val cmd = cli("app") {
             command("run") {
                 option("--out", "-o", help = "where to write").placeholder("FILE")
@@ -84,7 +84,7 @@ class MetavarTest {
     }
 
     @Test
-    fun placeholderOverridesAChoiceListInTheSignature() {
+    fun `placeholder overrides a choice list in the signature`() {
         // A long choice list in the signature column widens every other row; placeholder is the way out.
         val cmd = cli("app") {
             command("run") {
@@ -100,7 +100,7 @@ class MetavarTest {
     }
 
     @Test
-    fun placeholderNamesAPositionalInUsageAndItsRow() {
+    fun `placeholder names a positional in usage and its row`() {
         val cmd = cli("app") {
             command("run") {
                 argument("path", "what to run").placeholder("SCRIPT")
@@ -112,7 +112,7 @@ class MetavarTest {
     }
 
     @Test
-    fun withoutMetavarNothingChanges() {
+    fun `without metavar nothing changes`() {
         val cmd = cli("app") {
             command("run") {
                 option("--out", "-o", help = "where to write")
@@ -140,7 +140,7 @@ class HelpFollowsDeclarationOrderTest {
     }.subcommand("run")!!
 
     @Test
-    fun optionsAndFlagsInterleaveAsDeclared() {
+    fun `options and flags interleave as declared`() {
         val help = cmd().helpText("app run")
         val order = listOf("--verbose", "--out", "--quiet", "--level").map { help.indexOf(it) }
         assertEquals(order.sorted(), order, "help reordered the author's declarations:\n$help")

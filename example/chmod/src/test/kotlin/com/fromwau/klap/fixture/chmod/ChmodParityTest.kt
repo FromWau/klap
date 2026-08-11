@@ -8,7 +8,7 @@ class ChmodParityTest {
     private val parity = ParitySuite(chmodCli())
 
     @Test
-    fun bindsModeFlagsAndOperands() {
+    fun `binds mode flags and operands`() {
         parity.binds(
             "755", "script.sh",
             expected = NOTHING_BOUND.copy(mode = octal("755"), files = listOf("script.sh")),
@@ -68,7 +68,7 @@ class ChmodParityTest {
     }
 
     @Test
-    fun rejectsWhatRealChmodRejects() {
+    fun `rejects what real chmod rejects`() {
         parity.rejects("--zzz", because = "real chmod: unrecognized option '--zzz'")
         parity.rejects(because = "real chmod: missing operand")
         parity.rejects("755", because = "real chmod: missing operand after '755'")
@@ -82,7 +82,7 @@ class ChmodParityTest {
     }
 
     @Test
-    fun knownDivergenceFromRealChmod() {
+    fun `known divergence from real chmod`() {
         // A dash-led MODE is a positional to real chmod, but klap reads any dash-led token as an option,
         // so it is never reached here; no general rule can serve both chmod and mkdir (`chmod -w f` wants
         // an operand exactly where `mkdir -w f` wants an error). `chmod -- -w f` is the escape, and it is

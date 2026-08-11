@@ -9,7 +9,7 @@ import kotlinx.serialization.json.Json
 class AbbreviationTest {
 
     @Test
-    fun anAbbreviatedSubcommandReachesList() = withTempStore { path ->
+    fun `an abbreviated subcommand reaches list`() = withTempStore { path ->
         val cli = taskManagerCli()
         cli.captureWithFile(path, "add", "Buy milk")
 
@@ -20,7 +20,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun anAbbreviatedLongOptionReachesTheBuiltinJsonFlag() = withTempStore { path ->
+    fun `an abbreviated long option reaches the builtin json flag`() = withTempStore { path ->
         val cli = taskManagerCli()
         cli.captureWithFile(path, "add", "Buy milk")
 
@@ -33,7 +33,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun anAbbreviatedChoiceValueReachesHigh() = withTempStore { path ->
+    fun `an abbreviated choice value reaches high`() = withTempStore { path ->
         val cli = taskManagerCli()
 
         // `hi` prefixes only `high` among low/medium/high, so it resolves unambiguously.

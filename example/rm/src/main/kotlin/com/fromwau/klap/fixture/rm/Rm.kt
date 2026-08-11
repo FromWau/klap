@@ -46,7 +46,7 @@ public fun rmCli(): TypedCli<RmInputs> = cliOf("rm") {
         .optionalValue("always")
 
     // The invented long name `--interactive-once` is a fixture choice pinned by
-    // `RmParityTest.knownDivergenceFromRealRm`, not a klap limitation — real `-I` has no long form at all.
+    // RmParityTest's `known divergence from real rm`, not a klap limitation — real `-I` has no long form at all.
     val interactiveOnce = flag(
         "--interactive-once", "-I",
         help = "prompt once before removing more than three files, or when removing recursively",
