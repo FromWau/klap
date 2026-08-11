@@ -1,9 +1,12 @@
 package com.fromwau.klap.fixture.chmod
 
-import com.fromwau.klap.Err
+import com.fromwau.kern.result.Err
+import com.fromwau.kern.result.IError
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.fold
 import com.fromwau.klap.Abbreviation
-import com.fromwau.klap.Ok
-import com.fromwau.klap.Result
+import com.fromwau.klap.ConversionError
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
@@ -34,8 +37,8 @@ private val CHMOD_SYMBOLIC_CLAUSE = Regex("""[ugoa]*(?:[-+=](?:[rwxXst]*|[ugo]))
  * A named helper rather than an inline lambda so `.convert` infers `Arg<ChmodMode>` off a written-out
  * return type instead of the lambda body.
  */
-private fun parseChmodMode(raw: String): Result<ChmodMode, String> {
-    if (raw.isEmpty()) return Err("mode must not be empty")
+private fun parseChmodMode(raw: String): Result<ChmodMode, ConversionError> {
+    if (raw.isEmpty()) return Err(ConversionError.Domain(ChmodModeError.Empty, "mode must not be empty"))
     if (CHMOD_OCTAL.matches(raw)) {
         val digits = raw.trimStart('-', '+', '=')
         return Ok(ChmodMode.Octal(digits.fold(0) { acc, c -> acc * 8 + (c - '0') }))
@@ -44,7 +47,9 @@ private fun parseChmodMode(raw: String): Result<ChmodMode, String> {
     if (clauses.all { it.isNotEmpty() && CHMOD_SYMBOLIC_CLAUSE.matches(it) }) {
         return Ok(ChmodMode.Symbolic(clauses))
     }
-    return Err("not a mode; expected octal (755) or symbolic (u+x,a-w)")
+    return Err(
+        ConversionError.Domain(ChmodModeError.Malformed, "not a mode; expected octal (755) or symbolic (u+x,a-w)"),
+    )
 }
 
 private fun chmodModeLabel(mode: ChmodMode): String = when (mode) {
@@ -203,3 +208,10 @@ public val NOTHING_BOUND: ChmodInputs = ChmodInputs(
     mode = null,
     files = emptyList(),
 )
+
+/** The two ways a chmod mode operand can be rejected. */
+private sealed interface ChmodModeError : IError {
+    data object Empty : ChmodModeError
+
+    data object Malformed : ChmodModeError
+}

@@ -1,6 +1,6 @@
 package com.fromwau.klap.fixture.head
 
-import com.fromwau.klap.Ok
+import com.fromwau.kern.result.Ok
 import com.fromwau.klap.fixture.ParitySuite
 import kotlin.test.Test
 import kotlin.test.assertEquals

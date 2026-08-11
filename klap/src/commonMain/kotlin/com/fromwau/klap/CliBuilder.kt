@@ -1,5 +1,8 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.Err
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
 import com.fromwau.klap.internal.builder.BuilderImpl
 import com.fromwau.klap.internal.builder.validateReservedNames
 import com.fromwau.klap.internal.spec.Builtin

@@ -1,5 +1,12 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.Err
+import com.fromwau.kern.result.IError
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.getOrElse
+import com.fromwau.kern.result.map
+import com.fromwau.kern.result.mapError
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -94,16 +101,16 @@ class ReadmeSnippetsTest {
     @Test
     fun mapErrorTurnsADomainErrorIntoACliErrorWithoutUnwrapping() {
         val result: Result<String, CliError> = TaskStore().load()
-            .mapError { CliError.Failure("cannot read the store: $it") }
+            .mapError { CliError.Failure("cannot read the store: ${it.detail}") }
             .map { tasks -> "loaded ${tasks.size} task(s)" }
         assertEquals(Ok("loaded 2 task(s)"), result)
     }
 
     @Test
     fun mapErrorLeavesASuccessAloneAndMapLeavesAnErrorAlone() {
-        val failing: Result<List<StoredTask>, String> = Err("disk full")
+        val failing: Result<List<StoredTask>, TaskStoreError> = Err(TaskStoreError.DiskFull)
         val mapped: Result<String, CliError> = failing
-            .mapError { CliError.Failure("cannot read the store: $it") }
+            .mapError { CliError.Failure("cannot read the store: ${it.detail}") }
             .map { "unreachable" }
         assertEquals(Err(CliError.Failure("cannot read the store: disk full")), mapped)
     }
@@ -149,9 +156,19 @@ private fun greetCli() = cli("greet") {
 /** Stands in for the README's `Task`; only the two fields its snippets read are modelled. */
 private class StoredTask(val id: Int, val tags: List<String>)
 
+/** Stands in for the guide's `StoreError`: the store's own failure type, rooted in kern's [IError]. */
+private sealed interface TaskStoreError : IError {
+    val detail: String
+
+    data object DiskFull : TaskStoreError {
+        override val detail: String = "disk full"
+    }
+}
+
 /** Stands in for the README's `TaskStore`, whose `load()` returns a typed-error result. */
 private class TaskStore {
-    fun load(): Result<List<StoredTask>, String> = Ok(listOf(StoredTask(1, listOf("a")), StoredTask(3, listOf("x", "y"))))
+    fun load(): Result<List<StoredTask>, TaskStoreError> =
+        Ok(listOf(StoredTask(1, listOf("a")), StoredTask(3, listOf("x", "y"))))
 }
 
 private fun CommandBuilder.tagOption() =
