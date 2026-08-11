@@ -15,7 +15,7 @@ ships, so if you are building against a release, read this file at that release'
 | [Abbreviation](#abbreviation) | how far a partially typed name resolves, git's rationale, choosing a mode |
 | [Cross-input constraints](#cross-input-constraints) | `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `requiredIf` |
 | [Global / persistent options](#global--persistent-options) | options shared by every subcommand, and declining a built-in |
-| [Typed results and errors](#typed-results-and-errors) | `Result`, `CliError`, exit codes, did-you-mean |
+| [Typed results and errors](#typed-results-and-errors) | kern's `Result`, `IError`, `CliError`, exit codes, did-you-mean |
 | [Structured `--json`](#structured---json) | one `Ok(value)`, two renderings, actions that print as they go |
 | [Color output](#color-output) | styles, `ColorScope`, `NO_COLOR`, `--color` |
 | [Command groups and nesting](#command-groups-and-nesting) | subcommand trees and help sections |
@@ -248,7 +248,7 @@ val files   = argument("files").file().multiple(min = 1)           //  List<Stri
 | `.enum<E>()` | argument, option | `E`, matched case-insensitively; choices shown lowercase |
 | `.choice("a", "b")` | argument, option | the raw string, restricted to the given set (matched case-insensitively, returns the declared spelling) |
 | `.map { raw -> T }` | argument, option | any type; a thrown exception becomes a clean parse error |
-| `.convert { raw -> Result }` | argument, option | any type, with your own error message |
+| `.convert { raw -> Result }` | argument, option | any type, failing with a case of your own |
 | `.validate("msg") { it > 0 }` | argument, option | same type; fails with `BadValue` when the predicate is false. The predicate always runs per element, so declare it *before* `.multiple()`: a chain that puts it after fails at parse instead of validating |
 | `.range(1..65535)` | argument, option (`Comparable`) | same type, bounds-checked; shows the range in help. Sugar over `.validate()`, with the same ordering |
 | `.optional()` | argument | makes a positional nullable (options are already nullable) |
@@ -269,13 +269,60 @@ instead of transforming the value, so they are order-free: `.placeholder("SEED")
 `.long().placeholder("SEED")` declare the same input. The rest of the table reads the value or its
 cardinality, so order matters there.
 
-`.convert { }` reads the raw string and returns `Result<T, String>` yourself (`Ok(value)` or
-`Err("message")`), when you want to control the error text instead of letting `.map` derive one from a
-thrown exception:
+`.convert { }` reads the raw string and returns `Result<T, ConversionError>` yourself, when you want to
+control the error instead of letting `.map` derive one from a thrown exception. `ConversionError` is a
+sealed hierarchy of klap's own conversion failures, and `Domain` is the case you contribute to:
 
 ```kotlin
-val level = option("--level").convert { raw -> raw.toIntOrNull()?.let { Ok(it) } ?: Err("not a number") } //  Int?
+data object NotAPort : IError
+
+val port = option("--port").convert { raw ->
+    raw.toIntOrNull()?.let(::Ok) ?: Err(ConversionError.Domain(NotAPort, "not a port"))   // Int?
+}
 ```
+
+`Domain` pairs your error with the words klap prints. The words are a fragment, not a whole message:
+klap supplies the input's name and the offending token around them, printing
+`invalid value 'x' for --port: not a port`.
+
+Note what the failure is *not*: a string wearing a type. `NotAPort` is a case a caller can branch on, and
+declaring one is a single line. Give the failure a name even when there is only one of them, because the
+next reader gets `is NotAPort` instead of a message comparison.
+
+When there are several ways to fail, they are several cases, and the wording is chosen once at the
+boundary rather than baked into the error:
+
+```kotlin
+sealed interface PortError : IError {
+    data class NotANumber(val given: String) : PortError
+    data class OutOfRange(val given: Int) : PortError
+}
+
+fun PortError.detail(): String = when (this) {
+    is PortError.NotANumber -> "'$given' is not a number"
+    is PortError.OutOfRange -> "$given is outside 1..65535"
+}
+
+val port = option("--port").convert { raw ->
+    parsePort(raw).mapError { ConversionError.Domain(it, it.detail()) }
+}
+
+// driving parse() yourself, the payload is intact:
+val cause = (error as? CliError.BadValue)?.cause
+when (val own = (cause as? ConversionError.Domain)?.error) {
+    is PortError.OutOfRange -> retry(port = own.given.coerceIn(1..65535))
+    else -> report(error)
+}
+```
+
+klap's own converters report their own cases rather than a `Domain`, so `.int()` on `"abc"` yields
+`ConversionError.NotAnInteger` and `.choice("a", "b")` on `"c"` yields `ConversionError.NotOneOf(["a", "b"])`.
+The English for those lives in klap's renderer, which is why the cases carry no message. `cause` is null
+for the errors klap raises without running a converter, notably a `.validate()` or `.range()` rejection:
+those take a message string from you at declaration, so there is no error object to keep.
+
+`example/dd` is the worked example, a five-case operand grammar mapped to words in one `when`;
+`example/rsync` is the one-liner.
 
 `.map` is for total transforms; reach for `.convert { }` (or a thrown exception) when a value can be
 *invalid*, so the user sees a parse error instead of a silent fallback. A `.map { }` lambda that returns
@@ -715,10 +762,40 @@ An `action { }` returns `Result<T, CliError>`:
 - `Ok(value)` succeeds; klap renders `value` and exits `0`.
 - `Err(error)` fails; klap prints the message and exits with `error.exitCode`.
 
+`Result` is not klap's own type. It comes from
+[`com.fromwau.kern:result`](https://github.com/FromWau/kern/blob/master/result/README.md), which klap
+exposes as an `api` dependency, so it arrives transitively and you import it from
+`com.fromwau.kern.result`:
+
+```kotlin
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
+```
+
+The error side is bounded: `Result<out S, out E : IError>`, where `IError` is an empty marker interface.
+Root your own error hierarchy in it and everything else follows, including `CliError`, which implements
+it too:
+
+```kotlin
+sealed interface StoreError : IError {
+    val detail: String
+
+    data object DiskFull : StoreError {
+        override val detail: String = "disk full"
+    }
+
+    data class Missing(val id: Int) : StoreError {
+        override val detail: String get() = "no task $id"
+    }
+}
+```
+
+`IError` asks for nothing, so what a hierarchy carries is entirely yours; the `detail` above is this
+example's choice, not a klap or kern requirement. The rest of this section reuses this `StoreError`.
+
 **`Ok` / `Err` are builders, not the types you match on.** `Result<S, E>` is a sealed interface with
-two subtypes, `Result.Success(value)` and `Result.Error(error)`; `Ok(v)` and `Err(e)` are top-level
-functions that construct them. So you *write* `Ok(x)` and *match* `is Result.Success`, and the names
-never line up:
+two subtypes, `Result.Success(value)` and `Result.Error(error)`; `Ok` and `Err` are typealiases for
+them. So you *write* `Ok(x)` and *match* `is Result.Success`, and the names never line up:
 
 ```kotlin
 when (val parsed = cli.parse(argv)) {
@@ -727,16 +804,23 @@ when (val parsed = cli.parse(argv)) {
 }
 ```
 
-Six combinators come with it, all `inline`, all extensions on `Result<S, E>`:
+Nine combinators come with it, all extensions on `Result<S, E>`:
 
 | Combinator | Signature | Does |
 |---|---|---|
 | `map` | `(S) -> T` → `Result<T, E>` | rewrites the success value, leaves an error untouched |
 | `mapError` | `(E) -> F` → `Result<S, F>` | rewrites the error, leaves a success untouched |
 | `getOrElse` | `(E) -> S` → `S` | unwraps, computing a fallback from the error |
+| `getOrNull` | → `S?` | the success value, or null |
+| `errorOrNull` | → `E?` | the error, or null |
 | `fold` | `(S) -> T`, `(E) -> T` → `T` | collapses both sides to one type |
+| `orElse` | `(E) -> Result<S, F>` | recovers with another attempt, which may fail its own way |
 | `onSuccess` | `(S) -> Unit` → `Result<S, E>` | side effect on success, returns the receiver |
 | `onError` | `(E) -> Unit` → `Result<S, E>` | side effect on failure, returns the receiver |
+
+`getOrNull` and `errorOrNull` are the two that are not `inline`; the rest are, so a non-local `return`
+out of their lambdas works. kern also ships `EmptyResult<E>`, a typealias for `Result<Unit, E>`, for work
+with nothing to hand back on success.
 
 `mapError` is the one to reach for at a layer boundary, since it turns your domain's error into a
 `CliError` without unwrapping:
@@ -744,7 +828,7 @@ Six combinators come with it, all `inline`, all extensions on `Result<S, E>`:
 ```kotlin
 action {
     store.load()                                        // Result<List<Task>, StoreError>
-        .mapError { CliError.Failure("cannot read the store: $it") }
+        .mapError { CliError.Failure("cannot read the store: ${it.detail}") }
         .map { tasks -> "loaded ${tasks.size} task(s)" }
 }
 ```
@@ -825,16 +909,16 @@ payload intact. klap renders `detail` and exits, exactly as it does for `Failure
 being flattened into a sentence at the boundary:
 
 ```kotlin
-sealed interface StoreError { data object DiskFull : StoreError }
-
+// StoreError as declared under "Typed results and errors" above.
 action { Err(CliError.Domain(StoreError.DiskFull, "out of space", exitCode = 6)) }
 
 // and at the call site, if you drive parse() yourself:
 val payload = (error as? CliError.Domain)?.error as? StoreError
 ```
 
-The field is `Any` on purpose: klap never inspects it, and typing it would force a klap-owned supertype
-onto a hierarchy that already has its own root.
+The field is typed `IError` and nothing more. klap never inspects it, so the only thing asked of your
+hierarchy is the marker it already implements to be usable as a `Result` error at all; its own sealed root
+stays intact, and the `when` that unwraps it stays exhaustive.
 
 ### Did-you-mean, in your own messages
 
@@ -1282,12 +1366,14 @@ klap's rendering is a thin layer over pure functions. Reach past it when you nee
   `action { }`. `Execute.globals` carries only the built-in `--json` flag; your own
   `globalOption` / `globalFlag` values are read through their accessors inside `action { }`, not off
   `Execute`.
-- `Invocation.Execute.runAction(): Result<Any?, CliError>?` runs the resolved command's `action { }` with
+- `Invocation.Execute.runAction(): Result<Any?, CliError>` runs the resolved command's `action { }` with
   its parsed values in scope and hands back the action's own typed result — its `Ok(value)` or a typed `Failure` —
   instead of rendered text and an exit code. This is the hook for embedding klap's parsing and dispatch in
   a larger program: branch over the `Invocation` from `parse`, then call `runAction()` on an `Execute` to
-  execute it yourself. It returns null for a node with no action, never writes output or exits, and erases
-  the value to `Any?` (a `Cli` is not typed over its actions' return types), so cast it to your type.
+  execute it yourself. It never writes output or exits, and erases the value to `Any?` (a `Cli` is not typed
+  over its actions' return types), so cast it to your type. An `Execute` always has an action to run: a
+  group resolves to `ShowHelp`, and a command declaring neither an action nor subcommands is rejected when
+  the tree is built.
 - `cli.run(argv, terminal): Int` parses, dispatches, **runs the resolved `action { }`**, and renders its
   result (or any error) to a `Terminal` you supply, returning the exit code without terminating the
   process. Reach for `run` rather than `parse` whenever an action must actually execute. It also makes

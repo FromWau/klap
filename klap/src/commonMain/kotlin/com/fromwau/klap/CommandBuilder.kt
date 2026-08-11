@@ -1,5 +1,6 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.Result
 import com.fromwau.klap.internal.spec.Action
 import com.fromwau.klap.internal.spec.ActionSpec
 import kotlin.contracts.ExperimentalContracts

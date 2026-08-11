@@ -1,5 +1,9 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.Err
+import com.fromwau.kern.result.IError
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -136,5 +140,52 @@ class GuideSnippetsTest {
             val thrown = assertFailsWith<IllegalArgumentException> { build() }
             assertContains(thrown.message.orEmpty(), "not one of fast, slow")
         }
+    }
+}
+
+// --- "Converters and validators": the guide's typed-ConversionError snippet, transcribed ---
+
+private sealed interface PortError : IError {
+    data class NotANumber(val given: String) : PortError
+
+    data class OutOfRange(val given: Int) : PortError
+}
+
+private fun guidePortCli() = cli("net") {
+    val port = option("--port").convert { raw ->
+        val n = raw.toIntOrNull()
+            ?: return@convert Err(ConversionError.Domain(PortError.NotANumber(raw), "'$raw' is not a number"))
+        if (n in 1..65535) Ok(n)
+        else Err(ConversionError.Domain(PortError.OutOfRange(n), "$n is outside 1..65535"))
+    }
+    action { Ok("port ${port()}") }
+}
+
+class GuideConversionErrorSnippetTest {
+
+    @Test
+    fun theGuidesTypedConverterSnippetKeepsTheCallersCaseAndItsWords() {
+        val err = assertIs<Result.Error<CliError>>(guidePortCli().parse(listOf("--port", "70000"))).error
+        val bad = assertIs<CliError.BadValue>(err)
+        assertEquals(PortError.OutOfRange(70000), assertIs<ConversionError.Domain>(bad.cause).error)
+        assertEquals("70000 is outside 1..65535", bad.reason)
+
+        val nan = assertIs<Result.Error<CliError>>(guidePortCli().parse(listOf("--port", "http"))).error
+        assertEquals(
+            PortError.NotANumber("http"),
+            assertIs<ConversionError.Domain>(assertIs<CliError.BadValue>(nan).cause).error,
+        )
+    }
+
+    @Test
+    fun aBuiltinConverterReportsItsOwnCaseRatherThanADomainError() {
+        val tree = cli("lvl") {
+            option("--level").int()
+            action { Ok("ok") }
+        }
+        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--level", "x"))).error
+        val bad = assertIs<CliError.BadValue>(err)
+        assertEquals(ConversionError.NotAnInteger, bad.cause)
+        assertEquals("not an integer", bad.reason)
     }
 }

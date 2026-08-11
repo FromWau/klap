@@ -29,6 +29,9 @@ dependencyResolutionManagement {
             }
         }
         mavenCentral()
+        maven("https://maven.frommhund.xyz/releases") {
+            mavenContent { includeGroupAndSubgroups("com.fromwau") }
+        }
     }
 }
 

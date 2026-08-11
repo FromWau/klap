@@ -1,7 +1,9 @@
 package com.fromwau.klap.internal.spec
 
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.map
 import com.fromwau.klap.CompletionScope
-import com.fromwau.klap.Result
+import com.fromwau.klap.ConversionError
 
 /**
  * The model behind a holder: one shared, immutable-after-build spec — transformers mutate it at build
@@ -29,7 +31,7 @@ internal sealed interface HolderSpec {
 /** Value-carrying inputs (arguments, options): the raw-string convert pipeline, validation, and help hints. */
 @PublishedApi
 internal sealed interface ValueSpec : HolderSpec {
-    var convert: (String) -> Result<Any?, String>
+    var convert: (String) -> Result<Any?, ConversionError>
     var choices: List<String>?
 
     // Runs after a successful convert(); null = pass, non-null = error message. Always yields BadValue,
@@ -102,7 +104,7 @@ internal val FlagSpec.negativeShorts: List<String>
 internal class ArgumentSpec(
     override val name: String,
     override val help: String,
-    override var convert: (String) -> Result<Any?, String>,
+    override var convert: (String) -> Result<Any?, ConversionError>,
     override var cardinality: Cardinality = Cardinality.Required,
 ) : ValueSpec {
     override var choices: List<String>? = null
@@ -135,7 +137,7 @@ internal class ArgumentSpec(
 internal class OptionSpec(
     override val names: List<String>,
     override val help: String,
-    override var convert: (String) -> Result<Any?, String>,
+    override var convert: (String) -> Result<Any?, ConversionError>,
     override var section: String? = null,
 ) : ValueSpec, NamedSpec {
     // Above `name` deliberately: initializers run in declaration order, so a nameless declaration must

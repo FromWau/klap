@@ -1,10 +1,12 @@
 package com.fromwau.klap.internal.parse
 
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.getOrNull
+import com.fromwau.kern.result.map
+import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Command
-import com.fromwau.klap.Abbreviation
-import com.fromwau.klap.Result
 import com.fromwau.klap.SubcommandMatch
 import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.resolveSubcommand

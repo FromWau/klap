@@ -1,6 +1,6 @@
 package com.fromwau.example
 
-import com.fromwau.klap.Result
+import com.fromwau.kern.result.Result
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs

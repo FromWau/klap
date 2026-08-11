@@ -1,9 +1,9 @@
 package com.fromwau.example
 
+import com.fromwau.kern.result.Err
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
 import com.fromwau.klap.CliError
-import com.fromwau.klap.Err
-import com.fromwau.klap.Ok
-import com.fromwau.klap.Result
 import kotlin.random.Random
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds

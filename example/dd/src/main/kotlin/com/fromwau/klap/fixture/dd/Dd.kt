@@ -1,9 +1,12 @@
 package com.fromwau.klap.fixture.dd
 
-import com.fromwau.klap.Err
+import com.fromwau.kern.result.Err
+import com.fromwau.kern.result.IError
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.mapError
 import com.fromwau.klap.Abbreviation
-import com.fromwau.klap.Ok
-import com.fromwau.klap.Result
+import com.fromwau.klap.ConversionError
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
@@ -41,7 +44,7 @@ public fun ddCli(): TypedCli<DdInputs> = cliOf("dd") {
     // at the cost of per-operand help rows/defaults/choices (recovered only as prose in `epilogue`) and
     // dd's own error wording. Bare `dd` (zero operands) still parses: `.multiple()` defaults to min = 0.
     val operands = argument("operand", "an operand of the form key=value")
-        .convert { raw -> ddOperand(raw) }
+        .convert { raw -> ddOperand(raw).mapError { ConversionError.Domain(it, it.detail()) } }
         .multiple()
         .completeWith {
             val eq = current.indexOf('=')
@@ -153,19 +156,47 @@ private fun ddNumberIsValid(raw: String): Boolean =
         digits.isNotEmpty() && term.substring(digits.length) in DD_SIZE_SUFFIXES
     }
 
-/** The message for the first unknown symbol in a comma separated list, or null when every symbol is known. */
-private fun ddBadSymbol(value: String, allowed: List<String>, label: String): String? =
+/**
+ * dd's operand grammar has five distinct ways to be wrong. Each is a case carrying what went wrong, with
+ * no wording on it: `parse()` callers branch on the case, and [detail] below picks the English once.
+ */
+private sealed interface DdOperandError : IError {
+    data object NotKeyValue : DdOperandError
+
+    data class UnknownKey(val key: String) : DdOperandError
+
+    data class NotANumber(val value: String) : DdOperandError
+
+    data class UnknownSymbol(val symbol: String, val key: String, val allowed: List<String>) : DdOperandError
+
+    data class BadStatusLevel(val value: String) : DdOperandError
+}
+
+/** dd's own wording, chosen at the boundary rather than baked into [DdOperandError]. */
+private fun DdOperandError.detail(): String = when (this) {
+    DdOperandError.NotKeyValue -> "unrecognized operand: every dd operand is written key=value"
+    is DdOperandError.UnknownKey -> "unrecognized operand key '$key'"
+    is DdOperandError.NotANumber ->
+        "'$value' is not a dd number (digits, an optional multiplicative suffix, and optional xN products)"
+
+    is DdOperandError.UnknownSymbol -> "unknown $key symbol '$symbol' (choose from ${allowed.joinToString(", ")})"
+    is DdOperandError.BadStatusLevel ->
+        "invalid status level '$value' (choose from ${DD_STATUS_LEVELS.joinToString(", ")})"
+}
+
+/** The first unknown symbol in a comma separated list, or null when every symbol is known. */
+private fun ddBadSymbol(value: String, allowed: List<String>, label: String): DdOperandError.UnknownSymbol? =
     value.split(",").firstOrNull { it !in allowed }
-        ?.let { "unknown $label symbol '$it' (choose from ${allowed.joinToString(", ")})" }
+        ?.let { DdOperandError.UnknownSymbol(it, label, allowed) }
 
 /**
  * The whole of dd's operand grammar, re-implemented because klap has no per-key hook for a `key=value`
  * token: it splits the token, then applies the check the corresponding `.int()`/`.choice()`/`.enum<E>()`
  * converter would have applied had the key been declarable as its own input.
  */
-private fun ddOperand(raw: String): Result<DdOperand, String> {
+private fun ddOperand(raw: String): Result<DdOperand, DdOperandError> {
     val eq = raw.indexOf('=')
-    if (eq <= 0) return Err("unrecognized operand: every dd operand is written key=value")
+    if (eq <= 0) return Err(DdOperandError.NotKeyValue)
     val key = raw.take(eq)
     val value = raw.substring(eq + 1)
     val operand = DdOperand(key, value)
@@ -176,7 +207,7 @@ private fun ddOperand(raw: String): Result<DdOperand, String> {
             if (ddNumberIsValid(value)) {
                 Ok(operand)
             } else {
-                Err("'$value' is not a dd number (digits, an optional multiplicative suffix, and optional xN products)")
+                Err(DdOperandError.NotANumber(value))
             }
 
         key == "conv" -> {
@@ -198,10 +229,10 @@ private fun ddOperand(raw: String): Result<DdOperand, String> {
             if (value in DD_STATUS_LEVELS) {
                 Ok(operand)
             } else {
-                Err("invalid status level '$value' (choose from ${DD_STATUS_LEVELS.joinToString(", ")})")
+                Err(DdOperandError.BadStatusLevel(value))
             }
 
-        else -> Err("unrecognized operand key '$key'")
+        else -> Err(DdOperandError.UnknownKey(key))
     }
 }
 

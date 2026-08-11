@@ -1,5 +1,7 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.getOrElse
 import com.fromwau.klap.internal.parse.ArgvScan
 import com.fromwau.klap.internal.parse.END_OF_OPTIONS
 import com.fromwau.klap.internal.parse.accumulator

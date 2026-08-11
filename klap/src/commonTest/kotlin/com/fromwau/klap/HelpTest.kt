@@ -1,11 +1,14 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.map
 import com.fromwau.klap.internal.render.BuiltinOptionHelp
 import com.fromwau.klap.internal.render.HelpStyle
 import com.fromwau.klap.internal.render.argSummary
 import com.fromwau.klap.internal.render.helpText
-import com.fromwau.klap.internal.render.usageLine
 import com.fromwau.klap.internal.render.metaHint
+import com.fromwau.klap.internal.render.usageLine
 import com.fromwau.klap.internal.render.wrap
 import com.fromwau.klap.internal.spec.ArgumentSpec
 import kotlin.test.Test
@@ -293,9 +296,15 @@ class HelpTest {
     @Test
     fun helpRendersGroupedSubcommands() {
         val cmd = cli("app") {
-            command("status") { description = "show status" }
+            command("status") {
+                description = "show status"
+                action { Ok("") }
+            }
             group("Danger") {
-                command("destroy") { description = "delete everything" }
+                command("destroy") {
+                    description = "delete everything"
+                    action { Ok("") }
+                }
             }
         }
         val help = cmd.helpText()
@@ -361,7 +370,10 @@ class HelpTest {
     fun hiddenSubcommandOmittedFromHelpButStillExecutes() {
         var ran = false
         val cmd = cli("app") {
-            command("build") { description = "build it" }
+            command("build") {
+                description = "build it"
+                action { Ok("") }
+            }
             command("debug-dump") {
                 hidden = true
                 action {

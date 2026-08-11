@@ -1,7 +1,7 @@
 package com.fromwau.klap.fixture.tar
 
+import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Abbreviation
-import com.fromwau.klap.Ok
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection

@@ -1,14 +1,17 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.map
+import com.fromwau.klap.internal.render.reason
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.OptionSpec
+import com.fromwau.klap.internal.spec.ValueSpec
 import com.fromwau.klap.internal.spec.requireValidSpelling
 import com.fromwau.klap.internal.spec.token
-import com.fromwau.klap.internal.spec.ValueSpec
 import kotlin.jvm.JvmName
 
-private fun numeric(reason: String, parse: (String) -> Any?): (String) -> Result<Any?, String> =
-    { raw -> parse(raw)?.let { Result.Success(it) } ?: Result.Error(reason) }
+private fun numeric(error: ConversionError, parse: (String) -> Any?): (String) -> Result<Any?, ConversionError> =
+    { raw -> parse(raw)?.let { Result.Success(it) } ?: Result.Error(error) }
 
 /**
  * Wraps a composed [ValueSpec.convert] whose newest stage is type-changing (`.int()`, `.long()`,
@@ -16,9 +19,9 @@ private fun numeric(reason: String, parse: (String) -> Any?): (String) -> Result
  * [andThenConvert]'s inner cast would break if another converter composed on top of it. `.choice()`,
  * `.map { }`, and `.convert { }` stay unmarked, since stacking those is legal however often they chain.
  */
-private class TypeChangedConverter(private val delegate: (String) -> Result<Any?, String>) :
-    (String) -> Result<Any?, String> {
-    override fun invoke(raw: String): Result<Any?, String> = delegate(raw)
+private class TypeChangedConverter(private val delegate: (String) -> Result<Any?, ConversionError>) :
+    (String) -> Result<Any?, ConversionError> {
+    override fun invoke(raw: String): Result<Any?, ConversionError> = delegate(raw)
 }
 
 /**
@@ -28,7 +31,7 @@ private class TypeChangedConverter(private val delegate: (String) -> Result<Any?
  * [typeChanging] stage closes the spec to further converters — which is what catches a second call made
  * through a leaked `Arg<String>`/`Opt<String?>` handle, whose static type never advances to reveal it.
  */
-private fun ValueSpec.andThenConvert(typeChanging: Boolean = false, next: (String) -> Result<Any?, String>) {
+private fun ValueSpec.andThenConvert(typeChanging: Boolean = false, next: (String) -> Result<Any?, ConversionError>) {
     val label = if (this is OptionSpec) "option" else "argument"
     require(convert !is TypeChangedConverter) {
         "$label '$name': cannot add another converter after a type-changing converter " +
@@ -40,7 +43,7 @@ private fun ValueSpec.andThenConvert(typeChanging: Boolean = false, next: (Strin
             "(.int()/.long()/.double()/.boolean()/.enum<E>()), not before"
     }
     val prior = convert
-    val composed: (String) -> Result<Any?, String> = { raw ->
+    val composed: (String) -> Result<Any?, ConversionError> = { raw ->
         when (val p = prior(raw)) {
             is Result.Success -> next(p.value as String)
             is Result.Error -> p
@@ -53,7 +56,7 @@ private fun ValueSpec.andThenConvert(typeChanging: Boolean = false, next: (Strin
     val converted = next(declaredDefault.value as String)
     require(converted is Result.Success) {
         "$label '$name': default value '${declaredDefault.value}' is invalid: " +
-                (converted as Result.Error).error
+                (converted as Result.Error).error.reason()
     }
     cardinality = Cardinality.Default(converted.value)
 }
@@ -132,7 +135,7 @@ private fun ValueSpec.applyChoice(choices: List<String>) {
         val current = this.choices!!
         current.firstOrNull { it.equals(raw, ignoreCase = true) }
             ?.let { Result.Success(it) }
-            ?: Result.Error("not one of ${current.joinToString(", ")}")
+            ?: Result.Error(ConversionError.NotOneOf(current))
     }
 }
 
@@ -141,10 +144,7 @@ private fun ValueSpec.applyMap(transform: (String) -> Any?) {
         try {
             Result.Success(transform(raw))
         } catch (e: Exception) {
-            // A non-duplicating fallback: the BadValue render already prefixes "invalid value '<v>' for <name>: ",
-            // so a null/blank platform message (e.g. Kotlin/Native's toInt() NumberFormatException) must not add
-            // another literal "invalid value" here or the two collide into a redundant doubled phrase.
-            Result.Error(e.message?.takeIf { it.isNotBlank() } ?: "conversion failed")
+            Result.Error(ConversionError.Threw(e))
         }
     }
 }
@@ -174,7 +174,7 @@ internal fun <E : Enum<E>> ValueSpec.applyEnum(enumName: String?, values: Array<
     andThenConvert(true) { raw ->
         values.firstOrNull { it.name.equals(raw, ignoreCase = true) }
             ?.let { Result.Success(it) }
-            ?: Result.Error("not one of ${values.joinToString(", ") { it.name.lowercase() }}")
+            ?: Result.Error(ConversionError.NotOneOf(values.map { it.name.lowercase() }))
     }
 }
 
@@ -196,25 +196,25 @@ public abstract class ConverterScope internal constructor() {
 
     /** Parses this operand as an `Int`; anything else fails as an invalid value before your action runs. */
     public fun Arg<String>.int(): Arg<Int> {
-        spec.andThenConvert(true, numeric("not an integer") { it.toIntOrNull() })
+        spec.andThenConvert(true, numeric(ConversionError.NotAnInteger) { it.toIntOrNull() })
         return Arg(spec)
     }
 
     /** Parses this operand as a `Long`; anything else fails as an invalid value before your action runs. */
     public fun Arg<String>.long(): Arg<Long> {
-        spec.andThenConvert(true, numeric("not a long") { it.toLongOrNull() })
+        spec.andThenConvert(true, numeric(ConversionError.NotALong) { it.toLongOrNull() })
         return Arg(spec)
     }
 
     /** Parses this operand as a `Double`; anything else fails as an invalid value before your action runs. */
     public fun Arg<String>.double(): Arg<Double> {
-        spec.andThenConvert(true, numeric("not a number") { it.toDoubleOrNull() })
+        spec.andThenConvert(true, numeric(ConversionError.NotADouble) { it.toDoubleOrNull() })
         return Arg(spec)
     }
 
     /** Parses this operand as `true` or `false`; any other spelling is an invalid value. */
     public fun Arg<String>.boolean(): Arg<Boolean> {
-        spec.andThenConvert(true, numeric("not a boolean (true/false)") { it.toBooleanStrictOrNull() })
+        spec.andThenConvert(true, numeric(ConversionError.NotABoolean) { it.toBooleanStrictOrNull() })
         return Arg(spec)
     }
 
@@ -230,8 +230,13 @@ public abstract class ConverterScope internal constructor() {
         return Arg(spec)
     }
 
-    /** Converts the raw string yourself, returning `Ok(value)` or `Err(message)` to control the error text. */
-    public fun <T> Arg<String>.convert(transform: (String) -> Result<T, String>): Arg<T> {
+    /**
+     * Converts the raw string yourself, returning `Ok(value)` or a [ConversionError] to control the error.
+     * Name your failure and pair it with the words klap prints,
+     * `Err(ConversionError.Domain(NotAPort, "not a port"))`; the error itself arrives intact on
+     * [CliError.BadValue.cause] for a `parse` caller to match on.
+     */
+    public fun <T> Arg<String>.convert(transform: (String) -> Result<T, ConversionError>): Arg<T> {
         spec.andThenConvert(next = transform)
         return Arg(spec)
     }
@@ -383,19 +388,19 @@ public abstract class ConverterScope internal constructor() {
 
     /** Parses this option's value as an `Int`; anything else fails as an invalid value. */
     public fun Opt<String?>.int(): Opt<Int?> {
-        spec.andThenConvert(true, numeric("not an integer") { it.toIntOrNull() })
+        spec.andThenConvert(true, numeric(ConversionError.NotAnInteger) { it.toIntOrNull() })
         return Opt(spec)
     }
 
     /** Parses this option's value as a `Long`; anything else fails as an invalid value. */
     public fun Opt<String?>.long(): Opt<Long?> {
-        spec.andThenConvert(true, numeric("not a long") { it.toLongOrNull() })
+        spec.andThenConvert(true, numeric(ConversionError.NotALong) { it.toLongOrNull() })
         return Opt(spec)
     }
 
     /** Parses this option's value as a `Double`; anything else fails as an invalid value. */
     public fun Opt<String?>.double(): Opt<Double?> {
-        spec.andThenConvert(true, numeric("not a number") { it.toDoubleOrNull() })
+        spec.andThenConvert(true, numeric(ConversionError.NotADouble) { it.toDoubleOrNull() })
         return Opt(spec)
     }
 
@@ -407,7 +412,7 @@ public abstract class ConverterScope internal constructor() {
 
     /** Parses this option's value as `true` or `false`; any other spelling is an invalid value. */
     public fun Opt<String?>.boolean(): Opt<Boolean?> {
-        spec.andThenConvert(true, numeric("not a boolean (true/false)") { it.toBooleanStrictOrNull() })
+        spec.andThenConvert(true, numeric(ConversionError.NotABoolean) { it.toBooleanStrictOrNull() })
         return Opt(spec)
     }
 
@@ -417,8 +422,13 @@ public abstract class ConverterScope internal constructor() {
         return Opt(spec)
     }
 
-    /** Converts the raw string yourself, returning `Ok(value)` or `Err(message)` to control the error text. */
-    public fun <T> Opt<String?>.convert(transform: (String) -> Result<T, String>): Opt<T?> {
+    /**
+     * Converts the raw string yourself, returning `Ok(value)` or a [ConversionError] to control the error.
+     * Name your failure and pair it with the words klap prints,
+     * `Err(ConversionError.Domain(NotAPort, "not a port"))`; the error itself arrives intact on
+     * [CliError.BadValue.cause] for a `parse` caller to match on.
+     */
+    public fun <T> Opt<String?>.convert(transform: (String) -> Result<T, ConversionError>): Opt<T?> {
         spec.andThenConvert(next = transform)
         return Opt(spec)
     }
