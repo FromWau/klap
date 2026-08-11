@@ -22,7 +22,7 @@ class EmptyStoreFileTest {
     }
 
     @Test
-    fun aZeroByteStoreLoadsAsAnEmptyList() = withTempStore { path ->
+    fun `a zero byte store loads as an empty list`() = withTempStore { path ->
         writeRawStore(path, "")
 
         val result = taskManagerCli().captureWithFile(path, "list")
@@ -31,7 +31,7 @@ class EmptyStoreFileTest {
     }
 
     @Test
-    fun aWhitespaceOnlyStoreLoadsAsAnEmptyList() = withTempStore { path ->
+    fun `a whitespace only store loads as an empty list`() = withTempStore { path ->
         writeRawStore(path, "  \n\t  ")
 
         val result = taskManagerCli().captureWithFile(path, "list")
@@ -40,7 +40,7 @@ class EmptyStoreFileTest {
     }
 
     @Test
-    fun addingToAZeroByteStoreRecoversAWellFormedStore() = withTempStore { path ->
+    fun `adding to a zero byte store recovers a well formed store`() = withTempStore { path ->
         writeRawStore(path, "")
 
         val added = taskManagerCli().captureWithFile(path, "add", "Buy milk")
@@ -54,7 +54,7 @@ class EmptyStoreFileTest {
     }
 
     @Test
-    fun genuinelyInvalidJsonStoreStillFailsWithTheSameMessageAndExitCode() = withTempStore { path ->
+    fun `genuinely invalid json store still fails with the same message and exit code`() = withTempStore { path ->
         writeRawStore(path, "not json at all")
 
         val result = taskManagerCli().captureWithFile(path, "list")

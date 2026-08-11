@@ -18,48 +18,48 @@ private fun tree(): Cli = cli("todo") {
 class ParseResolutionTest {
 
     @Test
-    fun resolvesLeafToExecute() {
+    fun `resolves leaf to execute`() {
         val out = tree().parse(listOf("ping"))
         val exec = assertIs<Result.Success<Invocation>>(out).value
         assertEquals("ping", assertIs<Invocation.Execute>(exec).command.name)
     }
 
     @Test
-    fun jsonFlagIsCapturedAnywhere() {
+    fun `json flag is captured anywhere`() {
         val out = tree().parse(listOf("ping", "--json"))
         val exec = assertIs<Invocation.Execute>(assertIs<Result.Success<Invocation>>(out).value)
         assertEquals(true, exec.globals.json)
     }
 
     @Test
-    fun helpFlagShowsResolvedCommandHelp() {
+    fun `help flag shows resolved command help`() {
         val out = tree().parse(listOf("config", "-h"))
         val help = assertIs<Invocation.ShowHelp>(assertIs<Result.Success<Invocation>>(out).value)
         assertEquals("config", help.command.name)
     }
 
     @Test
-    fun versionFlagShowsVersion() {
+    fun `version flag shows version`() {
         val out = tree().parse(listOf("--version"))
         assertIs<Invocation.ShowVersion>(assertIs<Result.Success<Invocation>>(out).value)
     }
 
     @Test
-    fun groupWithoutSubcommandShowsGroupHelp() {
+    fun `group without subcommand shows group help`() {
         val out = tree().parse(listOf("config"))
         val help = assertIs<Invocation.ShowHelp>(assertIs<Result.Success<Invocation>>(out).value)
         assertEquals("config", help.command.name)
     }
 
     @Test
-    fun unknownSubcommandIsAnError() {
+    fun `unknown subcommand is an error`() {
         val out = tree().parse(listOf("config", "bogus"))
         val err = assertIs<Result.Error<CliError>>(out).error
         assertEquals(CliError.UnknownSubcommand("config", "bogus"), err)
     }
 
     @Test
-    fun mistypedSubcommandWithFlagsReportsSubcommandNotOption() {
+    fun `mistyped subcommand with flags reports subcommand not option`() {
         val app = cli("app") {
             command("temp") {
                 option("--from")
@@ -72,21 +72,21 @@ class ParseResolutionTest {
     }
 
     @Test
-    fun unknownSubcommandSuggestsNearestName() {
+    fun `unknown subcommand suggests nearest name`() {
         val out = tree().parse(listOf("cofnig"))
         val err = assertIs<Result.Error<CliError>>(out).error
         assertEquals(CliError.UnknownSubcommand("todo", "cofnig", "config"), err)
     }
 
     @Test
-    fun suggestNeverReturnsAnExactMatch() {
+    fun `suggest never returns an exact match`() {
         // A token equal to a candidate is not really unknown; "did you mean <the same word>" must never happen.
         assertEquals(null, suggest("config", listOf("config", "ping")))
         assertEquals("config", suggest("cofnig", listOf("config", "ping")))
     }
 
     @Test
-    fun suggestFoldsCaseBeforeExcludingTheSelfMatch() {
+    fun `suggest folds case before excluding the self match`() {
         // Regression: the self-match check must compare against the folded needle, not the raw token, so an
         // ignoreCase call never suggests a candidate that is the same word under the very fold it applies.
         assertEquals(null, suggest("FAST", listOf("fast"), ignoreCase = true))
@@ -99,7 +99,7 @@ class ParseResolutionTest {
     }
 
     @Test
-    fun aBlankTokenPrefixesEveryCandidateAndSoAnswersOnlyWhenThereIsOne() {
+    fun `a blank token prefixes every candidate and so answers only when there is one`() {
         // Every string carries the empty prefix, so the prefix rule reaches a lone candidate and ties on
         // any larger pool; the distance rule cannot rescue it either, since 0 is outside its 1..n bound.
         assertEquals("only", suggest("", listOf("only")))
@@ -108,7 +108,7 @@ class ParseResolutionTest {
     }
 
     @Test
-    fun suggestRejectsAWhollyDifferentShortToken() {
+    fun `suggest rejects a wholly different short token`() {
         // A short candidate is never suggested for a token every character of which is an edit, so a
         // 2-char alias does not match an unrelated 2-char word; a single-typo near-miss still fires.
         assertEquals(null, suggest("xy", listOf("ls", "rm")))
@@ -116,7 +116,7 @@ class ParseResolutionTest {
     }
 
     @Test
-    fun unknownSubcommandNeverSuggestsAHiddenSubcommand() {
+    fun `unknown subcommand never suggests a hidden subcommand`() {
         // A hidden subcommand is omitted from help/completion; a typo suggestion must not reveal its name either.
         val tree = cli("app") {
             command("secret") {
@@ -131,21 +131,21 @@ class ParseResolutionTest {
     }
 
     @Test
-    fun badOptionBeforeValidSubcommandBlamesTheOption() {
+    fun `bad option before valid subcommand blames the option`() {
         // Regression: a bad option ahead of a REAL subcommand must blame the option, not the subcommand.
         val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("--wat", "ping"))).error
         assertEquals(CliError.UnknownOption("--wat"), err)
     }
 
     @Test
-    fun leadingUnknownPositionalBlamesTheSubcommand() {
+    fun `leading unknown positional blames the subcommand`() {
         // First token is a non-flag: it is the leftmost offender, reported as an unknown subcommand.
         val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("bogus", "--wat"))).error
         assertEquals(CliError.UnknownSubcommand("todo", "bogus"), err)
     }
 
     @Test
-    fun postEndOfOptionsFlagShapedTokenIsAPositionalSubcommand() {
+    fun `post end of options flag shaped token is a positional subcommand`() {
         // After --, a flag-shaped token is positional, so it is an unknown subcommand, never an unknown option.
         val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("--", "--x"))).error
         assertEquals(CliError.UnknownSubcommand("todo", "--x"), err)

@@ -17,36 +17,36 @@ class AbbreviationTest {
     private val pool = listOf("recursive", "reference", "verbose", "sort", "sort-by")
 
     @Test
-    fun anExactSpellingResolvesToItself() {
+    fun `an exact spelling resolves to itself`() {
         assertEquals(NameMatch.Exact("verbose"), resolveLong("verbose", pool, infer = true))
     }
 
     @Test
-    fun anUnambiguousPrefixResolves() {
+    fun `an unambiguous prefix resolves`() {
         assertEquals(NameMatch.Prefix("verbose"), resolveLong("verb", pool, infer = true))
         assertEquals(NameMatch.Prefix("recursive"), resolveLong("recu", pool, infer = true))
     }
 
     @Test
-    fun anAmbiguousPrefixNamesEveryPossibilityInDeclarationOrder() {
+    fun `an ambiguous prefix names every possibility in declaration order`() {
         val match = assertIs<NameMatch.Ambiguous>(resolveLong("re", pool, infer = true))
         assertEquals(listOf("recursive", "reference"), match.candidates)
     }
 
     @Test
-    fun anExactSpellingBeatsBeingAPrefixOfAnother() {
+    fun `an exact spelling beats being a prefix of another`() {
         // `sort` is a strict prefix of `sort-by`, so prefix matching alone would call it ambiguous.
         assertEquals(NameMatch.Exact("sort"), resolveLong("sort", pool, infer = true))
     }
 
     @Test
-    fun anUnmatchedSpellingIsNone() {
+    fun `an unmatched spelling is none`() {
         assertEquals(NameMatch.None, resolveLong("nope", pool, infer = true))
         assertEquals(NameMatch.None, resolveLong("", pool, infer = true))
     }
 
     @Test
-    fun aDuplicatedCandidateDoesNotFakeAnAmbiguity() {
+    fun `a duplicated candidate does not fake an ambiguity`() {
         // The same spelling can reach the pool twice (a local spec and the built-in list both offering it);
         // two entries naming ONE option are not two possibilities.
         assertEquals(NameMatch.Prefix("verbose"), resolveLong("verb", listOf("verbose", "verbose"), infer = true))
@@ -64,29 +64,29 @@ class AbbreviationTest {
     }
 
     @Test
-    fun anUnambiguousPrefixBindsTheOption() {
+    fun `an unambiguous prefix binds the option`() {
         assertEquals("r=true ref=null v=false", tree().bindText("--recu", "f"))
         assertEquals("r=false ref=x v=false", tree().bindText("--refe", "x", "f"))
     }
 
     @Test
-    fun anAmbiguousPrefixIsAUsageError() {
+    fun `an ambiguous prefix is a usage error`() {
         val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("--re", "f"))).error
         assertEquals(CliError.AmbiguousOption("--re", listOf("--recursive", "--reference")), err)
     }
 
     @Test
-    fun anAbbreviationCarriesAnInlineValue() {
+    fun `an abbreviation carries an inline value`() {
         assertEquals("r=false ref=x v=false", tree().bindText("--refe=x", "f"))
     }
 
     @Test
-    fun aGeneratedNegationAbbreviatesToo() {
+    fun `a generated negation abbreviates too`() {
         assertEquals("r=false ref=null v=false", tree().bindText("--no-verb", "f"))
     }
 
     @Test
-    fun aBuiltinAbbreviates() {
+    fun `a builtin abbreviates`() {
         val versioned = cli("t") {
             abbreviation = Abbreviation.Options
             version = "1.0"
@@ -96,7 +96,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun aBuiltinTakesPartInAmbiguity() {
+    fun `a builtin takes part in ambiguity`() {
         val withHeader = cli("t") {
             abbreviation = Abbreviation.Options
             option("--header")
@@ -107,7 +107,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun theInjectedHelpAllAnswersToItsFullSpellingOnly() {
+    fun `the injected help all answers to its full spelling only`() {
         val tree = cli("t") {
             abbreviation = Abbreviation.Options
             command("build") { action<String>(human = { it }) { Ok("built") } }
@@ -124,7 +124,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun aHiddenInputMatchesButIsStillNeverSuggested() {
+    fun `a hidden input matches but is still never suggested`() {
         val tree = cli("t") {
             abbreviation = Abbreviation.Options
             val secret = flag("--secret").hidden()
@@ -147,7 +147,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun aGlobalAbbreviatesAndSharesOnePoolWithTheBuiltins() {
+    fun `a global abbreviates and shares one pool with the builtins`() {
         val tree = cli("app") {
             abbreviation = Abbreviation.Options
             val header = globalOption("--header")
@@ -165,7 +165,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun aGroupNodeReportsTheSameAmbiguityALeafWould() {
+    fun `a group node reports the same ambiguity a leaf would`() {
         val tree = cli("app") {
             abbreviation = Abbreviation.Options
             globalOption("--header")
@@ -188,7 +188,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun aCommandDeclaredLongTakesPartInTheBuiltinPreStrip() {
+    fun `a command declared long takes part in the builtin pre strip`() {
         // Real head: `head --ver f` reports "option '--ver' is ambiguous; possibilities: '--verbose'
         // '--version'". The pre-strip runs before the walk knows its command, so without every declared long
         // in its pool the built-in would win a spelling the command it reaches calls ambiguous.
@@ -203,7 +203,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun anAmbiguousAbbreviationRendersEveryPossibility() {
+    fun `an ambiguous abbreviation renders every possibility`() {
         // The head fixture pins this line as real-tool behaviour and quotes the wording in its `because`,
         // but a parity rejection only claims the line failed; the wording itself is pinned here.
         val err = assertIs<Result.Error<CliError>>(head().parse(listOf("--ver", "f"))).error
@@ -225,7 +225,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun helpAbbreviatesAgainstTheCommandTheWalkReached() {
+    fun `help abbreviates against the command the walk reached`() {
         // --help is resolved AFTER the walk, so it answers to the pool of the command actually reached: one
         // child's --header cannot take --h away from the root or from its siblings.
         assertIs<Invocation.ShowHelp>(assertIs<Result.Success<Invocation>>(dispatcher().parse(listOf("--h"))).value)
@@ -240,7 +240,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun anAbbreviationThePreStripDeclinedIsNeverUnknownAtTheCommand() {
+    fun `an abbreviation the pre strip declined is never unknown at the command`() {
         val tree = cli("app") {
             abbreviation = Abbreviation.Options
             command("fetch") {
@@ -276,7 +276,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun anAmbiguousPrefixNeitherSiblingDeclaresIsUnknownThere() {
+    fun `an ambiguous prefix neither sibling declares is unknown there`() {
         val tree = addListDispatcher()
         // --limit/--long belong to `list` alone; unlike the pinned pre-strip case above, `add` reaches
         // NEITHER spelling, so there is no remaining possibility left to report and the honest answer is
@@ -286,7 +286,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun theSamePrefixStaysAmbiguousWhereBothAreDeclared() {
+    fun `the same prefix stays ambiguous where both are declared`() {
         val tree = addListDispatcher()
         // At `list`, which declares both, the ambiguity is real and both spellings are reachable.
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("list", "--l"))).error
@@ -294,7 +294,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun exactlyOneReachableCandidateKeepsTheFullUnfilteredList() {
+    fun `exactly one reachable candidate keeps the full unfiltered list`() {
         val tree = addListDispatcher()
         // `show` declares only --limit, so --long is unreachable there; the pinned decision above still
         // reports the full, unfiltered list rather than silently collapsing to the one survivor.
@@ -303,7 +303,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun aGlobalAndACommandLongShareOnePoolInThePreStrip() {
+    fun `a global and a command long share one pool in the pre strip`() {
         val tree = cli("app") {
             abbreviation = Abbreviation.Options
             val sort = globalOption("--sort")
@@ -325,7 +325,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun aLocalLongIsNeverEatenByAnAbbreviatedMetaOption() {
+    fun `a local long is never eaten by an abbreviated meta option`() {
         val tree = cli("app") {
             abbreviation = Abbreviation.Options
             command("sub") {
@@ -351,7 +351,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun anAbbreviatedGlobalThatCollidesWithABuiltinIsAmbiguousInBothPositions() {
+    fun `an abbreviated global that collides with a builtin is ambiguous in both positions`() {
         val tree = cli("app") {
             abbreviation = Abbreviation.Options
             val collate = globalOption("--collate")
@@ -369,7 +369,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun shortsNeverAbbreviate() {
+    fun `shorts never abbreviate`() {
         // A single-dash token is a cluster of one-character shorts, so there is nothing to abbreviate and
         // `-re` must stay two chars rather than resolving to `--recursive`.
         val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("-re", "f"))).error
@@ -377,7 +377,7 @@ class AbbreviationTest {
     }
 
     @Test
-    fun subcommandNamesDoNotAbbreviateUnderOptions() {
+    fun `subcommand names do not abbreviate under options`() {
         val dispatcher = cli("t") {
             // Only Abbreviation.All infers a subcommand prefix; AbbreviationModeTest owns that mode boundary.
             abbreviation = Abbreviation.Options

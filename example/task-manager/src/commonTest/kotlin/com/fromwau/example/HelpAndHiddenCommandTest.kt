@@ -9,7 +9,7 @@ import kotlin.test.assertFalse
 class HelpAndHiddenCommandTest {
 
     @Test
-    fun helpExitsZeroAndNamesEverySubcommandButNotTheHiddenOne() {
+    fun `help exits zero and names every subcommand but not the hidden one`() {
         val result = taskManagerCli().capture("--help")
         assertEquals(0, result.exitCode, result.err)
         for (name in listOf("add", "list", "done", "rm", "tag")) {
@@ -21,7 +21,7 @@ class HelpAndHiddenCommandTest {
     }
 
     @Test
-    fun addsHelpClosesWithItsOwnEpilogueNotTheRoots() {
+    fun `adds help closes with its own epilogue not the roots`() {
         val result = taskManagerCli().capture("add", "--help")
         assertEquals(0, result.exitCode, result.err)
         assertContains(result.out, "Repeat --tag to attach several labels")
@@ -29,7 +29,7 @@ class HelpAndHiddenCommandTest {
     }
 
     @Test
-    fun whereRunsAndPrintsTheConfiguredPathEvenThoughHelpNeverMentionsIt() = withTempStore { path ->
+    fun `where runs and prints the configured path even though help never mentions it`() = withTempStore { path ->
         val result = taskManagerCli().captureWithFile(path, "where")
         assertEquals(0, result.exitCode, result.err)
         assertEquals(path, result.out.trim())

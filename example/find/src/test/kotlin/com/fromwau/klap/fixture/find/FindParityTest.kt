@@ -13,7 +13,7 @@ class FindParityTest {
     private val parity = ParitySuite(findCli())
 
     @Test
-    fun bindsThePrePathSwitchesThatReproduceExactly() {
+    fun `binds the pre path switches that reproduce exactly`() {
         // `-P`/`-L`/`-H`/`-D`/`-Olevel` are single-dash single-char, which is precisely klap's short
         // form, so these are the only find tokens spelled here exactly as find spells them.
         parity.binds("-L", "/srv", expected = NOTHING_BOUND.copy(logical = true, operand = listOf("/srv")))
@@ -32,7 +32,7 @@ class FindParityTest {
     }
 
     @Test
-    fun bindsTransliteratedPredicatesRealFindHasNeverAccepted() {
+    fun `binds transliterated predicates real find has never accepted`() {
         // Every line here is klap accepting what real find rejects: the predicates are respelled with two
         // dashes because klap forbids the single-dash multi-character spelling permanently. The assertions
         // pin that the ARITY and VALUE GRAMMAR of each predicate do reproduce, which is the part klap models
@@ -136,7 +136,7 @@ class FindParityTest {
     }
 
     @Test
-    fun bindsTheRawExpressionEscapeHatch() {
+    fun `binds the raw expression escape hatch`() {
         // The escape hatch works and preserves source order, which is what a hand-written recursive-descent
         // parser would need — but the `--` it requires is itself a token real find rejects, so even this is
         // klap being looser rather than a shape find has. Nothing in the tail bound to a predicate: it is
@@ -151,7 +151,7 @@ class FindParityTest {
     }
 
     @Test
-    fun rejectsWhatRealFindRejects() {
+    fun `rejects what real find rejects`() {
         parity.rejects("--zzz", because = "real find: unknown predicate `--zzz'")
         parity.rejects(".", "--type", because = "real find: missing argument to `-type'")
         parity.rejects(".", "--type", "q", because = "real find: Unknown argument to -type: q")
@@ -169,7 +169,7 @@ class FindParityTest {
     }
 
     @Test
-    fun permanentDivergenceFromRealFind() {
+    fun `permanent divergence from real find`() {
         // klap will never accept a single-dash multi-character option, because `-name` and the cluster
         // `-n -a -m -e` are the same bytes and telling them apart would make a token's shape stop
         // determining its meaning. Every line below is real find's own spelling, and every one of them
@@ -190,14 +190,14 @@ class FindParityTest {
     }
 
     @Test
-    fun knownDivergenceFromRealFind() {
+    fun `known divergence from real find`() {
         // Not a klap gap: `.range(0..3)` is this fixture's own choice, and real find takes any decimal after
         // -O. Recorded so the reject corpus does not read as if klap forced it.
         parity.rejects("-O9", ".", because = "the fixture's own .range(0..3); real find takes any decimal")
     }
 
     @Test
-    fun acceptsSurfaceRealFindDoesNotHave() {
+    fun `accepts surface real find does not have`() {
         // klap's short-cluster walk bundles the pre-path switches; real find matches each token whole,
         // so it reads `-LP` as one unknown predicate.
         // `lastWins` reads the order INSIDE the cluster, so the P written after the L wins.

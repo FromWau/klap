@@ -8,7 +8,7 @@ class PacmanParityTest {
     private val parity = ParitySuite(pacmanCli())
 
     @Test
-    fun bindsStackedOperationClusters() {
+    fun `binds stacked operation clusters`() {
         // The headline shape, and the answer to "what does klap do with a stacked operation flag":
         // the short-cluster walk resolves every character independently against this command's own
         // specs, so `-Syu` binds exactly as `-S -y -u` would. The operation letter is a flag like any
@@ -76,7 +76,7 @@ class PacmanParityTest {
     }
 
     @Test
-    fun rejectsWhatRealPacmanRejects() {
+    fun `rejects what real pacman rejects`() {
         parity.rejects("--zzz", because = "real pacman: unrecognized option '--zzz'")
         parity.rejects("--colour=never", "-Q", because = "real pacman: unrecognized option '--colour=never'")
         parity.rejects("-z", because = "real pacman: invalid option -- 'z'")
@@ -90,7 +90,7 @@ class PacmanParityTest {
     }
 
     @Test
-    fun knownDivergenceFromRealPacman() {
+    fun `known divergence from real pacman`() {
         // THE divergence for this tool: a contested short letter carries one meaning tree-wide, so the
         // canonical `-Rns` binds nosave (right) and search (wrong — real pacman reads `-s` under -R as
         // --recursive). Flip `recursive = true, search = false` above if klap ever gains a per-operation

@@ -8,7 +8,7 @@ class DdParityTest {
     private val parity = ParitySuite(ddCli())
 
     @Test
-    fun bindsKeyValueOperandsInAnyOrder() {
+    fun `binds key value operands in any order`() {
         parity.binds(
             "if=/dev/zero", "of=out.img", "bs=4M", "count=10", "status=progress",
             expected = NOTHING_BOUND.copy(
@@ -71,7 +71,7 @@ class DdParityTest {
     }
 
     @Test
-    fun rejectsWhatRealDdRejects() {
+    fun `rejects what real dd rejects`() {
         parity.rejects("--zzz", because = "real dd: unrecognized option '--zzz'")
         parity.rejects("bogus=1", because = "real dd: unrecognized operand 'bogus=1'")
         parity.rejects("count", because = "real dd: unrecognized operand 'count'")
@@ -85,7 +85,7 @@ class DdParityTest {
     }
 
     @Test
-    fun theHelpAndVersionAbbreviationsRealDdAcceptsReachThemHereToo() {
+    fun `the help and version abbreviations real dd accepts reach them here too`() {
         // dd declares no long option of its own, so this exercises only klap's injected built-ins — but
         // real dd abbreviates them the same way head's own --verbose/--version pair does: `--hel` prints
         // help and `--vers` prints the version.
@@ -94,7 +94,7 @@ class DdParityTest {
     }
 
     @Test
-    fun klapAcceptsWhatRealDdRejects() {
+    fun `klap accepts what real dd rejects`() {
         // The missing named-operand shape only costs help rows and error wording, not whether a token
         // parses, so it has no accept/reject line of its own here.
 

@@ -8,7 +8,7 @@ class RmParityTest {
     private val parity = ParitySuite(rmCli())
 
     @Test
-    fun bindsFlagsAndTheOptionalOperandList() {
+    fun `binds flags and the optional operand list`() {
         parity.binds(
             "-rf", "build",
             expected = NOTHING_BOUND.copy(recursive = true, force = true, files = listOf("build")),
@@ -53,7 +53,7 @@ class RmParityTest {
         parity.binds("--", "-foo", expected = NOTHING_BOUND.copy(files = listOf("-foo")))
         // Real rm needs an operand unless -f is given, and .requiredUnless() expresses that rule at parse
         // time: `rm -f` binds an empty list, and bare `rm` never reaches the action at all (see
-        // rejectsWhatRealRmRejects for the bare-`rm` line).
+        // `rejects what real rm rejects` for the bare-`rm` line).
         parity.binds("-f", expected = NOTHING_BOUND.copy(force = true))
         // `--recur` reaches `--recursive` and no other spelling, as it does for real rm.
         parity.binds("--recur", "d", expected = NOTHING_BOUND.copy(recursive = true, files = listOf("d")))
@@ -65,7 +65,7 @@ class RmParityTest {
     }
 
     @Test
-    fun rejectsWhatRealRmRejects() {
+    fun `rejects what real rm rejects`() {
         parity.rejects("--zzz", because = "real rm: unrecognized option '--zzz'")
         // `-R` is short-only; `--R` is not a spelling either tool has.
         parity.rejects("--R", "d", because = "real rm: unrecognized option '--R'")
@@ -77,7 +77,7 @@ class RmParityTest {
     }
 
     @Test
-    fun knownDivergenceFromRealRm() {
+    fun `known divergence from real rm`() {
         // `-I`'s long name is invented: real rm has no `--interactive-once` at all.
         parity.bindsLoosely(
             "--interactive-once", "a",

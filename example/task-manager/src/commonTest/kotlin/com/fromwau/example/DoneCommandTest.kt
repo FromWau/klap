@@ -8,14 +8,14 @@ import kotlin.test.assertEquals
 class DoneCommandTest {
 
     @Test
-    fun doneOnAnUnknownIdExitsWithTheProgramsNotFoundCode() = withTempStore { path ->
+    fun `done on an unknown id exits with the programs not found code`() = withTempStore { path ->
         val result = taskManagerCli().captureWithFile(path, "done", "42")
         assertEquals(EXIT_NOT_FOUND, result.exitCode, result.err)
         assertContains(result.err, "no task with id 42")
     }
 
     @Test
-    fun doneOnAnAlreadyDoneTaskExitsWithTheProgramsAlreadyDoneCode() = withTempStore { path ->
+    fun `done on an already done task exits with the programs already done code`() = withTempStore { path ->
         val cli = taskManagerCli()
         cli.captureWithFile(path, "add", "Ship it", "--done")
 

@@ -31,12 +31,12 @@ private object ExplodingWithControlCharSerializer : KSerializer<ExplodingWithCon
 class ErrorRenderingTest {
 
     @Test
-    fun unknownOption_message() {
+    fun `unknown option message`() {
         assertEquals("unknown option '--nope'", CliError.UnknownOption("--nope").message())
     }
 
     @Test
-    fun unknownOption_messageWithSuggestion() {
+    fun `unknown option message with suggestion`() {
         assertEquals(
             "unknown option '--verbos'. Did you mean --verbose?",
             CliError.UnknownOption("--verbos", "--verbose").message(),
@@ -44,7 +44,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun ambiguousOptionListsThePossibilitiesLikeGnu() {
+    fun `ambiguous option lists the possibilities like gnu`() {
         assertEquals(
             "option '--re' is ambiguous; possibilities: '--recursive' '--reference'",
             CliError.AmbiguousOption("--re", listOf("--recursive", "--reference")).message(),
@@ -52,7 +52,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun anAmbiguousSubcommandReadsLikeAnAmbiguousOption() {
+    fun `an ambiguous subcommand reads like an ambiguous option`() {
         assertEquals(
             "subcommand 'st' is ambiguous; possibilities: 'stash' 'status'",
             CliError.AmbiguousSubcommand("app", "st", listOf("stash", "status")).message(),
@@ -60,7 +60,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun unknownSubcommand_messageWithSuggestion() {
+    fun `unknown subcommand message with suggestion`() {
         assertEquals(
             "unknown subcommand 'confi' for 'app'. Did you mean config?",
             CliError.UnknownSubcommand("app", "confi", "config").message(),
@@ -68,7 +68,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun subcommandAfterSeparator_message() {
+    fun `subcommand after separator message`() {
         assertEquals(
             "'build' is a command of 'app', but '--' ends command parsing; put '--' after the command",
             CliError.SubcommandAfterSeparator("build", "app").message(),
@@ -76,7 +76,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun tooManyArguments_pluralizes() {
+    fun `too many arguments pluralizes`() {
         assertEquals(
             "unexpected extra arguments: a b",
             CliError.TooManyArguments("add", listOf("a", "b")).message(),
@@ -84,7 +84,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun tooManyArguments_singularWithCommandSuggestion() {
+    fun `too many arguments singular with command suggestion`() {
         assertEquals(
             "unexpected extra argument: biuld. Did you mean the 'build' command?",
             CliError.TooManyArguments("app", listOf("biuld"), "build").message(),
@@ -92,7 +92,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun invalidChoice_listsChoices() {
+    fun `invalid choice lists choices`() {
         assertEquals(
             "invalid value 'x' for level (choose from low, high)",
             CliError.InvalidChoice("level", "x", listOf("low", "high")).message(),
@@ -100,7 +100,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun anAmbiguousValueNamesTheOptionItBelongsTo() {
+    fun `an ambiguous value names the option it belongs to`() {
         assertEquals(
             "value 'h' for --priority is ambiguous; possibilities: 'high' 'highest'",
             CliError.AmbiguousValue("--priority", "h", listOf("high", "highest")).message(),
@@ -108,17 +108,17 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun flagTakesNoValue_namesTheShortFormAsTyped() {
+    fun `flag takes no value names the short form as typed`() {
         assertEquals("flag '-v' does not take a value", CliError.FlagTakesNoValue("-v").message())
     }
 
     @Test
-    fun flagTakesNoValue_namesTheLongFormAsTyped() {
+    fun `flag takes no value names the long form as typed`() {
         assertEquals("flag '--verbose' does not take a value", CliError.FlagTakesNoValue("--verbose").message())
     }
 
     @Test
-    fun flagTakesNoValue_negationHintIsPrefixedAndCorrect() {
+    fun `flag takes no value negation hint is prefixed and correct`() {
         assertEquals(
             "flag '--color' does not take a value; use --no-color to turn it off",
             CliError.FlagTakesNoValue("--color", "no-color").message(),
@@ -126,17 +126,17 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun missingRequiredOption_message() {
+    fun `missing required option message`() {
         assertEquals("missing required option --host", CliError.MissingRequiredOption("--host").message())
     }
 
     @Test
-    fun missingOptionValue_message() {
+    fun `missing option value message`() {
         assertEquals("option --host requires a value", CliError.MissingOptionValue("--host").message())
     }
 
     @Test
-    fun tooFewOccurrences_pluralizesMin() {
+    fun `too few occurrences pluralizes min`() {
         assertEquals(
             "'header' must be given at least 2 times (got 1)",
             CliError.TooFewOccurrences("header", 2, 1).message(),
@@ -144,7 +144,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun tooFewOccurrences_singularForMinOne() {
+    fun `too few occurrences singular for min one`() {
         assertEquals(
             "'tag' must be given at least 1 time (got 0)",
             CliError.TooFewOccurrences("tag", 1, 0).message(),
@@ -152,12 +152,12 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun exitCode_defaultsToTwo() {
+    fun `exit code defaults to two`() {
         assertEquals(2, CliError.UnknownOption("-z").exitCode)
     }
 
     @Test
-    fun jsonEnvelope_escapesQuotes() {
+    fun `json envelope escapes quotes`() {
         assertEquals(
             """{"error":"say \"hi\"","code":2}""",
             jsonErrorEnvelope("say \"hi\"", 2),
@@ -165,7 +165,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun encodeFailed_jsonEnvelopeStripsEmbeddedControlCharacters() {
+    fun `encode failed json envelope strips embedded control characters`() {
         // Every other message-bearing path (RenderFailed, both CliError paths) runs through
         // stripTerminalEscapes; EncodeFailed's --json envelope must match, or a throwing custom
         // serializer could leak a raw control character into structured output.
@@ -179,7 +179,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun missingArgument_messagePinsTheFullStringIncludingTheForCommandClause() {
+    fun `missing argument message pins the full string including the for command clause`() {
         assertEquals(
             "missing required argument <text> for 'add'",
             CliError.MissingArgument("add", "text").message(),
@@ -187,7 +187,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun usage_exitsTwoSoAHandWrittenRuleMatchesTheBuiltInOnes() {
+    fun `usage exits two so a hand written rule matches the built in ones`() {
         // The whole point of the variant: Failure would exit 1 here, disagreeing with every parse-level
         // error over the same class of mistake.
         val t = RecordingTerminal()
@@ -196,7 +196,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun failure_embeddedEscapeSequenceIsStrippedOnTheHumanPath() {
+    fun `failure embedded escape sequence is stripped on the human path`() {
         // A detail is written by the consumer but almost always interpolates an argv token, so klap cannot
         // tell a color the author applied from one a caller injected, and neutralizes both. This overturns
         // the earlier trust-boundary exemption, which let any Failure detail reach the terminal verbatim.
@@ -208,7 +208,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun usage_embeddedEscapeSequenceIsStrippedOnTheHumanPath() {
+    fun `usage embedded escape sequence is stripped on the human path`() {
         val esc = Char(27)
         val t = RecordingTerminal()
         val code = renderError(CliError.Usage("bad operand '$esc[31m'"), json = false, terminal = t)
@@ -217,7 +217,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun authoredDetail_keepsItsOwnNewlineOnBothPaths() {
+    fun `authored detail keeps its own newline on both paths`() {
         // A `hint:` continuation line is a layout choice the consumer made, so it survives as a real
         // newline on the human path and as a proper JSON string escape under --json, rather than being
         // mangled into the literal four characters \x0A on one path and not the other.
@@ -235,7 +235,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun echoedToken_newlineIsEscapedSoACallerCannotForgeASecondErrorLine() {
+    fun `echoed token newline is escaped so a caller cannot forge a second error line`() {
         // The counterpart to the test above: an argv token is not authored prose, so its newline stays
         // escaped. Otherwise `app --n=$'x\nerror: disk wiped'` prints a second, fabricated error line.
         val t = RecordingTerminal()
@@ -244,7 +244,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun badValue_realEscapeSequenceInTheEchoedValueIsStillStrippedOnTheHumanPath() {
+    fun `bad value real escape sequence in the echoed value is still stripped on the human path`() {
         // BadValue echoes a user-supplied value straight from argv, so an embedded ESC is neutralized to
         // the literal string "\x1B" here, exactly as in an authored detail but without the newline carve-out.
         val esc = Char(27)
@@ -255,7 +255,7 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun badValue_converterExceptionWithNullMessageDoesNotDoubleTheFallbackReason() {
+    fun `bad value converter exception with null message does not double the fallback reason`() {
         // .convert { }, not .map { }: a thrown .map { } exception is caught inside its own applyMap
         // wrapper before it ever reaches convertOne's catch, so it can never carry a null message through
         // to that fallback. A raw .convert { } lambda that throws instead of returning Result.Error is

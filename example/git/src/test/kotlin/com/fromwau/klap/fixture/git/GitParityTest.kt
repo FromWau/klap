@@ -8,7 +8,7 @@ class GitParityTest {
     private val parity = ParitySuite(gitCli())
 
     @Test
-    fun bindsTwoLevelRoutingAndGlobalsAtAnyDepth() {
+    fun `binds two level routing and globals at any depth`() {
         parity.binds(
             "-C", "/tmp/repo", "status", "--short",
             expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(directory = listOf("/tmp/repo")), short = true),
@@ -32,7 +32,7 @@ class GitParityTest {
     }
 
     @Test
-    fun bindsThePaginatePairAtAnyDepth() {
+    fun `binds the paginate pair at any depth`() {
         // `.negatable()`'s explicit-spelling overload reproduces git's real pager pair: `--paginate`
         // and both of the negative half's real spellings, `-P` and `--no-pager`, all bind. Only the
         // SHORT `-p` is unclaimed, because `add`/`commit`/`log` each spell `-p` as `--patch`; the
@@ -47,7 +47,7 @@ class GitParityTest {
     }
 
     @Test
-    fun bindsAddAndItsAlias() {
+    fun `binds add and its alias`() {
         // Case matters inside a cluster: `-n` is --dry-run, `-N` is --intent-to-add. git gives the two
         // near-opposite meanings, so a cluster that confuses them stages files a dry run would not have.
         parity.binds(
@@ -75,7 +75,7 @@ class GitParityTest {
     }
 
     @Test
-    fun bindsCommitMessagesAndNegations() {
+    fun `binds commit messages and negations`() {
         parity.binds(
             "commit", "-m", "subject", "-m", "body", "--amend",
             expected = NOTHING_COMMIT.copy(message = listOf("subject", "body"), amend = true),
@@ -121,7 +121,7 @@ class GitParityTest {
     }
 
     @Test
-    fun bindsLogsTwoOperandGroups() {
+    fun `binds logs two operand groups`() {
         parity.binds(
             "log", "-n", "5", "--oneline", "main..HEAD",
             expected = NOTHING_LOG.copy(maxCount = 5, oneline = true, revisionRange = "main..HEAD"),
@@ -138,7 +138,7 @@ class GitParityTest {
     }
 
     @Test
-    fun bindsRemoteAsAHybridParent() {
+    fun `binds remote as a hybrid parent`() {
         // `git remote` bare runs the parent's own action; `git remote add ...` routes past it.
         parity.binds("remote", expected = NOTHING_REMOTE)
         parity.binds("remote", "-v", expected = NOTHING_REMOTE.copy(verbose = true))
@@ -161,7 +161,7 @@ class GitParityTest {
     }
 
     @Test
-    fun rejectsWhatRealGitRejects() {
+    fun `rejects what real git rejects`() {
         parity.rejects("--zzz", because = "real git: unknown option: --zzz")
         parity.rejects("zzz", because = "real git: 'zzz' is not a git command")
         parity.rejects("-C", because = "real git: no directory given for '-C' option")
@@ -176,7 +176,7 @@ class GitParityTest {
     }
 
     @Test
-    fun knownDivergenceFromRealGit() {
+    fun `known divergence from real git`() {
         // klap cannot combine `.negatable()` with `.optionalValue()` on one holder, so `--decorate` stayed
         // negatable (for `--no-decorate`) rather than gaining the `=WHEN` spellings; see the KLAP-GAP note
         // beside its declaration.
@@ -247,7 +247,7 @@ class GitParityTest {
     }
 
     @Test
-    fun acceptsSurfaceRealGitDoesNotHave() {
+    fun `accepts surface real git does not have`() {
         // The fixture declares `-C`/`-c` with an invented long spelling (`--directory`/`--config`) rather
         // than short-only, though klap can do short-only now; these pin what real git rejects as a result.
         parity.bindsLoosely(

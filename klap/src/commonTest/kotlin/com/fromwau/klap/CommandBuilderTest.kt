@@ -14,7 +14,7 @@ import kotlin.test.assertTrue
 class CommandBuilderTest {
 
     @Test
-    fun builder_registersSpecsInOrder() {
+    fun `builder registers specs in order`() {
         val cmd = cli("add") {
             description = "Add a task"
             argument("text")
@@ -30,7 +30,7 @@ class CommandBuilderTest {
     }
 
     @Test
-    fun group_hasNoActionBlockAndResolvesSubcommands() {
+    fun `group has no action block and resolves subcommands`() {
         val cmd = cli("config") {
             command("get") { action { Ok("") } }
             command("set") { action { Ok("") } }
@@ -41,7 +41,7 @@ class CommandBuilderTest {
     }
 
     @Test
-    fun aliasResolves() {
+    fun `alias resolves`() {
         val cmd = cli("root") {
             command("scan") {
                 aliases = listOf("index")
@@ -52,7 +52,7 @@ class CommandBuilderTest {
     }
 
     @Test
-    fun rootAliasesAreRejectedAtBuild() {
+    fun `root aliases are rejected at build`() {
         // aliases only make sense on command(...) subcommands; the root itself has no sibling to
         // disambiguate from, so cli(){ } rejects a root-level aliases assignment outright.
         val ex = assertFailsWith<IllegalArgumentException> {
@@ -71,7 +71,7 @@ class PositionalDeclarationOrderTest {
 
 
     @Test
-    fun aVariadicMayBeFollowedByRequiredPositionals() {
+    fun `a variadic may be followed by required positionals`() {
         // `cp SOURCE... DEST`. Only REQUIRED slots may follow — an optional one is ambiguous, and
         // NonLastVariadicTest pins that rejection alongside the binding.
         val cmd = cli("cp") {
@@ -83,7 +83,7 @@ class PositionalDeclarationOrderTest {
     }
 
     @Test
-    fun requiredCannotFollowOptional() {
+    fun `required cannot follow optional`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
                 argument("a").optional()
@@ -94,7 +94,7 @@ class PositionalDeclarationOrderTest {
     }
 
     @Test
-    fun requiredPositionalTurnedOptionalBySiblingCommandFailsAtBuild() {
+    fun `required positional turned optional by sibling command fails at build`() {
         // "a"'s own build() ran (and passed: both were still Required) the instant command("a") { }
         // returned; "b" reaches "a"'s first argument only through a captured handle, after "a" is already
         // frozen into a Command, and relaxes it to Optional, stranding a Required argument after it.
@@ -124,7 +124,7 @@ class NegatableFlagDeclarationTest {
 
 
     @Test
-    fun negatableFlagCollidingWithDeclaredNameFailsAtBuild() {
+    fun `negatable flag colliding with declared name fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
                 flag("--color").negatable()
@@ -135,7 +135,7 @@ class NegatableFlagDeclarationTest {
     }
 
     @Test
-    fun negatableFlagCollidingWithDeclaredOptionFailsAtBuild() {
+    fun `negatable flag colliding with declared option fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
                 flag("--color").negatable()
@@ -146,7 +146,7 @@ class NegatableFlagDeclarationTest {
     }
 
     @Test
-    fun countAndNegatableAreMutuallyExclusive() {
+    fun `count and negatable are mutually exclusive`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
                 flag("--verbose", "-v").negatable().count()
@@ -156,7 +156,7 @@ class NegatableFlagDeclarationTest {
     }
 
     @Test
-    fun countThenNegatableAreMutuallyExclusive() {
+    fun `count then negatable are mutually exclusive`() {
         // Reverse order trips the symmetric guard inside .negatable() (require(!spec.isCount)). .count()
         // returns a CountFlag with no .negatable(), so the guard is reached by reusing the Flag handle
         // after .count() has already flipped isCount on the shared spec.
@@ -176,7 +176,7 @@ class GlobalAndLocalNameCollisionTest {
 
 
     @Test
-    fun negatableGlobalFlagCollidingWithSubcommandLocalFailsAtBuild() {
+    fun `negatable global flag colliding with subcommand local fails at build`() {
         // A negatable global generates --no-color; siftGlobals would strip it before the subcommand's local
         // no-color ever sees a value, so the local is silently shadowed. Fail loudly at build instead.
         assertFailsWith<IllegalArgumentException> {
@@ -191,7 +191,7 @@ class GlobalAndLocalNameCollisionTest {
     }
 
     @Test
-    fun subcommandRedeclaringGlobalLongNameFailsAtBuild() {
+    fun `subcommand redeclaring global long name fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
                 globalFlag("--verbose", "-v")
@@ -204,7 +204,7 @@ class GlobalAndLocalNameCollisionTest {
     }
 
     @Test
-    fun subcommandRedeclaringGlobalShortFailsAtBuild() {
+    fun `subcommand redeclaring global short fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
                 globalFlag("--verbose", "-v")
@@ -217,7 +217,7 @@ class GlobalAndLocalNameCollisionTest {
     }
 
     @Test
-    fun rootLocalOptionCollidingWithGlobalFailsAtBuild() {
+    fun `root local option colliding with global fails at build`() {
         // A single-command tool whose root both declares a global and a same-named local: siftGlobals
         // would strip the token first, so the local could never receive a value. Fail loudly at build.
         assertFailsWith<IllegalArgumentException> {
@@ -230,7 +230,7 @@ class GlobalAndLocalNameCollisionTest {
     }
 
     @Test
-    fun localNegatableFlagNegationCollidingWithGlobalNameFailsAtBuild() {
+    fun `local negatable flag negation colliding with global name fails at build`() {
         // "foo".negatable() generates --no-foo locally; a global also named "no-foo" would be stripped
         // by siftGlobals before the local negation ever sees a value.
         assertFailsWith<IllegalArgumentException> {
@@ -245,7 +245,7 @@ class GlobalAndLocalNameCollisionTest {
     }
 
     @Test
-    fun globalNegatableFlagNegationCollidingWithAnotherGlobalNameFailsAtBuild() {
+    fun `global negatable flag negation colliding with another global name fails at build`() {
         // A global-vs-global self-collision: "foo".negatable() generates --no-foo among the globals
         // themselves, colliding with another global plainly named "no-foo".
         assertFailsWith<IllegalArgumentException> {
@@ -258,7 +258,7 @@ class GlobalAndLocalNameCollisionTest {
     }
 
     @Test
-    fun nonCollidingLocalNegatableFlagAndGlobalStillBuild() {
+    fun `non colliding local negatable flag and global still build`() {
         val cmd = cli("ok") {
             globalFlag("--bar")
             command("run") {
@@ -275,7 +275,7 @@ class HiddenPositionalTest {
 
 
     @Test
-    fun hiddenRequiredPositionalFailsAtBuild() {
+    fun `hidden required positional fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
                 argument("secret").hidden()
@@ -285,7 +285,7 @@ class HiddenPositionalTest {
     }
 
     @Test
-    fun hiddenOptionalPositionalIsAllowed() {
+    fun `hidden optional positional is allowed`() {
         val cmd = cli("ok") {
             argument("note", help = "a note").optional().hidden()
             action { Ok("") }
@@ -294,7 +294,7 @@ class HiddenPositionalTest {
     }
 
     @Test
-    fun hiddenMandatoryVariadicPositionalFailsAtBuild() {
+    fun `hidden mandatory variadic positional fails at build`() {
         // A hidden .multiple(min = 1) is just as mandatory as a hidden Required positional: the user
         // must supply at least one value for a slot they cannot see in --help.
         assertFailsWith<IllegalArgumentException> {
@@ -306,7 +306,7 @@ class HiddenPositionalTest {
     }
 
     @Test
-    fun hiddenOptionalVariadicPositionalIsAllowed() {
+    fun `hidden optional variadic positional is allowed`() {
         val cmd = cli("ok") {
             argument("files").multiple().hidden()
             action { Ok("") }
@@ -320,7 +320,7 @@ class ReservedNameTest {
 
 
     @Test
-    fun optionNamedJsonFailsAtBuild() {
+    fun `option named json fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
                 option("--json")
@@ -330,7 +330,7 @@ class ReservedNameTest {
     }
 
     @Test
-    fun flagNamedHelpFailsAtBuild() {
+    fun `flag named help fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
                 flag("--help")
@@ -340,7 +340,7 @@ class ReservedNameTest {
     }
 
     @Test
-    fun globalOptionNamedVersionFailsAtBuild() {
+    fun `global option named version fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
                 globalOption("--version")
@@ -350,7 +350,7 @@ class ReservedNameTest {
     }
 
     @Test
-    fun colorIsAReservedOptionName() {
+    fun `color is a reserved option name`() {
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
@@ -362,7 +362,7 @@ class ReservedNameTest {
     }
 
     @Test
-    fun optionWithReservedShortHFailsAtBuild() {
+    fun `option with reserved short h fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
                 option("--thing", "-h")
@@ -372,7 +372,7 @@ class ReservedNameTest {
     }
 
     @Test
-    fun rootSubcommandNamedDocsFailsAtBuild() {
+    fun `root subcommand named docs fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
                 command("docs") { action { Ok("") } }
@@ -381,7 +381,7 @@ class ReservedNameTest {
     }
 
     @Test
-    fun rootSubcommandNamedCompletionFailsAtBuild() {
+    fun `root subcommand named completion fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
                 command("completion") { action { Ok("") } }
@@ -390,7 +390,7 @@ class ReservedNameTest {
     }
 
     @Test
-    fun rootSubcommandNamedCompleteFailsAtBuild() {
+    fun `root subcommand named complete fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
                 command("__complete") { action { Ok("") } }
@@ -399,7 +399,7 @@ class ReservedNameTest {
     }
 
     @Test
-    fun nestedSubcommandNamedDocsIsAllowed() {
+    fun `nested subcommand named docs is allowed`() {
         val cmd = cli("x") {
             command("outer") {
                 command("docs") { action { Ok("") } }
@@ -414,7 +414,7 @@ class ShortNameSpellingTest {
 
 
     @Test
-    fun aDigitOrDotShortBuildsAndIsRecognizedAsASpelling() {
+    fun `a digit or dot short builds and is recognized as a spelling`() {
         // A dash-led numeric token can reach these, because the parser asks the tree which shorts it
         // declares before deciding what the token is.
         val cmd = cli("x") {
@@ -427,7 +427,7 @@ class ShortNameSpellingTest {
     }
 
     @Test
-    fun flagWithDashShortFailsAtBuild() {
+    fun `flag with dash short fails at build`() {
         // A short of literal '-' generates the token '-' + '-' == '--', colliding with the
         // end-of-options sentinel, so it could never be recognized as a flag.
         assertFailsWith<IllegalArgumentException> {
@@ -439,7 +439,7 @@ class ShortNameSpellingTest {
     }
 
     @Test
-    fun optionWithSingleCharShortStillBuilds() {
+    fun `option with single char short still builds`() {
         val cmd = cli("x") {
             option("--level", "-l")
             action { Ok("") }
@@ -448,7 +448,7 @@ class ShortNameSpellingTest {
     }
 
     @Test
-    fun normalCliStillBuilds() {
+    fun `normal cli still builds`() {
         val cmd = cli("x") {
             option("--out", "-o")
             command("build") { action { Ok("") } }
@@ -463,7 +463,7 @@ class DuplicateDeclarationTest {
 
 
     @Test
-    fun duplicateSubcommandNameFailsAtBuild() {
+    fun `duplicate subcommand name fails at build`() {
         // Cli.subcommand() resolves by first match, so the second "list" would be permanently
         // unreachable while --help still lists it twice.
         assertFailsWith<IllegalArgumentException> {
@@ -475,7 +475,7 @@ class DuplicateDeclarationTest {
     }
 
     @Test
-    fun duplicateOptionLongNameFailsAtBuild() {
+    fun `duplicate option long name fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
                 option("--mode")
@@ -486,7 +486,7 @@ class DuplicateDeclarationTest {
     }
 
     @Test
-    fun duplicateFlagLongNameFailsAtBuild() {
+    fun `duplicate flag long name fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
                 flag("--verbose")
@@ -497,7 +497,7 @@ class DuplicateDeclarationTest {
     }
 
     @Test
-    fun optionAndFlagSameLongNameFailsAtBuild() {
+    fun `option and flag same long name fails at build`() {
         // findFlag() is checked before findOption(), so the flag would silently shadow the option:
         // the option becomes permanently unreachable while --help still lists it.
         assertFailsWith<IllegalArgumentException> {
@@ -510,7 +510,7 @@ class DuplicateDeclarationTest {
     }
 
     @Test
-    fun duplicateShortNameAmongOptionsFlagsFailsAtBuild() {
+    fun `duplicate short name among options flags fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
                 option("--mode", "-m")
@@ -526,7 +526,7 @@ class SubcommandAliasTest {
 
 
     @Test
-    fun subcommandAliasCollidesWithSiblingNameFailsAtBuild() {
+    fun `subcommand alias collides with sibling name fails at build`() {
         // "list"'s alias "show" would silently shadow the real "show" subcommand.
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
@@ -540,7 +540,7 @@ class SubcommandAliasTest {
     }
 
     @Test
-    fun subcommandAliasCollidesWithSiblingAliasFailsAtBuild() {
+    fun `subcommand alias collides with sibling alias fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
                 command("a") {
@@ -556,7 +556,7 @@ class SubcommandAliasTest {
     }
 
     @Test
-    fun distinctSubcommandsAndNonCollidingAliasStillBuild() {
+    fun `distinct subcommands and non colliding alias still build`() {
         // Distinct sibling names, a non-colliding alias, and "start" reused at a DIFFERENT nesting
         // level (root vs. under "build") must all still construct fine.
         val cmd = cli("x") {
@@ -575,7 +575,7 @@ class SubcommandAliasTest {
     }
 
     @Test
-    fun subcommandAliasEqualToReservedCompletionFailsAtBuild() {
+    fun `subcommand alias equal to reserved completion fails at build`() {
         // The alias would silently shadow the injected `completion` builtin at runtime.
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
@@ -588,7 +588,7 @@ class SubcommandAliasTest {
     }
 
     @Test
-    fun subcommandAliasEqualToReservedDocsFailsAtBuild() {
+    fun `subcommand alias equal to reserved docs fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("sub") {
@@ -600,7 +600,7 @@ class SubcommandAliasTest {
     }
 
     @Test
-    fun subcommandAliasEqualToReservedCompleteFailsAtBuild() {
+    fun `subcommand alias equal to reserved complete fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("sub") {
@@ -612,7 +612,7 @@ class SubcommandAliasTest {
     }
 
     @Test
-    fun subcommandNonReservedAliasStillBuildsAtRoot() {
+    fun `subcommand non reserved alias still builds at root`() {
         val cmd = cli("app") {
             command("sub") {
                 aliases = listOf("alt")
@@ -623,7 +623,7 @@ class SubcommandAliasTest {
     }
 
     @Test
-    fun subcommandAliasEqualToOwnNameFailsAtBuild() {
+    fun `subcommand alias equal to own name fails at build`() {
         // "foo, foo" is not a real alias, it is the same name rendered twice.
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
@@ -636,7 +636,7 @@ class SubcommandAliasTest {
     }
 
     @Test
-    fun subcommandDuplicateAliasWithinOwnListFailsAtBuild() {
+    fun `subcommand duplicate alias within own list fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("foo") {
@@ -648,7 +648,7 @@ class SubcommandAliasTest {
     }
 
     @Test
-    fun subcommandDistinctAliasesNoneEqualToOwnNameStillBuild() {
+    fun `subcommand distinct aliases none equal to own name still build`() {
         val cmd = cli("app") {
             command("foo") {
                 aliases = listOf("x", "y")
@@ -660,11 +660,11 @@ class SubcommandAliasTest {
     }
 
     @Test
-    fun subcommandAliasStartingWithDashFailsAtBuild() {
+    fun `subcommand alias starting with dash fails at build`() {
         // A dash-prefixed alias would be indistinguishable from an option token on the command line,
         // the same reason a dash-prefixed command name is rejected; aliases must run through the same
-        // check ([requireValidName]). A normal alias still building is already covered by [aliasResolves]
-        // and [subcommandNonReservedAliasStillBuildsAtRoot].
+        // check ([requireValidName]). A normal alias still building is already covered by `alias resolves`
+        // and `subcommand non reserved alias still builds at root`.
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("scan") {
@@ -680,7 +680,7 @@ class SubcommandAliasTest {
 class CommandNameValidationTest {
 
     @Test
-    fun blankSubcommandNameFailsAtBuild() {
+    fun `blank subcommand name fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("") { action { Ok("") } }
@@ -689,7 +689,7 @@ class CommandNameValidationTest {
     }
 
     @Test
-    fun subcommandNameContainingSpaceFailsAtBuild() {
+    fun `subcommand name containing space fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("build now") { action { Ok("") } }
@@ -698,7 +698,7 @@ class CommandNameValidationTest {
     }
 
     @Test
-    fun subcommandNameStartingWithDashFailsAtBuild() {
+    fun `subcommand name starting with dash fails at build`() {
         // A leading '-' would be indistinguishable from an option token on the command line.
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
@@ -708,14 +708,14 @@ class CommandNameValidationTest {
     }
 
     @Test
-    fun blankRootNameFailsAtBuild() {
+    fun `blank root name fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("") { action { Ok("") } }
         }
     }
 
     @Test
-    fun normalAndDottedSubcommandNamesStillBuild() {
+    fun `normal and dotted subcommand names still build`() {
         // Dots are used deliberately elsewhere (see DocsTest's `weird.name` case) and must stay allowed.
         val cmd = cli("app") {
             command("build") { action { Ok("") } }
@@ -730,7 +730,7 @@ class CommandNameValidationTest {
 class InputNameValidationTest {
 
     @Test
-    fun optionWithEmptyLongNameFailsAtConstruction() {
+    fun `option with empty long name fails at construction`() {
         // A blank long name renders a broken '-z, -- <value>' help row and is ambiguous with the
         // '--' end-of-options sentinel ('--=hello' would bind as the value).
         assertFailsWith<IllegalArgumentException> {
@@ -742,7 +742,7 @@ class InputNameValidationTest {
     }
 
     @Test
-    fun optionWithBlankLongNameFailsAtConstruction() {
+    fun `option with blank long name fails at construction`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
                 option("   ")
@@ -752,7 +752,7 @@ class InputNameValidationTest {
     }
 
     @Test
-    fun optionWithLeadingDashLongNameFailsAtConstruction() {
+    fun `option with leading dash long name fails at construction`() {
         // A leading '-' would be indistinguishable from an option token on the command line.
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
@@ -763,7 +763,7 @@ class InputNameValidationTest {
     }
 
     @Test
-    fun flagWithEmptyLongNameFailsAtConstruction() {
+    fun `flag with empty long name fails at construction`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
                 flag("--")
@@ -773,7 +773,7 @@ class InputNameValidationTest {
     }
 
     @Test
-    fun argumentWithEmptyNameFailsAtConstruction() {
+    fun `argument with empty name fails at construction`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
                 argument("")
@@ -783,7 +783,7 @@ class InputNameValidationTest {
     }
 
     @Test
-    fun flagNameWithControlCharFailsAtConstruction() {
+    fun `flag name with control char fails at construction`() {
         // requireValidName rejects control chars (code in 0..0x1F or 0x7F) as a disjunct separate from
         // isWhitespace(); 0x01 is a control char but not whitespace, so this exercises that branch
         // specifically rather than the whitespace check already covered above.
@@ -796,7 +796,7 @@ class InputNameValidationTest {
     }
 
     @Test
-    fun normalOptionAndFlagNamesStillConstruct() {
+    fun `normal option and flag names still construct`() {
         val cmd = cli("x") {
             option("--name")
             flag("--verbose", "-v")
@@ -811,7 +811,7 @@ class InputNameValidationTest {
 class ActionlessCommandInputTest {
 
     @Test
-    fun actionlessRootWithLocalOptionFailsAtBuild() {
+    fun `actionless root with local option fails at build`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 option("--color", "-c")
@@ -824,7 +824,7 @@ class ActionlessCommandInputTest {
     }
 
     @Test
-    fun actionlessRootWithLocalFlagFailsAtBuild() {
+    fun `actionless root with local flag fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 flag("--verbose", "-v")
@@ -834,7 +834,7 @@ class ActionlessCommandInputTest {
     }
 
     @Test
-    fun hybridRootWithLocalOptionAndActionStillBuilds() {
+    fun `hybrid root with local option and action still builds`() {
         val cmd = cli("app") {
             option("--tint", "-c")
             command("build") { action { Ok("") } }
@@ -844,7 +844,7 @@ class ActionlessCommandInputTest {
     }
 
     @Test
-    fun plainDispatcherWithNoLocalOptionsStillBuilds() {
+    fun `plain dispatcher with no local options still builds`() {
         val cmd = cli("app") {
             command("build") { action { Ok("") } }
             command("test") { action { Ok("") } }
@@ -853,7 +853,7 @@ class ActionlessCommandInputTest {
     }
 
     @Test
-    fun actionlessRootWithGlobalOptionInsteadOfLocalStillBuilds() {
+    fun `actionless root with global option instead of local still builds`() {
         val cmd = cli("app") {
             globalOption("--tint", "-c")
             command("build") { action { Ok("") } }
@@ -862,7 +862,7 @@ class ActionlessCommandInputTest {
     }
 
     @Test
-    fun actionlessNestedCommandWithLocalOptionFailsAtBuild() {
+    fun `actionless nested command with local option fails at build`() {
         // The check applies at every level, not just the root.
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
@@ -877,7 +877,7 @@ class ActionlessCommandInputTest {
     // --- reject an action-less command that declares a positional argument ---
 
     @Test
-    fun actionlessRootWithPositionalFailsAtBuild() {
+    fun `actionless root with positional fails at build`() {
         // The root is an action-less group (it only routes to "run"), so the declared positional's slot
         // is read as a subcommand token and could never bind; it must fail loudly instead.
         val ex = assertFailsWith<IllegalArgumentException> {
@@ -891,7 +891,7 @@ class ActionlessCommandInputTest {
     }
 
     @Test
-    fun actionlessNestedCommandWithPositionalFailsAtBuild() {
+    fun `actionless nested command with positional fails at build`() {
         // The check applies at every level, not just the root.
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
@@ -904,7 +904,7 @@ class ActionlessCommandInputTest {
     }
 
     @Test
-    fun actionlessRootWithNoPositionalStillBuilds() {
+    fun `actionless root with no positional still builds`() {
         val cmd = cli("app") {
             command("build") { action { Ok("") } }
             command("test") { action { Ok("") } }
@@ -917,7 +917,7 @@ class ActionlessCommandInputTest {
 class ReservedSectionTitleTest {
 
     @Test
-    fun groupTitleCollidingWithReservedSectionFailsAtBuild() {
+    fun `group title colliding with reserved section fails at build`() {
         // The exact scenario from the spec. NOTE: an action-less root with a local flag ALSO trips
         // validateActionlessLocalOptions, so this fails at build even so; the two isolating tests below
         // exercise the reserved-section check on its own.
@@ -930,7 +930,7 @@ class ReservedSectionTitleTest {
     }
 
     @Test
-    fun optionFlagGroupTitledLikeReservedSectionFailsAtBuild() {
+    fun `option flag group titled like reserved section fails at build`() {
         // Root has its own action, so the action-less-local guard is exempt: the reserved section
         // heading "Global options" on the flag's group is the sole reason this fails.
         val ex = assertFailsWith<IllegalArgumentException> {
@@ -943,7 +943,7 @@ class ReservedSectionTitleTest {
     }
 
     @Test
-    fun subcommandGroupTitledLikeReservedSectionFailsAtBuild() {
+    fun `subcommand group titled like reserved section fails at build`() {
         // Grouping a subcommand under "Commands" duplicates the built-in Commands heading in --help.
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
@@ -956,7 +956,7 @@ class ReservedSectionTitleTest {
     }
 
     @Test
-    fun optionFlagGroupTitledExamplesFailsAtBuild() {
+    fun `option flag group titled examples fails at build`() {
         // "Examples" is reserved too: `--help` emits its own "Examples:" heading whenever a command
         // has example(...) entries, so a group titled "Examples" would render a duplicate heading.
         val ex = assertFailsWith<IllegalArgumentException> {
@@ -969,7 +969,7 @@ class ReservedSectionTitleTest {
     }
 
     @Test
-    fun nonReservedGroupTitleStillBuilds() {
+    fun `non reserved group title still builds`() {
         val cmd = cli("app") {
             group("Networking") {
                 command("connect") { action { Ok("") } }
@@ -984,7 +984,7 @@ class ReservedSectionTitleTest {
 class CommandCanActOrDispatchTest {
 
     @Test
-    fun aCommandDeclaringNeitherAnActionNorSubcommandsIsRejected() {
+    fun `a command declaring neither an action nor subcommands is rejected`() {
         // Not a parse error: such a command would parse fine and silently exit 0, which reads as success.
         // A command with inputs but no action is already caught by its own check, so this is the bare case.
         val ex = assertFailsWith<IllegalArgumentException> {
@@ -994,7 +994,7 @@ class CommandCanActOrDispatchTest {
     }
 
     @Test
-    fun aGroupNeedsNoActionOfItsOwn() {
+    fun `a group needs no action of its own`() {
         val tree = cli("app") { command("group") { command("leaf") { action { Ok("ran") } } } }
         assertIs<Invocation.ShowHelp>(assertIs<Result.Success<Invocation>>(tree.parse(listOf("group"))).value)
         assertEquals(

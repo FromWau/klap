@@ -17,26 +17,26 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun noneRefusesALongOptionPrefix() {
+    fun `none refuses a long option prefix`() {
         val err = assertIs<Result.Error<CliError>>(tree(Abbreviation.None).parse(listOf("--recu", "f"))).error
         assertEquals(CliError.UnknownOption("--recu", "--recursive"), err)
     }
 
     @Test
-    fun noneStillBindsTheFullSpelling() {
+    fun `none still binds the full spelling`() {
         assertEquals("r=true ref=null", tree(Abbreviation.None).bindText("--recursive", "f"))
         assertEquals("r=false ref=x", tree(Abbreviation.None).bindText("--reference", "x", "f"))
     }
 
     @Test
-    fun noneNeverReportsAnAmbiguity() {
+    fun `none never reports an ambiguity`() {
         // Nothing infers, so a prefix reaching two spellings is simply not a spelling.
         val err = assertIs<Result.Error<CliError>>(tree(Abbreviation.None).parse(listOf("--re", "f"))).error
         assertIs<CliError.UnknownOption>(err)
     }
 
     @Test
-    fun longOptionsInfersALongOptionPrefix() {
+    fun `long options infers a long option prefix`() {
         assertEquals("r=true ref=null", tree(Abbreviation.Options).bindText("--recu", "f"))
         assertEquals(
             CliError.AmbiguousOption("--re", listOf("--recursive", "--reference")),
@@ -45,7 +45,7 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun noneKeepsTheShortAndTheFullBuiltinSpellings() {
+    fun `none keeps the short and the full builtin spellings`() {
         val strict = cli("t") {
             abbreviation = Abbreviation.None
             version = "1.0"
@@ -62,7 +62,7 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun noneRefusesAGlobalPrefixInEveryPosition() {
+    fun `none refuses a global prefix in every position`() {
         val tree = cli("app") {
             abbreviation = Abbreviation.None
             val header = globalOption("--header")
@@ -82,7 +82,7 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun theDefaultIsWhateverTheRootDeclares() {
+    fun `the default is whatever the root declares`() {
         // Two roots differing only in the switch must disagree on the same line.
         assertEquals("r=true ref=null", tree(Abbreviation.Options).bindText("--recu", "f"))
         assertIs<Result.Error<CliError>>(tree(Abbreviation.None).parse(listOf("--recu", "f")))
@@ -97,7 +97,7 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun aNumericAliasIsUntouchedByEveryMode() {
+    fun `a numeric alias is untouched by every mode`() {
         // The alias is short-side, so no mode may reach it: `-5` is `-n 5` in all three.
         for (mode in Abbreviation.entries) {
             assertEquals("n=5", head(mode).bindText("-5", "f"), mode.name)
@@ -117,7 +117,7 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun onlyAllInfersASubcommandPrefix() {
+    fun `only all infers a subcommand prefix`() {
         assertEquals("listen", dispatcher(Abbreviation.All).bindText("liste"))
         for (mode in listOf(Abbreviation.None, Abbreviation.Options)) {
             assertEquals(
@@ -129,7 +129,7 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun anAmbiguousSubcommandPrefixNamesEveryPossibility() {
+    fun `an ambiguous subcommand prefix names every possibility`() {
         assertEquals(
             CliError.AmbiguousSubcommand("app", "st", listOf("status", "stash")),
             assertIs<Result.Error<CliError>>(dispatcher(Abbreviation.All).parse(listOf("st"))).error,
@@ -137,13 +137,13 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun anExactSubcommandBeatsBeingAPrefixOfAnother() {
+    fun `an exact subcommand beats being a prefix of another`() {
         // `list` is a strict prefix of `listen`, so prefix matching alone would call it ambiguous.
         assertEquals("list", dispatcher(Abbreviation.All).bindText("list"))
     }
 
     @Test
-    fun anAliasTakesPartInThePoolWithoutFakingAnAmbiguity() {
+    fun `an alias takes part in the pool without faking an ambiguity`() {
         // `l` reaches `list`, `ls` and `listen`. The first two name ONE command, so the only real
         // possibilities are two, not three; and `ls` on its own still resolves exactly.
         assertEquals("list", dispatcher(Abbreviation.All).bindText("ls"))
@@ -163,14 +163,14 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun aMissThatIsNoPrefixStillSuggests() {
+    fun `a miss that is no prefix still suggests`() {
         // Abbreviation rescues prefixes; suggestion rescues transpositions. They are complementary.
         val err = assertIs<Result.Error<CliError>>(dispatcher(Abbreviation.All).parse(listOf("lsit"))).error
         assertEquals(CliError.UnknownSubcommand("app", "lsit", "list"), err)
     }
 
     @Test
-    fun anInferredSubcommandIsWhereItsOptionsResolve() {
+    fun `an inferred subcommand is where its options resolve`() {
         val tree = cli("app") {
             abbreviation = Abbreviation.All
             command("status") {
@@ -191,7 +191,7 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun aChoiceValueInfersWhereverAnOptionNameDoes() {
+    fun `a choice value infers wherever an option name does`() {
         // GNU couples the two: `ls --color=al` works for the same reason `--colo` does.
         for (mode in listOf(Abbreviation.Options, Abbreviation.All)) {
             assertEquals("p=low", priority(mode).bindText("--priority", "lo"), mode.name)
@@ -202,7 +202,7 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun anAmbiguousChoiceValueNamesEveryPossibility() {
+    fun `an ambiguous choice value names every possibility`() {
         assertEquals(
             CliError.AmbiguousValue("--priority", "hi", listOf("high", "highest")),
             assertIs<Result.Error<CliError>>(priority(Abbreviation.Options).parse(listOf("--priority", "hi"))).error,
@@ -210,12 +210,12 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun anExactChoiceBeatsBeingAPrefixOfAnother() {
+    fun `an exact choice beats being a prefix of another`() {
         assertEquals("p=high", priority(Abbreviation.Options).bindText("--priority", "high"))
     }
 
     @Test
-    fun choiceAbbreviationComposesWithCaseInsensitiveMatching() {
+    fun `choice abbreviation composes with case insensitive matching`() {
         // `.choice()` already matches case-insensitively; prefixing is layered on top, not instead of it.
         assertEquals("p=low", priority(Abbreviation.Options).bindText("--priority", "LO"))
         assertEquals("p=high", priority(Abbreviation.Options).bindText("--priority", "HIGH"))
@@ -228,7 +228,7 @@ class AbbreviationModeTest {
     private enum class Level { LOW, HIGH }
 
     @Test
-    fun anEnumValueInfersToo() {
+    fun `an enum value infers too`() {
         val tree = cli("t") {
             abbreviation = Abbreviation.Options
             val level = option("--level").enum<Level>()
@@ -238,7 +238,7 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun aBuiltinChoiceValueFollowsTheSameRule() {
+    fun `a builtin choice value follows the same rule`() {
         // A user cannot tell klap's own --color from an option the app declared, so it must not resolve
         // by a different rule; real `ls --color=al` binds `always`.
         val tree = cli("t") {
@@ -252,7 +252,7 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun anUnmatchedValueStillReportsTheChoicesAndSuggests() {
+    fun `an unmatched value still reports the choices and suggests`() {
         // Abbreviation rescues prefixes; the existing InvalidChoice suggestion rescues near-misses.
         val err = assertIs<Result.Error<CliError>>(priority(Abbreviation.Options).parse(listOf("--priority", "hgih")))
             .error
@@ -260,7 +260,7 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun aValueInAnOperandSlotInfersThroughTheSameConverter() {
+    fun `a value in an operand slot infers through the same converter`() {
         val tree = cli("t") {
             abbreviation = Abbreviation.Options
             val mode = argument("mode").choice("fast", "slow")
@@ -270,7 +270,7 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun aRefusedPrefixStillPointsAtTheOneSpellingItReached() {
+    fun `a refused prefix still points at the one spelling it reached`() {
         val strict = cli("t") {
             abbreviation = Abbreviation.None
             action<String>(human = { it }) { Ok("ran") }
@@ -287,7 +287,7 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun aPrefixReachingTwoSpellingsSuggestsTheNearest() {
+    fun `a prefix reaching two spellings suggests the nearest`() {
         val strict = cli("t") {
             abbreviation = Abbreviation.None
             option("--header")
@@ -302,7 +302,7 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun aTiedPrefixNeverSurrendersToAnUnrelatedCandidate() {
+    fun `a tied prefix never surrenders to an unrelated candidate`() {
         val strict = cli("t") {
             abbreviation = Abbreviation.None
             option("--sort")
@@ -318,7 +318,7 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun aRefusedSubcommandPrefixSuggestsToo() {
+    fun `a refused subcommand prefix suggests too`() {
         val strict = cli("app") {
             abbreviation = Abbreviation.None
             command("status") { action<String>(human = { it }) { Ok("status") } }

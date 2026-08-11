@@ -24,13 +24,13 @@ class AuthorTest {
     }
 
     @Test
-    fun helpFooterShowsTheRootAuthor() {
+    fun `help footer shows the root author`() {
         val help = tree("Jane Doe").helpText()
         assertTrue("Author: Jane Doe" in help, help)
     }
 
     @Test
-    fun authorIsRootOnlySoASubcommandHelpOmitsIt() {
+    fun `author is root only so a subcommand help omits it`() {
         val app = tree("Jane Doe")
         assertTrue("Author: Jane Doe" in app.helpText(), "root shows it")
         val sub = app.subcommand("add")!!
@@ -39,37 +39,37 @@ class AuthorTest {
     }
 
     @Test
-    fun absentAuthorRendersNoFooter() {
+    fun `absent author renders no footer`() {
         assertFalse("Author:" in tree(null).helpText())
     }
 
     @Test
-    fun blankAuthorRendersNoFooter() {
+    fun `blank author renders no footer`() {
         assertFalse("Author:" in tree("   ").helpText())
     }
 
     @Test
-    fun manPageRendersAnAuthorSection() {
+    fun `man page renders an author section`() {
         val man = tree("Jane Doe").renderManPage()
         assertTrue(".SH AUTHOR" in man, man)
         assertTrue("Jane Doe" in man, man)
     }
 
     @Test
-    fun markdownRendersAnAuthorSection() {
+    fun `markdown renders an author section`() {
         val md = tree("Jane Doe").renderMarkdownDocs()
         assertTrue("## Author" in md, md)
         assertTrue("Jane Doe" in md, md)
     }
 
     @Test
-    fun absentAuthorRendersNoManOrMarkdownSection() {
+    fun `absent author renders no man or markdown section`() {
         assertFalse(".SH AUTHOR" in tree(null).renderManPage())
         assertFalse("## Author" in tree(null).renderMarkdownDocs())
     }
 
     @Test
-    fun twoInputsSharingASecondarySpellingFailToBuild() {
+    fun `two inputs sharing a secondary spelling fail to build`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
@@ -83,7 +83,7 @@ class AuthorTest {
     }
 
     @Test
-    fun twoInputsSharingASecondaryLongFailToBuild() {
+    fun `two inputs sharing a secondary long fail to build`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("log") {
                 command("show") {
@@ -97,7 +97,7 @@ class AuthorTest {
     }
 
     @Test
-    fun anInputWithNoNamesFailsToBuild() {
+    fun `an input with no names fails to build`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
@@ -110,7 +110,7 @@ class AuthorTest {
     }
 
     @Test
-    fun aNegatableFlagWithNoLongSpellingFailsToBuild() {
+    fun `a negatable flag with no long spelling fails to build`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
@@ -123,7 +123,7 @@ class AuthorTest {
     }
 
     @Test
-    fun helpTextPassedPositionallyIsRejectedWithAPointerToTheNamedParameter() {
+    fun `help text passed positionally is rejected with a pointer to the named parameter`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
@@ -136,7 +136,7 @@ class AuthorTest {
     }
 
     @Test
-    fun oneWordHelpTextPassedPositionallyIsRejectedTheSameWay() {
+    fun `one word help text passed positionally is rejected the same way`() {
         // The whitespace rule cannot see this one: "recurse" is a perfectly well-formed word. The missing
         // dashes are what catch it, which is the whole reason a spelling carries its own.
         val ex = assertFailsWith<IllegalArgumentException> {
@@ -151,7 +151,7 @@ class AuthorTest {
     }
 
     @Test
-    fun aBareNameIsRejectedAndNamesTheTokenItShouldHaveBeen() {
+    fun `a bare name is rejected and names the token it should have been`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
@@ -164,7 +164,7 @@ class AuthorTest {
     }
 
     @Test
-    fun aBareOneCharacterNameIsRejectedAsAShortRatherThanALong() {
+    fun `a bare one character name is rejected as a short rather than a long`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
@@ -177,7 +177,7 @@ class AuthorTest {
     }
 
     @Test
-    fun aMultiCharacterShortIsRejectedAsTheClusterTheParserWouldReadIt() {
+    fun `a multi character short is rejected as the cluster the parser would read it`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
@@ -190,7 +190,7 @@ class AuthorTest {
     }
 
     @Test
-    fun aSpellingThatIsOnlyDashesOrCarriesThreeIsRejected() {
+    fun `a spelling that is only dashes or carries three is rejected`() {
         for (spelling in listOf("-", "--", "---x")) {
             assertFailsWith<IllegalArgumentException>("'$spelling' must not declare an input") {
                 cli("app") {
@@ -204,7 +204,7 @@ class AuthorTest {
     }
 
     @Test
-    fun asecondNumericAliasOnOneCommandFailsToBuild() {
+    fun `asecond numeric alias on one command fails to build`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("head") {
                 val lines = option("--lines", "-n").int()
@@ -218,7 +218,7 @@ class AuthorTest {
     }
 
     @Test
-    fun aNumericAliasNamingAnotherCommandsOptionFailsToBuild() {
+    fun `a numeric alias naming another commands option fails to build`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 val lines = globalOption("--lines", "-n").int()
@@ -232,7 +232,7 @@ class AuthorTest {
     }
 
     @Test
-    fun aOneCharacterLongIsDeclarableAndDistinctFromTheShortOfTheSameLetter() {
+    fun `a one character long is declarable and distinct from the short of the same letter`() {
         // Neither is expressible while a spelling's LENGTH decides its form: `--x` cannot be written at
         // all, and `--x` and `-x` cannot be told apart. Both fall out of writing the dashes down.
         lateinit var long: Opt<String?>
@@ -254,7 +254,7 @@ class AuthorTest {
 class PublicSurfaceTest {
 
     @Test
-    fun everyHandleExposesItsPrimaryName() {
+    fun `every handle exposes its primary name`() {
         lateinit var host: Opt<String?>
         lateinit var file: Arg<String>
         lateinit var verbose: Flag
@@ -273,7 +273,7 @@ class PublicSurfaceTest {
     }
 
     @Test
-    fun theDidYouMeanHelperIsPublicAndMatchesTheParsersOwn() {
+    fun `the did you mean helper is public and matches the parsers own`() {
         // Qualified so this reaches the public re-export even if a future import in this file shadows it.
         assertEquals("list", com.fromwau.klap.suggest("lst", listOf("list", "add")))
         // Past the threshold: nothing is close enough, and an exact match is never "did you mean".
@@ -284,7 +284,7 @@ class PublicSurfaceTest {
     }
 
     @Test
-    fun theDidYouMeanHelperAgreesWithTheParserOnTheSameToken() {
+    fun `the did you mean helper agrees with the parser on the same token`() {
         val tree = cli("app") {
             command("build") { action { Ok("") } }
             command("add") { action { Ok("") } }
@@ -294,7 +294,7 @@ class PublicSurfaceTest {
     }
 
     @Test
-    fun aDomainErrorRendersItsDetailAndKeepsItsTypedPayloadRecoverable() {
+    fun `a domain error renders its detail and keeps its typed payload recoverable`() {
         val err: CliError = CliError.Domain(StoreError.DiskFull, "out of space", exitCode = 6)
         assertEquals("out of space", err.message())
         assertEquals(StoreError.DiskFull, (err as CliError.Domain).error)
@@ -305,7 +305,7 @@ class PublicSurfaceTest {
     }
 
     @Test
-    fun aDomainDetailIsTreatedAsAuthoredProseLikeFailureAndUsage() {
+    fun `a domain detail is treated as authored prose like failure and usage`() {
         // Two lines survive, exactly as they do for Failure: the consumer wrote the sentence.
         val term = RecordingTerminal()
         renderError(CliError.Domain(StoreError.DiskFull, "out of space\n  free some and retry"), json = false, terminal = term)
@@ -313,7 +313,7 @@ class PublicSurfaceTest {
     }
 
     @Test
-    fun aDomainErrorSurvivesAnActionAndCarriesItsExitCode() {
+    fun `a domain error survives an action and carries its exit code`() {
         val tree = cli("app") {
             action<String> { Err(CliError.Domain(StoreError.DiskFull, "out of space", exitCode = 6)) }
         }

@@ -25,7 +25,7 @@ private object ThrowingDefaultValue {
 class HelpTest {
 
     @Test
-    fun argSummary_marksCardinality() {
+    fun `arg summary marks cardinality`() {
         val cmd = cli("add") {
             argument("text")
             argument("note").optional()
@@ -36,7 +36,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpText_leafListsArgumentsAndOptions() {
+    fun `help text leaf lists arguments and options`() {
         val cmd = cli("add") {
             description = "Add a task"
             argument("text", help = "the task text")
@@ -51,7 +51,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpText_listsBuiltinFlags() {
+    fun `help text lists builtin flags`() {
         val cmd = cli("todo") {
             version = "1.0.0"
             argument("text")
@@ -64,7 +64,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpText_omitsVersionFlagWhenUnversioned() {
+    fun `help text omits version flag when unversioned`() {
         val cmd = cli("add") {
             argument("text")
             action { Ok("") }
@@ -75,7 +75,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpGroupsSubcommandsUnderCommandsHeading() {
+    fun `help groups subcommands under commands heading`() {
         val cmd = cli("app") {
             command("build") {
                 description = "build it"
@@ -95,7 +95,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpText_groupListsSubcommands() {
+    fun `help text group lists subcommands`() {
         val cmd = cli("config") {
             description = "Manage config"
             command("get") {
@@ -113,7 +113,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpText_rootActionToolStillListsCompletion() {
+    fun `help text root action tool still lists completion`() {
         // A single-command tool exposes `--completion` as a meta-option, not a subcommand, so it
         // shows up in help only as a substring, not as a `Commands:` entry.
         val cmd = cli("tally") {
@@ -129,7 +129,7 @@ class HelpTest {
     }
 
     @Test
-    fun singleCommandToolHelpListsMetaOptions() {
+    fun `single command tool help lists meta options`() {
         val cmd = cli("wc") {
             argument("files").multiple(min = 1)
             action { Ok("") }
@@ -141,7 +141,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpShowsChoicesRequiredOptionalDefault() {
+    fun `help shows choices required optional default`() {
         val cmd = cli("cvt") {
             option("--from").choice("celsius", "fahrenheit").required()
             option("--to").choice("celsius", "fahrenheit")
@@ -157,7 +157,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpText_optionShowsValuePlaceholderFlagDoesNot() {
+    fun `help text option shows value placeholder flag does not`() {
         val cmd = cli("run") {
             option("--priority", "-p", help = "prio")
             flag("--verbose", "-v", help = "loud")
@@ -171,7 +171,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpShowsRangeHint() {
+    fun `help shows range hint`() {
         val cmd = cli("net") {
             option("--port", "-p", help = "port to use").int().range(1..65535)
             action { Ok("") }
@@ -181,7 +181,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpShowsCountFlagHint() {
+    fun `help shows count flag hint`() {
         val cmd = cli("run") {
             flag("--verbose", "-v", help = "increase verbosity").count()
             action { Ok("") }
@@ -192,7 +192,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpShowsNegatableFlagWithDefaultOn() {
+    fun `help shows negatable flag with default on`() {
         val cmd = cli("run") {
             flag("--tint", help = "apply a tint").negatable()
             action { Ok("") }
@@ -203,7 +203,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpShowsNegatableFlagWithDefaultOff() {
+    fun `help shows negatable flag with default off`() {
         val cmd = cli("run") {
             flag("--tint", help = "apply a tint").negatable(default = false)
             action { Ok("") }
@@ -214,7 +214,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpShowsNegatableFlagWithShortName() {
+    fun `help shows negatable flag with short name`() {
         val cmd = cli("run") {
             flag("--tint", "-c", help = "apply a tint").negatable()
             action { Ok("") }
@@ -224,7 +224,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpDoesNotIndentARowWhoseOnlyShortIsOnTheNegativeHalf() {
+    fun `help does not indent a row whose only short is on the negative half`() {
         val cmd = cli("run") {
             flag("--verify", help = "verify the thing").negatable("--no-verify", "-n")
             action { Ok("") }
@@ -235,7 +235,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpAdvertisesColorOptionUnderGlobalOptions() {
+    fun `help advertises color option under global options`() {
         val cmd = cli("app") {
             command("build") { action { Ok("") } }
         }
@@ -249,7 +249,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpShowsGlobalOptionsSectionOnRootAndSubcommand() {
+    fun `help shows global options section on root and subcommand`() {
         val cmd = cli("app") {
             globalFlag("--verbose", "-v", help = "enable verbose logging")
             command("build") {
@@ -272,7 +272,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpRendersGroupHeadingsForItsInputs() {
+    fun `help renders group headings for its inputs`() {
         val cmd = cli("deploy") {
             description = "Ship a build"
             group("Networking") {
@@ -294,7 +294,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpRendersGroupedSubcommands() {
+    fun `help renders grouped subcommands`() {
         val cmd = cli("app") {
             command("status") {
                 description = "show status"
@@ -314,7 +314,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpRendersExamplesAndEpilog() {
+    fun `help renders examples and epilog`() {
         val cmd = cli("deploy") {
             option("--host", "-H", help = "target host")
             example("deploy --host web1", "deploy to web1")
@@ -331,7 +331,7 @@ class HelpTest {
     }
 
     @Test
-    fun subcommandHelpRendersItsOwnEpilogueNotTheRoots() {
+    fun `subcommand help renders its own epilogue not the roots`() {
         val tree = cli("app") {
             epilogue = "Root trailer."
             command("run") {
@@ -348,7 +348,7 @@ class HelpTest {
     }
 
     @Test
-    fun hiddenOptionOmittedFromHelpButStillParses() {
+    fun `hidden option omitted from help but still parses`() {
         var seen: String? = null
         val cmd = cli("run") {
             val token = option("--internal-token").hidden()
@@ -367,7 +367,7 @@ class HelpTest {
     }
 
     @Test
-    fun hiddenSubcommandOmittedFromHelpButStillExecutes() {
+    fun `hidden subcommand omitted from help but still executes`() {
         var ran = false
         val cmd = cli("app") {
             command("build") {
@@ -393,7 +393,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpWrapsLongDescriptionsAtExplicitColumns() {
+    fun `help wraps long descriptions at explicit columns`() {
         val long = "This is a deliberately long option description that must exceed the wrap budget so it spills over."
         val cmd = cli("run") {
             option("--mode", "-m", help = long)
@@ -405,7 +405,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpWrapsMultiLineDescriptionPerLogicalLineWithoutPrematureBreak() {
+    fun `help wraps multi line description per logical line without premature break`() {
         // A description with an explicit newline is two logical lines. Each must wrap to the width
         // independently: the newline must not fold into a "word" that miscounts the running length
         // and forces a ragged early break on the line that follows it.
@@ -421,7 +421,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpStacksDescriptionAtNarrowWidthWithoutOverflow() {
+    fun `help stacks description at narrow width without overflow`() {
         // At a narrow terminal the aligned description column can't fit, so the description stacks
         // under the signature and wraps to the full width instead of overflowing. Uses a subcommand so
         // no injected completion/docs rows (root-only, unbreakable tokens) intrude. The width here must
@@ -444,7 +444,7 @@ class HelpTest {
     }
 
     @Test
-    fun wrapLeavesAnOverlongTokenIntactOnItsOwnLine() {
+    fun `wrap leaves an overlong token intact on its own line`() {
         val url = "https://example.com/really/long/path/that/exceeds/any/reasonable/width"
         val lines = wrap("see $url now", width = 20)
         // An unbreakable token wider than the budget is not hard-split; it sits alone on its line.
@@ -452,7 +452,7 @@ class HelpTest {
     }
 
     @Test
-    fun colorEscapesAppearOnlyWhenStyleEnablesColor() {
+    fun `color escapes appear only when style enables color`() {
         val cmd = cli("run") {
             description = "do a thing"
             option("--mode", "-m", help = "the mode")
@@ -465,7 +465,7 @@ class HelpTest {
     }
 
     @Test
-    fun versionedDispatcherListsVersionOnSubcommandHelp() {
+    fun `versioned dispatcher lists version on subcommand help`() {
         // --version works from any subcommand (Parser.kt recognizes it position-independently on the
         // root), so a subcommand's help should list it too, not just the root's.
         val cmd = cli("app") {
@@ -478,7 +478,7 @@ class HelpTest {
     }
 
     @Test
-    fun nonVersionedDispatcherOmitsVersionOnSubcommandHelp() {
+    fun `non versioned dispatcher omits version on subcommand help`() {
         val cmd = cli("app") {
             command("build") { action { Ok("") } }
         }
@@ -488,7 +488,7 @@ class HelpTest {
     }
 
     @Test
-    fun versionedDispatcherStillListsVersionOnRootHelp() {
+    fun `versioned dispatcher still lists version on root help`() {
         val cmd = cli("app") {
             version = "1.0"
             command("build") { action { Ok("") } }
@@ -499,7 +499,7 @@ class HelpTest {
     }
 
     @Test
-    fun simpleCommandDefaultHelpLayout() {
+    fun `simple command default help layout`() {
         // Regression guard on the exact PLAIN layout: args/options in the default block, and the
         // position-independent built-ins (-h/--help, --json) under a trailing `Global options` block.
         // Uses a subcommand so no injected `completion` row (root-only) perturbs the default block.
@@ -526,7 +526,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpAllRendersEveryDescendantHelpRecursively() {
+    fun `help all renders every descendant help recursively`() {
         val tree = cli("app") {
             command("build", "build things") {
                 option("--target", "-t", help = "what to build").choice("debug", "release")
@@ -554,7 +554,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpAllScopesToTheSubtreeItIsInvokedOn() {
+    fun `help all scopes to the subtree it is invoked on`() {
         val tree = cli("app") {
             command("build", "build things") {
                 option("--target", "-t", help = "what to build").choice("debug", "release")
@@ -576,7 +576,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpAllRowAdvertisedForDispatcherNotLeaf() {
+    fun `help all row advertised for dispatcher not leaf`() {
         val tree = cli("app") {
             command("build", "build things") { action { Ok("") } }
         }
@@ -590,7 +590,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpAllIsAReservedFlagName() {
+    fun `help all is a reserved flag name`() {
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
@@ -602,7 +602,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpRowHasExactlyOneSpaceBeforeTheRequiredHint() {
+    fun `help row has exactly one space before the required hint`() {
         // The single leading space is produced by metaHint(), which helpRow() emits verbatim as
         // help + metaHint(). Assert it here rather than on cmd.helpText(): the plain renderer
         // collapses whitespace in every row, so a double space regression is invisible once rendered.
@@ -619,7 +619,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpRendersEmptyStringDefaultWithoutOrphaningTheClosingParen() {
+    fun `help renders empty string default without orphaning the closing paren`() {
         // Reproduces the QA report at the width it broke on (COLUMNS=79, also the non-TTY fallback
         // width): an option with .default("") renders its meta-hint as "(default: )" (a dangling
         // space before the paren). Word-wrap treats "(default:" and ")" as two separate tokens, so at
@@ -644,7 +644,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpRendersEmptyStringDefaultSensiblyOnThePlainPath() {
+    fun `help renders empty string default sensibly on the plain path`() {
         val cmd = cli("cvt") {
             option("--tag", help = "a label").default("")
             action { Ok("") }
@@ -655,7 +655,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpCollapsesEmbeddedNewlineInHelpTextToOneLine() {
+    fun `help collapses embedded newline in help text to one line`() {
         val cmd = cli("run") {
             option("--mode", "-m", help = "line one\nline two")
             action { Ok("") }
@@ -667,7 +667,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpShowsSubcommandAliasesInCommandsSection() {
+    fun `help shows subcommand aliases in commands section`() {
         val cmd = cli("app") {
             command("list") {
                 description = "list items"
@@ -680,7 +680,7 @@ class HelpTest {
     }
 
     @Test
-    fun commandHelpOverloadSetsSubcommandDescription() {
+    fun `command help overload sets subcommand description`() {
         val cmd = cli("app") {
             command("build", "compile the project") { action { Ok("") } }
         }
@@ -689,7 +689,7 @@ class HelpTest {
     }
 
     @Test
-    fun commandHelpOverloadIsOverriddenByExplicitDescriptionInBlock() {
+    fun `command help overload is overridden by explicit description in block`() {
         // The block runs after `help` seeds the description, so an explicit assignment wins.
         val cmd = cli("app") {
             command("build", "compile the project") {
@@ -703,7 +703,7 @@ class HelpTest {
     }
 
     @Test
-    fun commandWithoutHelpOverloadStillSetsDescriptionFromBlock() {
+    fun `command without help overload still sets description from block`() {
         val cmd = cli("app") {
             command("x") {
                 description = "still works"
@@ -715,7 +715,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpRendersPlaceholderWhenDefaultValueToStringThrows() {
+    fun `help renders placeholder when default value toString throws`() {
         // A positional's .default(v) whose toString() throws must not escape --help rendering: display()
         // guards it the same way Action.kt's renderHuman guards a throwing result on the action-output
         // path, falling back to a placeholder instead of letting the exception propagate.
@@ -728,7 +728,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpRowListsEverySpellingShortsFirst() {
+    fun `help row lists every spelling shorts first`() {
         val cmd = cli("rm") {
             flag("--recursive", "-r", "-R", help = "remove directories recursively")
             option("--since", "--after", "-a", help = "lower time bound")
@@ -740,7 +740,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpRowKeepsTheLongsInDeclarationOrderSoThePrimaryLeads() {
+    fun `help row keeps the longs in declaration order so the primary leads`() {
         // Sorting the row by spelling length would put the shorter secondary long first, and the
         // primary is what every error message and the constraint hint name.
         val cmd = cli("app") {
@@ -752,7 +752,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpRowOfAShortOnlyInputCarriesNoLongForm() {
+    fun `help row of a short only input carries no long form`() {
         val cmd = cli("diff") {
             option("-Z", help = "lines of context")
             action { Ok("") }
@@ -763,7 +763,7 @@ class HelpTest {
     }
 
     @Test
-    fun helpRowOfAMultiLongNegatableFlagBracketsEveryLongForm() {
+    fun `help row of a multi long negatable flag brackets every long form`() {
         val cmd = cli("app") {
             flag("--tint", "--colour", "-t", help = "colourise").negatable(default = true)
             action { Ok("") }
@@ -773,7 +773,7 @@ class HelpTest {
     }
 
     @Test
-    fun hiddenSubcommandAliasNotShownInHelp() {
+    fun `hidden subcommand alias not shown in help`() {
         val cmd = cli("app") {
             command("visible") { action { Ok("") } }
             command("secret") {
@@ -791,7 +791,7 @@ class HelpTest {
 class RequiredOptionUsageTest {
 
     @Test
-    fun aRequiredOptionAppearsInTheUsageLine() {
+    fun `a required option appears in the usage line`() {
         val cmd = cli("app") {
             option("--host", "-H").required()
             option("--port", "-p")
@@ -801,7 +801,7 @@ class RequiredOptionUsageTest {
     }
 
     @Test
-    fun anOptionalOneStaysFoldedIntoTheOptionsPlaceholder() {
+    fun `an optional one stays folded into the options placeholder`() {
         val cmd = cli("app") {
             option("--port", "-p")
             action { Ok("") }
@@ -810,7 +810,7 @@ class RequiredOptionUsageTest {
     }
 
     @Test
-    fun theValuePlaceholderMatchesTheOnesTheHelpRowShows() {
+    fun `the value placeholder matches the ones the help row shows`() {
         val cmd = cli("app") {
             option("--out", "-o").placeholder("FILE").required()
             option("--mode").choice("fast", "slow").required()
@@ -820,7 +820,7 @@ class RequiredOptionUsageTest {
     }
 
     @Test
-    fun aRequiredOptionSitsAfterTheConstraintGroupsAndBeforeThePositionals() {
+    fun `a required option sits after the constraint groups and before the positionals`() {
         val cmd = cli("tar") {
             val create = flag("--create", "-c")
             val extract = flag("--extract", "-x")
@@ -833,7 +833,7 @@ class RequiredOptionUsageTest {
     }
 
     @Test
-    fun aRequiredOptionInsideAConstraintSetIsNamedOnlyByItsGroup() {
+    fun `a required option inside a constraint set is named only by its group`() {
         // Listing it twice would say the SET is required and that this one member is, which contradict.
         val cmd = cli("app") {
             val a = option("--alpha").required()
@@ -845,7 +845,7 @@ class RequiredOptionUsageTest {
     }
 
     @Test
-    fun aHiddenRequiredOptionStaysOutOfTheUsageLine() {
+    fun `a hidden required option stays out of the usage line`() {
         val cmd = cli("app") {
             option("--secret").required().hidden()
             option("--port")
@@ -859,7 +859,7 @@ class RequiredOptionUsageTest {
 class OptionalValueHelpTest {
 
     @Test
-    fun theHelpRowBracketsTheOptionalValue() {
+    fun `the help row brackets the optional value`() {
         val cmd = cli("ls") {
             // --color collides with klap's own built-in of the same name; free it the same way
             // BuiltinsOptOutTest does, so the option under test can use the name unchanged.
@@ -871,7 +871,7 @@ class OptionalValueHelpTest {
     }
 
     @Test
-    fun aMetavarIsUsedInsideTheBrackets() {
+    fun `a metavar is used inside the brackets`() {
         val cmd = cli("ls") {
             builtins { color = false }
             option("--color", help = "colorize").placeholder("WHEN").optionalValue("always")
@@ -881,7 +881,7 @@ class OptionalValueHelpTest {
     }
 
     @Test
-    fun aChoiceListIsUsedInsideTheBrackets() {
+    fun `a choice list is used inside the brackets`() {
         val cmd = cli("ls") {
             builtins { color = false }
             option("--color").choice("always", "auto", "never").optionalValue("always")
@@ -891,7 +891,7 @@ class OptionalValueHelpTest {
     }
 
     @Test
-    fun aShortSpellingBracketsItToo() {
+    fun `a short spelling brackets it too`() {
         val cmd = cli("git") {
             option("--gpg-sign", "-S", help = "sign it").placeholder("keyid").optionalValue("default")
             action { Ok("") }
@@ -900,7 +900,7 @@ class OptionalValueHelpTest {
     }
 
     @Test
-    fun theBareValueIsStatedSoTheDefaultIsDiscoverable() {
+    fun `the bare value is stated so the default is discoverable`() {
         val cmd = cli("ls") {
             builtins { color = false }
             option("--color", help = "colorize").placeholder("WHEN").optionalValue("always")
@@ -910,7 +910,7 @@ class OptionalValueHelpTest {
     }
 
     @Test
-    fun anOptionWithAShortRendersBothFormsAndItsPlaceholder() {
+    fun `an option with a short renders both forms and its placeholder`() {
         val cmd = cli("app") {
             option("--out", "-o", help = "where to write")
             action { Ok("") }
@@ -919,7 +919,7 @@ class OptionalValueHelpTest {
     }
 
     @Test
-    fun aRequiredOptionalValueOptionRendersBracketedInTheUsageLine() {
+    fun `a required optional value option renders bracketed in the usage line`() {
         val cmd = cli("app") {
             option("--mode").placeholder("M").optionalValue("fast").required()
             action { Ok("") }

@@ -8,7 +8,7 @@ class TarParityTest {
     private val parity = ParitySuite(tarCli())
 
     @Test
-    fun bindsBundledClustersAndTheOptionalOperandList() {
+    fun `binds bundled clusters and the optional operand list`() {
         parity.binds(
             "-cvf", "backup.tar", "src", "docs",
             expected = NOTHING_BOUND.copy(
@@ -58,7 +58,7 @@ class TarParityTest {
     }
 
     @Test
-    fun rejectsWhatRealTarRejects() {
+    fun `rejects what real tar rejects`() {
         parity.rejects("--zzz", because = "real tar: unrecognized option '--zzz'")
         parity.rejects("-f", because = "real tar: option requires an argument -- 'f'")
         parity.rejects("-cf", because = "real tar: option requires an argument -- 'f'")
@@ -71,7 +71,7 @@ class TarParityTest {
      * mode conflict outranks the missing `--file` a later bind would raise, which is GNU tar's order too.
      */
     @Test
-    fun rejectsTheModeAndCompressionConflicts() {
+    fun `rejects the mode and compression conflicts`() {
         parity.rejects(
             "-c", "-x", "-f", "a.tar",
             because = "real tar: You may not specify more than one '-Acdtrux' option",
@@ -85,7 +85,7 @@ class TarParityTest {
     }
 
     @Test
-    fun knownDivergenceFromRealTar() {
+    fun `known divergence from real tar`() {
         // Ambiguity is judged against the spellings a tree actually declares, and this fixture declares
         // `--exclude` without real tar's `--exclude-from`, so the same prefix reaches one option here and
         // several there. The rule agrees; the surface it runs over does not.
