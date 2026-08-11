@@ -2,7 +2,9 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.fold
-import com.fromwau.klap.internal.platform.defaultTerminal
+import com.fromwau.kern.terminal.BROKEN_PIPE_EXIT
+import com.fromwau.kern.terminal.Terminal
+import com.fromwau.kern.terminal.defaultTerminal
 import com.fromwau.klap.internal.platform.platformExit
 import com.fromwau.klap.internal.render.Candidate
 import com.fromwau.klap.internal.render.HelpStyle
@@ -11,9 +13,6 @@ import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.render.helpTextAll
 import com.fromwau.klap.internal.render.renderActionError
 import com.fromwau.klap.internal.render.renderError
-
-/** Exit code for a truncated output pipe: the shell's 128+N "killed by signal N" convention, N = SIGPIPE (13). */
-public const val BROKEN_PIPE_EXIT: Int = 128 + 13
 
 /**
  * Parses [argv], runs whatever it resolved to, writes the result to [terminal] and hands back the exit

@@ -43,7 +43,7 @@ class PosixConformanceTest {
     // options should not be allowed." ---
 
     @Test
-    fun guideline3_anOptionNameIsASingleCharacter() {
+    fun `guideline 3 an option name is a single character`() {
         // Enforced at construction: a multi-character short is rejected, naming the cluster it would read as.
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("util") { flag("-ab"); action { Ok("") } }
@@ -52,7 +52,7 @@ class PosixConformanceTest {
     }
 
     @Test
-    fun guideline3_aSingleDigitOptionNameIsAllowed() {
+    fun `guideline 3 a single digit option name is allowed`() {
         // A digit IS alphanumeric, so `curl -4` conforms; it is only MULTI-digit that the guideline rules
         // out, and klap has no multi-character short at all.
         val tree = cli("util") {
@@ -65,7 +65,7 @@ class PosixConformanceTest {
     // --- Guideline 4: "All options should be preceded by the '-' delimiter character." ---
 
     @Test
-    fun guideline4_everyOptionCarriesItsDelimiter() {
+    fun `guideline 4 every option carries its delimiter`() {
         // Enforced at DECLARATION since the spelling model became explicit: a name without a dash cannot
         // declare an option at all, so a klap tree has no way to offer a delimiter-less option.
         assertFailsWith<IllegalArgumentException> {
@@ -77,12 +77,12 @@ class PosixConformanceTest {
     // takes an option-argument, should be accepted when grouped behind one '-' delimiter." ---
 
     @Test
-    fun guideline5_optionsGroupBehindOneDelimiter() {
+    fun `guideline 5 options group behind one delimiter`() {
         assertEquals("a=true b=true c=null files=[]", bind("-ab"))
     }
 
     @Test
-    fun guideline5_aGroupMayEndInTheOptionThatTakesAnArgument() {
+    fun `guideline 5 a group may end in the option that takes an argument`() {
         assertEquals("a=true b=true c=cfg files=[]", bind("-abc", "cfg"))
         // ...and the argument may be attached to it, the form the guideline's own examples use.
         assertEquals("a=true b=true c=cfg files=[]", bind("-abccfg"))
@@ -91,14 +91,14 @@ class PosixConformanceTest {
     // --- Guideline 6: "Each option and option-argument should be a separate argument..." ---
 
     @Test
-    fun guideline6_anOptionArgumentMayBeItsOwnArgument() {
+    fun `guideline 6 an option argument may be its own argument`() {
         assertEquals("a=false b=false c=cfg files=[]", bind("-c", "cfg"))
     }
 
     // --- Guideline 7: "Option-arguments should not be optional." ---
 
     @Test
-    fun guideline7_anOptionArgumentIsNeverOptionalUnlessTheToolAsksForIt() {
+    fun `guideline 7 an option argument is never optional unless the tool asks for it`() {
         // klap's default conforms: a value-taking option demands its value, and a bare occurrence is an
         // error rather than a silently-absent value.
         val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("--config"))).error
@@ -106,7 +106,7 @@ class PosixConformanceTest {
     }
 
     @Test
-    fun guideline7_optionalValueIsTheOptInThatStepsOutsideIt() {
+    fun `guideline 7 optional value is the opt in that steps outside it`() {
         // `.optionalValue()` takes THAT option outside guideline 7, knowingly — four corpus tools need the
         // shape and no conforming spelling reaches it. The guideline exists because the option cannot tell
         // its value from the next operand, so klap resolves that the only unambiguous way: the space form
@@ -133,7 +133,7 @@ class PosixConformanceTest {
     // should be presented as a single argument, using <comma> or <blank> characters to separate them." ---
 
     @Test
-    fun guideline8_aCommaSeparatedOptionArgumentArrivesWhole() {
+    fun `guideline 8 a comma separated option argument arrives whole`() {
         // klap does not split it; the value reaches the converter intact, so a tool that wants the
         // guideline-8 shape splits it there. klap's repeated-occurrence `.multiple()` is sugar ON TOP,
         // and the line below shows it does not disturb the conforming form.
@@ -143,12 +143,12 @@ class PosixConformanceTest {
     // --- Guideline 9: "All options should precede operands on the command line." ---
 
     @Test
-    fun guideline9_aConformingLinePutsOptionsFirst() {
+    fun `guideline 9 a conforming line puts options first`() {
         assertEquals("a=true b=false c=cfg files=[f1, f2]", bind("-a", "-c", "cfg", "f1", "f2"))
     }
 
     @Test
-    fun guideline9_permutationIsSugarAndCannotDisturbAConformingLine() {
+    fun `guideline 9 permutation is sugar and cannot disturb a conforming line`() {
         // EXTENSION: klap reads an option AFTER an operand, as GNU getopt does and POSIX getopt does not.
         // It is additive by construction — a line that already puts every option first has no token for
         // this rule to reach, so no conforming invocation changes meaning. The two lines below bind
@@ -158,7 +158,7 @@ class PosixConformanceTest {
     }
 
     @Test
-    fun guideline9_theSwitchRestoresTheConformingReading() {
+    fun `guideline 9 the switch restores the conforming reading`() {
         // The opposite direction from every other extension here: this turns the GNU permutation OFF and
         // leaves the behaviour the guideline describes, where all options precede the operands.
         val strict = cli("t") {
@@ -176,12 +176,12 @@ class PosixConformanceTest {
     // even if they begin with the '-' character." ---
 
     @Test
-    fun guideline10_theDelimiterEndsOptionsAndDashLedOperandsFollow() {
+    fun `guideline 10 the delimiter ends options and dash led operands follow`() {
         assertEquals("a=true b=false c=null files=[-b, --config]", bind("-a", "--", "-b", "--config"))
     }
 
     @Test
-    fun guideline10_theDelimiterIsNotSwallowedAsAnOptionArgument() {
+    fun `guideline 10 the delimiter is not swallowed as an option argument`() {
         // "...that is not an option-argument": `--config --` leaves the option without a value rather
         // than binding "--" as one, so the FIRST `--` here is still the delimiter.
         val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("--config", "--"))).error
@@ -189,7 +189,7 @@ class PosixConformanceTest {
     }
 
     @Test
-    fun guideline10_onlyTheFirstDelimiterIsStructural() {
+    fun `guideline 10 only the first delimiter is structural`() {
         // A second `--` is an ordinary operand, since the first one already ended option parsing.
         assertEquals("a=false b=false c=null files=[--, x]", bind("--", "--", "x"))
     }
@@ -203,7 +203,7 @@ class PosixConformanceTest {
      * the string `--json` and reads `f.txt`.
      */
     @Test
-    fun guideline10_aBuiltinSpellingInAnOptionArgumentSlotIsThatOptionsValue() {
+    fun `guideline 10 a builtin spelling in an option argument slot is that options value`() {
         fun tree() = cliOf("mygrep") {
             val regexp = option("--regexp", "-e")
             val files = argument("file").multiple()
@@ -234,12 +234,12 @@ class PosixConformanceTest {
     // incompatible options preceding it." ---
 
     @Test
-    fun guideline11_optionOrderDoesNotMatterByDefault() {
+    fun `guideline 11 option order does not matter by default`() {
         assertEquals(bind("-a", "-b"), bind("-b", "-a"))
     }
 
     @Test
-    fun guideline11_lastWinsIsTheDocumentedOverrideTheGuidelineAllowsFor() {
+    fun `guideline 11 last wins is the documented override the guideline allows for`() {
         // The guideline's own escape clause, which is exactly what `lastWins` declares — and it documents
         // itself, since every member's help row names the set and the usage line groups it.
         fun overriding() = cli("rm") {
@@ -258,7 +258,7 @@ class PosixConformanceTest {
     }
 
     @Test
-    fun guideline11_theOverrideClauseCoversAValueTakingOptionToo() {
+    fun `guideline 11 the override clause covers a value taking option too`() {
         // Still the guideline's own escape clause, not an extension: it speaks of "options", and an option
         // that takes an option-argument is one. The set documents itself, since every member's help row
         // names it.
@@ -277,7 +277,7 @@ class PosixConformanceTest {
     // determined on a utility-specific basis." ---
 
     @Test
-    fun guideline12_operandOrderIsPreservedForTheUtilityToInterpret() {
+    fun `guideline 12 operand order is preserved for the utility to interpret`() {
         assertEquals("a=false b=false c=null files=[z, a, m]", bind("z", "a", "m"))
     }
 
@@ -285,7 +285,7 @@ class PosixConformanceTest {
     // used to mean only standard input (or standard output...) or a file named -." ---
 
     @Test
-    fun guideline13_aLoneDashIsAnOperandNotAnOption() {
+    fun `guideline 13 a lone dash is an operand not an option`() {
         assertEquals("a=false b=false c=null files=[-]", bind("-"))
         assertEquals("a=true b=false c=null files=[-, f]", bind("-a", "-", "f"))
     }
@@ -295,7 +295,7 @@ class PosixConformanceTest {
     // be treated as such." ---
 
     @Test
-    fun guideline14_aDashLedTokenIsAnOptionEvenWhenItIsNotDeclared() {
+    fun `guideline 14 a dash led token is an option even when it is not declared`() {
         // `-w` is identifiable as an option per guidelines 3 and 4,
         // so it must be treated as one rather than demoted to an operand. An undeclared one is therefore
         // an ERROR, not a filename — which is also what stops a typo binding silently.
@@ -304,7 +304,7 @@ class PosixConformanceTest {
     }
 
     @Test
-    fun guideline14_aDashLedNumberIsAnOptionToo() {
+    fun `guideline 14 a dash led number is an option too`() {
         // The same reading applied to digits, which is why `ls -5` errors rather than binding a file
         // named "-5". `numericAlias` is sugar that gives such a token a meaning only when a tool asks
         // for one; without it, guideline 14 holds.
@@ -315,7 +315,7 @@ class PosixConformanceTest {
     // --- The extensions, each paired with the conforming line it must not disturb ---
 
     @Test
-    fun extension_longOptionsDoNotDisturbTheShortFormOrTheDelimiter() {
+    fun `extension long options do not disturb the short form or the delimiter`() {
         // `--verbose` is outside guideline 3's model entirely (POSIX option names are one character), so
         // it is sugar. It cannot collide with a conforming line: a single `-` introduces shorts, a bare
         // `--` is still the delimiter, and only `--<name>` reaches the long form.
@@ -325,7 +325,7 @@ class PosixConformanceTest {
     }
 
     @Test
-    fun extension_aNonAlphanumericShortDoesNotDisturbTheAlphanumericOnes() {
+    fun `extension a non alphanumeric short does not disturb the alphanumeric ones`() {
         // Guideline 3 says alphanumeric; klap allows any single character, which curl needs for `-:`.
         // Sugar, and additive: it claims a character no conforming option name could have used.
         val tree = cli("util") {
@@ -342,7 +342,7 @@ class PosixConformanceTest {
     }
 
     @Test
-    fun extension_numericAliasClaimsOnlyWhatNoDeclaredShortDoes() {
+    fun `extension numeric alias claims only what no declared short does`() {
         // Multi-digit `-20` is outside guideline 3, so `numericAlias` is sugar. A DECLARED short wins,
         // so the conforming reading of `-2...` as an option cluster is never overridden by it.
         val tree = cli("head") {
@@ -371,13 +371,13 @@ class PosixConformanceTest {
     }
 
     @Test
-    fun extension_theAttachedLongValueDoesNotDisturbTheSeparateForm() {
+    fun `extension the attached long value does not disturb the separate form`() {
         // `--config=cfg` is a GNU spelling; guideline 6 wants them separate. Both bind identically.
         assertEquals(bind("--config", "cfg"), bind("--config=cfg"))
     }
 
     @Test
-    fun extension_explicitNegationSpellingsCannotDisturbAConformingLine() {
+    fun `extension explicit negation spellings cannot disturb a conforming line`() {
         // EXTENSION: `.negatable(vararg)` lets a short turn a flag OFF under a spelling the flag itself
         // never declared. The guidelines describe no negation at all, so `-P` is additive: it claims a
         // character no conforming option name on this flag used, and a line that only ever says `-L`,
@@ -396,7 +396,7 @@ class PosixConformanceTest {
     }
 
     @Test
-    fun extension_prefixAbbreviationIsSugarAndCannotDisturbAConformingLine() {
+    fun `extension prefix abbreviation is sugar and cannot disturb a conforming line`() {
         // EXTENSION: GNU's unambiguous-prefix rule, opt-in via `abbreviation = Abbreviation.Options`. Guideline 3
         // makes an option name a single alphanumeric character, so a `--`-led long option lies outside the
         // guidelines entirely and an abbreviation of one can only ever name input they leave undefined. On

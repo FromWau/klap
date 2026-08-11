@@ -1,6 +1,6 @@
 package com.fromwau.klap.fixture.find
 
-import com.fromwau.klap.Terminal
+import com.fromwau.kern.terminal.Terminal
 import com.fromwau.klap.run
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -15,7 +15,7 @@ private class RecordingTerminal : Terminal {
 class FindExpressionSplitTest {
 
     @Test
-    fun anExpressionWithNoStartingPointKeepsAllItsTokens() {
+    fun `an expression with no starting point keeps all its tokens`() {
         val t = RecordingTerminal()
         findCli().cli.run(listOf("--", "-name", "*.kt", "-o", "-print"), t)
         assertTrue(

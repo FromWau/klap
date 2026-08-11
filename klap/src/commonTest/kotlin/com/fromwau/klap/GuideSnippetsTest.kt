@@ -26,14 +26,14 @@ class GuideSnippetsTest {
     }
 
     @Test
-    fun theGuidesAbbreviationTableIsWhatTheModesDo() {
+    fun `the guides abbreviation table is what the modes do`() {
         // The guide's table claims All resolves a subcommand prefix and that exact still wins outright.
         assertEquals("listen", guideAbbreviationExample().bindText("liste"))
         assertEquals("list", guideAbbreviationExample().bindText("list"))
     }
 
     @Test
-    fun theGuidesStrictHelpSuggestionIsReal() {
+    fun `the guides strict help suggestion is real`() {
         val strict = cli("tasks") {
             action<String>(human = { it }) { Ok("ran") }
         }
@@ -46,7 +46,7 @@ class GuideSnippetsTest {
     // --- "Inputs and converters": the two rendered error shapes ---
 
     @Test
-    fun theGuidesRenderedValueErrorsNameTheDashedOption() {
+    fun `the guides rendered value errors name the dashed option`() {
         val tree = cli("app") {
             val port = option("--port").int().validate("must be 1..65535") { it in 1..65535 }
             val level = option("--level").choice("debug", "info", "warn", "error")
@@ -67,7 +67,7 @@ class GuideSnippetsTest {
     // --- "Help output": group returns its block's value, so a plain val captures the handle ---
 
     @Test
-    fun theGuidesGroupSnippetCapturesAHandleByPlainVal() {
+    fun `the guides group snippet captures a handle by plain val`() {
         val tree = cli("deploy") {
             val host = group("Networking") {
                 option("--host", "-H", help = "target host").required()
@@ -80,7 +80,7 @@ class GuideSnippetsTest {
     }
 
     @Test
-    fun theGuidesMultiHandleGroupSnippetInfersEachType() {
+    fun `the guides multi handle group snippet infers each type`() {
         val tree = cli("build") {
             val jobs: Opt<Int>
             val tags: Opt<List<String>>
@@ -98,7 +98,7 @@ class GuideSnippetsTest {
     // --- "Inputs and converters": the declaration-order rules the guide states as prose ---
 
     @Test
-    fun theGuidesConverterOrderRuleIsWhatTheBuilderEnforces() {
+    fun `the guides converter order rule is what the builder enforces`() {
         // The guide's example of the wrong order, and of the right one it tells you to write instead.
         val wrongOrder = assertFailsWith<IllegalArgumentException> {
             cli("app") {
@@ -118,7 +118,7 @@ class GuideSnippetsTest {
     }
 
     @Test
-    fun theGuidesAliasedHandleRuleIsWhatTheBuilderEnforces() {
+    fun `the guides aliased handle rule is what the builder enforces`() {
         val thrown = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 val n = argument("n")
@@ -131,7 +131,7 @@ class GuideSnippetsTest {
     }
 
     @Test
-    fun theGuidesDefaultRowIsTrueForAChoiceSetInBothOrders() {
+    fun `the guides default row is true for a choice set in both orders`() {
         // The row claims a choice set is checked whichever side the default is declared on.
         for (build in listOf<() -> Unit>(
             { cli("app") { argument("m").choice("fast", "slow").default("bogus"); action { Ok("") } } },
@@ -164,7 +164,7 @@ private fun guidePortCli() = cli("net") {
 class GuideConversionErrorSnippetTest {
 
     @Test
-    fun theGuidesTypedConverterSnippetKeepsTheCallersCaseAndItsWords() {
+    fun `the guides typed converter snippet keeps the callers case and its words`() {
         val err = assertIs<Result.Error<CliError>>(guidePortCli().parse(listOf("--port", "70000"))).error
         val bad = assertIs<CliError.BadValue>(err)
         assertEquals(PortError.OutOfRange(70000), assertIs<ConversionError.Domain>(bad.cause).error)
@@ -178,7 +178,7 @@ class GuideConversionErrorSnippetTest {
     }
 
     @Test
-    fun aBuiltinConverterReportsItsOwnCaseRatherThanADomainError() {
+    fun `a builtin converter reports its own case rather than a domain error`() {
         val tree = cli("lvl") {
             option("--level").int()
             action { Ok("ok") }

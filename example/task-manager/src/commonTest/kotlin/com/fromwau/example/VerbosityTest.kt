@@ -9,7 +9,7 @@ import kotlin.test.assertFalse
 class VerbosityTest {
 
     @Test
-    fun repeatedGlobalVerboseRevealsMoreOfEachTask() = withTempStore { path ->
+    fun `repeated global verbose reveals more of each task`() = withTempStore { path ->
         val cli = taskManagerCli()
         cli.captureWithFile(path, "add", "Ship it", "--due", "2026-01-01", "--tag", "release")
 

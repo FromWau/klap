@@ -27,7 +27,7 @@ private fun holdLock(lockPath: Path) {
 class TaskStoreLockTest {
 
     @Test
-    fun aWriterCannotEnterWhileAnotherHoldsTheLock() = withTempStore { path ->
+    fun `a writer cannot enter while another holds the lock`() = withTempStore { path ->
         val store = TaskStore(Path(path), lockTimeout = 50.milliseconds)
         holdLock(store.lockPath)
 
@@ -38,7 +38,7 @@ class TaskStoreLockTest {
     }
 
     @Test
-    fun theLockIsReleasedOnceTheBlockSucceeds() = withTempStore { path ->
+    fun `the lock is released once the block succeeds`() = withTempStore { path ->
         val store = TaskStore(Path(path))
 
         assertIs<Result.Success<Unit>>(store.withLock { store.save(listOf(Task(id = 1, title = "Buy milk"))) })
@@ -46,7 +46,7 @@ class TaskStoreLockTest {
     }
 
     @Test
-    fun theLockIsReleasedWhenTheBlockReturnsAnError() = withTempStore { path ->
+    fun `the lock is released when the block returns an error`() = withTempStore { path ->
         val store = TaskStore(Path(path))
 
         assertIs<Result.Error<CliError>>(store.withLock { Err(CliError.Failure("boom", exitCode = EXIT_NOT_FOUND)) })
@@ -54,7 +54,7 @@ class TaskStoreLockTest {
     }
 
     @Test
-    fun aLaterWriterEntersOnceTheEarlierOneHasFinished() = withTempStore { path ->
+    fun `a later writer enters once the earlier one has finished`() = withTempStore { path ->
         val store = TaskStore(Path(path), lockTimeout = 50.milliseconds)
 
         assertIs<Result.Success<Unit>>(store.withLock { store.save(listOf(Task(id = 1, title = "first"))) })

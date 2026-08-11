@@ -3,6 +3,8 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.map
+import com.fromwau.kern.terminal.green
+import com.fromwau.kern.terminal.red
 import com.fromwau.klap.internal.parse.sift
 import com.fromwau.klap.internal.render.BuiltinOptionHelp
 import com.fromwau.klap.internal.render.Candidate
@@ -44,7 +46,7 @@ class ShortClusterCompletionTest {
     }
 
     @Test
-    fun aPartialShortClusterOffersEveryRemainingShortAsAContinuation() {
+    fun `a partial short cluster offers every remaining short as a continuation`() {
         // Guideline 5 bundles one-character options into one token, so a half-typed cluster has
         // continuations: `-r<TAB>` must offer them, not just `-r` itself.
         val candidates = cli.completionsFor("list", "-r")
@@ -56,14 +58,14 @@ class ShortClusterCompletionTest {
     }
 
     @Test
-    fun clusteringContinuesPastTheSecondFlag() {
+    fun `clustering continues past the second flag`() {
         val candidates = cli.completionsFor("list", "-rl")
         assertTrue("-rln" in candidates, "expected -rln among $candidates")
         assertTrue("-rlr" !in candidates, "already-typed shorts stay out: $candidates")
     }
 
     @Test
-    fun aValueTakingShortEndsTheClusterSoNothingIsOfferedAfterIt() {
+    fun `a value taking short ends the cluster so nothing is offered after it`() {
         // `-n` consumes the rest of the token as its value, so no further short can follow it. Offering
         // one would suggest a line klap then rejects.
         assertTrue(cli.completionsFor("list", "-rn").none { it.length > 3 }, "nothing may follow a value-taker")
@@ -71,7 +73,7 @@ class ShortClusterCompletionTest {
     }
 
     @Test
-    fun aLongOptionIsNeverTreatedAsACluster() {
+    fun `a long option is never treated as a cluster`() {
         // `--r` is a prefix of one long name, not a bundle of shorts.
         assertEquals(listOf("--reverse"), cli.completionsFor("list", "--r"))
     }
@@ -80,7 +82,7 @@ class ShortClusterCompletionTest {
 class CompletionTest {
 
     @Test
-    fun candidateEncodesValueTabDescriptionAndSanitizes() {
+    fun `candidate encodes value tab description and sanitizes`() {
         assertEquals("1", Candidate("1").toCompletionLine())
         assertEquals("1\tBuy Beer", Candidate("1", "Buy Beer").toCompletionLine())
         assertEquals("1\ta b c", Candidate("1", "a\tb\nc").toCompletionLine())   // tab/newline collapse to space
@@ -88,7 +90,7 @@ class CompletionTest {
     }
 
     @Test
-    fun shellOf_isCaseInsensitive() {
+    fun `shell of is case insensitive`() {
         assertEquals(CompletionShell.FISH, CompletionShell.fromOrNull("Fish"))
         assertEquals(CompletionShell.POWERSHELL, CompletionShell.fromOrNull("PowerShell"))
     }
@@ -99,7 +101,7 @@ class GeneratedShellScriptTest {
 
 
     @Test
-    fun bash_delegatesEveryCompletionToComplete() {
+    fun `bash delegates every completion to complete`() {
         val script = sampleTree().renderCompletion(CompletionShell.BASH)
         // COMP_WORDBREAKS (default includes `=`) would split an attached `--opt=value` word before we
         // ever see it, so the words reaching __complete are reconstructed from COMP_LINE/COMP_POINT
@@ -114,7 +116,7 @@ class GeneratedShellScriptTest {
     }
 
     @Test
-    fun bash_reattachesAPrefixWhenTheCurrentWordWasNotWordbreakSplit() {
+    fun `bash reattaches a prefix when the current word was not wordbreak split`() {
         // A glued short option (`-tr`) has no COMP_WORDBREAKS char, so bash's own $cur equals the whole
         // word and would replace all of it; the script must reconstruct just the flag prefix ("-t") to
         // re-prepend to a bare value candidate ("red"), not drop it or double it.
@@ -124,7 +126,7 @@ class GeneratedShellScriptTest {
     }
 
     @Test
-    fun zsh_delegatesEveryCompletionToComplete() {
+    fun `zsh delegates every completion to complete`() {
         val script = sampleTree().renderCompletion(CompletionShell.ZSH)
         assertTrue("#compdef todo" in script, script)
         assertTrue("__complete" in script, script)
@@ -132,7 +134,7 @@ class GeneratedShellScriptTest {
     }
 
     @Test
-    fun zsh_movesTheAttachedValuePrefixIntoIprefixBeforeCompadd() {
+    fun `zsh moves the attached value prefix into iprefix before compadd`() {
         // zsh's $words keeps an attached `--tag=r` or glued `-tr` as ONE word, so compadd would match
         // "red" against the whole typed token unless compset -p first moves the attached prefix into
         // $IPREFIX; that reconciliation must happen before compadd runs for this ordering check to hold.
@@ -144,14 +146,14 @@ class GeneratedShellScriptTest {
     }
 
     @Test
-    fun fish_delegatesEveryCompletionToComplete() {
+    fun `fish delegates every completion to complete`() {
         val script = sampleTree().renderCompletion(CompletionShell.FISH)
         assertTrue("__complete" in script, script)
         assertTrue("complete -c todo -f -a '(__todo_klap_complete)'" in script, script)
     }
 
     @Test
-    fun fish_emitsCandidatesWithPrintfNotEcho() {
+    fun `fish emits candidates with printf not echo`() {
         // fish's `echo` treats a leading -e/-n/-s/-E as ITS OWN flag when it's the whole argument,
         // silently swallowing a candidate that happens to look like one; printf's first argument is
         // always its format string, so a candidate value can never be mistaken for one of its flags.
@@ -162,7 +164,7 @@ class GeneratedShellScriptTest {
     }
 
     @Test
-    fun fish_reattachesAPrefixWhenTheCurrentTokenWasNotAlreadyACandidatePrefix() {
+    fun `fish reattaches a prefix when the current token was not already a candidate prefix`() {
         // fish's `commandline -ct` never splits an attached word, so __complete already returns the bare
         // value ("red") for `--tag=r` or a glued `-tr`; fish's own pager still prefix-matches candidates
         // against the WHOLE current token, so the script must reconcile and re-prepend the flag/`=` part.
@@ -172,7 +174,7 @@ class GeneratedShellScriptTest {
     }
 
     @Test
-    fun powershell_generatesAndShellOfResolves() {
+    fun `powershell generates and shell of resolves`() {
         assertEquals(CompletionShell.POWERSHELL, CompletionShell.fromOrNull("powershell"))
         assertEquals(CompletionShell.POWERSHELL, CompletionShell.fromOrNull("PowerShell"))
         val script = sampleTree().renderCompletion(CompletionShell.POWERSHELL)
@@ -180,14 +182,14 @@ class GeneratedShellScriptTest {
     }
 
     @Test
-    fun powershell_compensatesCursorPastLastElement() {
+    fun `powershell compensates cursor past last element`() {
         val script = sampleTree().renderCompletion(CompletionShell.POWERSHELL)
         assertTrue($$"$commandAst.CommandElements[-1].Extent.EndOffset -lt $cursorPosition" in script, script)
         assertTrue($$"$words += ''" in script, script)
     }
 
     @Test
-    fun powershell_fileCompletionPreservesDirectoryPrefix() {
+    fun `powershell file completion preserves directory prefix`() {
         // `Get-ChildItem -Name` returns only the leaf, which would complete `src/ma<TAB>` to `main.kt`
         // and lose the `src/`, so the script re-prepends the typed prefix and marks a directory match to
         // tab-descend. commonTest cannot run PowerShell, so anchor the script instead.
@@ -199,7 +201,7 @@ class GeneratedShellScriptTest {
     }
 
     @Test
-    fun bash_dropsTheDescriptionColumnKeepingValueOnly() {
+    fun `bash drops the description column keeping value only`() {
         // Each __complete line is `value` or `value\tdescription`; bash's menu cannot show a per-candidate
         // description, so it must strip from the FIRST tab on and keep the value only (decision 3). A
         // COMPLETE_FILES line has no tab and is unchanged by the strip, so its sentinel mapping still fires.
@@ -208,7 +210,7 @@ class GeneratedShellScriptTest {
     }
 
     @Test
-    fun zsh_decodesValueTabDescriptionIntoCompaddDisplayArray() {
+    fun `zsh decodes value tab description into compadd display array`() {
         // zsh splits each line into a $values array (matched/inserted) and a parallel $descriptions display
         // array rendered as "value  -- description", fed to compadd via -d; a description-less line shows bare.
         val script = sampleTree().renderCompletion(CompletionShell.ZSH)
@@ -218,7 +220,7 @@ class GeneratedShellScriptTest {
     }
 
     @Test
-    fun fish_forwardsValueTabDescriptionLineForNativeRendering() {
+    fun `fish forwards value tab description line for native rendering`() {
         // fish's completion reads `value\tdescription` natively, so each raw response line is emitted WHOLE
         // (only the flag prefix is re-prepended to its head); fish then splits it into the inserted value
         // and the shown description. Contrast bash, which strips the description off.
@@ -228,7 +230,7 @@ class GeneratedShellScriptTest {
     }
 
     @Test
-    fun powershell_decodesValueTabDescriptionIntoToolTip() {
+    fun `powershell decodes value tab description into tool tip`() {
         // PowerShell splits each line on the FIRST tab: the value is the completion + list item, the
         // description becomes the tooltip; a description-less line tooltips the value.
         val script = sampleTree().renderCompletion(CompletionShell.POWERSHELL)
@@ -245,7 +247,7 @@ class CompleteBuiltinRoundTripTest {
 
 
     @Test
-    fun completeSubcommandReturnsProviderCandidates() {
+    fun `complete subcommand returns provider candidates`() {
         val tree = cli("todo") {
             command("checkout") {
                 argument("branch", help = "branch name").completeWith { candidates(listOf("main", "develop", "feature-x")) }
@@ -259,7 +261,7 @@ class CompleteBuiltinRoundTripTest {
     }
 
     @Test
-    fun completeThroughRunEmitsValueTabDescriptionLineOnStdout() {
+    fun `complete through run emits value tab description line on stdout`() {
         val tree = cli("todo") {
             command("rm") {
                 argument("id").completeWith { candidate("1", "Buy Beer") }
@@ -273,7 +275,7 @@ class CompleteBuiltinRoundTripTest {
     }
 
     @Test
-    fun bashUsesMapfileNotCompgenReexpansion() {
+    fun `bash uses mapfile not compgen reexpansion`() {
         val tree = cli("todo") {
             command("checkout") {
                 argument("branch", help = "branch name").completeWith { candidates(listOf("main", "develop")) }
@@ -287,7 +289,7 @@ class CompleteBuiltinRoundTripTest {
     }
 
     @Test
-    fun everyShellConsumesCompleteOutputLiterally() {
+    fun `every shell consumes complete output literally`() {
         // The value-escaping guarantee in the delegated model: candidate text from __complete is offered
         // verbatim, never re-evaluated, so an attacker-influenced candidate cannot execute on Tab.
         val tree = sampleTree()
@@ -316,7 +318,7 @@ class SubcommandCandidateTest {
 
 
     @Test
-    fun completeCandidatesReturnsNestedSubcommands() {
+    fun `complete candidates returns nested subcommands`() {
         val app = cli("app") {
             command("rollout") {
                 command("status") { action { Ok("") } }
@@ -329,7 +331,7 @@ class SubcommandCandidateTest {
     }
 
     @Test
-    fun completeCandidatesDescendsToDepthTwoNotParentChildren() {
+    fun `complete candidates descends to depth two not parent children`() {
         val app = cli("app") {
             command("rollout") {
                 command("status") {
@@ -344,7 +346,7 @@ class SubcommandCandidateTest {
     }
 
     @Test
-    fun completeCandidatesExcludesHiddenSubcommandsAndBuiltins() {
+    fun `complete candidates excludes hidden subcommands and builtins`() {
         val app = cli("app") {
             command("visible") { action { Ok("") } }
             command("secret") {
@@ -364,7 +366,7 @@ class FileCompletionSentinelTest {
 
 
     @Test
-    fun fileSlotYieldsSentinelAndBashMapsItToCompgenF() {
+    fun `file slot yields sentinel and bash maps it to compgen f`() {
         val tree = cli("todo") {
             command("add") {
                 argument("file", help = "target file").file()
@@ -379,7 +381,7 @@ class FileCompletionSentinelTest {
     }
 
     @Test
-    fun bashFileFallbackMarksCompoptFilenamesSoADirectoryGetsATrailingSlash() {
+    fun `bash file fallback marks compopt filenames so a directory gets a trailing slash`() {
         // Without -o filenames, bash treats a compgen -f match like any other plain value and appends a
         // trailing space on insertion, even for a directory — breaking Tab-to-descend into it.
         val tree = cli("todo") {
@@ -402,7 +404,7 @@ class OptionValueCandidateTest {
 
 
     @Test
-    fun completeCandidatesCountsOptionValueNotAsPositional() {
+    fun `complete candidates counts option value not as positional`() {
         val tree = cli("app") {
             command("deploy") {
                 option("--tag", "-t", help = "tag").choice("t1", "t2")
@@ -419,7 +421,7 @@ class OptionValueCandidateTest {
     }
 
     @Test
-    fun completeCandidatesCompletesGlobalOptionValue() {
+    fun `complete candidates completes global option value`() {
         val tree = cli("todo") {
             globalOption("--profile", "-p", help = "profile").choice("dev", "prod")
             command("run") { action { Ok("") } }
@@ -428,7 +430,7 @@ class OptionValueCandidateTest {
     }
 
     @Test
-    fun optionMarkedFileYieldsTheFileSentinelForItsValue() {
+    fun `option marked file yields the file sentinel for its value`() {
         // Opt.file() (the mirror of Arg.file()) makes an option's VALUE slot complete filesystem paths, so
         // a local `--out <TAB>` and a global `--file <TAB>` both delegate to the shell's native file completion.
         val tree = cli("app") {
@@ -443,7 +445,7 @@ class OptionValueCandidateTest {
     }
 
     @Test
-    fun completeCandidatesCompletesShortOptionValue() {
+    fun `complete candidates completes short option value`() {
         val tree = cli("todo") {
             command("add") {
                 option("--only", "-o", help = "restrict").choice("lines", "words")
@@ -459,7 +461,7 @@ class FlagNameCandidateTest {
 
 
     @Test
-    fun completeCandidatesOffersFlagNamesForAFlagShapedWord() {
+    fun `complete candidates offers flag names for a flag shaped word`() {
         val tree = cli("app") {
             version = "1.0"
             globalFlag("--verbose", "-v")
@@ -478,7 +480,7 @@ class FlagNameCandidateTest {
     }
 
     @Test
-    fun completeCandidatesOffersMetaOptionNamesForASingleCommandTool() {
+    fun `complete candidates offers meta option names for a single command tool`() {
         // A single-command root (it carries its own action) advertises --completion / --docs in --help's
         // Global options, so flag-name completion must offer those names too, like --help / --json.
         val tree = cli("fmt") { action { Ok("") } }
@@ -489,7 +491,7 @@ class FlagNameCandidateTest {
     }
 
     @Test
-    fun completeCandidatesOffersHelpAllWhenTheCommandHasVisibleSubcommands() {
+    fun `complete candidates offers help all when the command has visible subcommands`() {
         // --help-all is a real, parser-recognized flag only where Help.kt itself advertises it (a command
         // with at least one visible subcommand), so completion must offer it under that same gate.
         val tree = cli("app") {
@@ -503,7 +505,7 @@ class FlagNameCandidateTest {
     }
 
     @Test
-    fun completeCandidatesOmitsHelpAllForALeafToolWithNoSubcommands() {
+    fun `complete candidates omits help all for a leaf tool with no subcommands`() {
         // Mirrors Help.kt: a leaf tool with no subcommands never advertises --help-all in --help, so
         // completion must not offer it either.
         val tree = cli("app") { action { Ok("") } }
@@ -512,7 +514,7 @@ class FlagNameCandidateTest {
     }
 
     @Test
-    fun completeCandidatesPrefixFiltersFlagNamesAndIncludesShorts() {
+    fun `complete candidates prefix filters flag names and includes shorts`() {
         val tree = cli("app") {
             command("build") {
                 flag("--force", "-f")
@@ -524,7 +526,7 @@ class FlagNameCandidateTest {
     }
 
     @Test
-    fun completeCandidatesOffersNoFlagNamesAfterEndOfOptions() {
+    fun `complete candidates offers no flag names after end of options`() {
         val tree = cli("app") {
             command("build") {
                 flag("--force")
@@ -536,7 +538,7 @@ class FlagNameCandidateTest {
     }
 
     @Test
-    fun completeCandidatesHidesHiddenFlagNames() {
+    fun `complete candidates hides hidden flag names`() {
         val tree = cli("app") {
             command("build") {
                 flag("--secret").hidden()
@@ -550,7 +552,7 @@ class FlagNameCandidateTest {
     }
 
     @Test
-    fun completeCandidatesCompletesAHiddenOptionsOwnValueNotTheNextPositionalsChoices() {
+    fun `complete candidates completes a hidden options own value not the next positionals choices`() {
         // A hidden option is still fully parseable; hidden only means "not advertised by name", so once its
         // name has been typed, its VALUE must complete from the option's own choices, not fall through to
         // the next positional's.
@@ -575,7 +577,7 @@ class ProviderCandidateTest {
 
 
     @Test
-    fun completeWithDefaultPrefixFiltersProviderCandidates() {
+    fun `complete with default prefix filters provider candidates`() {
         val tree = cli("app") {
             command("run") {
                 argument("x").completeWith { candidates(listOf("alpha", "beta")) }
@@ -586,7 +588,7 @@ class ProviderCandidateTest {
     }
 
     @Test
-    fun completeWithFilterByPrefixFalseSkipsPrefixFiltering() {
+    fun `complete with filter by prefix false skips prefix filtering`() {
         val tree = cli("app") {
             command("run") {
                 argument("x").completeWith(filterByPrefix = false) { candidates(listOf("alpha", "beta")) }
@@ -597,7 +599,7 @@ class ProviderCandidateTest {
     }
 
     @Test
-    fun completeWithDslProducesDescribedCandidatesFilteredOnValue() {
+    fun `complete with dsl produces described candidates filtered on value`() {
         val tree = cli("app") {
             command("rm") {
                 argument("id").completeWith {
@@ -621,7 +623,7 @@ class CursorSlotTargetingTest {
 
 
     @Test
-    fun completeCandidatesTargetsFirstPositionalAfterClusteredFlagAndOptionValue() {
+    fun `complete candidates targets first positional after clustered flag and option value`() {
         val tree = cli("app") {
             command("deploy") {
                 flag("--verbose", "-v")
@@ -638,7 +640,7 @@ class CursorSlotTargetingTest {
     }
 
     @Test
-    fun completeCandidatesCompletesClusteredShortOptionValue() {
+    fun `complete candidates completes clustered short option value`() {
         // `-vp <TAB>`: the flag `-v` is peeled off and the trailing option `-p` awaits the next word as its
         // value, exactly as parsing binds `-vp 8080`, so complete `-p`'s value here rather than a positional.
         val tree = cli("app") {
@@ -653,7 +655,7 @@ class CursorSlotTargetingTest {
     }
 
     @Test
-    fun completeCandidatesTargetsFirstPositionalAfterInlineOptionValue() {
+    fun `complete candidates targets first positional after inline option value`() {
         val tree = cli("app") {
             command("deploy") {
                 option("--tag", "-p").choice("t1", "t2")
@@ -669,7 +671,7 @@ class CursorSlotTargetingTest {
     }
 
     @Test
-    fun completeCandidatesTargetsFirstPositionalAfterDashLedNumericOptionValue() {
+    fun `complete candidates targets first positional after dash led numeric option value`() {
         val tree = cli("app") {
             command("deploy") {
                 option("--count", "-c").int()
@@ -685,7 +687,7 @@ class CursorSlotTargetingTest {
     }
 
     @Test
-    fun completeCandidatesResolvesTheCommandPastALeadingGlobalFlag() {
+    fun `complete candidates resolves the command past a leading global flag`() {
         // A leading global option/flag must not stop the subcommand walk: `myapp -v issue show <TAB>`
         // should offer the same candidates as `myapp issue show <TAB>` (no leading global).
         val tree = globalPrecedingSubcommandTree()
@@ -696,7 +698,7 @@ class CursorSlotTargetingTest {
     }
 
     @Test
-    fun completeCandidatesResolvesTheCommandPastAnInterspersedGlobalFlag() {
+    fun `complete candidates resolves the command past an interspersed global flag`() {
         val tree = globalPrecedingSubcommandTree()
         val withoutGlobal = tree.completeCandidates(listOf("issue", "show", "")).map { it.value }
         val withInterspersedGlobal = tree.completeCandidates(listOf("issue", "-v", "show", "")).map { it.value }
@@ -704,7 +706,7 @@ class CursorSlotTargetingTest {
     }
 
     @Test
-    fun completeCandidatesIncludesSubcommandAliases() {
+    fun `complete candidates includes subcommand aliases`() {
         val tree = cli("app") {
             command("list") {
                 aliases = listOf("ls")
@@ -717,7 +719,7 @@ class CursorSlotTargetingTest {
     }
 
     @Test
-    fun completeCandidatesExcludesHiddenSubcommandAliases() {
+    fun `complete candidates excludes hidden subcommand aliases`() {
         val tree = cli("app") {
             command("visible") { action { Ok("") } }
             command("secret") {
@@ -737,7 +739,7 @@ class AttachedValueCompletionTest {
 
 
     @Test
-    fun completeCandidatesCompletesAttachedLongOptionValue() {
+    fun `complete candidates completes attached long option value`() {
         // zsh's $words array does not split a word at `=`, so `--tag=r` arrives as ONE word; this must
         // complete the option's value filtered by "r", exactly like the space form `--tag r` does.
         val tree = cli("todo") {
@@ -751,7 +753,7 @@ class AttachedValueCompletionTest {
     }
 
     @Test
-    fun completeCandidatesCompletesAttachedLongOptionValueEmpty() {
+    fun `complete candidates completes attached long option value empty`() {
         val tree = cli("todo") {
             command("add") {
                 option("--tag", "-t", help = "tag").choice("red", "green")
@@ -762,7 +764,7 @@ class AttachedValueCompletionTest {
     }
 
     @Test
-    fun completeCandidatesCompletesGluedShortOptionValue() {
+    fun `complete candidates completes glued short option value`() {
         // `-tr`: short option `-t` with a glued (attached) value "r", no space, no `=`.
         val tree = cli("todo") {
             command("add") {
@@ -779,7 +781,7 @@ class ProviderFailureTest {
 
 
     @Test
-    fun completeCandidatesReturnsEmptyWhenProviderThrowsButSiblingProviderStillWorks() {
+    fun `complete candidates returns empty when provider throws but sibling provider still works`() {
         // A `.completeWith { }` provider is user code invoked synchronously on every Tab press by the
         // hidden __complete path. If it throws, the exception must not propagate: the generated shell
         // scripts call __complete without redirecting stderr, so a raw stack trace would dump straight
@@ -799,7 +801,7 @@ class ProviderFailureTest {
     }
 
     @Test
-    fun completeCandidatesReturnsEmptyWhenProviderThrowsAnError() {
+    fun `complete candidates returns empty when provider throws an error`() {
         // Not just Exception: an Error (e.g. a broken invariant in third-party provider code) must be
         // contained the same way, since this is a keypress-time safety boundary, not routine control flow.
         val tree = cli("app") {
@@ -812,9 +814,9 @@ class ProviderFailureTest {
     }
 
     @Test
-    fun completeSubcommandThroughHiddenCompleteBuiltinIgnoresALeadingGlobalFlag() {
+    fun `complete subcommand through hidden complete builtin ignores a leading global flag`() {
         // Reproduces the real `myapp __complete -- -v issue show ""` shell-completion path (see
-        // completeSubcommandReturnsProviderCandidates for the no-global baseline of this same builtin).
+        // `complete subcommand returns provider candidates` for the no-global baseline of this same builtin).
         val tree = globalPrecedingSubcommandTree()
         val t = RecordingTerminal()
         val code = tree.run(arrayOf("__complete", "--", "-v", "issue", "show", ""), t)
@@ -834,7 +836,7 @@ class CandidateDescriptionTest {
 
 
     @Test
-    fun subcommandAndOptionNameCompletionCarryTheirHelpAsDescription() {
+    fun `subcommand and option name completion carry their help as description`() {
         val tree = cli("app") {
             command("rm", "delete a task") { action { Ok("") } }
             command("list") { action { Ok("") } }        // no help -> bare value
@@ -845,7 +847,7 @@ class CandidateDescriptionTest {
     }
 
     @Test
-    fun subcommandAliasesCarryTheSameCommandsHelpAsDescription() {
+    fun `subcommand aliases carry the same commands help as description`() {
         val tree = cli("app") {
             command("list", "show every task") {
                 aliases = listOf("ls")
@@ -858,7 +860,7 @@ class CandidateDescriptionTest {
     }
 
     @Test
-    fun optionAndFlagNameCompletionCarryTheirHelpAsDescription() {
+    fun `option and flag name completion carry their help as description`() {
         val tree = cli("app") {
             command("build") {
                 option("--target", "-t", help = "build target")
@@ -874,7 +876,7 @@ class CandidateDescriptionTest {
     }
 
     @Test
-    fun shortAndNegatedOptionNamesCarryTheirHelpAsDescription() {
+    fun `short and negated option names carry their help as description`() {
         val tree = cli("app") {
             command("build") {
                 option("--target", "-t", help = "build target")
@@ -888,7 +890,7 @@ class CandidateDescriptionTest {
     }
 
     @Test
-    fun builtinOptionNamesCarryTheirOwnHelpText() {
+    fun `builtin option names carry their own help text`() {
         val tree = cli("app") {
             version = "1.0"
             command("build") { action { Ok("") } }
@@ -904,7 +906,7 @@ class CandidateDescriptionTest {
     }
 
     @Test
-    fun metaOptionNamesCarryTheirOwnHelpTextOnASingleCommandTool() {
+    fun `meta option names carry their own help text on a single command tool`() {
         val tree = cli("fmt") { action { Ok("") } }
         val names = tree.completeCandidates(listOf("--"))
         assertTrue(Candidate("--completion", BuiltinOptionHelp.COMPLETION) in names, names.toString())
@@ -912,7 +914,7 @@ class CandidateDescriptionTest {
     }
 
     @Test
-    fun choiceValueCompletionCarriesNoDescription() {
+    fun `choice value completion carries no description`() {
         val tree = cli("app") {
             command("deploy") {
                 argument("env").choice("prod", "staging")
@@ -931,7 +933,7 @@ class BuiltinColorValueCompletionTest {
 
 
     @Test
-    fun completeCandidatesCompletesTheBuiltinColorOptionValueSpaceForm() {
+    fun `complete candidates completes the builtin color option value space form`() {
         // --color is a built-in meta-option, not a user-declared OptionSpec, so its value must complete
         // from COLOR_MODE_NAMES directly instead of falling through to the next positional/subcommand once
         // its name has been typed. A tree with subcommands makes the difference visible: falling through
@@ -947,7 +949,7 @@ class BuiltinColorValueCompletionTest {
     }
 
     @Test
-    fun completeCandidatesPrefixFiltersTheBuiltinColorOptionValue() {
+    fun `complete candidates prefix filters the builtin color option value`() {
         val tree = cli("app") {
             command("build") { action { Ok("") } }
             command("test") { action { Ok("") } }
@@ -959,7 +961,7 @@ class BuiltinColorValueCompletionTest {
     }
 
     @Test
-    fun completeCandidatesCompletesTheBuiltinColorOptionValueAttachedForm() {
+    fun `complete candidates completes the builtin color option value attached form`() {
         // zsh's $words array (and fish's `commandline -ct`) never split a word at `=`, so `--color=` arrives
         // as ONE word; this must complete the same way the space form above does.
         val tree = cli("app") {
@@ -978,7 +980,7 @@ class CompleteFilesDirectiveTest {
 
 
     @Test
-    fun aProviderCanHandOffToNativeFileCompletion() {
+    fun `a provider can hand off to native file completion`() {
         val tree = cli("dd") {
             argument("operand").multiple().completeWith {
                 if (current.startsWith("if=")) completeFiles("if=") else candidates(listOf("if=", "count="))
@@ -990,7 +992,7 @@ class CompleteFilesDirectiveTest {
     }
 
     @Test
-    fun completeFilesCarriesTheNonPathPrefixOnTheDirectiveLineAndDefaultsToNone() {
+    fun `complete files carries the non path prefix on the directive line and defaults to none`() {
         // Everything after the marker IS the prefix, so a shell strips a fixed marker and takes the rest
         // verbatim; the default has to encode as the bare marker, which is what `.file()` also emits.
         val tree = cli("t") {
@@ -1003,7 +1005,7 @@ class CompleteFilesDirectiveTest {
     }
 
     @Test
-    fun completeFilesStaysExclusiveOfASiblingSubcommandNameAtTheFirstPositional() {
+    fun `complete files stays exclusive of a sibling subcommand name at the first positional`() {
         // A hybrid parent (its own first positional beside subcommand children, git-style) filters
         // subcommand names by the same `current` prefix a completeFiles() provider sees, so a name like
         // "if" sitting next to an `if=<TAB>` provider could join the sentinel into a two-line answer no
@@ -1017,7 +1019,7 @@ class CompleteFilesDirectiveTest {
     }
 
     @Test
-    fun completeFilesDiscardsCandidatesCollectedBeforeIt() {
+    fun `complete files discards candidates collected before it`() {
         // The generated scripts map a LONE directive line to the shell's own file completion and treat any
         // other line as a literal candidate, so a directive sitting beside real candidates would be inserted
         // as the text " klap:files:". Making it exclusive is the only reading that works in every shell.
@@ -1032,7 +1034,7 @@ class CompleteFilesDirectiveTest {
     }
 
     @Test
-    fun completeFilesDropsCandidatesAddedAfterIt() {
+    fun `complete files drops candidates added after it`() {
         // The mirror of the case above, and the one a provider is likelier to write: every shell gate tests
         // for a directive line ALONE, so an added candidate would make all four fall through and insert the
         // directive's own text into the command line.
@@ -1061,7 +1063,7 @@ private fun Cli.candidateValuesFor(vararg words: String): List<String> =
 class CompletionModifierRoutingTest {
 
     @Test
-    fun positionIndependentModifiersDoNotBreakSubcommandRouting() {
+    fun `position independent modifiers do not break subcommand routing`() {
         val tree = modifierTree()
         // Baseline: the walk reaches `list`, so its own --status is offered.
         val baseline = listOf("--status")
@@ -1077,7 +1079,7 @@ class CompletionModifierRoutingTest {
     }
 
     @Test
-    fun colorValueStillCompletesDespiteTheStrip() {
+    fun `color value still completes despite the strip`() {
         val tree = modifierTree()
         // The strip deletes the token the SPACE form matches on, so that branch must be answered from the
         // raw head before it runs; the attached form reads `current`, which is never stripped.
@@ -1096,7 +1098,7 @@ private fun colorAbbreviationDispatcherTree(abbreviationMode: Abbreviation): Cli
 class ColorAbbreviationCompletionTest {
 
     @Test
-    fun anAbbreviatedColorOptionOffersColorModesUnderAbbreviationAll() {
+    fun `an abbreviated color option offers color modes under abbreviation all`() {
         // An unambiguous abbreviation binds --color at parse time, so completion has to offer its values
         // rather than falling through to the first-positional branch and naming subcommands.
         val tree = colorAbbreviationDispatcherTree(Abbreviation.All)
@@ -1104,7 +1106,7 @@ class ColorAbbreviationCompletionTest {
     }
 
     @Test
-    fun anAbbreviatedAttachedColorOptionOffersColorModesUnderAbbreviationAll() {
+    fun `an abbreviated attached color option offers color modes under abbreviation all`() {
         // The attached form resolves the same way. matchingValueOption cannot cover it: --color is a
         // built-in, so there is no declared OptionSpec for it to find.
         val tree = colorAbbreviationDispatcherTree(Abbreviation.All)
@@ -1113,7 +1115,7 @@ class ColorAbbreviationCompletionTest {
     }
 
     @Test
-    fun anAbbreviatedColorOptionDoesNotOfferColorModesUnderAbbreviationNone() {
+    fun `an abbreviated color option does not offer color modes under abbreviation none`() {
         // Abbreviation.None turns off scan.matched's prefix half, so "--col" resolves to nothing here,
         // exactly as the parser itself refuses the abbreviation.
         val tree = colorAbbreviationDispatcherTree(Abbreviation.None)
@@ -1121,7 +1123,7 @@ class ColorAbbreviationCompletionTest {
     }
 
     @Test
-    fun anAbbreviationAmbiguousWithAnotherDeclaredOptionOffersNoColorModes() {
+    fun `an abbreviation ambiguous with another declared option offers no color modes`() {
         // Guards against resolving the abbreviation without checking ambiguity first: "--col" reaches
         // both the declared --collate and the built-in --color, so it must offer nothing rather than pick.
         val tree = cli("app") {
@@ -1133,7 +1135,7 @@ class ColorAbbreviationCompletionTest {
     }
 
     @Test
-    fun theExactColorSpellingStillCompletesUnderEveryAbbreviationMode() {
+    fun `the exact color spelling still completes under every abbreviation mode`() {
         val tree = colorAbbreviationDispatcherTree(Abbreviation.All)
         assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--color", ""))
         assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--color="))
@@ -1153,7 +1155,7 @@ private fun siftTree(): Command = cli("t") {
 class SiftAccumulationTest {
 
     @Test
-    fun walkContinuesPastAnOffendingTokenAndKeepsTheFirstError() {
+    fun `walk continues past an offending token and keeps the first error`() {
         val sifted = siftTree().sift(
             listOf("--bogus", "one", "--out", "x", "--alsobogus", "two", "-v"),
         )
@@ -1168,7 +1170,7 @@ class SiftAccumulationTest {
     }
 
     @Test
-    fun aDanglingOptionValueIsRecordedAndTheWalkCarriesOn() {
+    fun `a dangling option value is recorded and the walk carries on`() {
         // The commonest completion shape: an option typed with its value not yet supplied. The option must
         // be LAST for that to happen — a following token, dash-led or not, is its value.
         val sifted = siftTree().sift(listOf("-v", "--out"))
@@ -1180,7 +1182,7 @@ class SiftAccumulationTest {
     }
 
     @Test
-    fun aBadShortClusterIsRecordedAndTheRestOfTheSegmentStillWalks() {
+    fun `a bad short cluster is recorded and the rest of the segment still walks`() {
         val sifted = siftTree().sift(listOf("-vz", "one"))
 
         assertEquals(CliError.UnknownOption("-z"), sifted.error)
@@ -1190,7 +1192,7 @@ class SiftAccumulationTest {
     }
 
     @Test
-    fun aClusterOptionWithNoValueIsRecordedAndTheWalkCarriesOn() {
+    fun `a cluster option with no value is recorded and the walk carries on`() {
         // The second of the two cluster break sites: the cluster ends on `-o`, which needs a value that
         // neither the rest of the token nor a following one supplies.
         val sifted = siftTree().sift(listOf("-vo"))
@@ -1201,7 +1203,7 @@ class SiftAccumulationTest {
     }
 
     @Test
-    fun parseRaisesTheFirstSiftErrorBeforeBinding() {
+    fun `parse raises the first sift error before binding`() {
         val tree = cli("t") {
             command("go") {
                 flag("--verbose", "-v", help = "chatty")
@@ -1234,7 +1236,7 @@ private fun slotTree(): Cli = cli("t") {
 class CompletionSlotCountingTest {
 
     @Test
-    fun optionsAndTheirValuesNeverConsumeAPositionalSlot() {
+    fun `options and their values never consume a positional slot`() {
         val tree = slotTree()
         assertEquals(listOf("FIRST"), tree.candidateValuesFor("go", ""))
         assertEquals(listOf("SECOND"), tree.candidateValuesFor("go", "a", ""))
@@ -1251,7 +1253,7 @@ class CompletionSlotCountingTest {
     }
 
     @Test
-    fun positionalLookalikesAndUnknownOptionsCountCorrectly() {
+    fun `positional lookalikes and unknown options count correctly`() {
         val tree = slotTree()
         // A dash-led number is an option token like any other, so it is unknown here
         // and consumes no slot; the cursor is still on the FIRST one. Written after `--` it fills a slot,
@@ -1292,7 +1294,7 @@ private fun valueTree(): Cli = cli("todo") {
 class CompletionValueScopeTest {
 
     @Test
-    fun providerReadsGlobalsInEveryTokenShape() {
+    fun `provider reads globals in every token shape`() {
         val tree = valueTree()
         // Absent, so the declared default applies — exactly as it would at runtime.
         assertEquals(listOf("tasks.json|3|false|plain|false"), tree.candidateValuesFor("show", "3", ""))
@@ -1307,7 +1309,7 @@ class CompletionValueScopeTest {
     }
 
     @Test
-    fun providerReadsTheCommandsOwnTypedInputs() {
+    fun `provider reads the commands own typed inputs`() {
         val tree = valueTree()
         assertEquals(
             listOf("tasks.json|3|true|json|false"),
@@ -1316,7 +1318,7 @@ class CompletionValueScopeTest {
     }
 
     @Test
-    fun aGlobalHidingInAMixedShortClusterResolves() {
+    fun `a global hiding in a mixed short cluster resolves`() {
         val tree = valueTree()
         // `-lv`: `l` is the command's own flag, `v` a global. siftGlobals leaves the mixed cluster whole for
         // the command sift, which tops the accumulator up — the shape the example's word-scanner got wrong.
@@ -1327,7 +1329,7 @@ class CompletionValueScopeTest {
     }
 
     @Test
-    fun readingAnUnresolvedInputYieldsNoCandidates() {
+    fun `reading an unresolved input yields no candidates`() {
         val tree = valueTree()
         // `abc` fails the .int() conversion, so `id` is left unbound; reading it aborts the provider and
         // Tab offers nothing rather than crashing or printing a stack trace into the terminal.
@@ -1335,7 +1337,7 @@ class CompletionValueScopeTest {
     }
 
     @Test
-    fun oneBadTokenDoesNotBlankTheInputsAroundIt() {
+    fun `one bad token does not blank the inputs around it`() {
         val tree = valueTree()
         // An unknown option is recorded by sift and skipped; the globals still bind.
         assertEquals(
@@ -1345,7 +1347,7 @@ class CompletionValueScopeTest {
     }
 
     @Test
-    fun lenientCardinalityBindsWhatIsTypedSoFar() {
+    fun `lenient cardinality binds what is typed so far`() {
         val tree = cli("todo") {
             command("show") {
                 val tags = option("--tag", "-t", help = "tags").multiple(min = 2)
@@ -1361,7 +1363,7 @@ class CompletionValueScopeTest {
     }
 
     @Test
-    fun surplusPositionalsDoNotBlankTheInputsThatDidBind() {
+    fun `surplus positionals do not blank the inputs that did bind`() {
         val tree = cli("todo") {
             command("show") {
                 val what = argument("what", "what")
@@ -1375,7 +1377,7 @@ class CompletionValueScopeTest {
     }
 
     @Test
-    fun aRequiredOptionNotYetTypedLeavesTheProviderWithNothing() {
+    fun `a required option not yet typed leaves the provider with nothing`() {
         val tree = cli("todo") {
             command("show") {
                 val region = option("--region", "-r", help = "region").required()
@@ -1389,7 +1391,7 @@ class CompletionValueScopeTest {
     }
 
     @Test
-    fun aScalarOptionThatFailsToConvertLeavesOnlyItselfUnbound() {
+    fun `a scalar option that fails to convert leaves only itself unbound`() {
         val tree = cli("todo") {
             command("show") {
                 val port = option("--port", "-p", help = "port").int()
@@ -1405,7 +1407,7 @@ class CompletionValueScopeTest {
     }
 
     @Test
-    fun anAbsentVariadicReadsBackEmptyWhicheverKindItIs() {
+    fun `an absent variadic reads back empty whichever kind it is`() {
         val tree = cli("todo") {
             command("opt") {
                 val tags = option("--tag", "-t", help = "tags").multiple(min = 2)
@@ -1425,7 +1427,7 @@ class CompletionValueScopeTest {
     }
 
     @Test
-    fun aProviderOnAnOptionValueStillReadsEverythingElse() {
+    fun `a provider on an option value still reads everything else`() {
         val tree = cli("todo") {
             val store = globalOption("--file", "-f", help = "task store").default("tasks.json")
             command("show") {
@@ -1454,19 +1456,19 @@ class OptionalValueCompletionTest {
     }
 
     @Test
-    fun theWordAfterABareOccurrenceCompletesAsAnOperand() {
+    fun `the word after a bare occurrence completes as an operand`() {
         // A bare optional-value option consumes no following token, so the parser leaves it an
         // operand; completion must agree or it advertises a binding that cannot happen.
         assertEquals(listOf("FILE"), tree().candidateValuesFor("--color", ""))
     }
 
     @Test
-    fun theAttachedFormStillCompletesItsValue() {
+    fun `the attached form still completes its value`() {
         assertEquals(listOf("always", "auto", "never"), tree().candidateValuesFor("--color="))
     }
 
     @Test
-    fun anOrdinaryOptionsNextWordStillCompletesItsValue() {
+    fun `an ordinary options next word still completes its value`() {
         val ordinary = cli("app") {
             option("--fmt").choice("json", "text")
             action { Ok("") }
@@ -1485,12 +1487,12 @@ class CompletionConditionalOperandTest {
     }
 
     @Test
-    fun theSlotIsOfferedWhenItsTriggerIsAbsent() {
+    fun `the slot is offered when its trigger is absent`() {
         assertEquals(listOf("644", "755"), chmodLike().candidateValuesFor(""))
     }
 
     @Test
-    fun aSlotTheTriggerRemovedIsNotOffered() {
+    fun `a slot the trigger removed is not offered`() {
         // The same line parses as `mode=null files=[a]` and `--help` renders `[<mode>]`, so offering the
         // mode values here would make completion the only one of the three that still sees the slot.
         assertEquals(listOf(COMPLETE_FILES), chmodLike().candidateValuesFor("--reference=r", ""))

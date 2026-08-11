@@ -1,6 +1,6 @@
 package com.fromwau.klap.fixture.rsync
 
-import com.fromwau.klap.Terminal
+import com.fromwau.kern.terminal.Terminal
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.run
 import kotlin.test.Test
@@ -18,7 +18,7 @@ class RsyncParityTest {
     private val parity = ParitySuite(rsyncCli())
 
     @Test
-    fun bindsFlagsAndTheOperandList() {
+    fun `binds flags and the operand list`() {
         parity.binds(
             "-avz", "src/", "dst/",
             expected = NOTHING_BOUND.copy(
@@ -56,7 +56,7 @@ class RsyncParityTest {
     }
 
     @Test
-    fun countsRepeatedVerboseAndHumanReadable() {
+    fun `counts repeated verbose and human readable`() {
         parity.binds("-v", "src/", "dst/", expected = NOTHING_BOUND.copy(verbose = 1, paths = listOf("src/", "dst/")))
         parity.binds("-vv", "src/", "dst/", expected = NOTHING_BOUND.copy(verbose = 2, paths = listOf("src/", "dst/")))
         parity.binds(
@@ -89,7 +89,7 @@ class RsyncParityTest {
     }
 
     @Test
-    fun bindsAWholeRemoteShellCommandAsOneValue() {
+    fun `binds a whole remote shell command as one value`() {
         // The whole point of -e: the value is one argv token however many words it contains, so
         // nothing here needs quoting rules or a re-join.
         parity.binds(
@@ -126,7 +126,7 @@ class RsyncParityTest {
     }
 
     @Test
-    fun bindsRepeatableFiltersInOrder() {
+    fun `binds repeatable filters in order`() {
         parity.binds(
             "--exclude=a", "--exclude=b", "src/", "dst/",
             expected = NOTHING_BOUND.copy(exclude = listOf("a", "b"), paths = listOf("src/", "dst/")),
@@ -154,7 +154,7 @@ class RsyncParityTest {
     }
 
     @Test
-    fun togglesThePartialAndProgressPairs() {
+    fun `toggles the partial and progress pairs`() {
         parity.binds("src/", "dst/", expected = NOTHING_BOUND.copy(paths = listOf("src/", "dst/")))
         parity.binds(
             "--partial", "src/", "dst/",
@@ -178,7 +178,7 @@ class RsyncParityTest {
     }
 
     @Test
-    fun bindsPortAndBwlimitTheWayRealRsyncParsesThem() {
+    fun `binds port and bwlimit the way real rsync parses them`() {
         parity.binds(
             "--port=1234", "src/", "dst/",
             expected = NOTHING_BOUND.copy(port = 1234, paths = listOf("src/", "dst/")),
@@ -221,7 +221,7 @@ class RsyncParityTest {
     }
 
     @Test
-    fun bindsTheOperandsRealRsyncAccepts() {
+    fun `binds the operands real rsync accepts`() {
         // Two or more operands: sources plus a destination.
         parity.binds("src/", "dst/", expected = NOTHING_BOUND.copy(paths = listOf("src/", "dst/")))
         parity.binds("a", "b", "dst/", expected = NOTHING_BOUND.copy(paths = listOf("a", "b", "dst/")))
@@ -238,7 +238,7 @@ class RsyncParityTest {
     }
 
     @Test
-    fun rejectsWhatRealRsyncRejects() {
+    fun `rejects what real rsync rejects`() {
         parity.rejects(because = "real rsync: no operands prints the usage summary and exits 1")
         parity.rejects("--verbsoe", "src/", "dst/", because = "real rsync: --verbsoe: unknown option")
         parity.rejects("-Q", "src/", "dst/", because = "real rsync: -Q: unknown option")
@@ -264,7 +264,7 @@ class RsyncParityTest {
     }
 
     @Test
-    fun klapAcceptsWhatRealRsyncRejects() {
+    fun `klap accepts what real rsync rejects`() {
         // klap's own surface claims tokens real rsync has never heard of. rsync's operands are paths, so
         // each of these also shadows a file of that name.
         parity.bindsLoosely(
@@ -284,7 +284,7 @@ class RsyncParityTest {
     }
 
     @Test
-    fun knownDivergenceFromRealRsync() {
+    fun `known divergence from real rsync`() {
         // GAP 1 — `-h` alone. Real rsync documents "-h is help only on its own": `rsync -h` prints help
         // and exits 0, while `-h` anywhere alongside anything else is --human-readable (both verified).
         // klap resolves a spelling to exactly one input regardless of what else is on the line, so with
@@ -314,7 +314,7 @@ class RsyncParityTest {
     }
 
     @Test
-    fun helpRendersEachDeclaredSection() {
+    fun `help renders each declared section`() {
         // showsHelp only pins that a line resolves to help, not what the rendered text says, so this
         // drives the real renderer and reads its output back — the point of grouping rsync's sixteen
         // handles into Output/Selection/Transfer/Connection instead of one flat wall of rows.

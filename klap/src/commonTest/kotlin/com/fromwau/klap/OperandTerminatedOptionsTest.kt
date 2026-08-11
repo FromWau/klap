@@ -20,34 +20,34 @@ class OperandTerminatedOptionsTest {
     }
 
     @Test
-    fun optionsBeforeTheFirstOperandStillBind() {
+    fun `options before the first operand still bind`() {
         assertEquals("v=true l=root cmd=[]", sshLike().bindText("-v", "-l", "root", "web1"))
     }
 
     @Test
-    fun aDashLedTokenAfterTheFirstOperandIsAnOperand() {
+    fun `a dash led token after the first operand is an operand`() {
         assertEquals("v=false l=null cmd=[ls, -la]", sshLike().bindText("web1", "ls", "-la"))
     }
 
     @Test
-    fun aDeclaredShortAfterTheFirstOperandStaysWithTheOperands() {
+    fun `a declared short after the first operand stays with the operands`() {
         // The silent theft the switch prevents: `-l` is declared, so under permutation `ssh web1 ls -la`
         // binds login = "a" and exits 0 with the `-la` cluster consumed locally.
         assertEquals("v=false l=null cmd=[tar, -C, /src]", sshLike().bindText("web1", "tar", "-C", "/src"))
     }
 
     @Test
-    fun anUndeclaredOptionAfterTheFirstOperandIsAnOperandNotAnError() {
+    fun `an undeclared option after the first operand is an operand not an error`() {
         assertEquals("v=false l=null cmd=[grep, -x, pat]", sshLike().bindText("web1", "grep", "-x", "pat"))
     }
 
     @Test
-    fun theEndOfOptionsMarkerEndsOptionsUnderTheSwitchToo() {
+    fun `the end of options marker ends options under the switch too`() {
         assertEquals("v=true l=null cmd=[ls, -la]", sshLike().bindText("-v", "--", "web1", "ls", "-la"))
     }
 
     @Test
-    fun theSwitchIsOffByDefaultSoOptionsPermute() {
+    fun `the switch is off by default so options permute`() {
         val permuting = cli("t") {
             val v = flag("--verbose", "-v")
             val files = argument("file").multiple()
@@ -57,13 +57,13 @@ class OperandTerminatedOptionsTest {
     }
 
     @Test
-    fun anUnknownOptionBeforeTheFirstOperandStillErrors() {
+    fun `an unknown option before the first operand still errors`() {
         val err = assertIs<Result.Error<CliError>>(sshLike().parse(listOf("-x", "web1"))).error
         assertEquals(CliError.UnknownOption("-x"), err)
     }
 
     @Test
-    fun aMixedClusterAfterTheFirstOperandDropsTheGlobal() {
+    fun `a mixed cluster after the first operand drops the global`() {
         // siftGlobals leaves a global-plus-local cluster whole for THIS command's own sift to split, but
         // that split never runs once f1 has already ended options, so -fs and its value x bind as literal
         // operands instead of splitting into force=true sort=x.

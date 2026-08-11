@@ -121,7 +121,7 @@ public fun lsCli(): TypedCli<LsInputs> = cliOf("ls") {
     // `--color[=WHEN]` is optional-value via `.optionalValue("always")` — a bare occurrence binds "always"
     // and `--color=never` binds its own value, matching real ls exactly. The space form never binds (GNU's
     // own rule, not a klap limit): `ls --color auto f` colours `f` and leaves "auto" as a second file
-    // operand (see knownDivergenceFromRealLs).
+    // operand (see `known divergence from real ls`).
     val color = option("--color", help = "color the output WHEN: always, auto or never")
         .choice("always", "auto", "never")
         .optionalValue("always")

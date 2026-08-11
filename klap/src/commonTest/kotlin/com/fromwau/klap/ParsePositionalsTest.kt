@@ -41,60 +41,60 @@ private fun Cli.exec(argv: List<String>): String {
 class ParsePositionalsTest {
 
     @Test
-    fun requiredAndOptionalPositional() {
+    fun `required and optional positional`() {
         assertEquals("text=buy tag=null\n", posTree().exec(listOf("add", "buy")))
         assertEquals("text=buy tag=urgent\n", posTree().exec(listOf("add", "buy", "urgent")))
     }
 
     @Test
-    fun variadicConvertsEach() {
+    fun `variadic converts each`() {
         assertEquals("sum=6\n", posTree().exec(listOf("sum", "1", "2", "3")))
     }
 
     @Test
-    fun missingRequiredArgument() {
+    fun `missing required argument`() {
         val err = assertIs<Result.Error<CliError>>(posTree().parse(listOf("add"))).error
         assertEquals(CliError.MissingArgument("add", "text"), err)
     }
 
     @Test
-    fun variadicMinEnforced() {
+    fun `variadic min enforced`() {
         val err = assertIs<Result.Error<CliError>>(posTree().parse(listOf("sum"))).error
         assertEquals(CliError.MissingArgument("sum", "nums"), err)
     }
 
     @Test
-    fun tooManyArgumentsRejected() {
+    fun `too many arguments rejected`() {
         val err = assertIs<Result.Error<CliError>>(posTree().parse(listOf("ping", "extra"))).error
         assertEquals(CliError.TooManyArguments("ping", listOf("extra")), err)
     }
 
     @Test
-    fun endOfOptionsMakesDashLedPositional() {
+    fun `end of options makes dash led positional`() {
         assertEquals("text=-x tag=null\n", posTree().exec(listOf("add", "--", "-x")))
     }
 
     @Test
-    fun badPositionalValueIsRejected() {
+    fun `bad positional value is rejected`() {
         val err = assertIs<Result.Error<CliError>>(posTree().parse(listOf("sum", "abc"))).error
         assertEquals(CliError.BadValue("nums", "abc", "not an integer", ConversionError.NotAnInteger), err)
     }
 
     @Test
-    fun validateFailureOnArgumentYieldsBadValue() {
+    fun `validate failure on argument yields bad value`() {
         val tree = validateTree()
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("add", " "))).error
         assertEquals(CliError.BadValue("text", " ", "must not be blank"), err)
     }
 
     @Test
-    fun validatePassOnArgumentBindsValue() {
+    fun `validate pass on argument binds value`() {
         val tree = validateTree()
         assertEquals("buy\n", tree.exec(listOf("add", "buy")))
     }
 
     @Test
-    fun rangeAcceptsAndRejectsOnArgument() {
+    fun `range accepts and rejects on argument`() {
         val tree = cli("todo") {
             command("age") {
                 val n = argument("n").int().range(0..120)
@@ -107,7 +107,7 @@ class ParsePositionalsTest {
     }
 
     @Test
-    fun defaultBypassesValidationOnArgument() {
+    fun `default bypasses validation on argument`() {
         // A .default value is trusted: it binds directly and is never routed through validate.
         val tree = cli("todo") {
             command("age") {
@@ -121,7 +121,7 @@ class ParsePositionalsTest {
     // --- "?: default" substitution semantics on positionals ---
 
     @Test
-    fun argumentDefaultNonNull_absentUsesDefault_presentUsesValue() {
+    fun `argument default non null absent uses default present uses value`() {
         val tree = cli("todo") {
             command("add") {
                 val tag = argument("tag").default("d")
@@ -133,7 +133,7 @@ class ParsePositionalsTest {
     }
 
     @Test
-    fun argumentMapToNullDefault_substitutesDefaultInsteadOfNpeOnBadInput() {
+    fun `argument map to null default substitutes default instead of npe on bad input`() {
         val tree = cli("todo") {
             command("age") {
                 val n = argument("n").map { it.toIntOrNull() }.default(0)
@@ -146,7 +146,7 @@ class ParsePositionalsTest {
     }
 
     @Test
-    fun reusingAnArgHandleForTwoTypeConvertersIsRejectedAtConstruction() {
+    fun `reusing an arg handle for two type converters is rejected at construction`() {
         // Both .int() and .long() mutate the one shared spec, so the second stage would cast the first's
         // Int back to String for every input the user could type, leaving the argument unbindable.
         val thrown = assertFailsWith<IllegalArgumentException> {
@@ -163,7 +163,7 @@ class ParsePositionalsTest {
     // --- converter/validate chains must never throw at parse (never-throw contract) ---
 
     @Test
-    fun validateAfterMultipleYieldsBadValueInsteadOfCrashing() {
+    fun `validate after multiple yields bad value instead of crashing`() {
         // validate runs per element (each a String), but the predicate expects the List; casting the
         // String element to List throws at parse, which the never-throw contract turns into BadValue.
         val tree = cli("app") {
@@ -193,19 +193,19 @@ private fun variadicTree(): Cli = cli("tar") {
 class VariadicPositionalArityTest {
 
     @Test
-    fun multipleWithMinZeroAcceptsZeroOperands() {
+    fun `multiple with min zero accepts zero operands`() {
         val outcome = variadicTree().parse(listOf("list"))
         assertIs<Result.Success<Invocation>>(outcome)
     }
 
     @Test
-    fun multipleWithMinZeroBindsAnEmptyList() {
+    fun `multiple with min zero binds an empty list`() {
         assertEquals("files=[]\n", variadicTree().exec(listOf("list")))
         assertEquals("files=[a, b]\n", variadicTree().exec(listOf("list", "a", "b")))
     }
 
     @Test
-    fun multipleWithMinOneStillRejectsZeroOperands() {
+    fun `multiple with min one still rejects zero operands`() {
         // The guard must key on min, not on emptiness: a declared minimum is still enforced.
         val outcome = variadicTree().parse(listOf("strict"))
         val error = assertIs<Result.Error<CliError>>(outcome).error
@@ -214,7 +214,7 @@ class VariadicPositionalArityTest {
     }
 
     @Test
-    fun helpRowAgreesWithTheUsageLineAboutOptionality() {
+    fun `help row agrees with the usage line about optionality`() {
         // The usage line says arity in brackets, the Arguments row says it in words. They must not
         // disagree: a bare "(repeatable)" beside a "[file...]" usage leaves zero-allowed unstated.
         val help = variadicTree().subcommand("list")!!.helpText("tar list")
@@ -227,7 +227,7 @@ class VariadicPositionalArityTest {
     }
 
     @Test
-    fun helpDistinguishesAnOptionalVariadicFromAMandatoryOne() {
+    fun `help distinguishes an optional variadic from a mandatory one`() {
         // The usage line has to advertise which of the two it is, or it documents a shape it cannot parse.
         val tree = variadicTree()
         assertEquals("[file...]", tree.subcommand("list")!!.argSummary())
@@ -250,20 +250,20 @@ class NonLastVariadicTest {
     }
 
     @Test
-    fun aVariadicFollowedByARequiredPositionalSplitsFromTheEnd() {
+    fun `a variadic followed by a required positional splits from the end`() {
         assertEquals("[a] -> b", run(cpTree(), "a", "b"))
         assertEquals("[a, b] -> c", run(cpTree(), "a", "b", "c"))
     }
 
     @Test
-    fun theTrailingSlotIsFilledBeforeTheVariadicTakesAnything() {
+    fun `the trailing slot is filled before the variadic takes anything`() {
         // One token cannot satisfy both, and the fixed slot is the one that must hold: the variadic is
         // left short and reports its own minimum rather than swallowing the destination.
         assertIs<Result.Error<CliError>>(cpTree().parse(listOf("a")))
     }
 
     @Test
-    fun twoTrailingRequiredSlotsBothBindFromTheEnd() {
+    fun `two trailing required slots both bind from the end`() {
         val tree = cli("app") {
             val mid = argument("mid").multiple(min = 0)
             val a = argument("a")
@@ -275,7 +275,7 @@ class NonLastVariadicTest {
     }
 
     @Test
-    fun aLeadingRequiredSlotStillBindsFromTheFront() {
+    fun `a leading required slot still binds from the front`() {
         val tree = cli("app") {
             val first = argument("first")
             val rest = argument("rest").multiple(min = 0)
@@ -287,7 +287,7 @@ class NonLastVariadicTest {
     }
 
     @Test
-    fun aTrailingVariadicTakesEveryOperandAndAllowsNone() {
+    fun `a trailing variadic takes every operand and allows none`() {
         val tree = cli("app") {
             val files = argument("file").multiple(min = 0)
             action { Ok(files().toString()) }
@@ -297,7 +297,7 @@ class NonLastVariadicTest {
     }
 
     @Test
-    fun anOptionalSlotAfterAVariadicIsRejectedAtBuild() {
+    fun `an optional slot after a variadic is rejected at build`() {
         // Genuinely ambiguous: with one token left there is no rule saying whether it feeds the greedy
         // slot or the optional one.
         val ex = assertFailsWith<IllegalArgumentException> {
@@ -311,7 +311,7 @@ class NonLastVariadicTest {
     }
 
     @Test
-    fun theUsageLineRendersTheVariadicWhereItWasDeclared() {
+    fun `the usage line renders the variadic where it was declared`() {
         assertEquals("<source>... <dest>", cpTree().argSummary())
     }
 }

@@ -8,7 +8,7 @@ class CpParityTest {
     private val parity = ParitySuite(cpCli())
 
     @Test
-    fun bindsFlagsOptionsAndTheTwoOperandSlots() {
+    fun `binds flags options and the two operand slots`() {
         parity.binds(
             "-R", "src", "backup",
             expected = NOTHING_BOUND.copy(recursive = true, sources = listOf("src"), dest = "backup"),
@@ -158,7 +158,7 @@ class CpParityTest {
     }
 
     @Test
-    fun bindsEachOfRealCpsThreeOperandShapes() {
+    fun `binds each of real cps three operand shapes`() {
         // `cp a b d` with d a directory: exit 0 (verified, coreutils 9.11).
         parity.binds("a", "b", "c", expected = NOTHING_BOUND.copy(sources = listOf("a", "b"), dest = "c"))
         // `cp -t d a`: exit 0 (verified). -t removes the DEST slot, so every operand is a source.
@@ -170,7 +170,7 @@ class CpParityTest {
     }
 
     @Test
-    fun rejectsWhatRealCpRejects() {
+    fun `rejects what real cp rejects`() {
         parity.rejects("--zzz", because = "real cp: unrecognized option '--zzz'")
         parity.rejects(because = "real cp: missing file operand")
         parity.rejects("-Q", "a", "b", because = "real cp: invalid option -- 'Q'")
@@ -189,7 +189,7 @@ class CpParityTest {
     }
 
     @Test
-    fun knownDivergenceFromRealCp() {
+    fun `known divergence from real cp`() {
         // `--preserve` and `--context` stayed value-required here while real cp's are optional: real cp
         // copies a to b with its default attribute set, swallowing `a` as the value and leaving the
         // operand slots a token short. The two declared slots at least make it loud.
@@ -204,7 +204,7 @@ class CpParityTest {
     }
 
     @Test
-    fun klapAcceptsWhatRealCpRejects() {
+    fun `klap accepts what real cp rejects`() {
         // klap can carry any number of spellings on one holder (`flag("recursive", "r", "R")`); this
         // fixture instead splits into two flags, and `--recursive-r` is the invented long form that costs.
         parity.bindsLoosely(
