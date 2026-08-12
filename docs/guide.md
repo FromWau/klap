@@ -240,6 +240,12 @@ At most one per command, and a short the command declares itself wins: a tree wi
 alias binds `-4` to the flag and `-5` to the alias. A negative **option value** needs no escape at all —
 `-n -5` is the dash-led-value rule above — so only a negative *operand* needs the `--`.
 
+A number carrying a **unit** (`-1m`, `-500ms`) fits none of the three: `numericAlias` claims all-digit
+tokens only, so `-1m` splits as the cluster `-1` `-m` and reports the first char it cannot place. Give it
+to an option, where the value slot takes the next token whatever it looks like (`seek --offset -1m`), or
+keep it an operand and write `seek -- -1m`. Of the two, the option spelling is the one a user discovers
+without being told.
+
 ```kotlin
 val port    = option("--port", "-p").int().default(8080)           //  Int
 val level   = option("--level").enum<LogLevel>()                   //  LogLevel?  (case-insensitive)

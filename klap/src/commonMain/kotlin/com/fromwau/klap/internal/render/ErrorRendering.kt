@@ -47,7 +47,8 @@ internal fun CliError.message(): String = when (this) {
     is CliError.AmbiguousSubcommand ->
         "subcommand '$token' is ambiguous; possibilities: ${candidates.joinToString(" ") { "'$it'" }}"
 
-    is CliError.UnknownOption -> "unknown option '$token'" + suggestion.didYouMean()
+    is CliError.UnknownOption ->
+        "unknown option '$token'" + cluster?.let { " (in '$it')" }.orEmpty() + suggestion.didYouMean()
     is CliError.AmbiguousOption ->
         "option '$token' is ambiguous; possibilities: ${candidates.joinToString(" ") { "'$it'" }}"
 

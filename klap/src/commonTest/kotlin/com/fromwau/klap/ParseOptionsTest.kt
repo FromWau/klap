@@ -258,7 +258,7 @@ class ShortClusterErrorTest {
         }
         // -vz: v is a known flag, z is unknown -> error names -z, not -vz.
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("dial", "-vz"))).error
-        assertEquals(CliError.UnknownOption("-z"), err)
+        assertEquals(CliError.UnknownOption("-z", cluster = "-vz"), err)
     }
 
     @Test
@@ -293,7 +293,7 @@ class ShortClusterErrorTest {
         // -fz: f is a flag, z is an unknown LETTER (not a stray non-alphanumeric char), so the
         // single-char reporting from `unknown char in cluster names that char` above must still hold.
         val err = assertIs<Result.Error<CliError>>(clusterTree().parse(listOf("run", "-fz"))).error
-        assertEquals(CliError.UnknownOption("-z"), err)
+        assertEquals(CliError.UnknownOption("-z", cluster = "-fz"), err)
     }
 
     @Test
@@ -710,7 +710,7 @@ class MixedShortClusterTest {
         }
         // -fvz: f local, v global, z unknown -> the error still names the offending char, -z.
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("build", "-fvz"))).error
-        assertEquals(CliError.UnknownOption("-z"), err)
+        assertEquals(CliError.UnknownOption("-z", cluster = "-fvz"), err)
     }
 
     @Test
@@ -772,7 +772,7 @@ class MixedShortClusterTest {
         // groupClusterErrorNamesFirstOffendingCharLikeALeaf's no-subcommand case now that a real
         // subcommand actually follows.
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("-hv", "build"))).error
-        assertEquals(CliError.UnknownOption("-h"), err)
+        assertEquals(CliError.UnknownOption("-h", cluster = "-hv"), err)
     }
 }
 
@@ -1732,7 +1732,7 @@ class DigitShortTest {
             val n = argument("n").int()
             action { Ok(n().toString()) }
         }
-        assertEquals(CliError.UnknownOption("-1"), assertIs<Result.Error<CliError>>(tree.parse(listOf("-100"))).error)
+        assertEquals(CliError.UnknownOption("-1", cluster = "-100"), assertIs<Result.Error<CliError>>(tree.parse(listOf("-100"))).error)
     }
 
     @Test
@@ -1839,7 +1839,7 @@ class NumericAliasTest {
     fun `a numeric alias claims only an all digit token`() {
         // `-5x` is not a number, so the alias must not take it; it stays a short cluster.
         assertEquals(
-            CliError.UnknownOption("-5"),
+            CliError.UnknownOption("-5", cluster = "-5x"),
             assertIs<Result.Error<CliError>>(headTree().parse(listOf("-5x"))).error,
         )
     }
