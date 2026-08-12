@@ -312,6 +312,18 @@ class PosixConformanceTest {
         assertEquals(CliError.UnknownOption("-5"), err)
     }
 
+    @Test
+    fun `guideline 14 dashLed is the opt in that steps outside it`() {
+        // `dashLed()` takes THAT operand outside guideline 14, knowingly: a token identifiable as an
+        // option binds as its value instead. It is per-argument and the author asks for it, so the
+        // conforming reading above is what a CLI gets unless it says otherwise.
+        val conforming = cli("app") { command("go") { argument("n"); action { Ok("") } } }
+        assertIs<Result.Error<CliError>>(conforming.parse(listOf("go", "-5")))
+
+        val optedIn = cli("app") { command("go") { argument("n").dashLed(); action { Ok("") } } }
+        assertIs<Result.Success<Invocation>>(optedIn.parse(listOf("go", "-5")))
+    }
+
     // --- The extensions, each paired with the conforming line it must not disturb ---
 
     @Test

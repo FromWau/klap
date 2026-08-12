@@ -259,10 +259,9 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         val allRefs = flag("--all", help = "pretend as if all refs were listed on the command line")
         val reversed = flag("--reverse", help = "output the commits in reverse order")
 
-        // git's `--decorate[=short|full|auto|no]` plus `--no-decorate` needs BOTH `.negatable()` (for
-        // `--no-decorate`) AND `.optionalValue()` (for `=full`) on the same holder, but no call combines
-        // them: `.negatable()` lives on `Flag`, `.optionalValue()` on `Opt<T>`. Keeping `.negatable()`
-        // matches `--decorate`/`--no-decorate` exactly, at the cost of the `=WHEN` spellings.
+        // KLAP-GAP: git's `--decorate[=short|full|auto|no]` plus `--no-decorate` needs BOTH `.negatable()`
+        // and `.optionalValue()` on one holder, but the first lives on `Flag` and the second on `Opt<T>`.
+        // Keeping `.negatable()` matches `--decorate`/`--no-decorate` exactly and drops the `=WHEN` spellings.
         val decorate = flag("--decorate", help = "print the ref names of shown commits").negatable(default = true)
 
         // KLAP-GAP: `--` only ends option parsing rather than separating git's two operand groups, so `git

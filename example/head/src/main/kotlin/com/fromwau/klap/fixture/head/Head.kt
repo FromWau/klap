@@ -66,6 +66,8 @@ public fun headCli(): TypedCli<HeadInputs> = cliOf("head") {
 
     val zeroTerminated = flag("--zero-terminated", "-z", help = "line delimiter is NUL, not newline")
 
+    // Deliberately NOT `dashLed()`, unlike chmod's mode: real head rejects a dash-led FILE, so `head -x f`
+    // must stay an unknown option here too. Only `-NUM` slips through, claimed by the alias above.
     val files = argument("file", "file to print the head of; '-' means standard input")
         .file()
         .multiple()

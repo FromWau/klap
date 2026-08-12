@@ -1,6 +1,9 @@
 package com.fromwau.klap.fixture.chmod
 
 import com.fromwau.klap.fixture.ParitySuite
+import com.fromwau.klap.fixture.chmod.ChmodMode.OctalOp.ADD
+import com.fromwau.klap.fixture.chmod.ChmodMode.OctalOp.ASSIGN
+import com.fromwau.klap.fixture.chmod.ChmodMode.OctalOp.REMOVE
 import kotlin.test.Test
 
 class ChmodParityTest {
@@ -21,7 +24,8 @@ class ChmodParityTest {
                 files = listOf("src"),
             ),
         )
-        // The escape the other half needs, and the one chmod's own help documents.
+        // The POSIX escape works independently of `dashLed()`: a post-`--` operand never enters the
+        // admitted set, so it binds in a marked and an unmarked slot alike.
         parity.binds(
             "--", "-w", "notes.txt",
             expected = NOTHING_BOUND.copy(mode = ChmodMode.Symbolic(listOf("-w")), files = listOf("notes.txt")),
@@ -82,16 +86,40 @@ class ChmodParityTest {
     }
 
     @Test
-    fun `known divergence from real chmod`() {
-        // A dash-led MODE is a positional to real chmod, but klap reads any dash-led token as an option,
-        // so it is never reached here; no general rule can serve both chmod and mkdir (`chmod -w f` wants
-        // an operand exactly where `mkdir -w f` wants an error). `chmod -- -w f` is the escape, and it is
-        // POSIX's own.
-        parity.rejects("-w", "notes.txt", because = "permanent klap non-goal: dash-led operand; use `chmod -- -w f`")
-        parity.rejects("-rwx", "notes.txt", because = "permanent klap non-goal: dash-led operand; use `chmod -- -rwx f`")
-        parity.rejects("-R", "-w", "d", because = "permanent klap non-goal: dash-led operand; use `chmod -R -- -w d`")
-        parity.rejects("-755", "f", because = "permanent klap non-goal: dash-led operand; use `chmod -- -755 f`")
+    fun `a leading dash mode binds the way real chmod binds it`() {
+        // GNU chmod reads a dash-led MODE as the operand it is. The rule that serves both this and mkdir
+        // is a per-argument opt-in: chmod marks its mode slot and mkdir does not.
+        parity.binds(
+            "-w", "notes.txt",
+            expected = NOTHING_BOUND.copy(mode = ChmodMode.Symbolic(listOf("-w")), files = listOf("notes.txt")),
+        )
+        parity.binds(
+            "-rwx", "notes.txt",
+            expected = NOTHING_BOUND.copy(mode = ChmodMode.Symbolic(listOf("-rwx")), files = listOf("notes.txt")),
+        )
+        parity.binds(
+            "-R", "-w", "d",
+            expected = NOTHING_BOUND.copy(
+                recursive = true,
+                mode = ChmodMode.Symbolic(listOf("-w")),
+                files = listOf("d"),
+            ),
+        )
+        parity.binds(
+            "-755", "f",
+            expected = NOTHING_BOUND.copy(mode = octal("755", REMOVE), files = listOf("f")),
+        )
     }
 
-    private fun octal(digits: String) = ChmodMode.Octal(digits.toInt(radix = 8))
+    @Test
+    fun `an octal mode's operator is part of what it means`() {
+        // Verified against GNU chmod 9.11: `-755` clears the bits `755` sets, and `+755` and `=755` differ
+        // again, so the four spellings are four modes rather than one written four ways.
+        parity.binds("755", "f", expected = NOTHING_BOUND.copy(mode = octal("755"), files = listOf("f")))
+        parity.binds("+755", "f", expected = NOTHING_BOUND.copy(mode = octal("755", ADD), files = listOf("f")))
+        parity.binds("=755", "f", expected = NOTHING_BOUND.copy(mode = octal("755", ASSIGN), files = listOf("f")))
+    }
+
+    private fun octal(digits: String, op: ChmodMode.OctalOp? = null) =
+        ChmodMode.Octal(digits.toInt(radix = 8), op)
 }

@@ -369,6 +369,32 @@ public abstract class ConverterScope internal constructor() {
     }
 
     /**
+     * Lets this operand accept a single-dash token such as `-1m`, which klap otherwise reads as an option.
+     *
+     * ```kotlin
+     * command("seek") {
+     *     val position = argument("position", "1-9, or +/-N with a unit").dashLed()
+     *     action { Ok(seekTo(position())) }
+     * }
+     * ```
+     *
+     * Anything the tree declares still wins: a flag, a short cluster, a long option, an abbreviation, a
+     * `numericAlias`, or a built-in like `-h`. Only a token that resolves to none of those reaches this
+     * slot, and `--` remains the escape for a value that genuinely collides. Marking one slot does not
+     * change how any other slot behaves: a single-dash token that reaches an operand slot without this
+     * modifier is still reported as an unknown option, naming the whole word.
+     *
+     * In exchange, a single-dash **typo** on this command binds here instead of being reported as an
+     * unknown option. Long options are unaffected and keep their did-you-mean. Prefer this on a command
+     * whose own value error names the grammar it accepts, since that error is what a mistyped short now
+     * produces.
+     */
+    public fun <T> Arg<T>.dashLed(): Arg<T> {
+        spec.dashLed = true
+        return Arg(spec)
+    }
+
+    /**
      * Supplies tab-completion candidates for this value at the moment the user presses Tab, so they can be
      * anything your program can compute: branch names, task ids, rows from a file.
      *

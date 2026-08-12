@@ -117,6 +117,10 @@ internal class ArgumentSpec(
     override var isPath: Boolean = false
     override var constraintHint: String? = null
 
+    // Only arguments carry this: an option's value slot already takes the next token whatever it looks
+    // like, so there is nothing for a flag to opt into there.
+    var dashLed: Boolean = false
+
     // Set by Arg.absentWhen(): the input whose presence removes this slot from the operand list entirely.
     // Deliberately not a Cardinality: the slot IS required in every other reading, and folding a condition
     // into the cardinality would make every `when` over it answer a question it cannot answer without the
