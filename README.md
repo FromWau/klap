@@ -28,6 +28,9 @@ dependencies {
 Add `kotlin("plugin.serialization")` only if an action returns an `@Serializable` type. The JSON runtime
 is exposed as `api`, so it arrives transitively. KMP consumers put the dependency in `commonMain`.
 
+Actions are synchronous unless declared with `actionSuspending { }`, which needs `runSuspending` and a
+scope you supply. klap itself takes no dependency on `kotlinx-coroutines`.
+
 Two of klap's types are not its own. `Result<S, E>` is
 [`com.fromwau.kern:result`](https://github.com/FromWau/kern/blob/master/result/README.md) and `Terminal`,
 `Style` and the colour palette are
@@ -100,12 +103,13 @@ collection klap hands back is a `List`.
 ## Where to go next
 
 - **[The guide](docs/guide.md)** is the full reference: converters and validators, flags, cross-input
-  constraints, global options, typed errors, `--json`, color, subcommand trees, help layout, completion,
-  generated docs, and the escape hatch.
+  constraints, global options, typed errors, suspending actions, `--json`, color, subcommand trees, help
+  layout, completion, generated docs, and the escape hatch.
 - **[`example/`](example/README.md)** is a behaviour index: "how do I get an operation mode like pacman's
   `-S`" is a table lookup that names the tool doing it. Behind the table are an installable task-manager
-  CLI and fifteen real tools (`pacman`, `git`, `tar`, `find`, `dd`, ...) reproduced in klap, so every
-  answer is runnable code to copy from.
+  CLI, fifteen real tools (`pacman`, `git`, `tar`, `find`, `dd`, ...) reproduced in klap, and pulse, a
+  suspending-actions service monitor with real Ctrl-C cancellation, so every answer is runnable code to
+  copy from.
 
 ## POSIX conformance
 

@@ -4,9 +4,9 @@ import com.fromwau.kern.terminal.Style
 import com.fromwau.klap.internal.spec.HolderSpec
 
 /**
- * Receiver of an `action { }` block: read this run's parsed values by invoking the handles the builder
- * handed you, wrap text in a [Style] to colour it when colour is on, and read [json] when your action
- * writes as it goes.
+ * Receiver of an `action { }` or `actionSuspending { }` block: read this run's parsed values by invoking
+ * the handles the builder handed you, wrap text in a [Style] to colour it when colour is on, and read
+ * [json] when your action writes as it goes.
  *
  * ```kotlin
  * val name = argument("name")
@@ -45,6 +45,6 @@ public class ActionScope internal constructor(
     override fun unbound(spec: HolderSpec): Nothing =
         error(
             "input '${spec.name}' was read but not bound by the current command; an accessor is only " +
-                "readable inside the action { } of the command that declares it",
+                "readable inside the action of the command that declares it",
         )
 }

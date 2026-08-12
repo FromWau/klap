@@ -24,6 +24,7 @@ import com.fromwau.klap.internal.spec.negativeLongs
 import com.fromwau.klap.internal.spec.negativeShorts
 import com.fromwau.klap.internal.spec.shorts
 import com.fromwau.klap.internal.spec.token
+import kotlin.coroutines.cancellation.CancellationException
 
 // --- Reusable row/section model ---
 // helpText() renders through this model; the docs renderer consumes the same assembly, so the model and
@@ -97,6 +98,8 @@ internal fun ValueSpec.display(value: Any?): String {
     // renderHuman), so a throwing toString() falls back to a placeholder here instead of escaping.
     val text = try {
         value.toString()
+    } catch (e: CancellationException) {
+        throw e
     } catch (_: Exception) {
         "<unprintable>"
     }

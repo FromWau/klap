@@ -289,8 +289,8 @@ internal fun validateCanActOrDispatch(
     isBuiltin: Boolean = false,
 ) {
     require(hasAction || hasSubcommands || isBuiltin) {
-        "command '$name': declares neither an action { } nor subcommands, so it can never run; give " +
-                "'$name' an action { }, or a subcommand for it to dispatch to"
+        "command '$name': declares neither an action nor subcommands, so it can never run; give " +
+                "'$name' an action { } or actionSuspending { }, or a subcommand for it to dispatch to"
     }
 }
 

@@ -2,6 +2,7 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -43,6 +44,14 @@ class PublicCollectionApiTest {
         assertEquals(0, cli.run(listOf("f"), RecordingTerminal()))
         assertEquals(0, cli.run(setOf("f"), RecordingTerminal()))
         assertEquals(0, cli.run(arrayOf("f"), RecordingTerminal()))
+    }
+
+    @Test
+    fun `runSuspending takes a collection and an array`() = runTest {
+        val cli = greet().cli
+        assertEquals(0, cli.runSuspending(listOf("f"), RecordingTerminal()))
+        assertEquals(0, cli.runSuspending(setOf("f"), RecordingTerminal()))
+        assertEquals(0, cli.runSuspending(arrayOf("f"), RecordingTerminal()))
     }
 
     /**

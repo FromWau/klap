@@ -7,6 +7,7 @@ import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.fold
 import com.fromwau.klap.ActionScope
 import com.fromwau.klap.CliError
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -24,16 +25,23 @@ internal sealed interface ActionError : IError {
 /** The erased, non-generic face of an [ActionSpec]: run the action for its rendered output, or for its raw value. */
 internal sealed interface Action {
     /**
+     * Whether this action was declared with `actionSuspending { }`. The synchronous entry points read this
+     * to refuse an action they cannot drive; `action { }` and `actionSuspending { }` are its only writers,
+     * one always passing false and the other always true.
+     */
+    val suspending: Boolean
+
+    /**
      * Run the action and render its result to display text (`--json` or human), for the
      * [com.fromwau.klap.run] terminal path.
      */
-    fun renderOutput(scope: ActionScope, json: Boolean): Result<String, ActionError>
+    suspend fun renderOutput(scope: ActionScope, json: Boolean): Result<String, ActionError>
 
     /**
      * Run the action and return its own typed result, unrendered, for the
      * [com.fromwau.klap.runAction] embedding hatch.
      */
-    fun evaluate(scope: ActionScope): Result<Any?, CliError>
+    suspend fun evaluate(scope: ActionScope): Result<Any?, CliError>
 }
 
 /**
@@ -43,11 +51,12 @@ internal sealed interface Action {
  * construction (which would otherwise crash every invocation, including `--help`).
  */
 internal class ActionSpec<T>(
-    private val block: ActionScope.() -> Result<T, CliError>,
+    private val block: suspend ActionScope.() -> Result<T, CliError>,
+    override val suspending: Boolean,
     private val serializer: () -> KSerializer<T>,
     private val human: (ActionScope.(T) -> String)?,
 ) : Action {
-    override fun renderOutput(scope: ActionScope, json: Boolean): Result<String, ActionError> =
+    override suspend fun renderOutput(scope: ActionScope, json: Boolean): Result<String, ActionError> =
         scope.block().fold(
             onError = { error -> Err(ActionError.Failed(error)) },
             onSuccess = { value -> if (json) renderJson(value) else renderHuman(scope, value) },
@@ -62,6 +71,8 @@ internal class ActionSpec<T>(
 
         return try {
             Ok(klapJson.encodeToString(resolved, value))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Err(ActionError.EncodeFailed(e.message))
         }
@@ -69,9 +80,11 @@ internal class ActionSpec<T>(
 
     private fun renderHuman(scope: ActionScope, value: T): Result<String, ActionError> = try {
         Ok(human?.invoke(scope, value) ?: value?.toString().orEmpty())
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         Err(ActionError.RenderFailed(e.message))
     }
 
-    override fun evaluate(scope: ActionScope): Result<Any?, CliError> = scope.block()
+    override suspend fun evaluate(scope: ActionScope): Result<Any?, CliError> = scope.block()
 }

@@ -8,6 +8,7 @@ import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.ValueSpec
 import com.fromwau.klap.internal.spec.requireValidSpelling
 import com.fromwau.klap.internal.spec.token
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.jvm.JvmName
 
 private fun numeric(error: ConversionError, parse: (String) -> Any?): (String) -> Result<Any?, ConversionError> =
@@ -143,6 +144,8 @@ private fun ValueSpec.applyMap(transform: (String) -> Any?) {
     andThenConvert { raw ->
         try {
             Result.Success(transform(raw))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.Error(ConversionError.Threw(e))
         }
