@@ -6,6 +6,7 @@ import com.fromwau.kern.result.Result
 import com.fromwau.kern.terminal.Terminal
 import com.fromwau.kern.terminal.yellow
 import com.fromwau.klap.internal.render.Candidate
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -100,6 +101,16 @@ class RunnerTest {
         assertEquals(1, code)
         assertTrue("could not render output" in t.err.toString(), t.err.toString())
         assertEquals("", t.out.toString())
+    }
+
+    @Test
+    fun `a cancellation exception thrown from a human renderer propagates rather than rendering`() {
+        // renderHuman's broad catch must not swallow cancellation: a human renderer that touches a
+        // cancellation-aware API needs the exception to escape, not turn into a rendered error.
+        val tree = cli("app") {
+            command("go") { action(human = { throw CancellationException("cancelled") }) { Ok("x") } }
+        }
+        assertFailsWith<CancellationException> { tree.run(arrayOf("go"), RecordingTerminal()) }
     }
 
     @Test

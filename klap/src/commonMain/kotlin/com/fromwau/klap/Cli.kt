@@ -169,9 +169,27 @@ public class Cli internal constructor(
      * built, so the walk can only ever produce the same list.
      */
     internal val declaredLongs: List<String> by lazy { subtreeLongs() }
+
+    /**
+     * The qualified path of the first command in this tree declared with `actionSuspending { }`, or null
+     * when none is.
+     *
+     * Held rather than derived per call, for the same reason as [declaredLongs]: `run` and `main` read this
+     * on every call, the walk allocates a path string per node visited, and the tree is immutable once
+     * built, so it can only ever produce the same answer.
+     */
+    internal val suspendingPath: String? by lazy { firstSuspendingPath() }
 }
 
 private fun Command.subtreeLongs(): List<String> =
     namedInputs.flatMap { it.longs } +
             flags.filter { it.negatable }.flatMap { it.negativeLongs } +
             subcommands.flatMap { it.subtreeLongs() }
+
+private fun Command.firstSuspendingPath(prefix: String = name): String? {
+    if (action?.suspending == true) return prefix
+    for (sub in subcommands) {
+        sub.firstSuspendingPath("$prefix ${sub.name}")?.let { return it }
+    }
+    return null
+}

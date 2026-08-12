@@ -4,9 +4,6 @@ plugins {
     alias(libs.plugins.kotlinSerialization)
 }
 
-group = "com.fromwau"
-version = libs.versions.klapVersion.get()
-
 kotlin {
     jvmToolchain(libs.versions.jdk.get().toInt())
 

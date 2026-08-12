@@ -32,6 +32,7 @@ import com.fromwau.klap.internal.spec.negativeShorts
 import com.fromwau.klap.internal.spec.shorts
 import com.fromwau.klap.internal.spec.token
 import com.fromwau.klap.resolveSubcommand
+import kotlin.coroutines.cancellation.CancellationException
 
 /** POSIX end-of-options: every token after it is positional, never a flag. */
 internal const val END_OF_OPTIONS = "--"
@@ -579,6 +580,8 @@ private fun ValueSpec.convertOne(raw: String, inferValues: Boolean): Result<Any?
     // converter exception into a BadValue instead of crashing the process.
     val converted = try {
         convert(resolved)
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         val threw = ConversionError.Threw(e)
         return Result.Error(CliError.BadValue(name, raw, threw.reason(), threw))
@@ -604,6 +607,8 @@ private fun ValueSpec.convertOne(raw: String, inferValues: Boolean): Result<Any?
         // A validate failure is always BadValue, never InvalidChoice, even on a choices-backed spec.
         val message = try {
             validate?.invoke(value)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             val reason = e.message?.takeIf { it.isNotBlank() } ?: "conversion failed"
             return Result.Error(CliError.BadValue(name, raw, reason))

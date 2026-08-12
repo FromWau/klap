@@ -1,9 +1,12 @@
 # klap by example
 
-Runnable klap programs to copy from. Two kinds live here:
+Runnable klap programs to copy from. Three kinds live here:
 
 - **[`task-manager/`](task-manager/)** is a complete, installable CLI. Start here if you want to see a
   whole program: command tree, storage, colors, completion, packaging.
+- **[`pulse/`](pulse/)** is a complete program too, but built to show one capability rather than a whole
+  surface: suspending actions, real cancellation, a background loop running alongside the CLI. Start
+  here if that is the part you need.
 - **The fifteen tool directories** reproduce the command-line surface of a real tool (`pacman`, `git`,
   `tar`, `find`, ...) in klap. Their actions are stubs; the parsing surface is the point. Start here if
   you already know the behaviour you want and need to see how it is spelled.
@@ -12,32 +15,34 @@ For the concepts behind any of this, read the [guide](../docs/guide.md).
 
 ## "How do I make it behave like ...?"
 
-Find the behaviour, open the file. Every path below is `example/<tool>/src/main/kotlin/.../<Tool>.kt`.
+Find the behaviour, open the file. Every path below is `example/<tool>/src/main/kotlin/.../<Tool>.kt`,
+except pulse's row, which points at its module rather than a single file.
 
-| You want | Look at | The construct |
-|---|---|---|
-| Mutually exclusive operation modes, exactly one required (`pacman -S` vs `-R` vs `-Q`) | [`pacman`](pacman/), [`tar`](tar/) | `requireExactlyOne` |
-| Two options that conflict but are both optional (`tar -z` vs `-j`) | [`tar`](tar/) | `requireAtMostOne` |
-| A flag repeated to raise a level (`-v`, `-vv`, `-vvv`) | [`pacman`](pacman/), [`ssh`](ssh/), [`curl`](curl/) | `.count()` |
-| A cluster whose last character takes a value (`tar -cvf out.tar`) | [`tar`](tar/) | short clustering |
-| An option with an explicit "off" spelling (`git --no-pager`) | [`git`](git/), [`chmod`](chmod/), [`rm`](rm/) | `.negatable()` |
-| The later of two conflicting flags winning (`head -q -v`) | [`cp`](cp/), [`head`](head/), [`ls`](ls/), [`find`](find/) | `lastWins` |
-| Passing a trailing command through untouched (`ssh host ls -la`) | [`ssh`](ssh/) | `optionsEndAtFirstOperand` |
-| An operand that disappears when an option supplies it (`cp -t DIR`) | [`cp`](cp/), [`mv`](mv/), [`chmod`](chmod/) | `.absentWhen()` |
-| An input required only when another is absent | [`rm`](rm/) | `.requiredUnless()` |
-| An option whose value may be omitted (`ls --color` vs `--color=never`) | [`cp`](cp/), [`git`](git/), [`ls`](ls/), [`mv`](mv/) | `.optionalValue()` |
-| Bare `key=value` operands, no dashes anywhere (`dd if=x bs=4M`) | [`dd`](dd/) | operand-only surfaces |
-| The obsolete digit-short form (`head -20`) | [`head`](head/), [`git`](git/) | `numericAlias` |
-| A subcommand tree with aliases (`git add` / `git stage`) | [`git`](git/) | `command { }`, `aliases` |
-| Help split into sections on a wide flat tool | [`pacman`](pacman/), [`curl`](curl/), [`ls`](ls/) | `group { }` |
-| A value restricted to a fixed set (`--sort=WORD`) | [`cp`](cp/), [`ls`](ls/), [`git`](git/) | `.choice()` |
-| A value parsed into your own enum | [`task-manager`](task-manager/) | `.enum<E>()` |
-| A number with bounds (`--max-time`, `-p PORT`) | [`find`](find/), [`ssh`](ssh/), [`curl`](curl/) | `.int()`, `.range()` |
-| Rejecting a malformed value with your own message | [`head`](head/), [`mkdir`](mkdir/), [`git`](git/) | `.validate()` |
-| An input kept out of `--help` | [`git`](git/), [`task-manager`](task-manager/) | `hidden` |
-| Taking `-h` back from klap so it can mean something else | [`ls`](ls/), [`pacman`](pacman/) | `builtins { }` |
-| Tab completion that reads your CLI's own parsed inputs | [`task-manager`](task-manager/), [`chmod`](chmod/), [`dd`](dd/) | `completeWith { }` |
-| An option that may appear many times (`curl -H a -H b`) | [`git`](git/), [`ssh`](ssh/), [`curl`](curl/) | `.multiple()` |
+| You want                                                                                                    | Look at                                                         | The construct                       |
+|-------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------|-------------------------------------|
+| Mutually exclusive operation modes, exactly one required (`pacman -S` vs `-R` vs `-Q`)                      | [`pacman`](pacman/), [`tar`](tar/)                              | `requireExactlyOne`                 |
+| Two options that conflict but are both optional (`tar -z` vs `-j`)                                          | [`tar`](tar/)                                                   | `requireAtMostOne`                  |
+| A flag repeated to raise a level (`-v`, `-vv`, `-vvv`)                                                      | [`pacman`](pacman/), [`ssh`](ssh/), [`curl`](curl/)             | `.count()`                          |
+| A cluster whose last character takes a value (`tar -cvf out.tar`)                                           | [`tar`](tar/)                                                   | short clustering                    |
+| An option with an explicit "off" spelling (`git --no-pager`)                                                | [`git`](git/), [`chmod`](chmod/), [`rm`](rm/)                   | `.negatable()`                      |
+| The later of two conflicting flags winning (`head -q -v`)                                                   | [`cp`](cp/), [`head`](head/), [`ls`](ls/), [`find`](find/)      | `lastWins`                          |
+| Passing a trailing command through untouched (`ssh host ls -la`)                                            | [`ssh`](ssh/)                                                   | `optionsEndAtFirstOperand`          |
+| An operand that disappears when an option supplies it (`cp -t DIR`)                                         | [`cp`](cp/), [`mv`](mv/), [`chmod`](chmod/)                     | `.absentWhen()`                     |
+| An input required only when another is absent                                                               | [`rm`](rm/)                                                     | `.requiredUnless()`                 |
+| An option whose value may be omitted (`ls --color` vs `--color=never`)                                      | [`cp`](cp/), [`git`](git/), [`ls`](ls/), [`mv`](mv/)            | `.optionalValue()`                  |
+| Bare `key=value` operands, no dashes anywhere (`dd if=x bs=4M`)                                             | [`dd`](dd/)                                                     | operand-only surfaces               |
+| The obsolete digit-short form (`head -20`)                                                                  | [`head`](head/), [`git`](git/)                                  | `numericAlias`                      |
+| A subcommand tree with aliases (`git add` / `git stage`)                                                    | [`git`](git/)                                                   | `command { }`, `aliases`            |
+| Help split into sections on a wide flat tool                                                                | [`pacman`](pacman/), [`curl`](curl/), [`ls`](ls/)               | `group { }`                         |
+| A value restricted to a fixed set (`--sort=WORD`)                                                           | [`cp`](cp/), [`ls`](ls/), [`git`](git/)                         | `.choice()`                         |
+| A value parsed into your own enum                                                                           | [`task-manager`](task-manager/)                                 | `.enum<E>()`                        |
+| A number with bounds (`--max-time`, `-p PORT`)                                                              | [`find`](find/), [`ssh`](ssh/), [`curl`](curl/)                 | `.int()`, `.range()`                |
+| Rejecting a malformed value with your own message                                                           | [`head`](head/), [`mkdir`](mkdir/), [`git`](git/)               | `.validate()`                       |
+| An input kept out of `--help`                                                                               | [`git`](git/), [`task-manager`](task-manager/)                  | `hidden`                            |
+| Taking `-h` back from klap so it can mean something else                                                    | [`ls`](ls/), [`pacman`](pacman/)                                | `builtins { }`                      |
+| Tab completion that reads your CLI's own parsed inputs                                                      | [`task-manager`](task-manager/), [`chmod`](chmod/), [`dd`](dd/) | `completeWith { }`                  |
+| An option that may appear many times (`curl -H a -H b`)                                                     | [`git`](git/), [`ssh`](ssh/), [`curl`](curl/)                   | `.multiple()`                       |
+| An action that suspends, with real cancellation reaching it from the caller's scope (`pulse watch`, Ctrl-C) | [`pulse`](pulse/)                                               | `actionSuspending`, `runSuspending` |
 
 Every row above was checked against a real call, not a mention in a comment. One construct klap offers
 has **no example here yet**, so read the guide for it:
@@ -45,7 +50,7 @@ has **no example here yet**, so read the guide for it:
 
 ## The tool fixtures
 
-Each directory is one Gradle module with two files:
+Each tool directory is one Gradle module with two files:
 
 ```
 example/pacman/
@@ -65,13 +70,13 @@ parity.rejects("--lines", because = "real head: option '--lines' requires an arg
 DSL in [`example/parity/`](parity/) that every fixture test is written in. Its verbs are the claims a
 fixture can make:
 
-| verb | the claim |
-|---|---|
-| `binds(argv, expected)` | parses, dispatches, and binds exactly this record |
-| `bindsLoosely(argv, because, expected)` | klap binds it but the **real tool rejects it**: invented surface |
-| `rejects(argv, because)` | does not parse; `because` names the real tool's answer, or the klap gap |
-| `showsHelp(argv, because)` | resolves to help specifically |
-| `shortCircuits(argv, because)` | a built-in swallowed the line before the command saw it |
+| verb                                    | the claim                                                               |
+|-----------------------------------------|-------------------------------------------------------------------------|
+| `binds(argv, expected)`                 | parses, dispatches, and binds exactly this record                       |
+| `bindsLoosely(argv, because, expected)` | klap binds it but the **real tool rejects it**: invented surface        |
+| `rejects(argv, because)`                | does not parse; `because` names the real tool's answer, or the klap gap |
+| `showsHelp(argv, because)`              | resolves to help specifically                                           |
+| `shortCircuits(argv, because)`          | a built-in swallowed the line before the command saw it                 |
 
 `accepts` / `acceptsLoosely` also exist, taking a lambda over the bound record instead of a whole
 expectation. No fixture currently uses either: whole-record comparison won everywhere.
@@ -128,34 +133,34 @@ Run them all, or one:
 
 The tools, and why each is in the suite:
 
-| Tool | The shape it contributes |
-|---|---|
-| [`pacman`](pacman/) | one required operation mode out of seven, each with its own option set |
-| [`git`](git/) | a deep subcommand tree, global options before the subcommand, eight negatable flags |
-| [`find`](find/) | an expression language rather than an option list, and where that stops fitting |
-| [`ssh`](ssh/) | a wrapper: everything after the destination belongs to the remote command |
-| [`curl`](curl/) | a wide flat tool whose help needs sections, repeatable headers |
-| [`tar`](tar/) | value-taking clusters (`-cvf out.tar`), and both exclusivity shapes side by side: `requireExactlyOne` for `-c`/`-x`/`-t`, `requireAtMostOne` for `-z`/`-j` |
-| [`dd`](dd/) | no flags and no options at all, only bare `key=value` operands |
-| [`cp`](cp/), [`mv`](mv/) | three synopsis forms, and an operand that moves into an option |
-| [`chmod`](chmod/) | a mode operand that looks like an option, reached with `--` (`chmod -- -w notes.txt`) |
-| [`rm`](rm/) | negatable interactivity flags, an input required unless another is present |
-| [`ls`](ls/) | many small format/sort flags that override one another |
-| [`head`](head/) | the obsolete `head -20` digit short, dash-led values (`-n -5`) |
-| [`mkdir`](mkdir/) | the small end: a validated option and one variadic operand |
-| [`rsync`](rsync/) | clustered shorts ending in a value-taker (`-vauPe "ssh -p 2222"`), and a real tool whose long options never abbreviate |
+| Tool                     | The shape it contributes                                                                                                                                   |
+|--------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [`pacman`](pacman/)      | one required operation mode out of seven, each with its own option set                                                                                     |
+| [`git`](git/)            | a deep subcommand tree, global options before the subcommand, eight negatable flags                                                                        |
+| [`find`](find/)          | an expression language rather than an option list, and where that stops fitting                                                                            |
+| [`ssh`](ssh/)            | a wrapper: everything after the destination belongs to the remote command                                                                                  |
+| [`curl`](curl/)          | a wide flat tool whose help needs sections, repeatable headers                                                                                             |
+| [`tar`](tar/)            | value-taking clusters (`-cvf out.tar`), and both exclusivity shapes side by side: `requireExactlyOne` for `-c`/`-x`/`-t`, `requireAtMostOne` for `-z`/`-j` |
+| [`dd`](dd/)              | no flags and no options at all, only bare `key=value` operands                                                                                             |
+| [`cp`](cp/), [`mv`](mv/) | three synopsis forms, and an operand that moves into an option                                                                                             |
+| [`chmod`](chmod/)        | a mode operand that looks like an option, reached with `--` (`chmod -- -w notes.txt`)                                                                      |
+| [`rm`](rm/)              | negatable interactivity flags, an input required unless another is present                                                                                 |
+| [`ls`](ls/)              | many small format/sort flags that override one another                                                                                                     |
+| [`head`](head/)          | the obsolete `head -20` digit short, dash-led values (`-n -5`)                                                                                             |
+| [`mkdir`](mkdir/)        | the small end: a validated option and one variadic operand                                                                                                 |
+| [`rsync`](rsync/)        | clustered shorts ending in a value-taker (`-vauPe "ssh -p 2222"`), and a real tool whose long options never abbreviate                                     |
 
 ### What each fixture declares about `abbreviation`
 
 `Abbreviation` (see the [guide](../docs/guide.md#abbreviation)) is root-only and defaults to `None`, so a
 fixture that wants to reproduce a real tool's abbreviation behaviour states so explicitly:
 
-| Mode | Fixtures |
-|---|---|
-| `Abbreviation.Options` | `chmod`, `cp`, `dd`, `git`, `head`, `ls`, `mkdir`, `mv`, `pacman`, `rm`, `tar` — eleven, including **all eight coreutils stubs**, which go through `getopt_long` without exception, plus `git`, whose subcommands' options abbreviate the same way — though its top-level ones do not, since real git refuses abbreviation there and the switch is root-only |
-| `Abbreviation.None` (declared, not inherited) | `curl`, `rsync` — both match long options exactly, and both say so rather than inheriting the default silently |
-| `Abbreviation.All` | `task-manager`, the showcase |
-| left on the ambient default | `ssh`, `find` |
+| Mode                                          | Fixtures                                                                                                                                                                                                                                                                                                                                                     |
+|-----------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `Abbreviation.Options`                        | `chmod`, `cp`, `dd`, `git`, `head`, `ls`, `mkdir`, `mv`, `pacman`, `rm`, `tar` — eleven, including **all eight coreutils stubs**, which go through `getopt_long` without exception, plus `git`, whose subcommands' options abbreviate the same way — though its top-level ones do not, since real git refuses abbreviation there and the switch is root-only |
+| `Abbreviation.None` (declared, not inherited) | `curl`, `rsync` — both match long options exactly, and both say so rather than inheriting the default silently                                                                                                                                                                                                                                               |
+| `Abbreviation.All`                            | `task-manager`, the showcase                                                                                                                                                                                                                                                                                                                                 |
+| left on the ambient default                   | `ssh`, `find`                                                                                                                                                                                                                                                                                                                                                |
 
 The last row is exempt for two different reasons, not one:
 
@@ -241,3 +246,26 @@ binary it just built, so neither can drift from the shipped CLI.
 ```bash
 cd example/task-manager/packaging/arch && makepkg -si
 ```
+
+## The pulse showcase
+
+[`pulse/`](pulse/src/main/kotlin/com/fromwau/klap/fixture/pulse/Main.kt) is a service monitor whose work
+actually suspends: six simulated services with their own latencies and failure modes, an `async` fan-out
+gathered with `awaitAll`, `withTimeoutOrNull` at two different scopes, a metrics loop running alongside
+the CLI in the caller's own scope, and a tree that mixes `actionSuspending { }` commands with one plain
+synchronous `action { }`. Times are `kotlin.time.Duration` end to end, parsed from the command line
+through a `.convert { }` that fails with its own typed error.
+
+Its `main()` is where the parts klap deliberately does not own live: the caller's `Job`, a shutdown hook
+that cancels it on Ctrl-C, and the exit code. That path is what makes a Ctrl-C reach both the suspended
+action and the independent metrics loop, letting the loop's `finally` run before the process exits:
+
+```
+[pulse] shutdown signal received, cancelling...
+[metrics] loop shut down cleanly after 13 tick(s)
+[pulse] cancelled
+```
+
+None of that machinery is klap's, which is the point: klap declares suspending functions and never runs,
+blocks on, or cancels a coroutine itself. The [guide](../docs/guide.md#suspending-actions) explains that
+split; this module is it, working.
