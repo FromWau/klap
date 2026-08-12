@@ -81,7 +81,20 @@ public sealed interface CliError : IError {
         val candidates: List<String>,
     ) : CliError
 
-    public data class UnknownOption(val token: String, val suggestion: String? = null) : CliError
+    /**
+     * An option spelling nothing in the tree declares.
+     *
+     * @param token the spelling itself, dashes included.
+     * @param suggestion the declared spelling [token] most likely meant, when one is close enough.
+     * @param cluster the single word [token] was read out of, when short clustering split one: typing
+     *   `-1m` reports [token] `-1` with [cluster] `-1m`. Null whenever [token] is what the user typed,
+     *   which is every other case. Report both, or the message names a token absent from the command line.
+     */
+    public data class UnknownOption(
+        val token: String,
+        val suggestion: String? = null,
+        val cluster: String? = null,
+    ) : CliError
 
     /**
      * An abbreviated long option that names more than one declared spelling. [token] is what the user

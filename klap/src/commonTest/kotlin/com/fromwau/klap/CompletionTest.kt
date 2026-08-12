@@ -1185,7 +1185,7 @@ class SiftAccumulationTest {
     fun `a bad short cluster is recorded and the rest of the segment still walks`() {
         val sifted = siftTree().sift(listOf("-vz", "one"))
 
-        assertEquals(CliError.UnknownOption("-z"), sifted.error)
+        assertEquals(CliError.UnknownOption("-z", cluster = "-vz"), sifted.error)
         assertEquals(listOf("one"), sifted.positionals)
         // The `v` before the bad char was already counted; a partial cluster is retained, not discarded.
         assertEquals(1, sifted.flags.entries.single { it.key.name == "--verbose" }.value)

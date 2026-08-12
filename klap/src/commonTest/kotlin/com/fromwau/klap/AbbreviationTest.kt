@@ -373,7 +373,7 @@ class AbbreviationTest {
         // A single-dash token is a cluster of one-character shorts, so there is nothing to abbreviate and
         // `-re` must stay two chars rather than resolving to `--recursive`.
         val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("-re", "f"))).error
-        assertEquals(CliError.UnknownOption("-e"), err)
+        assertEquals(CliError.UnknownOption("-e", cluster = "-re"), err)
     }
 
     @Test

@@ -157,6 +157,17 @@ class ErrorRenderingTest {
     }
 
     @Test
+    fun `an unknown short split out of a cluster names the word it came from`() {
+        // Without the cluster the message names a token absent from the command line: someone typing
+        // `-1m` is told about `-1`, and looks for it in vain.
+        assertEquals(
+            "unknown option '-1' (in '-1m')",
+            CliError.UnknownOption("-1", cluster = "-1m").message(),
+        )
+        assertEquals("unknown option '-z'", CliError.UnknownOption("-z").message())
+    }
+
+    @Test
     fun `json envelope escapes quotes`() {
         assertEquals(
             """{"error":"say \"hi\"","code":2}""",

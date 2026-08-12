@@ -1108,7 +1108,9 @@ private fun clusterCharError(
                 if (prevFlag.negatable) prevFlag.negativeLongs.firstOrNull() else null,
             )
 
-        ch.isLetterOrDigit() -> CliError.UnknownOption("-$ch")
+        // The cluster only earns a mention when it is not the whole story: `-z` reports itself, while
+        // `-1m` splits and would otherwise report a `-1` the user cannot find in what they typed.
+        ch.isLetterOrDigit() -> CliError.UnknownOption("-$ch", cluster = token.takeIf { it != "-$ch" })
         else -> CliError.UnknownOption(token)
     }
 }
