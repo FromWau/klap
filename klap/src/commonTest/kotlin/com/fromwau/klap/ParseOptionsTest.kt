@@ -852,6 +852,19 @@ class SuggestionAcrossTheTreeTest {
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("biuld"))).error
         assertEquals(CliError.TooManyArguments("app", listOf("biuld"), "build"), err)
     }
+
+    @Test
+    fun `a dash led extra is never offered as a mistyped subcommand`() {
+        // A command name cannot start with '-', so edit distance against one is always a wrong answer:
+        // `-rm` is one edit from the `rm` command and means nothing like it. The `--` is what makes the
+        // token an operand at all, so this is the shape that reaches the extra-arguments error.
+        val tree = cli("app") {
+            action { Ok("") }
+            command("rm") { action { Ok("") } }
+        }
+        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--", "-rm"))).error
+        assertEquals(CliError.TooManyArguments("app", listOf("-rm"), null), err)
+    }
 }
 
 /** A required global fails a leaf that executes but must not block a bare group that only shows help. */

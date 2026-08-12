@@ -32,6 +32,7 @@ except pulse's row, which points at its module rather than a single file.
 | An option whose value may be omitted (`ls --color` vs `--color=never`)                                      | [`cp`](cp/), [`git`](git/), [`ls`](ls/), [`mv`](mv/)            | `.optionalValue()`                  |
 | Bare `key=value` operands, no dashes anywhere (`dd if=x bs=4M`)                                             | [`dd`](dd/)                                                     | operand-only surfaces               |
 | The obsolete digit-short form (`head -20`)                                                                  | [`head`](head/), [`git`](git/)                                  | `numericAlias`                      |
+| A single-dash token that should bind as an operand, not an option (`chmod -w f`)                            | [`chmod`](chmod/)                                               | `.dashLed()`                        |
 | A subcommand tree with aliases (`git add` / `git stage`)                                                    | [`git`](git/)                                                   | `command { }`, `aliases`            |
 | Help split into sections on a wide flat tool                                                                | [`pacman`](pacman/), [`curl`](curl/), [`ls`](ls/)               | `group { }`                         |
 | A value restricted to a fixed set (`--sort=WORD`)                                                           | [`cp`](cp/), [`ls`](ls/), [`git`](git/)                         | `.choice()`                         |
@@ -143,7 +144,7 @@ The tools, and why each is in the suite:
 | [`tar`](tar/)            | value-taking clusters (`-cvf out.tar`), and both exclusivity shapes side by side: `requireExactlyOne` for `-c`/`-x`/`-t`, `requireAtMostOne` for `-z`/`-j` |
 | [`dd`](dd/)              | no flags and no options at all, only bare `key=value` operands                                                                                             |
 | [`cp`](cp/), [`mv`](mv/) | three synopsis forms, and an operand that moves into an option                                                                                             |
-| [`chmod`](chmod/)        | a mode operand that looks like an option, reached with `--` (`chmod -- -w notes.txt`)                                                                      |
+| [`chmod`](chmod/)        | a mode operand that looks like an option, opted in with `dashLed()` (`chmod -w notes.txt`)                                                                 |
 | [`rm`](rm/)              | negatable interactivity flags, an input required unless another is present                                                                                 |
 | [`ls`](ls/)              | many small format/sort flags that override one another                                                                                                     |
 | [`head`](head/)          | the obsolete `head -20` digit short, dash-led values (`-n -5`)                                                                                             |

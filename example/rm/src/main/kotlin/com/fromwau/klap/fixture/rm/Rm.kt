@@ -62,10 +62,9 @@ public fun rmCli(): TypedCli<RmInputs> = cliOf("rm") {
         help = "when removing a hierarchy recursively, skip any directory on a different file system",
     )
 
-    // `.negatable()` is a direct hit for GNU's --preserve-root / --no-preserve-root pair. Real rm's
-    // `--preserve-root[=all]` also wants `.optionalValue()` on the same holder for the `=all` spelling, but
-    // that call lives on `Opt<T>` while `.negatable()` lives on `Flag`, so no call combines them; keeping
-    // the negation matches `--no-preserve-root` exactly and costs only the smaller `=all` spelling.
+    // KLAP-GAP: rm's `--preserve-root[=all]` plus `--no-preserve-root` needs BOTH `.negatable()` and
+    // `.optionalValue()` on one holder, but the first lives on `Flag` and the second on `Opt<T>`.
+    // Keeping `.negatable()` matches `--no-preserve-root` exactly and drops the `=all` spelling.
     val preserveRoot = flag("--preserve-root", help = "do not remove '/' (default)").negatable(default = true)
 
     // `.requiredUnless(inputs.force)` drops the declared minimum of 1 to 0 exactly when -f fired, so bare

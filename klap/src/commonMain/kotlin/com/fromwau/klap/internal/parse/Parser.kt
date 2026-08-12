@@ -484,6 +484,17 @@ internal fun Command.bindPositionals(
                 val fixedAfter = args.size - index - 1
                 val take = (values.size - i - fixedAfter).coerceAtLeast(0)
                 val slice = values.subList(i, i + take)
+                // Rule 3: the sift is permissive (it admits when ANY argument on the command is marked), so
+                // the slot a value actually lands in is only known here. Keyed on what the sift admitted
+                // rather than on the token's shape, so a `--`-escaped operand still binds in an unmarked
+                // slot. Reported as the unknown option it is, naming the whole word rather than a cluster
+                // character the user never typed. Checked before the min count below, so a rejected token
+                // is never also blamed for the slice coming up short.
+                if (policy != BindPolicy.Lenient && !spec.dashLed) {
+                    (i until i + take).firstOrNull { it in sifted.dashLedAdmitted }?.let {
+                        return Result.Error(CliError.UnknownOption(values[it]))
+                    }
+                }
                 // Keyed on min alone: multiple() defaults to min = 0, which means the operand list is
                 // genuinely optional (`tar -tf a.tar` names no FILE). Erroring on any empty slice regardless
                 // of min would make min = 0 behave as min = 1 and put every `[FILE...]` surface out of reach.
@@ -518,6 +529,10 @@ internal fun Command.bindPositionals(
                         }
                     }
                 } else {
+                    // Rule 3, same as the Multiple branch above.
+                    if (policy != BindPolicy.Lenient && i in sifted.dashLedAdmitted && !spec.dashLed) {
+                        return Result.Error(CliError.UnknownOption(raw))
+                    }
                     when (val outcome = spec.convertOne(raw, inferValues)) {
                         is Result.Error -> if (policy != BindPolicy.Lenient) return outcome
                         // Same "?: default" substitution as the option bind: only a converter that SUCCEEDS
@@ -652,7 +667,11 @@ private fun ValueSpec.resolveChoice(raw: String, choices: List<String>): Result<
  */
 private fun Command.tooManyArguments(extras: List<String>): CliError.TooManyArguments {
     val commandNames = subcommands.filterNot { it.hidden }.flatMap { listOf(it.name) + it.aliases }
-    return CliError.TooManyArguments(name, extras, extras.firstOrNull()?.let { suggest(it, commandNames) })
+    // A dash-led extra is never a mistyped subcommand: [requireValidName] forbids a leading '-' on every
+    // command name and alias, so measuring one against them can only produce a wrong answer ('-rm' is one
+    // edit from 'rm'). Such a token gets here past `--`, or past a `dashLed()` slot that already took one.
+    val needle = extras.firstOrNull()?.takeUnless { it.startsWith("-") }
+    return CliError.TooManyArguments(name, extras, needle?.let { suggest(it, commandNames) })
 }
 
 /**
@@ -840,6 +859,7 @@ internal fun Command.sift(
     val negations = mutableMapOf<FlagSpec, Boolean>()
     val optionValues = mutableMapOf<OptionSpec, MutableList<String>>()
     val positionals = mutableListOf<String>()
+    val dashLedAdmitted = mutableSetOf<Int>()
     var error: CliError? = null
 
     // A lambda, not a value: only the first call's build() actually executes, so suggest()'s edit-distance
@@ -854,6 +874,9 @@ internal fun Command.sift(
     // Loop-invariant, but built only once a long token actually needs it: a segment of operands and short
     // clusters must not pay for a list it never reads.
     val longPool by lazy(LazyThreadSafetyMode.NONE) { longMatchPool(globalAcc) }
+
+    // Loop-invariant, and over [specs] rather than [arguments] so the answer costs one pass and no list.
+    val hasDashLedSlot = specs.any { it is ArgumentSpec && it.dashLed }
 
     fun hit(flag: FlagSpec, polarity: Boolean, at: Int) {
         flagCounts[flag] = (flagCounts[flag] ?: 0) + 1
@@ -973,6 +996,20 @@ internal fun Command.sift(
                 // mixed cluster like `-fv` binds the global too; only a char that is neither is recorded.
                 val chars = token.removePrefix("-")
                 var advance = 1
+
+                // Decided before the walk, because the walk records flag hits as it goes and a token that
+                // turns out to be an operand would have to unwind them. A `--` token cannot arrive here at
+                // all, the arm above claims it, so long-option typos keep their did-you-mean.
+                if (hasDashLedSlot && !shortClusterResolvesInFull(chars, globalAcc)) {
+                    dashLedAdmitted += positionals.size
+                    positionals += token
+                    i += 1
+                    // It is an operand, so it ends options under the POSIX reading exactly as the
+                    // not-flag-like route above does; "the first operand" cannot depend on its spelling.
+                    if (optionsEndAtFirstOperand) optionsEnded = true
+                    continue
+                }
+
                 var j = 0
                 while (j < chars.length) {
                     val ch = chars[j].toString()
@@ -1023,7 +1060,16 @@ internal fun Command.sift(
             }
         }
     }
-    return Sifted(flagCounts, negations, optionValues, positionals, error, flagPositions, optionPositions)
+    return Sifted(
+        flagCounts,
+        negations,
+        optionValues,
+        positionals,
+        error,
+        flagPositions,
+        optionPositions,
+        dashLedAdmitted,
+    )
 }
 
 internal fun List<FlagSpec>.findFlag(token: String): FlagSpec? = when {
@@ -1077,6 +1123,35 @@ private fun Command.findNegatedFlag(long: String): FlagSpec? = flags.findNegated
 private fun Command.findNegatedShort(short: String): FlagSpec? = flags.findNegatedShort(short)
 private fun Command.findOption(long: String?, short: String?): OptionSpec? =
     options.findOption(long, short)
+
+/**
+ * Whether a short cluster resolves in full against this command and [globalAcc]'s globals: every character
+ * is a flag, a negated short, or an option. An option takes whatever follows it in the cluster as its
+ * value, so the characters after one are not asked to resolve. Answers without recording a hit, which is
+ * the point: [sift]'s cluster walk mutates as it goes, so a token that turns out to be an operand has to be
+ * recognised before the walk starts rather than unwound afterwards.
+ *
+ * The loop mirrors that walk, early exit included, which is what makes "declared wins" all-or-nothing up
+ * to the option that ends it. Sharing only the lookups would not be enough: `-p8080` resolves there, where
+ * requiring every character to resolve would demand the same of `8080` and hand a declared option's own
+ * token to an operand slot.
+ *
+ * Call this from inside the cluster branch. A `numericAlias` resolves in a branch ahead of it and is none
+ * of these three lookups, so checking earlier would read `head -5` as an operand.
+ */
+internal fun Command.shortClusterResolvesInFull(
+    chars: String,
+    globalAcc: GlobalAccumulator?,
+): Boolean {
+    for (c in chars) {
+        val ch = c.toString()
+        if (globalAcc.clusterHit(findFlag("-$ch")) { flagSpecs.findFlag("-$ch") } != null) continue
+        if (globalAcc.clusterHit(findNegatedShort(ch)) { flagSpecs.findNegatedShort(ch) } != null) continue
+        // An option takes the rest of the cluster as its value, so nothing after it has to resolve.
+        return globalAcc.clusterHit(findOption(null, ch)) { optionSpecs.findOption(null, ch) } != null
+    }
+    return true
+}
 
 /**
  * The error for an unrecognized char at `chars[j]` inside a short cluster (the chars before it, `chars[0
@@ -1383,6 +1458,10 @@ internal class Sifted(
     // whole-token one: see [clusterPosition].
     val flagPositions: Map<FlagSpec, Int> = emptyMap(),
     val optionPositions: Map<OptionSpec, Int> = emptyMap(),
+    // Indices into [positionals] that arrived through a `dashLed()` slot: a single-dash token that resolved
+    // to no option. Only these are refusable at bind time, so a `--`-escaped operand keeps binding in any
+    // slot exactly as it does today.
+    val dashLedAdmitted: Set<Int> = emptySet(),
 )
 
 /**

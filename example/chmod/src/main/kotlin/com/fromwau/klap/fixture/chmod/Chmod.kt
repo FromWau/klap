@@ -23,7 +23,11 @@ import com.fromwau.klap.projection
 
 /** The MODE operand: `755` / `-0755` (octal) or `u+x,a-w` (symbolic clauses). */
 public sealed interface ChmodMode {
-    public data class Octal(val bits: Int) : ChmodMode
+    /** The operator an octal mode may carry: `chmod -755` clears the bits `chmod 755` sets. */
+    public enum class OctalOp(public val symbol: Char) { ADD('+'), REMOVE('-'), ASSIGN('=') }
+
+    /** [op] is null for the plain absolute spelling, `755`, which carries no operator at all. */
+    public data class Octal(val bits: Int, val op: OctalOp? = null) : ChmodMode
     public data class Symbolic(val clauses: List<String>) : ChmodMode
 }
 
@@ -40,8 +44,9 @@ private val CHMOD_SYMBOLIC_CLAUSE = Regex("""[ugoa]*(?:[-+=](?:[rwxXst]*|[ugo]))
 private fun parseChmodMode(raw: String): Result<ChmodMode, ConversionError> {
     if (raw.isEmpty()) return Err(ConversionError.Domain(ChmodModeError.Empty, "mode must not be empty"))
     if (CHMOD_OCTAL.matches(raw)) {
-        val digits = raw.trimStart('-', '+', '=')
-        return Ok(ChmodMode.Octal(digits.fold(0) { acc, c -> acc * 8 + (c - '0') }))
+        val op = ChmodMode.OctalOp.entries.firstOrNull { it.symbol == raw.first() }
+        val digits = if (op == null) raw else raw.drop(1)
+        return Ok(ChmodMode.Octal(digits.fold(0) { acc, c -> acc * 8 + (c - '0') }, op))
     }
     val clauses = raw.split(',')
     if (clauses.all { it.isNotEmpty() && CHMOD_SYMBOLIC_CLAUSE.matches(it) }) {
@@ -53,7 +58,7 @@ private fun parseChmodMode(raw: String): Result<ChmodMode, ConversionError> {
 }
 
 private fun chmodModeLabel(mode: ChmodMode): String = when (mode) {
-    is ChmodMode.Octal -> mode.bits.toString(8).padStart(4, '0')
+    is ChmodMode.Octal -> mode.op?.symbol?.toString().orEmpty() + mode.bits.toString(8).padStart(4, '0')
     is ChmodMode.Symbolic -> mode.clauses.joinToString(",")
 }
 
@@ -67,7 +72,7 @@ public fun chmodCli(): TypedCli<ChmodInputs> = cliOf("chmod") {
 
     example("chmod 755 script.sh", "octal mode")
     example("chmod u+x,go-w -R src", "symbolic mode, recursively")
-    example("chmod -- -w notes.txt", "a dash-led mode needs -- to separate it from the options")
+    example("chmod -w notes.txt", "a dash-led mode binds directly; `--` still works too")
 
     val changes = flag("--changes", "-c", help = "like verbose but report only when a change is made")
     val silent = flag("--silent", "-f", help = "suppress most error messages")
@@ -114,15 +119,15 @@ public fun chmodCli(): TypedCli<ChmodInputs> = cliOf("chmod") {
     // Multiple claims the rest — the reverse shape (`SOURCE... DEST`, cp) is what that same greedy slice
     // makes impossible.
     //
-    // KLAP-GAP: a leading-dash mode never reaches this slot. `chmod -w f`, `chmod -rwx f` and `chmod -R -w d` are
-    // all accepted by GNU chmod, but every dash-led token is an option token to klap, so it is read as an
-    // unknown option instead. No general rule serves both chmod and mkdir (`-w f` is an operand to one and
-    // an error to the other), so this is a permanent divergence rather than a gap to close; `chmod -- -w f`
-    // is POSIX's own escape.
+    // `dashLed()` is why `chmod -w f`, `chmod -rwx f` and `chmod -R -w d` bind here as GNU chmod binds
+    // them. The rule that serves both this and mkdir (where `-w f` really is an error) is per-argument
+    // opt-in: chmod marks its mode slot and mkdir does not. `-R` still parses as the flag it is, because
+    // only a token resolving to nothing reaches the slot, and `chmod -- -w f` still works.
     //
     // `chmod --reference=RFILE FILE...` REPLACES the MODE operand entirely, so the slot must disappear on
     // that line rather than merely go unread, or the first FILE slides into it.
     val mode = argument("mode", "the new mode: octal (755) or symbolic (u+x,a-w)")
+        .dashLed()
         .convert(::parseChmodMode)
         .completeWith { candidates(listOf("644", "755", "600", "700", "u+x", "a-w", "go-rwx")) }
         .absentWhen(reference)
