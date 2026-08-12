@@ -7,23 +7,24 @@ how to add it; start at [`example/`](../example/README.md) for runnable programs
 ships, so if you are building against a release, read this file at that release's tag
 ([`v0.1.0`](https://github.com/FromWau/klap/blob/v0.1.0/docs/guide.md), and so on) rather than here.
 
-| | |
-|---|---|
-| [Quick start](#quick-start) | the builder DSL, the three receivers, sharing a declaration |
-| [Inputs and converters](#inputs-and-converters) | spellings, dash-led values, numbers, dependent and optional-value operands |
-| [Flags](#flags-boolean-counted-negatable) | boolean, counted, negatable |
-| [Abbreviation](#abbreviation) | how far a partially typed name resolves, git's rationale, choosing a mode |
-| [Cross-input constraints](#cross-input-constraints) | `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `requiredIf` |
-| [Global / persistent options](#global--persistent-options) | options shared by every subcommand, and declining a built-in |
-| [Typed results and errors](#typed-results-and-errors) | kern's `Result`, `IError`, `CliError`, exit codes, did-you-mean |
-| [Structured `--json`](#structured---json) | one `Ok(value)`, two renderings, actions that print as they go |
-| [Color output](#color-output) | styles, `ColorScope`, `NO_COLOR`, `--color` |
-| [Command groups and nesting](#command-groups-and-nesting) | subcommand trees and help sections |
-| [Help output](#help-output) | layout, wrapping, examples, epilogue |
-| [Shell completion](#shell-completion) | bash/zsh/fish/powershell, value-aware providers |
-| [Generated docs](#generated-docs) | markdown and man pages |
-| [Escape hatch](#escape-hatch) | driving the parser yourself, and testing your CLI |
-| [POSIX conformance](#posix-conformance) | what klap guarantees, and the two deliberate exits from it |
+|                                                            |                                                                                   |
+|------------------------------------------------------------|-----------------------------------------------------------------------------------|
+| [Quick start](#quick-start)                                | the builder DSL, the three receivers, sharing a declaration                       |
+| [Inputs and converters](#inputs-and-converters)            | spellings, dash-led values, numbers, dependent and optional-value operands        |
+| [Flags](#flags-boolean-counted-negatable)                  | boolean, counted, negatable                                                       |
+| [Abbreviation](#abbreviation)                              | how far a partially typed name resolves, git's rationale, choosing a mode         |
+| [Cross-input constraints](#cross-input-constraints)        | `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `requiredIf`                 |
+| [Global / persistent options](#global--persistent-options) | options shared by every subcommand, and declining a built-in                      |
+| [Typed results and errors](#typed-results-and-errors)      | kern's `Result`, `IError`, `CliError`, exit codes, did-you-mean                   |
+| [Suspending actions](#suspending-actions)                  | `actionSuspending`, `runSuspending`, the caller-owned scope, no suspending `main` |
+| [Structured `--json`](#structured---json)                  | one `Ok(value)`, two renderings, actions that print as they go                    |
+| [Color output](#color-output)                              | styles, `ColorScope`, `NO_COLOR`, `--color`                                       |
+| [Command groups and nesting](#command-groups-and-nesting)  | subcommand trees and help sections                                                |
+| [Help output](#help-output)                                | layout, wrapping, examples, epilogue                                              |
+| [Shell completion](#shell-completion)                      | bash/zsh/fish/powershell, value-aware providers                                   |
+| [Generated docs](#generated-docs)                          | markdown and man pages                                                            |
+| [Escape hatch](#escape-hatch)                              | driving the parser yourself, and testing your CLI                                 |
+| [POSIX conformance](#posix-conformance)                    | what klap guarantees, and the two deliberate exits from it                        |
 ## Quick start
 
 `cli(name)` builds the root command. A single-command tool can act at the root, so no subcommand is
@@ -31,7 +32,7 @@ required. This is the [README](../README.md)'s front-page program with a `descri
 `--times` added:
 
 ```kotlin
-import com.fromwau.klap.Ok
+import com.fromwau.kern.result.Ok
 import com.fromwau.klap.cli
 import com.fromwau.klap.main
 
@@ -58,18 +59,23 @@ HELLO, ADA!
 HELLO, ADA!
 ```
 
-Everything lives in package `com.fromwau.klap`. Import the entry points you name at the top level:
-`cli`, `main`, `Ok`, `Err`, `CliError` (plus `Result` / `Opt` / `getOrElse` if you reference them).
-Everything you call *inside* a `cli { }` / `command { }` block takes no import, because it is a member
-of the block's receiver.
+`cli`, `main`, `CliError` and `Opt` live in package `com.fromwau.klap`; import whichever you name at the
+top level. `Ok`, `Err`, `Result` and `getOrElse` are not klap's own: they come from
+`com.fromwau.kern.result`, imported the same way. Everything you call *inside* a `cli { }` / `command { }`
+block takes no import, because it is a member of the block's receiver.
+
+Outside a block, nothing is a member: `parse`, `run`, `runSuspending`, `runAction` and `runActionSuspending`
+are top-level extension functions on `Cli` / `Invocation.Execute`, not members, and so are kern's `Result`
+combinators (`map`, `mapError`, `getOrElse`, `fold`, and the rest). None of them show up in autocomplete on
+the value you call them on until you import that one by name.
 
 Those receivers have names, and you will want them the first time you factor a declaration out:
 
-| Receiver | Where it is the receiver | What it carries |
-|---|---|---|
-| `CommandBuilder` | `command(name) { }` | `argument`, `option`, `flag`, `command`, `group`, `example`, `action`; the cross-input rules `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `numericAlias`; the per-command settings `description`, `aliases`, `epilogue`, `hidden`, `optionsEndAtFirstOperand` |
-| `CliBuilder` | `cli(name) { }` | everything on `CommandBuilder`, plus the root-only `globalOption`, `globalFlag`, `version`, `author`, `abbreviation`, `builtins { }` |
-| `ConverterScope` | the base of both | every converter: `.int()`, `.map()`, `.default()`, `.range()`, `.count()`, `.negatable()`, `.absentWhen()`, `.completeWith()`, ... |
+| Receiver         | Where it is the receiver | What it carries                                                                                                                                                                                                                                                       |
+|------------------|--------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `CommandBuilder` | `command(name) { }`      | `argument`, `option`, `flag`, `command`, `group`, `example`, `action`; the cross-input rules `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `numericAlias`; the per-command settings `description`, `aliases`, `epilogue`, `hidden`, `optionsEndAtFirstOperand` |
+| `CliBuilder`     | `cli(name) { }`          | everything on `CommandBuilder`, plus the root-only `globalOption`, `globalFlag`, `version`, `author`, `abbreviation`, `builtins { }`                                                                                                                                  |
+| `ConverterScope` | the base of both         | every converter: `.int()`, `.map()`, `.default()`, `.range()`, `.count()`, `.negatable()`, `.absentWhen()`, `.completeWith()`, ...                                                                                                                                    |
 
 `CliBuilder` extends `CommandBuilder`, which extends `ConverterScope`, so a root block can call
 anything a subcommand block can. All three are abstract classes with internal constructors: klap owns
@@ -115,6 +121,8 @@ has an `action` (no subcommands), `--completion` / `--docs` arrive as options, a
 
 ```kotlin
 import com.fromwau.klap.*
+import com.fromwau.kern.result.Err
+import com.fromwau.kern.result.Ok
 import kotlinx.serialization.Serializable
 import kotlin.math.pow
 import kotlin.math.round
@@ -241,28 +249,28 @@ val region  = option("--region").required()                        //  String  (
 val files   = argument("files").file().multiple(min = 1)           //  List<String>  (min 1, path-completed)
 ```
 
-| Converter | On | Result |
-|---|---|---|
-| `.int()` `.long()` `.double()` | argument, option | the parsed primitive |
-| `.boolean()` | argument, option | `Boolean`, accepting only the exact lowercase literals `true` / `false` (case-sensitive: `True`, `TRUE`, `yes`, `no`, `1`, `0`, and `""` are all rejected) |
-| `.enum<E>()` | argument, option | `E`, matched case-insensitively; choices shown lowercase |
-| `.choice("a", "b")` | argument, option | the raw string, restricted to the given set (matched case-insensitively, returns the declared spelling) |
-| `.map { raw -> T }` | argument, option | any type; a thrown exception becomes a clean parse error |
-| `.convert { raw -> Result }` | argument, option | any type, failing with a case of your own |
-| `.validate("msg") { it > 0 }` | argument, option | same type; fails with `BadValue` when the predicate is false. The predicate always runs per element, so declare it *before* `.multiple()`: a chain that puts it after fails at parse instead of validating |
-| `.range(1..65535)` | argument, option (`Comparable`) | same type, bounds-checked; shows the range in help. Sugar over `.validate()`, with the same ordering |
-| `.optional()` | argument | makes a positional nullable (options are already nullable) |
-| `.default(v)` | argument, option | binds `v` whenever the value would be null (absent, or a converter that resolved to `null`). Declared *before* a converter, it runs through that too, so `.default("0").int()` binds `0`; one the converter rejects fails at construction. A `.choice()` set is checked in either order, but `.validate()` / `.range()` predicates never run against a default. |
-| `.required()` | option | fails if the option is missing |
-| `.requiredIf(flag)` | option | fails if the option is missing *and* `flag` was given (see [Cross-input constraints](#cross-input-constraints)) |
-| `.optionalValue(whenBare)` | option | `--opt=V` binds `V`, a bare `--opt` binds `whenBare`, and the space form never binds (see [POSIX conformance](#posix-conformance)) |
-| `.multiple(min = 0)` | argument, option | collects every occurrence into a `List`, and `min` is enforced. A command may declare **one** variadic argument, but any number of repeatable options |
-| `.absentWhen(input)` | argument | removes this operand slot entirely whenever `input` was supplied, so the operands after it keep their own positions (see [Operands that depend on an option](#operands-that-depend-on-an-option)) |
-| `.requiredUnless(input)` | argument | drops this operand's declared minimum to zero whenever `input` was supplied; the slot itself stays, so nothing shifts. Only a `.multiple()` operand carries a minimum to relax, so any other cardinality is rejected when the tree is constructed (reach for `.absentWhen()` to remove a slot instead) |
-| `.placeholder(name)` | argument, option | the word help and usage show in the value slot: `--out <FILE>` instead of `--out <value>`. On an option it also replaces the choice list, which keeps a long one from widening every other row |
-| `.file()` | argument, option | marks a path for shell file-completion (completion only; does not check the path exists or is a file) |
-| `.hidden()` | argument, option, flag | still parses, but omitted from help, completion, and docs |
-| `.completeWith { ... }` | argument, option | supply completion candidates at runtime via `candidate()` / `candidates()` / `completeFiles()` (see below) |
+| Converter                      | On                              | Result                                                                                                                                                                                                                                                                                                                                                          |
+|--------------------------------|---------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `.int()` `.long()` `.double()` | argument, option                | the parsed primitive                                                                                                                                                                                                                                                                                                                                            |
+| `.boolean()`                   | argument, option                | `Boolean`, accepting only the exact lowercase literals `true` / `false` (case-sensitive: `True`, `TRUE`, `yes`, `no`, `1`, `0`, and `""` are all rejected)                                                                                                                                                                                                      |
+| `.enum<E>()`                   | argument, option                | `E`, matched case-insensitively; choices shown lowercase                                                                                                                                                                                                                                                                                                        |
+| `.choice("a", "b")`            | argument, option                | the raw string, restricted to the given set (matched case-insensitively, returns the declared spelling)                                                                                                                                                                                                                                                         |
+| `.map { raw -> T }`            | argument, option                | any type; a thrown exception becomes a clean parse error                                                                                                                                                                                                                                                                                                        |
+| `.convert { raw -> Result }`   | argument, option                | any type, failing with a case of your own                                                                                                                                                                                                                                                                                                                       |
+| `.validate("msg") { it > 0 }`  | argument, option                | same type; fails with `BadValue` when the predicate is false. The predicate always runs per element, so declare it *before* `.multiple()`: a chain that puts it after fails at parse instead of validating                                                                                                                                                      |
+| `.range(1..65535)`             | argument, option (`Comparable`) | same type, bounds-checked; shows the range in help. Sugar over `.validate()`, with the same ordering                                                                                                                                                                                                                                                            |
+| `.optional()`                  | argument                        | makes a positional nullable (options are already nullable)                                                                                                                                                                                                                                                                                                      |
+| `.default(v)`                  | argument, option                | binds `v` whenever the value would be null (absent, or a converter that resolved to `null`). Declared *before* a converter, it runs through that too, so `.default("0").int()` binds `0`; one the converter rejects fails at construction. A `.choice()` set is checked in either order, but `.validate()` / `.range()` predicates never run against a default. |
+| `.required()`                  | option                          | fails if the option is missing                                                                                                                                                                                                                                                                                                                                  |
+| `.requiredIf(flag)`            | option                          | fails if the option is missing *and* `flag` was given (see [Cross-input constraints](#cross-input-constraints))                                                                                                                                                                                                                                                 |
+| `.optionalValue(whenBare)`     | option                          | `--opt=V` binds `V`, a bare `--opt` binds `whenBare`, and the space form never binds (see [POSIX conformance](#posix-conformance))                                                                                                                                                                                                                              |
+| `.multiple(min = 0)`           | argument, option                | collects every occurrence into a `List`, and `min` is enforced. A command may declare **one** variadic argument, but any number of repeatable options                                                                                                                                                                                                           |
+| `.absentWhen(input)`           | argument                        | removes this operand slot entirely whenever `input` was supplied, so the operands after it keep their own positions (see [Operands that depend on an option](#operands-that-depend-on-an-option))                                                                                                                                                               |
+| `.requiredUnless(input)`       | argument                        | drops this operand's declared minimum to zero whenever `input` was supplied; the slot itself stays, so nothing shifts. Only a `.multiple()` operand carries a minimum to relax, so any other cardinality is rejected when the tree is constructed (reach for `.absentWhen()` to remove a slot instead)                                                          |
+| `.placeholder(name)`           | argument, option                | the word help and usage show in the value slot: `--out <FILE>` instead of `--out <value>`. On an option it also replaces the choice list, which keeps a long one from widening every other row                                                                                                                                                                  |
+| `.file()`                      | argument, option                | marks a path for shell file-completion (completion only; does not check the path exists or is a file)                                                                                                                                                                                                                                                           |
+| `.hidden()`                    | argument, option, flag          | still parses, but omitted from help, completion, and docs                                                                                                                                                                                                                                                                                                       |
+| `.completeWith { ... }`        | argument, option                | supply completion candidates at runtime via `candidate()` / `candidates()` / `completeFiles()` (see below)                                                                                                                                                                                                                                                      |
 
 `.placeholder()`, `.file()`, `.hidden()` and `.completeWith { }` set display and completion metadata
 instead of transforming the value, so they are order-free: `.placeholder("SEED").long()` and
@@ -495,11 +503,11 @@ cli("tasks") {
 }
 ```
 
-| Mode | Long options | `.choice()` / `.enum<E>()` values | Subcommands |
-|---|---|---|---|
-| `Abbreviation.None` (default) | no | no | no |
-| `Abbreviation.Options` | yes | yes | no |
-| `Abbreviation.All` | yes | yes | yes |
+| Mode                          | Long options | `.choice()` / `.enum<E>()` values | Subcommands |
+|-------------------------------|--------------|-----------------------------------|-------------|
+| `Abbreviation.None` (default) | no           | no                                | no          |
+| `Abbreviation.Options`        | yes          | yes                               | no          |
+| `Abbreviation.All`            | yes          | yes                               | yes         |
 
 `Options` is the GNU shape, and a name and its value travel together there: `mkdir --par d` reaches
 `--parents`, `--no-der` reaches a negatable flag's negative half, and `ls --color=al` reaches `always`
@@ -806,17 +814,17 @@ when (val parsed = cli.parse(argv)) {
 
 Nine combinators come with it, all extensions on `Result<S, E>`:
 
-| Combinator | Signature | Does |
-|---|---|---|
-| `map` | `(S) -> T` → `Result<T, E>` | rewrites the success value, leaves an error untouched |
-| `mapError` | `(E) -> F` → `Result<S, F>` | rewrites the error, leaves a success untouched |
-| `getOrElse` | `(E) -> S` → `S` | unwraps, computing a fallback from the error |
-| `getOrNull` | → `S?` | the success value, or null |
-| `errorOrNull` | → `E?` | the error, or null |
-| `fold` | `(S) -> T`, `(E) -> T` → `T` | collapses both sides to one type |
-| `orElse` | `(E) -> Result<S, F>` | recovers with another attempt, which may fail its own way |
-| `onSuccess` | `(S) -> Unit` → `Result<S, E>` | side effect on success, returns the receiver |
-| `onError` | `(E) -> Unit` → `Result<S, E>` | side effect on failure, returns the receiver |
+| Combinator    | Signature                      | Does                                                      |
+|---------------|--------------------------------|-----------------------------------------------------------|
+| `map`         | `(S) -> T` → `Result<T, E>`    | rewrites the success value, leaves an error untouched     |
+| `mapError`    | `(E) -> F` → `Result<S, F>`    | rewrites the error, leaves a success untouched            |
+| `getOrElse`   | `(E) -> S` → `S`               | unwraps, computing a fallback from the error              |
+| `getOrNull`   | → `S?`                         | the success value, or null                                |
+| `errorOrNull` | → `E?`                         | the error, or null                                        |
+| `fold`        | `(S) -> T`, `(E) -> T` → `T`   | collapses both sides to one type                          |
+| `orElse`      | `(E) -> Result<S, F>`          | recovers with another attempt, which may fail its own way |
+| `onSuccess`   | `(S) -> Unit` → `Result<S, E>` | side effect on success, returns the receiver              |
+| `onError`     | `(E) -> Unit` → `Result<S, E>` | side effect on failure, returns the receiver              |
 
 `getOrNull` and `errorOrNull` are the two that are not `inline`; the rest are, so a non-local `return`
 out of their lambdas works. kern also ships `EmptyResult<E>`, a typealias for `Result<Unit, E>`, for work
@@ -936,11 +944,117 @@ else is neutralized on the way out, including escape codes: a detail almost alwa
 from argv, and klap cannot tell a color you applied from one a caller injected. Color your `Ok` output,
 not your errors.
 
+## Suspending actions
+
+`action { }` is synchronous. When the work suspends, declare it with `actionSuspending { }` and run the
+CLI through `runSuspending`, which takes the exit code back rather than ending the process:
+
+```kotlin
+fun main(args: Array<String>) {
+    val code = runBlocking {
+        cli("tool") { actionSuspending { Ok(client.fetch()) } }
+            .runSuspending(args, defaultTerminal())
+    }
+    exitProcess(code)
+}
+```
+
+`runBlocking` is yours, not klap's: klap declares suspending functions but never runs or blocks on a
+coroutine, so it takes no dependency on `kotlinx-coroutines`. The scope is yours too, which is the point.
+Cancel it and a suspended action is cancelled with it; put a timeout around it and the timeout applies.
+
+Note the block body. `fun main(args) = runBlocking { ...; exitProcess(code) }` does not compile, because
+the last expression is `Nothing` and the expression body infers it. Keep `exitProcess` a statement.
+
+That also makes klap usable as one task among several rather than as the whole program:
+
+```kotlin
+suspend fun main(args: Array<String>) {
+    val code = coroutineScope {
+        val service = SomeService()
+        val job = launch { service.startLoop() }
+
+        val exitCode = cli("list") { actionSuspending { Ok(SomeRepository(service).fetchAll()) } }
+            .runSuspending(args, defaultTerminal())
+
+        job.cancelAndJoin()
+        exitCode
+    }
+    exitProcess(code)
+}
+```
+
+There is deliberately no suspending counterpart to `main`. `main` ends the process, which from inside a
+caller's scope would skip every `finally` and kill sibling coroutines, so a suspending CLI exits itself
+once its scope has wound down.
+
+The synchronous entry points refuse what they cannot drive, and say so at the point of use:
+
+```
+cli 'app': command 'app fetch' uses actionSuspending { }, which the synchronous entry points cannot
+drive; call runSuspending(argv, terminal) from a coroutine instead
+```
+
+`runAction` refuses only the action it resolved, so on a tree that mixes both kinds you can still drive a
+synchronous command through `parse` + `runAction`. The suspending half goes through `parse` +
+`runActionSuspending` instead, `runAction`'s `suspend` counterpart, which never refuses since a `suspend`
+function can drive either kind of action.
+
+### Cancelling on Ctrl-C
+
+Cancellation is the capability the whole feature exists for, so here is what it takes to turn "cancel the
+scope" into a clean process exit on the JVM. The signal-handling half is JVM-specific
+(`Runtime.getRuntime().addShutdownHook`); the cancellation half, cancelling `rootJob` and catching what
+`runBlocking` rethrows, is ordinary coroutines mechanics and works on every target. klap does not install a
+signal handler and does not intend to: the scope is the caller's, so the signal is too.
+
+```kotlin
+fun main(args: Array<String>) {
+    val rootJob = Job()   // the caller-owned scope; klap never sees it directly
+
+    Runtime.getRuntime().addShutdownHook(
+        Thread {
+            // Fires on every exit, not only a signal, so guard on the job still being active: an
+            // ordinary run has already completed it by the time this hook runs.
+            if (rootJob.isActive) {
+                rootJob.cancel(CancellationException("process is shutting down"))
+                runBlocking { rootJob.children.forEach { it.join() } }
+            }
+        },
+    )
+
+    val code = try {
+        runBlocking(rootJob) {
+            val service = SomeService()
+            val job = launch { service.startLoop() }
+
+            val exitCode = cli("tool") { actionSuspending { Ok(client.fetch()) } }
+                .runSuspending(args, defaultTerminal())
+
+            job.cancelAndJoin()   // waits for service.startLoop()'s own finally to run
+            exitCode
+        }
+    } catch (_: CancellationException) {
+        // runBlocking rethrows the cancellation the hook above triggered.
+        130   // the conventional 128 + SIGINT
+    } finally {
+        // A bare Job() never leaves Active on its own once its children finish; without this the
+        // guard above stays true forever, so an ordinary exit would look like a cancellation too.
+        rootJob.complete()
+    }
+    exitProcess(code)
+}
+```
+
+That reaches a suspended action and an independent background loop the same way, and the loop's `finally`
+runs to completion before the process exits. [`example/pulse`](../example/pulse/) is this whole pattern
+worked through in a real program, SIGINT handling included.
+
 ## Structured `--json`
 
 The value you return from `Ok` renders two ways, chosen by the global `--json` flag:
 
-- **Without `--json`:** an optional `human` renderer passed to `action`, falling back to
+- **Without `--json`:** an optional `human` renderer passed to the action builder, falling back to
   `value.toString()`.
 - **With `--json`:** `kotlinx.serialization` encoding of the value. A `String` becomes a bare JSON
   string; an `@Serializable` type becomes its object/array.
@@ -968,7 +1082,9 @@ $ fleet list --json
 The `human` renderer runs with the same `ActionScope` receiver as the `action` body, so it can read the
 command's inputs, not just the result value. That makes it the home for presentation-only formatting an
 input should drive without leaking into the JSON, for example an `--oneline` flag that reshapes the human
-layout while `--json` still emits the full object.
+layout while `--json` still emits the full object. Nothing ties its text back to the value it is handed, so
+a stale `human` renders wrong prose while `--json` stays correct; klap cannot check this, keep it in sync
+by hand.
 
 Errors follow suit: under `--json` a failure prints `{"error":"...","code":n}` to stderr, so a
 pipeline sees JSON on both streams. Returning a `String` or primitive needs no setup; returning an
@@ -1028,7 +1144,7 @@ through the same switch and the same mechanism, so the two can never disagree ab
 sanitized on the way out, so styling one has no effect; see [Typed results and errors](#typed-results-and-errors).)
 
 ```kotlin
-import com.fromwau.klap.yellow
+import com.fromwau.kern.terminal.yellow
 
 command("build") {
     action { Ok(yellow { "built" }) }
@@ -1374,6 +1490,9 @@ klap's rendering is a thin layer over pure functions. Reach past it when you nee
   over its actions' return types), so cast it to your type. An `Execute` always has an action to run: a
   group resolves to `ShowHelp`, and a command declaring neither an action nor subcommands is rejected when
   the tree is built.
+- `Invocation.Execute.runActionSuspending(): Result<Any?, CliError>` is `runAction`'s `suspend` counterpart,
+  for a resolved action that suspends. It never refuses, since a `suspend` function can drive either kind of
+  action (see [Suspending actions](#suspending-actions)).
 - `cli.run(argv, terminal): Int` parses, dispatches, **runs the resolved `action { }`**, and renders its
   result (or any error) to a `Terminal` you supply, returning the exit code without terminating the
   process. Reach for `run` rather than `parse` whenever an action must actually execute. It also makes
@@ -1396,14 +1515,19 @@ val code = cli.run(arrayOf("list", "--json"), term)
 // assert on code and term.out
 ```
 
+- `Cli.runSuspending(argv, terminal): Int` is `run`'s `suspend` counterpart: same parse, dispatch and
+  render, but the caller supplies the coroutine scope and gets the exit code back as a value instead of the
+  process terminating. A CLI containing any `actionSuspending { }` refuses `run` and must go through
+  `runSuspending` instead (see [Suspending actions](#suspending-actions)).
+
 `cli.main(argv)` is the full drop-in: it calls `run` with the platform terminal and exits the process
 with the resulting code.
 
-All three take any `Collection<String>`, so a `List`, a `Set`, or whatever collection you already hold
-goes straight in. Each also has an `Array<String>` overload, because an `Array` is not a `Collection` and
-that is the shape Kotlin's own `fun main(args: Array<String>)` gives you. Going the other way, every
-collection klap hands back is a `List`: `Command.aliases`, `Command.subcommands`, a `.multiple()` holder's
-value, and the collections inside `CliError`. Liberal in, specific out.
+Every argv-taking entry point above accepts any `Collection<String>`, so a `List`, a `Set`, or whatever
+collection you already hold goes straight in. Each also has an `Array<String>` overload, because an `Array`
+is not a `Collection` and that is the shape Kotlin's own `fun main(args: Array<String>)` gives you. Going
+the other way, every collection klap hands back is a `List`: `Command.aliases`, `Command.subcommands`, a
+`.multiple()` holder's value, and the collections inside `CliError`. Liberal in, specific out.
 
 One caveat on the widened parameter: argv is a *sequence*, and the order is the input. A `Collection` with
 no meaningful order will parse in whatever order it iterates, which is the caller's error rather than
@@ -1501,15 +1625,15 @@ assertEquals(
 Use `run(argv, terminal)` instead when what you want to pin is the *output* — the rendered text, the exit
 code, or a `--json` envelope. `inputs` is for binding, `run` is for rendering.
 
-A `cli { }` tree is immutable after construction: each `parse` / `run` / `runAction` records its resolved
-values in a per-call snapshot handed to that call's `action { }` as its receiver, not on the tree, so
-**one tree is safe to parse and run from multiple threads at once** — every call sees only its own
-values. Because the accessors live on that receiver, an `option(...)` / `argument(...)` / `flag(...)`
-reader only compiles where such a receiver is in scope — inside the command's `action { }`, or against an
-`Execute.inputs` snapshot (see below). Reading one from arbitrary code is a compile error, not a runtime
-surprise. The write side is scoped the same way: the fluent transformers (`.int()`,
-`.default(...)`, `.validate(...)`, ...) only compile inside a builder block, so a leaked handle cannot
-mutate a built tree.
+A `cli { }` tree is immutable after construction: each `parse` / `run` / `runSuspending` / `runAction` /
+`runActionSuspending` records its resolved values in a per-call snapshot handed to that call's `action { }`
+as its receiver, not on the tree, so **one tree is safe to parse and run from multiple threads at once**:
+every call sees only its own values. Because the accessors live on that receiver, an `option(...)` /
+`argument(...)` / `flag(...)` reader only compiles where such a receiver is in scope, inside the command's
+`action { }`, or against an `Execute.inputs` snapshot (see below). Reading one from arbitrary code is a
+compile error, not a runtime surprise. The write side is scoped the same way: the fluent transformers
+(`.int()`, `.default(...)`, `.validate(...)`, ...) only compile inside a builder block, so a leaked handle
+cannot mutate a built tree.
 
 ## POSIX conformance
 

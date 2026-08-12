@@ -21,8 +21,8 @@ public abstract class CliBuilder internal constructor() : CommandBuilder() {
 
     /**
      * A position-independent option shared by every subcommand: recognized before, between, or
-     * after the subcommand path, bound once, and readable from any nested `action { }` by closing
-     * over the returned [Opt] as a `val`.
+     * after the subcommand path, bound once, and readable from any nested action by closing over the
+     * returned [Opt] as a `val`.
      *
      * @see [CommandBuilder.option] for how [names] and [help] are read.
      */
@@ -131,7 +131,7 @@ private fun validateEveryExecutableCommandProjects(cli: Cli, readers: Map<Comman
     walk(cli, "")
     require(unprojected.isEmpty()) {
         "cli '${cli.name}': no projection for ${unprojected.joinToString(", ") { "'$it'" }}. Every command " +
-            "with an action { } must end its block in projection { }, and the root must combine them with " +
+            "with an action must end its block in projection { }, and the root must combine them with " +
             "dispatch(...)"
     }
 }

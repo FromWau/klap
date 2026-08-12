@@ -145,11 +145,12 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
 
     @PublishedApi
     internal fun <T> registerAction(
-        block: ActionScope.() -> Result<T, CliError>,
+        block: suspend ActionScope.() -> Result<T, CliError>,
+        suspending: Boolean,
         serializer: () -> KSerializer<T>,
         human: (ActionScope.(T) -> String)?,
     ) {
-        actionSpec = ActionSpec(block, serializer, human)
+        actionSpec = ActionSpec(block, suspending, serializer, human)
     }
 
     /**
@@ -162,6 +163,8 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * }
      * ```
      *
+     * For work that suspends, use [actionSuspending] instead.
+     *
      * @param human turns the returned value into the line printed on success; without it the value's
      *   `toString()` is printed. A `--json` run serializes the value instead of calling this, so [T] must be
      *   `@Serializable` for a CLI that offers `--json`.
@@ -172,6 +175,34 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
         noinline human: (ActionScope.(T) -> String)? = null,
         noinline block: ActionScope.() -> Result<T, CliError>,
     ) {
-        registerAction(block, { serializer<T>() }, human)
+        // `{ block() }` rather than `block`: a non-suspend function type is not a subtype of the suspend
+        // one. The signature above is what makes `suspending = false` honest.
+        registerAction({ block() }, suspending = false, { serializer<T>() }, human)
+    }
+
+    /**
+     * Defines what this command does when it runs, for work that suspends.
+     *
+     * ```kotlin
+     * command("list") {
+     *     actionSuspending { Ok(repo.fetchAll()) }
+     * }
+     * ```
+     *
+     * A command declared this way needs a suspending entry point: [runSuspending] for the whole CLI, or
+     * [runActionSuspending] for a single resolved command. The synchronous `run`, `main` and `runAction`
+     * refuse it, because without a caller-supplied scope nothing could resume it.
+     *
+     * @param human turns the returned value into the line printed on success; without it the value's
+     *   `toString()` is printed. A `--json` run serializes the value instead of calling this, so [T] must be
+     *   `@Serializable` for a CLI that offers `--json`.
+     * @param block the work itself, returning `Ok(value)` or a typed [CliError] that klap renders to stderr
+     *   and turns into the exit code. It may suspend.
+     */
+    public inline fun <reified T> actionSuspending(
+        noinline human: (ActionScope.(T) -> String)? = null,
+        noinline block: suspend ActionScope.() -> Result<T, CliError>,
+    ) {
+        registerAction(block, suspending = true, { serializer<T>() }, human)
     }
 }
