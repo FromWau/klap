@@ -6,6 +6,7 @@ import com.fromwau.kern.result.map
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -21,6 +22,13 @@ private fun appWithRequiredGlobal(): Cli = cli("app") {
 }
 
 private fun greet(): Cli = cli("greet") {
+    argument("name")
+    action { Ok("") }
+}
+
+/** A single-command root that offers every rung of the built-in ladder at once. */
+private fun ladderRoot(): Cli = cli("greet") {
+    version = "1.0.0"
     argument("name")
     action { Ok("") }
 }
@@ -165,10 +173,30 @@ class BuiltinsTest {
     }
 
     @Test
-    fun `help outranks completion meta option`() {
-        val tree = greet()
-        val inv = assertIs<Result.Success<Invocation>>(tree.parse(listOf("--help", "--completion", "bash"))).value
-        assertIs<Invocation.ShowHelp>(inv)
+    fun `a line naming two built-ins answers the higher rung in either order`() {
+        // The ladder docs/guide.md publishes: version, help-all, help, completion, docs. Every adjacent
+        // pair, written both ways round, since the claim is that argv position never picks the answer.
+        val tree = ladderRoot()
+        assertIs<Invocation.ShowVersion>(parseOf(tree, "--version", "--help-all"))
+        assertIs<Invocation.ShowVersion>(parseOf(tree, "--help-all", "--version"))
+        assertTrue(assertIs<Invocation.ShowHelp>(parseOf(tree, "--help-all", "--help")).recursive)
+        assertTrue(assertIs<Invocation.ShowHelp>(parseOf(tree, "--help", "--help-all")).recursive)
+        assertFalse(assertIs<Invocation.ShowHelp>(parseOf(tree, "--help", "--completion", "bash")).recursive)
+        assertFalse(assertIs<Invocation.ShowHelp>(parseOf(tree, "--completion", "bash", "--help")).recursive)
+        assertEquals(
+            CompletionShell.BASH,
+            assertIs<Invocation.ShowCompletion>(parseOf(tree, "--completion", "bash", "--docs", "man")).shell,
+        )
+        assertEquals(
+            CompletionShell.BASH,
+            assertIs<Invocation.ShowCompletion>(parseOf(tree, "--docs", "man", "--completion", "bash")).shell,
+        )
+    }
+
+    @Test
+    fun `a bad value on a lower rung is not reported when a higher one answers`() {
+        // `--completion bsh` alone is an InvalidChoice; under a help request it is never looked at.
+        assertIs<Invocation.ShowHelp>(parseOf(ladderRoot(), "--help", "--completion", "bsh"))
     }
 
     @Test
@@ -208,14 +236,14 @@ class BuiltinsTest {
         // The injected `completion <shell>` declares exactly one argument; a surplus operand must be
         // rejected like any user command's, not silently dropped (a builtin routes before positional binding).
         val err = assertIs<Result.Error<CliError>>(app().parse(listOf("completion", "bash", "extra"))).error
-        assertEquals(CliError.TooManyArguments("completion", listOf("extra")), err)
+        assertEquals(CliError.TooManyArguments("todo completion", listOf("extra")), err)
     }
 
     @Test
     fun `docs subcommand rejects extra arguments`() {
         val tree = cli("app") { command("build") { action { Ok("") } } }
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("docs", "man", "extra"))).error
-        assertEquals(CliError.TooManyArguments("docs", listOf("extra")), err)
+        assertEquals(CliError.TooManyArguments("app docs", listOf("extra")), err)
     }
 
     @Test
@@ -260,6 +288,37 @@ class BuiltinsTest {
         assertIs<Invocation.ShowVersion>(
             assertIs<Result.Success<Invocation>>(tree.parse(listOf("--color=always", "--version"))).value,
         )
+    }
+
+    @Test
+    fun `the version print honours the json modifier`() {
+        // --version outranks every other token, so --json can never reach an action here; it still has to
+        // decide the shape of what --version itself prints, or a caller piping the line gets prose.
+        val tree = cli("todo") {
+            version = "1.0"
+            action { Ok("ran") }
+        }
+
+        val plain = RecordingTerminal()
+        assertEquals(0, tree.run(listOf("--version"), plain))
+        assertEquals("todo 1.0\n", plain.out.toString())
+
+        val structured = RecordingTerminal()
+        assertEquals(0, tree.run(listOf("--version", "--json"), structured))
+        assertEquals("""{"name":"todo","version":"1.0"}""" + "\n", structured.out.toString())
+    }
+
+    @Test
+    fun `the version print ignores json when the tree declined the builtin`() {
+        val tree = cli("todo") {
+            builtins { json = false }
+            version = "1.0"
+            val own = flag("--json", help = "the app's own")
+            action { Ok("own=${own()}") }
+        }
+        val t = RecordingTerminal()
+        assertEquals(0, tree.run(listOf("--version", "--json"), t))
+        assertEquals("todo 1.0\n", t.out.toString())
     }
 
     @Test
@@ -315,6 +374,39 @@ class BuiltinsTest {
         // Guideline 5's group: the flags come first and the one option that takes an argument ends the
         // cluster, so `-ve` reaches for the next token exactly as a bare `-e` does.
         assertEquals("v=true e=--json files=[f.txt]", grepWithFlag().bindText("-ve", "--json", "f.txt"))
+    }
+
+    @Test
+    fun `the help short clusters with a declared short in either order`() {
+        // Klap's own short is a short: `-vh` reads as `-v -h`, at whichever end of the cluster it sits.
+        assertIs<Invocation.ShowHelp>(parseOf(grepWithFlag(), "-vh", "f.txt"))
+        assertIs<Invocation.ShowHelp>(parseOf(grepWithFlag(), "-hv", "f.txt"))
+    }
+
+    @Test
+    fun `the help short standing in a cluster's value position is that value`() {
+        // `-e` ends the cluster and takes the rest of the token, so the `h` is the pattern to search for.
+        assertEquals("v=false e=h files=[f.txt]", grepWithFlag().bindText("-eh", "f.txt"))
+        assertEquals("v=true e=h files=[f.txt]", grepWithFlag().bindText("-veh", "f.txt"))
+    }
+
+    @Test
+    fun `an undeclared cluster char is reported ahead of the help short`() {
+        // The cluster walk reports the leftmost character it cannot place, and the help short changes
+        // nothing about that: `-xv` with `-v` declared blames `-x` too. Behind it, help never answers a
+        // line carrying a spelling the tree declares nowhere.
+        val before = assertIs<Result.Error<CliError>>(grepWithFlag().parse(listOf("-xh", "f.txt"))).error
+        assertEquals(CliError.UnknownOption("-x", cluster = "-xh"), before)
+        val after = assertIs<Result.Error<CliError>>(grepWithFlag().parse(listOf("-hx", "f.txt"))).error
+        assertEquals(CliError.UnknownOption("-x", cluster = "-hx"), after)
+    }
+
+    @Test
+    fun `an inline value on the help short is refused inside a cluster too`() {
+        assertEquals(
+            CliError.FlagTakesNoValue("--help", null),
+            assertIs<Result.Error<CliError>>(grepWithFlag().parse(listOf("-vh=x"))).error,
+        )
     }
 
     @Test
@@ -419,7 +511,7 @@ class BuiltinsTest {
         assertEquals(false, executeOf(grep(), "--", "--json", "f.txt").globals.json)
     }
 
-    // --- --help/--help-all must not mask a mistyped subcommand ---
+    // --- --help/--help-all must not mask a mistyped subcommand or option ---
     //
     // An unresolved subcommand at a GROUP errors even with --help appended; a resolved command's own
     // leftover, or an abbreviation, is untouched.
@@ -431,6 +523,15 @@ class BuiltinsTest {
         val withHelp = assertIs<Result.Error<CliError>>(tree.parse(listOf("zzz", "--help"))).error
         assertEquals(bare, withHelp)
         assertEquals(CliError.UnknownSubcommand("todo", "zzz", null), bare)
+    }
+
+    @Test
+    fun `unknown option with help errors identically to without help`() {
+        val tree = grep()
+        val bare = assertIs<Result.Error<CliError>>(tree.parse(listOf("--zzz"))).error
+        val withHelp = assertIs<Result.Error<CliError>>(tree.parse(listOf("--zzz", "--help"))).error
+        assertEquals(bare, withHelp)
+        assertEquals(CliError.UnknownOption("--zzz"), bare)
     }
 
     @Test
@@ -447,7 +548,7 @@ class BuiltinsTest {
         val bare = assertIs<Result.Error<CliError>>(tree.parse(listOf("tag", "zzz"))).error
         val withHelp = assertIs<Result.Error<CliError>>(tree.parse(listOf("tag", "zzz", "--help"))).error
         assertEquals(bare, withHelp)
-        assertEquals(CliError.UnknownSubcommand("tag", "zzz", null), bare)
+        assertEquals(CliError.UnknownSubcommand("app tag", "zzz", null), bare)
     }
 
     @Test

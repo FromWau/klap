@@ -113,7 +113,7 @@ class ParseOptionsTest {
             }
         }
         val err = assertIs<Result.Error<CliError>>(app.parse(listOf("grp", "--", "-x"))).error
-        assertEquals(CliError.UnknownSubcommand("grp", "-x"), err)
+        assertEquals(CliError.UnknownSubcommand("app grp", "-x"), err)
     }
 
     @Test
@@ -122,7 +122,7 @@ class ParseOptionsTest {
             command("grp") { command("child") { action { Ok("") } } }
         }
         val err = assertIs<Result.Error<CliError>>(app.parse(listOf("grp", "-"))).error
-        assertEquals(CliError.UnknownSubcommand("grp", "-"), err)
+        assertEquals(CliError.UnknownSubcommand("app grp", "-"), err)
     }
 
     @Test
@@ -131,7 +131,7 @@ class ParseOptionsTest {
             command("grp") { command("child") { action { Ok("") } } }
         }
         val err = assertIs<Result.Error<CliError>>(app.parse(listOf("grp", "--", "--"))).error
-        assertEquals(CliError.UnknownSubcommand("grp", "--"), err)
+        assertEquals(CliError.UnknownSubcommand("app grp", "--"), err)
     }
 }
 
@@ -421,7 +421,7 @@ class RepeatedAndDefaultedValueTest {
             }
         }
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("send"))).error
-        assertEquals(CliError.MissingArgument("send", "file"), err)
+        assertEquals(CliError.MissingArgument("net send", "file"), err)
     }
 
     @Test
@@ -719,15 +719,15 @@ class MixedShortClusterTest {
             globalFlag("--verbose", "-v")
             command("build") { action { Ok("") } }
         }
-        // `app` is a group (a subcommand, no root action). `-hv` mixes the non-clusterable built-in -h
-        // with the global -v; the error names the first offending char -h, matching a leaf sift's
-        // granularity (not the whole `-hv` token).
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("-hv"))).error
-        assertEquals(CliError.UnknownOption("-h"), err)
+        // `app` is a group (a subcommand, no root action). `-vz` mixes the global -v with an undeclared
+        // char; the error names the first offending char -z, matching a leaf sift's granularity (not the
+        // whole `-vz` token).
+        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("-vz"))).error
+        assertEquals(CliError.UnknownOption("-z", cluster = "-vz"), err)
     }
 
     @Test
-    fun `mixed cluster before the subcommand binds both just like after`() {
+    fun `mixed cluster is refused before the subcommand and binds after it`() {
         val tree = cli("app") {
             val verbose = globalFlag("--verbose", "-v")
             command("build") {
@@ -735,18 +735,16 @@ class MixedShortClusterTest {
                 action { Ok("v=${verbose()} f=${force()}") }
             }
         }
-        // -vf before "build" must bind the global and the local exactly like -vf after it: a global binds
-        // identically on either side of the subcommand name, mixed cluster or not. Anchored to a literal
-        // AND to the after-subcommand result, since comparing only the two would pass vacuously if both
-        // sides stopped binding instead of both succeeding.
-        val before = tree.execAndCapture(listOf("-vf", "build"))
-        val after = tree.execAndCapture(listOf("build", "-vf"))
-        assertEquals("v=true f=true\n", before)
-        assertEquals(after, before)
+        // A cluster means what its characters mean written apart, in every position: `-v -f build` is
+        // refused for the out-of-scope `-f`, so `-vf build` is too. Anchored to the after-subcommand line
+        // as well, since a cluster that stopped binding everywhere would satisfy the refusal on its own.
+        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("-vf", "build"))).error
+        assertEquals(CliError.UnknownOption("-f", cluster = "-vf"), err)
+        assertEquals("v=true f=true\n", tree.execAndCapture(listOf("build", "-vf")))
     }
 
     @Test
-    fun `unresolved cluster with no global char still stops routing before the subcommand`() {
+    fun `cluster naming nothing at all before the subcommand reports its first character`() {
         val tree = cli("app") {
             globalFlag("--verbose", "-v")
             command("build") {
@@ -754,25 +752,22 @@ class MixedShortClusterTest {
                 action { Ok("") }
             }
         }
-        // -xz: neither char is declared anywhere, local or global. A fix that skips any cluster the
-        // routing walk cannot resolve, rather than only one carrying a declared global, would wrongly let
-        // this reach `build` instead of stopping here with the offending char.
+        // -xz: neither char is declared anywhere, local or global, so there is no global hit ahead of the
+        // offending one and the report falls on the very first character.
         val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("-xz", "build"))).error
-        assertEquals(CliError.UnknownOption("-x"), err)
+        assertEquals(CliError.UnknownOption("-x", cluster = "-xz"), err)
     }
 
     @Test
-    fun `mixed cluster with builtin help short before the subcommand still names it`() {
+    fun `a cluster carrying the help short asks for help at the command the walk reached`() {
         val tree = cli("app") {
             globalFlag("--verbose", "-v")
             command("build") { action { Ok("") } }
         }
-        // -hv: the built-in help short -h never resolves inside a cluster (it names no declared spec at
-        // all), even beside a real global -v; the offending char is -h, matching
-        // groupClusterErrorNamesFirstOffendingCharLikeALeaf's no-subcommand case now that a real
-        // subcommand actually follows.
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("-hv", "build"))).error
-        assertEquals(CliError.UnknownOption("-h", cluster = "-hv"), err)
+        // -hv is a help request: the built-in short clusters like any declared one. Both characters
+        // resolve before routing, so the walk steps over the token and `build` is still reached.
+        val shown = assertIs<Result.Success<Invocation>>(tree.parse(listOf("-hv", "build"))).value
+        assertEquals("app build", assertIs<Invocation.ShowHelp>(shown).qualifiedName)
     }
 }
 
@@ -1456,13 +1451,7 @@ class NegatableGlobalPolarityTest {
     fun `negation stripped from ahead of the subcommand still orders against the cluster`() {
         // The negation is consumed before the subcommand token, so it has no index in the leaf's segment at
         // all — only the raw argv index the pre-strip recorded can place it against the cluster.
-        val tree = negatableGlobalTree()
-        assertEquals("v=true f=true\n", tree.execAndCapture(listOf("--no-verbose", "go", "-fv")))
-        // The mirror binds too, rather than erroring: a mixed cluster ahead of the subcommand is deferred to
-        // `go`'s own sift exactly like the same cluster written after it, so `-fv`'s -v still loses to the
-        // later --no-verbose by the same last-occurrence-wins rule `mixed cluster before the negation loses to it`
-        // pins entirely inside the leaf's own segment.
-        assertEquals("v=false f=true\n", tree.execAndCapture(listOf("-fv", "go", "--no-verbose")))
+        assertEquals("v=true f=true\n", negatableGlobalTree().execAndCapture(listOf("--no-verbose", "go", "-fv")))
     }
 
     @Test

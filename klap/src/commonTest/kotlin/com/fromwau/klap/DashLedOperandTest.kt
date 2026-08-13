@@ -70,8 +70,9 @@ class DashLedOperandTest {
 
     @Test
     fun `a marked slot takes a negative hour offset even though -h is a builtin`() {
-        // -h is matched as a whole token, not a declared cluster character, so `h` never resolves inside a
-        // cluster. Pinning this stops a change to cluster evaluation order from silently taking hour offsets away.
+        // `h` resolves inside a cluster (it is klap's own short), but `1` does not, so the cluster still
+        // fails to resolve in full. Pinning this stops a change to cluster evaluation order from silently
+        // taking hour offsets away.
         val t = RecordingTerminal()
         assertEquals(0, seekTree(mark = true).run(listOf("seek", "-1h"), t))
         assertEquals("pos=-1h\n", t.out.toString())
@@ -241,7 +242,7 @@ class DashLedOperandTest {
         val error = assertIs<Result.Error<CliError>>(
             seekTree(mark = true).parse(listOf("seek", "-1m", "-2m")),
         ).error
-        assertEquals(CliError.TooManyArguments("seek", listOf("-2m")), error)
+        assertEquals(CliError.TooManyArguments("echoctl seek", listOf("-2m")), error)
     }
 
     @Test

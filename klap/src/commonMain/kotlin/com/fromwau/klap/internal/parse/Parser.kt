@@ -10,7 +10,6 @@ import com.fromwau.klap.Builtins
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Command
-import com.fromwau.klap.ConversionError
 import com.fromwau.klap.Globals
 import com.fromwau.klap.Invocation
 import com.fromwau.klap.SubcommandMatch
@@ -25,14 +24,12 @@ import com.fromwau.klap.internal.spec.InputConstraint
 import com.fromwau.klap.internal.spec.NamedSpec
 import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.ValueSpec
-import com.fromwau.klap.internal.spec.constraintToken
 import com.fromwau.klap.internal.spec.longs
 import com.fromwau.klap.internal.spec.negativeLongs
 import com.fromwau.klap.internal.spec.negativeShorts
 import com.fromwau.klap.internal.spec.shorts
 import com.fromwau.klap.internal.spec.token
 import com.fromwau.klap.resolveSubcommand
-import kotlin.coroutines.cancellation.CancellationException
 
 /** POSIX end-of-options: every token after it is positional, never a flag. */
 internal const val END_OF_OPTIONS = "--"
@@ -80,8 +77,17 @@ internal fun Command.numericAliasValue(
     return alias to digits
 }
 
-/** The [NamedSpec.shorts] of every spec given, bare of their dash and deduplicated. */
-internal fun shortsOf(specs: List<NamedSpec>): Set<String> = specs.flatMapTo(mutableSetOf()) { it.shorts }
+private fun shortsOf(specs: List<NamedSpec>): Set<String> = specs.flatMapTo(mutableSetOf()) { it.shorts }
+
+/**
+ * Whether [ch] is klap's own help short here. Asked ahead of every declared lookup, which costs nothing:
+ * the character is reserved at build time while the built-in is offered, so no spec can be holding it.
+ */
+internal fun GlobalAccumulator?.isHelpShort(ch: Char): Boolean =
+    ch == 'h' && (this?.builtins ?: Builtins.DEFAULT).helpShort
+
+/** Whether any operand slot is `dashLed()`; over [Command.specs] so the answer costs one pass and no list. */
+private val Command.hasDashLedSlot: Boolean get() = specs.any { it is ArgumentSpec && it.dashLed }
 
 internal fun Command.bind(
     segment: List<String>,
@@ -101,7 +107,7 @@ internal fun Command.bind(
         val firstToken = head.firstOrNull()
         return when {
             // Match a leaf sift's granularity: a short cluster names its first (offending) char, not the
-            // whole token, so `-hv` at a group and `list -ah` at a leaf both report `-h`; a long `--opt`
+            // whole token, so `-vz` at a group and `list -az` at a leaf both report `-z`; a long `--opt`
             // is named in full.
             firstToken != null && firstToken.isFlagLike() -> {
                 val long = firstToken.takeIf { it.startsWith("--") }?.removePrefix("--")?.substringBefore('=')
@@ -114,9 +120,13 @@ internal fun Command.bind(
                 if (ambiguous != null) {
                     Result.Error(ambiguousOrUnknown("--$long", ambiguous.candidates.map { "--$it" }, globalAcc))
                 } else {
-                    val offending = if (long != null) firstToken else "-${firstToken[1]}"
+                    // Resolved rather than assumed to be firstToken[1]: a cluster reaching here may carry
+                    // declared characters ahead of the offending one, and naming a declared global as
+                    // unknown is worse than naming nothing.
+                    val offending = if (long != null) firstToken
+                    else firstUnresolvedShort(firstToken.removePrefix("-"), globalAcc) ?: "-${firstToken[1]}"
                     val suggestion = long?.let { suggest(offending, longOptionCandidates(globalAcc)) }
-                    Result.Error(CliError.UnknownOption(offending, suggestion))
+                    Result.Error(CliError.UnknownOption(offending, suggestion, firstToken.takeIf { it != offending }))
                 }
             }
 
@@ -126,11 +136,11 @@ internal fun Command.bind(
                 // stopped) is misplaced, not unknown; say so instead of "unknown subcommand".
                 val infer = globalAcc?.inferSubcommands ?: false
                 if (ddIndex >= 0 && resolveSubcommand(token, infer) is SubcommandMatch.One) {
-                    Result.Error(CliError.SubcommandAfterSeparator(token, name))
+                    Result.Error(CliError.SubcommandAfterSeparator(token, qualifiedName))
                 } else {
                     Result.Error(
                         CliError.UnknownSubcommand(
-                            name, token,
+                            qualifiedName, token,
                             suggest(token, subcommandCandidates()),
                         )
                     )
@@ -155,7 +165,7 @@ internal fun Command.bind(
         globalAcc?.inferNames ?: false,
     ).getOrElse { return Result.Error(it) }
     resolveLastWins(sifted, sink)
-    bindPositionals(sifted.positionals, sink, sifted, globalAcc?.inferNames ?: false)
+    bindPositionals(sifted.positionals, sink, sifted, globalAcc?.inferNames ?: false, qualifiedName = qualifiedName)
         .getOrElse { return Result.Error(it) }
     checkConditionalRequirements(sifted, globalAcc)?.let { return Result.Error(it) }
     // Placeholder scope: parse() attaches the completed snapshot (command inputs + globals) via copy().
@@ -190,12 +200,8 @@ private fun Command.checkConditionalRequirements(
 /**
  * Collapse each [ConstraintArity.LastWins] set to its single winner: the member written last on the command
  * line keeps what it bound, and every other member binds what it would have bound had the user not written
- * it at all, whatever [bindFlagsAndOptions] just wrote.
- *
- * "What it would have bound" is per kind rather than a single `false`: a plain flag misses to `false`, a
- * count flag to `0`, a negatable flag to its declared default, and an option to its `.default()` or null.
- * That keeps a loser indistinguishable from an absent input, which is the whole point of the rule: an
- * action reads the winner off its own handle and needs no precedence logic.
+ * it at all ([absentValue]), whatever [bindFlagsAndOptions] just wrote. A loser is then indistinguishable
+ * from an absent input, so an action reads the winner off its own handle and needs no precedence logic.
  *
  * Runs after the flag/option bind rather than instead of it, so a member keeps whatever the ordinary rules
  * gave it when the set is untouched, and so this stays one small pass over the declared sets. A set nobody
@@ -242,37 +248,11 @@ private fun HolderSpec.lastPosition(sifted: Sifted): Int? = when (this) {
  * `.multiple()` options out of a set: their accessors are non-null, so a null here would NPE inside the
  * action.
  */
-private fun HolderSpec.absentValue(): Any? = when {
+internal fun HolderSpec.absentValue(): Any? = when {
     this is FlagSpec && isCount -> 0
     this is FlagSpec && negatable -> (cardinality as Cardinality.Default).value
     this is FlagSpec -> false
     else -> (cardinality as? Cardinality.Default)?.value
-}
-
-/**
- * The first violated cross-input constraint on this command, in declaration order, or null.
- *
- * Reads [sifted], never the bound values: an option with a `.default()` ALWAYS binds, so the bound map
- * cannot tell "the user gave it" from "the default filled it in", while the sift only records what was
- * actually on the line. Called from [bind] after [Sifted.error] and before any bind, so a mode conflict
- * outranks the `missing required option --file` a later bind would raise, matching GNU tar. Globals never
- * take part: a constraint's members are all this command's own specs (enforced at construction).
- */
-private fun Command.checkConstraints(sifted: Sifted): CliError? {
-    for (constraint in constraints) {
-        // A last-wins set is an override rule: any number of members is legal, so it has nothing to check
-        // here and is resolved after binding instead (see [resolveLastWins]).
-        if (constraint.arity == ConstraintArity.LastWins) continue
-        val given = constraint.members.filter { supplied(it, sifted) }
-        when {
-            given.size > 1 -> return CliError.MutuallyExclusive(given.map { it.constraintToken() })
-            given.isEmpty() && constraint.arity == ConstraintArity.ExactlyOne ->
-                return CliError.ExactlyOneRequired(constraint.members.map { it.constraintToken() })
-
-            else -> Unit
-        }
-    }
-    return null
 }
 
 /**
@@ -300,145 +280,6 @@ internal fun Command.supplied(
 }
 
 /**
- * Bind [flags]/[options] from their sifted occurrences: a flag misses to `false` unless negatable/count,
- * an option applies its default/null/error when absent. The single cardinality code path shared by a
- * leaf's own [bind] and [bindGlobals], so both bind flags/options the same way.
- *
- * When [policy] is [BindPolicy.DeferRequired], an under-satisfied Required or Multiple(min) option is NOT
- * an immediate error; the error it would raise is returned in the result list instead, so the caller can
- * decide later whether the absence actually matters. [bind] never defers (its own required options always
- * fail fast); only globals do, since a missing required global should not block a bare group that only
- * ends up showing help. [BindPolicy.Lenient] never errors nor defers: whatever cannot be satisfied is
- * simply left out of [sink] (see [completionValues]).
- */
-private fun bindFlagsAndOptions(
-    flags: List<FlagSpec>,
-    options: List<OptionSpec>,
-    flagHits: Map<FlagSpec, Int>,
-    negations: Map<FlagSpec, Boolean>,
-    optionValues: Map<OptionSpec, List<String>>,
-    sink: MutableMap<HolderSpec, Any?>,
-    inferValues: Boolean,
-    policy: BindPolicy = BindPolicy.Strict,
-): Result<List<CliError>, CliError> {
-    bindFlags(flags, flagHits, negations, sink)
-    return bindOptions(options, optionValues, sink, inferValues, policy)
-}
-
-/** Flags always bind: a count reads its occurrences, a negatable one its polarity, the rest presence. */
-private fun bindFlags(
-    flags: List<FlagSpec>,
-    flagHits: Map<FlagSpec, Int>,
-    negations: Map<FlagSpec, Boolean>,
-    sink: MutableMap<HolderSpec, Any?>,
-) {
-    flags.forEach { spec ->
-        val hits = flagHits[spec] ?: 0
-        when {
-            spec.isCount -> sink[spec] = hits
-            spec.negatable -> sink[spec] =
-                negations[spec] ?: (spec.cardinality as Cardinality.Default).value
-
-            else -> sink[spec] = hits > 0
-        }
-    }
-}
-
-/**
- * Options are where [policy] earns its keep: a missing or unconvertible value is fatal under
- * [BindPolicy.Strict], collected under [BindPolicy.DeferRequired], and simply left unbound under
- * [BindPolicy.Lenient], which is what a half-typed completion line needs.
- */
-private fun bindOptions(
-    options: List<OptionSpec>,
-    optionValues: Map<OptionSpec, List<String>>,
-    sink: MutableMap<HolderSpec, Any?>,
-    inferValues: Boolean,
-    policy: BindPolicy,
-): Result<List<CliError>, CliError> {
-    val deferred = mutableListOf<CliError>()
-    for (opt in options) {
-        val raws = optionValues[opt].orEmpty()
-        when (val c = opt.cardinality) {
-            is Cardinality.Multiple -> {
-                if (raws.size < c.min) {
-                    val tooFew = CliError.TooFewOccurrences(opt.name, c.min, raws.size)
-                    when (policy) {
-                        BindPolicy.Strict -> return Result.Error(tooFew)
-                        BindPolicy.DeferRequired -> deferred += tooFew
-                        // Bind whatever IS on the line rather than nothing: a provider reading a
-                        // half-filled multiple() wants the occurrences typed so far.
-                        BindPolicy.Lenient -> Unit
-                    }
-                }
-                if (raws.size >= c.min || policy == BindPolicy.Lenient) {
-                    when (val converted = opt.convertOccurrences(raws, inferValues)) {
-                        // Lenient leaves it unbound: one bad occurrence must not blank its siblings.
-                        is Result.Error -> if (policy != BindPolicy.Lenient) return converted
-                        is Result.Success -> sink[opt] = converted.value
-                    }
-                }
-            }
-
-            else -> {
-                val raw = raws.lastOrNull()
-                if (raw != null) {
-                    when (val outcome = opt.convertOne(raw, inferValues)) {
-                        // Lenient leaves it unbound: a wrong or half-typed value must not blank its siblings.
-                        is Result.Error -> if (policy != BindPolicy.Lenient) return outcome
-                        // A converter ERROR is handled above; only a converter that SUCCEEDS with null (e.g.
-                        // `.map { it.toIntOrNull() }` on bad input) is "?: default"-substituted here, same as
-                        // an absent option.
-                        is Result.Success -> sink[opt] =
-                            if (c is Cardinality.Default) outcome.value ?: c.value else outcome.value
-                    }
-                } else when (c) {
-                    is Cardinality.Default -> sink[opt] = c.value
-                    Cardinality.Required -> when (policy) {
-                        BindPolicy.Strict -> return Result.Error(CliError.MissingRequiredOption(opt.token()))
-                        BindPolicy.DeferRequired -> deferred += CliError.MissingRequiredOption(opt.token())
-                        // Left unbound; reading it from a CompletionScope throws, which the provider seam
-                        // turns into no candidates.
-                        BindPolicy.Lenient -> Unit
-                    }
-
-                    else -> sink[opt] = null
-                }
-            }
-        }
-    }
-    return Result.Success(deferred)
-}
-
-/**
- * Bind every global spec from its position-independent occurrences. What an under-satisfied required or
- * `multiple(min)` global does depends on [policy]: the default [BindPolicy.DeferRequired] returns the error
- * it would raise in the result list, left for [parse] to judge against where the walk actually ended up,
- * while [BindPolicy.Lenient] (completion) leaves it unbound and returns nothing.
- */
-internal fun bindGlobals(
-    globalSpecs: List<HolderSpec>,
-    globalSift: GlobalSift,
-    sink: MutableMap<HolderSpec, Any?>,
-    inferValues: Boolean,
-    policy: BindPolicy = BindPolicy.DeferRequired,
-): Result<List<CliError>, CliError> {
-    val flags = globalSpecs.filterIsInstance<FlagSpec>()
-    val options = globalSpecs.filterIsInstance<OptionSpec>()
-    return bindFlagsAndOptions(
-        flags,
-        options,
-        globalSift.flags,
-        // Every occurrence has been seen by now, so the winning polarity is fixed and its position spent.
-        globalSift.negations.mapValues { (_, polarity) -> polarity.on },
-        globalSift.options.mapValues { (_, occurrences) -> occurrences.inArgvOrder() },
-        sink,
-        inferValues,
-        policy,
-    )
-}
-
-/**
  * The operand slots this line actually has: [Command.arguments] minus every slot whose `.absentWhen()`
  * trigger held. Shared with the completion planner, so the slot it offers candidates for and the slot the
  * bind fills are the same one; `chmod --reference=r <TAB>` must not offer a MODE the parse has removed.
@@ -451,187 +292,6 @@ internal fun Command.activeArguments(
     overridden: Set<HolderSpec> = lastWinsLosers(sifted),
 ): List<ArgumentSpec> =
     arguments.filterNot { spec -> spec.absentWhen?.let { supplied(it, sifted, overridden) } == true }
-
-/**
- * Assign [values] to this command's argument specs; enforce required/variadic/extra rules per [policy].
- * A positional has no deferral case, so [policy] only distinguishes [BindPolicy.Lenient] from the two
- * strict policies: [BindPolicy.DeferRequired] behaves exactly like [BindPolicy.Strict] here.
- */
-internal fun Command.bindPositionals(
-    values: List<String>,
-    sink: MutableMap<HolderSpec, Any?>,
-    sifted: Sifted,
-    inferValues: Boolean,
-    policy: BindPolicy = BindPolicy.Strict,
-): Result<Unit, CliError> {
-    val overridden = lastWinsLosers(sifted)
-    val args = activeArguments(sifted, overridden)
-    // A slot whose absentWhen trigger fired is not in [args] at all, so the operands after it keep their
-    // own positions; binding it here rather than in the loop keeps the accessor total.
-    arguments.filterNot { it in args }.forEach { sink[it] = it.absentValue() }
-    var i = 0
-    for ((index, spec) in args.withIndex()) {
-        val isLast = index == args.lastIndex
-        when (val c = spec.cardinality) {
-            is Cardinality.Multiple -> {
-                // A relaxedWhen trigger drops the declared minimum to zero; the slot itself is untouched,
-                // so nothing else about the slice changes.
-                val min = if (spec.relaxedWhen?.let { supplied(it, sifted, overridden) } == true) 0 else c.min
-                // Everything left EXCEPT what the fixed slots after this one still need. They are all
-                // Required (BuilderValidation's rule), so the count is exact and `cp a b c` gives the
-                // variadic [a, b] and the destination c. With the variadic last this is `values.drop(i)`
-                // unchanged, which is why nothing about a trailing `[FILE...]` moves.
-                val fixedAfter = args.size - index - 1
-                val take = (values.size - i - fixedAfter).coerceAtLeast(0)
-                val slice = values.subList(i, i + take)
-                // Rule 3: the sift is permissive (it admits when ANY argument on the command is marked), so
-                // the slot a value actually lands in is only known here. Keyed on what the sift admitted
-                // rather than on the token's shape, so a `--`-escaped operand still binds in an unmarked
-                // slot. Reported as the unknown option it is, naming the whole word rather than a cluster
-                // character the user never typed. Checked before the min count below, so a rejected token
-                // is never also blamed for the slice coming up short.
-                if (policy != BindPolicy.Lenient && !spec.dashLed) {
-                    (i until i + take).firstOrNull { it in sifted.dashLedAdmitted }?.let {
-                        return Result.Error(CliError.UnknownOption(values[it]))
-                    }
-                }
-                // Keyed on min alone: multiple() defaults to min = 0, which means the operand list is
-                // genuinely optional (`tar -tf a.tar` names no FILE). Erroring on any empty slice regardless
-                // of min would make min = 0 behave as min = 1 and put every `[FILE...]` surface out of reach.
-                // Zero given still reads as a fully-absent mandatory argument when a minimum IS declared;
-                // short of a declared minimum gets the same count-aware error the analogous option's
-                // Multiple branch reports.
-                if (slice.size < min) {
-                    val tooFew =
-                        if (slice.isEmpty()) CliError.MissingArgument(name, spec.name)
-                        else CliError.TooFewOccurrences(spec.name, min, slice.size)
-                    if (policy != BindPolicy.Lenient) return Result.Error(tooFew)
-                }
-                // Binds the slice even when empty, matching the option branch above: under Lenient
-                // "nothing typed yet" is truthfully an empty list, and binding it keeps a provider that
-                // reads this input alive instead of aborting it. Strict/DeferRequired already returned
-                // above when the slice was empty or short.
-                when (val converted = spec.convertAll(slice, inferValues)) {
-                    is Result.Error -> if (policy != BindPolicy.Lenient) return converted
-                    is Result.Success -> sink[spec] = converted.value
-                }
-                i += take
-            }
-
-            else -> {
-                val raw = values.getOrNull(i)
-                if (raw == null) {
-                    when (c) {
-                        is Cardinality.Default -> sink[spec] = c.value
-                        Cardinality.Optional -> sink[spec] = null
-                        else -> if (policy != BindPolicy.Lenient) {
-                            return Result.Error(CliError.MissingArgument(name, spec.name))
-                        }
-                    }
-                } else {
-                    // Rule 3, same as the Multiple branch above.
-                    if (policy != BindPolicy.Lenient && i in sifted.dashLedAdmitted && !spec.dashLed) {
-                        return Result.Error(CliError.UnknownOption(raw))
-                    }
-                    when (val outcome = spec.convertOne(raw, inferValues)) {
-                        is Result.Error -> if (policy != BindPolicy.Lenient) return outcome
-                        // Same "?: default" substitution as the option bind: only a converter that SUCCEEDS
-                        // with null falls back to c.value.
-                        is Result.Success -> sink[spec] =
-                            if (c is Cardinality.Default) outcome.value ?: c.value else outcome.value
-                    }
-                    // Advances even when the value was rejected: the token belonged to this slot either way.
-                    i += 1
-                }
-            }
-        }
-        if (isLast && i < values.size && policy != BindPolicy.Lenient) {
-            return Result.Error(tooManyArguments(values.drop(i)))
-        }
-    }
-
-    if (args.isEmpty() && values.isNotEmpty() && policy != BindPolicy.Lenient) {
-        return Result.Error(tooManyArguments(values))
-    }
-    return Result.Success(Unit)
-}
-
-/** Convert every raw a variadic slot received, failing on the first that does not convert. */
-private fun ValueSpec.convertAll(raws: List<String>, inferValues: Boolean): Result<List<Any?>, CliError> {
-    val converted = mutableListOf<Any?>()
-    for (raw in raws) converted += convertOne(raw, inferValues).getOrElse { return Result.Error(it) }
-    return Result.Success(converted)
-}
-
-/**
- * [convertAll] for a `multiple()` option, which additionally rejects a converter that SUCCEEDS with null
- * (`.map { it.toIntOrNull() }` on bad input): `Opt<T?>.multiple()` narrows the accessor to a non-null
- * `List<T>`, leaving no slot to bind such a value into. The positional form keeps `List<T?>` and allows it.
- */
-private fun OptionSpec.convertOccurrences(raws: List<String>, inferValues: Boolean): Result<List<Any>, CliError> {
-    val converted = mutableListOf<Any>()
-    for (raw in raws) {
-        val value = convertOne(raw, inferValues).getOrElse { return Result.Error(it) }
-            ?: return Result.Error(CliError.BadValue(name, raw, "conversion failed"))
-        converted += value
-    }
-    return Result.Success(converted)
-}
-
-/**
- * Convert one raw value through a spec, mapping a converter failure to the right CliError, then run
- * [ValueSpec.validate]. [inferValues] resolves a `.choice()`/`.enum<E>()` prefix before the converter ever
- * sees the raw token, since the converter closes over its choices at declaration time and cannot know the
- * root's [Abbreviation] mode itself.
- */
-private fun ValueSpec.convertOne(raw: String, inferValues: Boolean): Result<Any?, CliError> {
-    val resolved = if (!inferValues || choices == null) {
-        raw
-    } else {
-        resolveChoice(raw, choices!!).getOrElse { return Result.Error(it) }
-    }
-    // A converter chain that compiles but is misused (two type converters stacked, or a nullable map
-    // feeding a later String-typed stage) can throw at parse; the parse-never-throws contract turns any
-    // converter exception into a BadValue instead of crashing the process.
-    val converted = try {
-        convert(resolved)
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        val threw = ConversionError.Threw(e)
-        return Result.Error(CliError.BadValue(name, raw, threw.reason(), threw))
-    }
-    val value = converted.getOrElse { cause ->
-        return Result.Error(
-            if (choices != null) {
-                // Choice-restricted matching is case-insensitive (.choice()/.enum()), so the "did you
-                // mean" suggestion ignores case too, rather than penalizing a near-miss for wrong case.
-                CliError.InvalidChoice(
-                    name, raw, choices!!,
-                    suggest(raw, choices!!, ignoreCase = true),
-                )
-            } else {
-                CliError.BadValue(name, raw, cause.reason(), cause)
-            },
-        )
-    }
-    // A converter that succeeds with null is treated as absent (see the bind-site "?: default"
-    // substitution), and an absent value never runs validate, so skip it here rather than hand a
-    // non-null predicate a null. Guard validate itself too, upholding the never-throw contract.
-    if (value != null) {
-        // A validate failure is always BadValue, never InvalidChoice, even on a choices-backed spec.
-        val message = try {
-            validate?.invoke(value)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            val reason = e.message?.takeIf { it.isNotBlank() } ?: "conversion failed"
-            return Result.Error(CliError.BadValue(name, raw, reason))
-        }
-        message?.let { return Result.Error(CliError.BadValue(name, raw, it)) }
-    }
-    return Result.Success(value)
-}
 
 /**
  * The declared choice [raw] names when a prefix may resolve one, or [raw] itself when none does — an
@@ -653,25 +313,6 @@ internal fun resolveChoice(name: String, raw: String, choices: List<String>): Re
             CliError.AmbiguousValue(name, raw, match.candidates.map { choices[lowered.indexOf(it)] }),
         )
     }
-}
-
-/** [resolveChoice], reading this spec's own [ValueSpec.name] as the error's [CliError.AmbiguousValue.name]. */
-private fun ValueSpec.resolveChoice(raw: String, choices: List<String>): Result<String, CliError> =
-    resolveChoice(name, raw, choices)
-
-/**
- * A [CliError.TooManyArguments] whose first extra token, when it near-matches a visible subcommand,
- * carries a "did you mean the 'X' command?" hint. This catches the hybrid case where a command has both
- * its own action and user subcommands, so a typo of a real subcommand is otherwise silently consumed as
- * a stray positional for the action instead of being routed.
- */
-private fun Command.tooManyArguments(extras: List<String>): CliError.TooManyArguments {
-    val commandNames = subcommands.filterNot { it.hidden }.flatMap { listOf(it.name) + it.aliases }
-    // A dash-led extra is never a mistyped subcommand: [requireValidName] forbids a leading '-' on every
-    // command name and alias, so measuring one against them can only produce a wrong answer ('-rm' is one
-    // edit from 'rm'). Such a token gets here past `--`, or past a `dashLed()` slot that already took one.
-    val needle = extras.firstOrNull()?.takeUnless { it.startsWith("-") }
-    return CliError.TooManyArguments(name, extras, needle?.let { suggest(it, commandNames) })
 }
 
 /**
@@ -701,9 +342,7 @@ private fun Command.longOptionCandidates(globalAcc: GlobalAccumulator?): List<St
 }
 
 /**
- * Every long spelling THIS command answers to once the walk has reached it, dashes stripped, in [longPool]'s
- * order: its own options and flags in declaration order, then the globals, then every negatable flag's
- * negative longs (its own before the globals'), then the built-ins the tree still offers.
+ * Every long spelling THIS command answers to once the walk has reached it, dashes stripped.
  *
  * ONE pool, because ambiguity is a property of everything reachable from this token position: a `--he` that
  * could mean a declared `--header` or the built-in `--help` must be reported as ambiguous rather than
@@ -745,12 +384,18 @@ private fun Command.longPool(globalAcc: GlobalAccumulator?, treeLongs: List<Stri
     return (namedInputs + globals).flatMap { spec -> spec.longs } +
             negatable.flatMap { spec -> spec.negativeLongs } +
             treeLongs +
-            builtinLongs(
-                globalAcc?.builtins ?: Builtins.DEFAULT,
-                versioned = globalAcc?.rootVersion != null,
-                metaOptions = globalAcc?.metaOptions ?: false,
-            )
+            globalAcc.offeredBuiltinLongs()
 }
+
+/**
+ * The built-in long spellings this tree offers, dashes stripped. Shared by the pool that resolves a token
+ * and by the sift that binds one, so the two cannot disagree about whether a name is klap's own.
+ */
+private fun GlobalAccumulator?.offeredBuiltinLongs(): List<String> = builtinLongs(
+    this?.builtins ?: Builtins.DEFAULT,
+    versioned = this?.rootVersion != null,
+    metaOptions = this?.metaOptions ?: false,
+)
 
 /**
  * Narrows an ambiguity detected against [longMatchPool] to the spellings [this] command can actually reach.
@@ -782,22 +427,6 @@ private fun Command.ambiguousOrUnknown(
 internal fun Command.subcommandCandidates(): List<String> =
     subcommands.filterNot { it.hidden }.flatMap { listOf(it.name) + it.aliases }
 
-/**
- * Split a segment into flag counts, option->values map, and positionals. A short-cluster char that is not
- * local is tried against [globalAcc]'s global specs (so a mixed cluster like `-fv` binds the global too),
- * the global occurrence recorded there; without [globalAcc], only this command's own flags/options are
- * recognized.
- *
- * Never fails: an unrecognized or malformed dash token is recorded in [Sifted.error] (first one wins) and
- * the walk carries on, the same accumulate-and-record contract [siftGlobals] uses. [bind] raises that error
- * before it binds anything, so a malformed segment still fails immediately for parsing; completion ignores
- * the error instead, so a half-typed line still yields every input around the offending token.
- *
- * [positions] gives each [segment] token its index in the argv [siftGlobals] walked, so a global recorded
- * here can be ordered against one the pre-strip already resolved and removed (see [Polarity], [Occurrence]).
- * It is optional: a caller with no interest in ordering (completion) may omit it, and the observations this
- * records then simply win outright.
- */
 /**
  * A cluster char resolved to the spec it names. [globals] is non-null exactly when the char named a global
  * rather than one of this command's own inputs, which is what decides where the occurrence is recorded.
@@ -850,6 +479,22 @@ private fun OptionSpec?.valueFrom(attached: String?, next: () -> String?): Taken
     return TakenValue(taken, consumedNext = taken != null)
 }
 
+/**
+ * Split a segment into flag counts, option->values map, and positionals. A short-cluster char that is not
+ * local is tried against [globalAcc]'s global specs (so a mixed cluster like `-fv` binds the global too),
+ * the global occurrence recorded there; without [globalAcc], only this command's own flags/options are
+ * recognized.
+ *
+ * Never fails: an unrecognized or malformed dash token is recorded in [Sifted.error] (first one wins) and
+ * the walk carries on, the same accumulate-and-record contract [siftGlobals] uses. [bind] raises that error
+ * before it binds anything, so a malformed segment still fails immediately for parsing; completion ignores
+ * the error instead, so a half-typed line still yields every input around the offending token.
+ *
+ * [positions] gives each [segment] token its index in the argv [siftGlobals] walked, so a global recorded
+ * here can be ordered against one the pre-strip already resolved and removed (see [Polarity], [Occurrence]).
+ * It is optional: a caller with no interest in ordering (completion) may omit it, and the observations this
+ * records then simply win outright.
+ */
 internal fun Command.sift(
     segment: List<String>,
     globalAcc: GlobalAccumulator? = null,
@@ -875,8 +520,8 @@ internal fun Command.sift(
     // clusters must not pay for a list it never reads.
     val longPool by lazy(LazyThreadSafetyMode.NONE) { longMatchPool(globalAcc) }
 
-    // Loop-invariant, and over [specs] rather than [arguments] so the answer costs one pass and no list.
-    val hasDashLedSlot = specs.any { it is ArgumentSpec && it.dashLed }
+    // Loop-invariant; the property behind it walks the specs on every read.
+    val dashLedSlot = hasDashLedSlot
 
     fun hit(flag: FlagSpec, polarity: Boolean, at: Int) {
         flagCounts[flag] = (flagCounts[flag] ?: 0) + 1
@@ -886,17 +531,33 @@ internal fun Command.sift(
 
     var i = 0
     var optionsEnded = false
+    // `--` makes every later token literal by POSIX contract, so the refusal below must not reach past one.
+    var endedBySeparator = false
     while (i < segment.size) {
         val token = segment[i]
         val aliasHit = numericAliasValue(token, globalAcc)
         when {
             optionsEnded -> {
-                positionals += token
+                // Refused rather than kept: neither reading survives here (see MixedClusterAfterOperands),
+                // and keeping it whole is the one that loses the global without saying so. Gated on the
+                // cluster resolving in FULL, so a tail word that merely happens to carry a global's letter
+                // (`tar -cvf x`) stays the operand it is.
+                val chars = token.removePrefix("-")
+                val mixedGlobal =
+                    if (endedBySeparator || !token.isFlagLike() || token.startsWith("--")) null
+                    else if (!shortClusterResolvesInFull(chars, globalAcc)) null
+                    else globalAcc?.let { firstGlobalShort(chars, it.flagSpecs, it.optionSpecs) }
+                if (mixedGlobal != null) {
+                    record { CliError.MixedClusterAfterOperands(token, mixedGlobal) }
+                } else {
+                    positionals += token
+                }
                 i += 1
             }
 
             token == END_OF_OPTIONS -> {
                 optionsEnded = true
+                endedBySeparator = true
                 i += 1
             }
 
@@ -955,6 +616,11 @@ internal fun Command.sift(
                             segment.getOrNull(i + 1)?.takeUnless { it == END_OF_OPTIONS }
                         }
                         when {
+                            // klap's own, resolved by the built-in ladder rather than bound here. In the
+                            // pool since it is a legal spelling on every command, so without this the
+                            // binder would call a name its own pool accepts unknown.
+                            opt == null && long in globalAcc.offeredBuiltinLongs() -> i += 1
+
                             opt == null -> {
                                 record {
                                     CliError.UnknownOption(
@@ -1000,7 +666,7 @@ internal fun Command.sift(
                 // Decided before the walk, because the walk records flag hits as it goes and a token that
                 // turns out to be an operand would have to unwind them. A `--` token cannot arrive here at
                 // all, the arm above claims it, so long-option typos keep their did-you-mean.
-                if (hasDashLedSlot && !shortClusterResolvesInFull(chars, globalAcc)) {
+                if (dashLedSlot && !shortClusterResolvesInFull(chars, globalAcc)) {
                     dashLedAdmitted += positionals.size
                     positionals += token
                     i += 1
@@ -1012,6 +678,14 @@ internal fun Command.sift(
 
                 var j = 0
                 while (j < chars.length) {
+                    if (globalAcc.isHelpShort(chars[j])) {
+                        // Klap's own, so it binds nothing here; the help ladder answers it. An inline
+                        // `=value` on it is the same usage error a declared boolean short reports.
+                        if (chars.getOrNull(j + 1) == '=') record { CliError.FlagTakesNoValue("--help", null) }
+                        j += 1
+                        continue
+                    }
+
                     val ch = chars[j].toString()
                     val flagHit = globalAcc.clusterHit(findFlag("-$ch")) { flagSpecs.findFlag("-$ch") }
                     if (flagHit != null) {
@@ -1099,24 +773,21 @@ internal fun List<OptionSpec>.findOption(long: String?, short: String?): OptionS
     firstOrNull { (long != null && long in it.longs) || (short != null && short in it.shorts) }
 
 /**
- * Whether [cluster] (a short-cluster token with its leading dash already stripped) contains at least one
- * char that resolves against a declared global flag, its negated short, or a global option — the same
- * per-char lookup [siftGlobals]'s cluster branch performs. Shared so a walk that has not yet reached the
- * command owning the cluster's OTHER chars can still tell "carries a global" from "carries none" without
- * reimplementing the resolution rule: the subcommand-routing walk and the arity walk behind
- * [optionValueSlots] both ask this before deciding whether an unresolved char stops their walk outright or
- * is left for the reached command's own [sift] to claim.
+ * The leftmost character of [cluster] (a short-cluster token with its leading dash already stripped) that
+ * names a global flag, its negated short, or a global option, dash included; null when none does. The
+ * per-char lookup is [siftGlobals]'s own, so a caller that has not reached the command owning the cluster's
+ * OTHER chars still tells "carries a global" from "carries none" the way the sift would.
  */
-internal fun clusterTouchesGlobal(
+private fun firstGlobalShort(
     cluster: String,
     flagSpecs: List<FlagSpec>,
     optionSpecs: List<OptionSpec>,
-): Boolean = cluster.any { char ->
+): String? = cluster.firstOrNull { char ->
     val ch = char.toString()
     flagSpecs.findFlag("-$ch") != null ||
         flagSpecs.findNegatedShort(ch) != null ||
         optionSpecs.findOption(null, ch) != null
-}
+}?.let { "-$it" }
 
 private fun Command.findFlag(token: String): FlagSpec? = flags.findFlag(token)
 private fun Command.findNegatedFlag(long: String): FlagSpec? = flags.findNegatedFlag(long)
@@ -1124,12 +795,17 @@ private fun Command.findNegatedShort(short: String): FlagSpec? = flags.findNegat
 private fun Command.findOption(long: String?, short: String?): OptionSpec? =
     options.findOption(long, short)
 
+/** Whether every character of a short cluster resolves; see [firstUnresolvedShort]. */
+private fun Command.shortClusterResolvesInFull(
+    chars: String,
+    globalAcc: GlobalAccumulator?,
+): Boolean = firstUnresolvedShort(chars, globalAcc) == null
+
 /**
- * Whether a short cluster resolves in full against this command and [globalAcc]'s globals: every character
- * is a flag, a negated short, or an option. An option takes whatever follows it in the cluster as its
- * value, so the characters after one are not asked to resolve. Answers without recording a hit, which is
- * the point: [sift]'s cluster walk mutates as it goes, so a token that turns out to be an operand has to be
- * recognised before the walk starts rather than unwound afterwards.
+ * The leftmost character of [chars] naming nothing this command or [globalAcc] declares, dash included, or
+ * null when the cluster resolves in full. Answers without recording a hit, which is the point: [sift]'s
+ * cluster walk mutates as it goes, so a token that turns out to be an operand has to be recognised before
+ * the walk starts rather than unwound afterwards.
  *
  * The loop mirrors that walk, early exit included, which is what makes "declared wins" all-or-nothing up
  * to the option that ends it. Sharing only the lookups would not be enough: `-p8080` resolves there, where
@@ -1137,32 +813,63 @@ private fun Command.findOption(long: String?, short: String?): OptionSpec? =
  * token to an operand slot.
  *
  * Call this from inside the cluster branch. A `numericAlias` resolves in a branch ahead of it and is none
- * of these three lookups, so checking earlier would read `head -5` as an operand.
+ * of these lookups, so checking earlier would read `head -5` as an operand.
  */
-internal fun Command.shortClusterResolvesInFull(
+private fun Command.firstUnresolvedShort(
     chars: String,
     globalAcc: GlobalAccumulator?,
-): Boolean {
+): String? {
     for (c in chars) {
+        if (globalAcc.isHelpShort(c)) continue
         val ch = c.toString()
         if (globalAcc.clusterHit(findFlag("-$ch")) { flagSpecs.findFlag("-$ch") } != null) continue
         if (globalAcc.clusterHit(findNegatedShort(ch)) { flagSpecs.findNegatedShort(ch) } != null) continue
         // An option takes the rest of the cluster as its value, so nothing after it has to resolve.
-        return globalAcc.clusterHit(findOption(null, ch)) { optionSpecs.findOption(null, ch) } != null
+        val option = globalAcc.clusterHit(findOption(null, ch)) { optionSpecs.findOption(null, ch) }
+        return if (option != null) null else "-$ch"
     }
-    return true
+    return null
 }
+
+/**
+ * Whether [token] asks for help through klap's short: the reading [sift] gives that token, asked without
+ * recording anything, so the help ladder and the bind cannot disagree about one cluster.
+ *
+ * The short takes part in a cluster like a declared one, which is what confines it: past a character
+ * naming a value-taking option the `h` is that option's value (`-ph`), past one naming nothing at all it
+ * sits in a cluster already refused (`-xh`), and on a `dashLed()` command a cluster that resolves to
+ * nothing is an operand (`-1h`).
+ */
+internal fun Command.namesHelpShort(token: String, globalAcc: GlobalAccumulator?): Boolean {
+    if (!token.isFlagLike() || token.startsWith("--")) return false
+    if (numericAliasValue(token, globalAcc) != null) return false
+    val chars = token.removePrefix("-")
+    if (hasDashLedSlot && !shortClusterResolvesInFull(chars, globalAcc)) return false
+    for (j in chars.indices) {
+        // An `=value` on a boolean built-in is a usage error, raised where the sift walks the cluster.
+        if (globalAcc.isHelpShort(chars[j])) return chars.getOrNull(j + 1) != '='
+        val ch = chars[j].toString()
+        if (globalAcc.clusterHit(findFlag("-$ch")) { flagSpecs.findFlag("-$ch") } != null) continue
+        if (globalAcc.clusterHit(findNegatedShort(ch)) { flagSpecs.findNegatedShort(ch) } != null) continue
+        return false
+    }
+    return false
+}
+
+/** Whether any token [this] scan may act on names klap's help short; see [Command.namesHelpShort]. */
+internal fun ArgvScan.namesHelpShort(cmd: Command, globalAcc: GlobalAccumulator?): Boolean =
+    openTokens.any { cmd.namesHelpShort(it, globalAcc) }
 
 /**
  * The error for an unrecognized char at `chars[j]` inside a short cluster (the chars before it, `chars[0
  * until j]`, all matched flags, since an option match would have ended the loop already). A `=` right
  * after a flag char is the short form of `--flag=value`, so it reports the same no-value error the long
- * form does, naming the preceding flag (found via [findFlag], which both callers back with
- * [findFlagOrNegatedShort] so a preceding NEGATIVE short is named too, not just a positive one) rather
- * than the phantom `-=` a bare `"-$ch"` would fabricate. Any other stray non-alphanumeric char (e.g. the
+ * form does. It names the preceding flag rather than the phantom `-=` a bare `"-$ch"` would fabricate;
+ * both callers back [findFlag] with [findFlagOrNegatedShort], so a preceding NEGATIVE short is named too.
+ * Any other stray non-alphanumeric char (e.g. the
  * `-` in `-f-y`) blames the whole original [token] instead of fabricating `"-$ch"` (which for `ch == '-'`
  * would misreport as the end-of-options marker `--`). A genuinely unknown LETTER/digit still names just
- * that char, matching a leaf's existing granularity. Shared by [Cli.clusterCharError] (the per-command
+ * that char, matching a leaf's existing granularity. Shared by [Command.clusterCharError] (the per-command
  * sift, [findFlag] backed by local + global specs) and [siftGlobals] (the position-independent pre-strip,
  * [findFlag] backed by global specs alone), so both short-cluster walks report a boolean flag's `=value`
  * identically regardless of whether the cluster precedes or follows the subcommand.
@@ -1203,13 +910,10 @@ private fun Command.clusterCharError(
         j,
     )
 
-
 /**
- * Seed a mutable [GlobalAccumulator] from this pre-strip result, ready for the segment sift to top up.
- * [rootVersion] is the root's own [Cli.version], [builtins] its resolved built-in surface, [metaOptions]
- * whether it offers `--completion`/`--docs`, and [treeLongs] its [Cli.declaredLongs]; all four are threaded
- * through so a nested command's [longOptionCandidates] and [longMatchPool] see the same surface the root's
- * own pre-walk scans did.
+ * Seed a mutable [GlobalAccumulator] from this pre-strip result, ready for the segment sift to top up. The
+ * root's surface is threaded through so a nested command's [longOptionCandidates] and [longMatchPool] see
+ * the same surface the root's own pre-walk scans did.
  */
 internal fun GlobalSift.accumulator(
     globalSpecs: List<HolderSpec>,
@@ -1232,11 +936,20 @@ internal fun GlobalSift.accumulator(
 )
 
 /**
+ * This root's spec lists and pools in a [GlobalAccumulator] holding no occurrences: what a pass that must
+ * READ the global surface before [siftGlobals] has produced one asks its questions through, so its reading
+ * of a token is identical to the one [sift] will give.
+ */
+internal fun Cli.globalLookup(): GlobalAccumulator =
+    GlobalSift(emptyMap(), emptyMap(), emptyMap())
+        .accumulator(globalSpecs, version, builtins, metaOptions, declaredLongs, abbreviation)
+
+/**
  * Walk [scan]'s tokens before the end-of-options marker, pull out those naming a global (long form, or a
  * short cluster whose chars are ALL globals, e.g. `-vc`), and return the cleaned argv for the normal
  * subcommand walk alongside the sifted occurrences. A short cluster that mixes a global with a non-global
- * char is left whole for the resolved command's global-aware [sift] to split (so `-fv` binds both, in any
- * order).
+ * char is left whole for the resolved command's global-aware [sift] to split (so `build -fv` binds both,
+ * in any order); it does not route, so the command that splits it is whatever the walk had reached.
  * Unlike [sift], an unrecognized dash token is left in place rather than erroring: it may belong to
  * whatever command the walk resolves to, and only that command's own [sift] is allowed to reject it.
  *
@@ -1441,37 +1154,6 @@ internal fun List<HolderSpec>.siftGlobals(
 }
 
 /**
- * Collected option/flag occurrences plus leftover positionals for a command segment.
- * [flags] counts occurrences per spec (a plain flag binds `count > 0`, a count flag binds the count itself).
- * [negations] carries the last-seen polarity per negatable flag: true for `--x`, false for `--no-x`.
- * [error] is the first hard syntax error hit while walking, mirroring [GlobalSift.error]: [bind] raises it
- * before binding anything, while the completion planner ignores it and uses whatever the walk did collect.
- */
-internal class Sifted(
-    val flags: Map<FlagSpec, Int>,
-    val negations: Map<FlagSpec, Boolean>,
-    val options: Map<OptionSpec, List<String>>,
-    val positionals: List<String>,
-    val error: CliError? = null,
-    // Where each flag/option was LAST seen, for the one rule that needs order between two different inputs
-    // ([ConstraintArity.LastWins]). Encoded so a position inside a short cluster is comparable with a
-    // whole-token one: see [clusterPosition].
-    val flagPositions: Map<FlagSpec, Int> = emptyMap(),
-    val optionPositions: Map<OptionSpec, Int> = emptyMap(),
-    // Indices into [positionals] that arrived through a `dashLed()` slot: a single-dash token that resolved
-    // to no option. Only these are refusable at bind time, so a `--`-escaped operand keeps binding in any
-    // slot exactly as it does today.
-    val dashLedAdmitted: Set<Int> = emptySet(),
-)
-
-/**
- * A comparable position for a flag occurrence: the token's own index, times a stride wide enough that the
- * character index within a short cluster orders inside it without ever reaching the next token. So `-if`
- * and `-i -f` compare the same way, which is what makes `lastWins` mean the same thing in both spellings.
- */
-internal fun clusterPosition(tokenIndex: Int, charIndex: Int = 0): Int = tokenIndex * 1000 + charIndex
-
-/**
  * Global option/flag occurrences pulled out of argv, ahead of and independent from the subcommand walk.
  * [error] carries the first hard syntax error hit while sifting a recognized global (a dangling
  * value-taking option, or a `--flag=value` given to a boolean flag), which [parse] raises before the
@@ -1531,19 +1213,12 @@ private fun MutableMap<FlagSpec, Polarity>.recordPolarity(flag: FlagSpec, on: Bo
  */
 internal class Occurrence(val value: String, val position: Int?)
 
-/** These occurrences' values in argv order; an unpositioned one (see [Occurrence]) comes last. */
-private fun List<Occurrence>.inArgvOrder(): List<String> =
-    sortedBy { it.position ?: Int.MAX_VALUE }.map { it.value }
-
 /**
  * A mutable running tally of global occurrences: seeded from [siftGlobals]' position-independent pass, then
  * topped up by a command segment's own [sift] when a global char is buried in a mixed short cluster (`-fv`).
- * [flagSpecs]/[optionSpecs] let that sift recognize a global char after it has ruled out a local one.
- * [rootVersion] carries the root's own [Cli.version], [builtins] its resolved built-in surface,
- * [metaOptions] its `--completion`/`--docs` gate, [treeLongs] its [Cli.declaredLongs], and [abbreviation] its
- * [Cli.abbreviation], down to a nested command's [sift]: the only way any of them reaches the did-you-mean
- * candidate set and the abbreviation pool (see [longOptionCandidates], [longMatchPool]) without threading
- * five separate parameters through every call between [parse] and [sift].
+ * It also carries the root's own surface down to a nested [sift], the only way that surface reaches the
+ * did-you-mean candidate set and the abbreviation pool (see [longOptionCandidates], [longMatchPool])
+ * without threading five separate parameters through every call between [parse] and [sift].
  */
 internal class GlobalAccumulator(
     val flagSpecs: List<FlagSpec>,
@@ -1589,39 +1264,4 @@ internal class GlobalAccumulator(
 
     /** The merged occurrences, ready for [bindGlobals]. Segment syntax errors surface via [Sifted.error]. */
     fun toGlobalSift(): GlobalSift = GlobalSift(flags, negations, options)
-}
-
-/**
- * The lenient counterpart to [com.fromwau.klap.parse]'s bind phase, for tab completion: bind everything the
- * half-typed [sifted] segment and [globalAcc] can resolve for [cmd], and leave the rest unbound.
- *
- * Never fails, and [Sifted.error] is deliberately ignored — a malformed token loses only itself, not the
- * inputs around it. Reading an input this leaves unbound throws from the [com.fromwau.klap.CompletionScope]
- * accessor, which the provider seam turns into "no candidates".
- *
- * [sifted] must be the result of `cmd.sift(segment, globalAcc)` with this same [globalAcc]: that walk is
- * what records a global hiding in a mixed short cluster (`-fv`), and the [bindGlobals] below reads them
- * back off the accumulator.
- */
-internal fun Cli.completionValues(
-    cmd: Command,
-    sifted: Sifted,
-    globalAcc: GlobalAccumulator,
-): Map<HolderSpec, Any?> {
-    val sink = mutableMapOf<HolderSpec, Any?>()
-    // Same order parse() binds in: the command's own inputs, then the globals the segment sift topped up.
-    // Every Result is discarded: Lenient never errors, and it defers nothing.
-    bindFlagsAndOptions(
-        cmd.flags,
-        cmd.options,
-        sifted.flags,
-        sifted.negations,
-        sifted.options,
-        sink,
-        globalAcc.inferNames,
-        BindPolicy.Lenient,
-    )
-    cmd.bindPositionals(sifted.positionals, sink, sifted, globalAcc.inferNames, BindPolicy.Lenient)
-    bindGlobals(globalSpecs, globalAcc.toGlobalSift(), sink, globalAcc.inferNames, BindPolicy.Lenient)
-    return sink
 }
