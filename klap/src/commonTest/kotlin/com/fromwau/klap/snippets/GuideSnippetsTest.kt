@@ -1,9 +1,23 @@
-package com.fromwau.klap
+package com.fromwau.klap.snippets
 
 import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.klap.Abbreviation
+import com.fromwau.klap.Cli
+import com.fromwau.klap.CliError
+import com.fromwau.klap.CommandBuilder
+import com.fromwau.klap.ConversionError
+import com.fromwau.klap.Invocation
+import com.fromwau.klap.Opt
+import com.fromwau.klap.RecordingTerminal
+import com.fromwau.klap.ValueScope
+import com.fromwau.klap.bindText
+import com.fromwau.klap.cli
+import com.fromwau.klap.cliOf
+import com.fromwau.klap.parse
+import com.fromwau.klap.run
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -14,6 +28,10 @@ import kotlin.test.assertIs
  * The guide's abbreviation snippets, transcribed and executed. `docs/guide.md`'s abbreviation section makes
  * specific claims about what each `Abbreviation` mode resolves and what a miss suggests; these pin those
  * claims against the real parser so a change that breaks one shows up here, not only in prose.
+ *
+ * Kept out of `com.fromwau.klap` on purpose. Inside klap's own package every klap symbol resolves with no
+ * import at all, so a snippet naming one that does not exist still compiled and the import half of a
+ * snippet went untested. Moving these back would take that check away again.
  */
 class GuideSnippetsTest {
 

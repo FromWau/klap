@@ -313,7 +313,11 @@ private fun ValueSpec.candidatesFor(
         }
         .orEmpty()
 
-    choices != null -> choices!!.filter { it.startsWith(current) }.map { Candidate(it) }
+    // ignoreCase because [resolveChoice] lowers both sides to match, so `--sort=SIZE` binds; a
+    // case-sensitive filter here would leave Tab dead on a spelling the parser accepts. The provider
+    // branch above stays case-sensitive: its candidates go through an arbitrary converter whose own
+    // matching klap does not know.
+    choices != null -> choices!!.filter { it.startsWith(current, ignoreCase = true) }.map { Candidate(it) }
     else -> emptyList()
 }
 

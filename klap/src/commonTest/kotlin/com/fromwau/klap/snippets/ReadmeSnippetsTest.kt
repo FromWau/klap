@@ -1,4 +1,4 @@
-package com.fromwau.klap
+package com.fromwau.klap.snippets
 
 import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.IError
@@ -8,6 +8,21 @@ import com.fromwau.kern.result.getOrElse
 import com.fromwau.kern.result.map
 import com.fromwau.kern.result.mapError
 import com.fromwau.klap.internal.render.completeCandidates
+import com.fromwau.klap.Abbreviation
+import com.fromwau.klap.Cli
+import com.fromwau.klap.CliError
+import com.fromwau.klap.CommandBuilder
+import com.fromwau.klap.ConversionError
+import com.fromwau.klap.Invocation
+import com.fromwau.klap.Opt
+import com.fromwau.klap.RecordingTerminal
+import com.fromwau.klap.ValueScope
+import com.fromwau.klap.bindText
+import com.fromwau.klap.cli
+import com.fromwau.klap.cliOf
+import com.fromwau.klap.parse
+import com.fromwau.klap.projection
+import com.fromwau.klap.run
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -22,6 +37,10 @@ import kotlin.test.assertTrue
  * read as file top level, so a reader copying it got an unresolved reference instead of a program.
  * Prose cannot catch that regressing. These tests can, so the README's compilability is a verified
  * property rather than a claim.
+ *
+ * Kept out of `com.fromwau.klap` on purpose. Inside klap's own package every klap symbol resolves with no
+ * import at all, so a snippet naming one that does not exist still compiled and the import half of a
+ * snippet went untested. Moving these back would take that check away again.
  *
  * Each block below names the README section it comes from. Keep them transcriptions: a snippet
  * "improved" here but not there proves nothing about the document a reader actually opens.
