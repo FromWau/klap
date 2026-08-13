@@ -24,7 +24,7 @@ ships, so if you are building against a release, read this file at that release'
 | [Shell completion](#shell-completion)                      | bash/zsh/fish/powershell, value-aware providers                                   |
 | [Generated docs](#generated-docs)                          | markdown and man pages                                                            |
 | [Escape hatch](#escape-hatch)                              | driving the parser yourself, and testing your CLI                                 |
-| [POSIX conformance](#posix-conformance)                    | what klap guarantees, and the two deliberate exits from it                        |
+| [POSIX conformance](#posix-conformance)                    | what klap guarantees, and the deliberate exits from it                            |
 ## Quick start
 
 `cli(name)` builds the root command. A single-command tool can act at the root, so no subcommand is
@@ -219,12 +219,12 @@ global. The slot belongs to the option — position-independent means *anywhere 
 A dash-led number is an **option token like any other**: `-5` is an unknown option unless something
 declares it. That matches `ls -5` and `sleep -1`, which both reject.
 
-Three declarations give it a meaning:
+These declarations give it a meaning:
 
 ```kotlin
 flag("-4")                       // curl -4: an ordinary short whose character is a digit
 numericAlias(lines)              // head -5, git log -5: -<NUM> is shorthand for another option
-argument("n").int()              // app -- -100: a negative OPERAND, written after --
+argument("n").int()              // app -- -100: a negative OPERAND
 ```
 
 `numericAlias` aliases `-<NUM>`, for any N, onto an option you already declared; the digits become its
@@ -238,13 +238,29 @@ numericAlias(lines)
 
 At most one per command, and a short the command declares itself wins: a tree with both `flag("-4")` and an
 alias binds `-4` to the flag and `-5` to the alias. A negative **option value** needs no escape at all —
-`-n -5` is the dash-led-value rule above — so only a negative *operand* needs the `--`.
+`-n -5` is the dash-led-value rule above. A negative **operand** needs the `--` escape, unless its slot is
+marked with `dashLed()`, covered next.
 
 A number carrying a **unit** (`-1m`, `-500ms`) fits none of the three: `numericAlias` claims all-digit
-tokens only, so `-1m` splits as the cluster `-1` `-m` and reports the first char it cannot place. Give it
-to an option, where the value slot takes the next token whatever it looks like (`seek --offset -1m`), or
-keep it an operand and write `seek -- -1m`. Of the two, the option spelling is the one a user discovers
-without being told.
+tokens only, so `-1m` splits as the cluster `-1` `-m` and reports the first char it cannot place. Mark the
+operand instead:
+
+```kotlin
+command("seek") {
+    val position = argument("position", "1-9, or +/-N with a unit (ms|s|m|h)").dashLed()
+    action { Ok(seekTo(position())) }
+}
+```
+
+`dashLed()` lets that one slot take a single-dash token that resolves to nothing. Anything declared still
+wins, and a cluster counts as resolved only when every character in it does. A built-in like `-h` is matched
+as a whole token before that check runs, so `h` inside a cluster resolves to nothing at all: `-1h` reaches
+the operand because neither of its characters resolves, not because a declared `-h` was shadowed.
+
+The trade is on that command only. A mistyped short option now binds as the operand instead of being
+reported as an unknown option, so reach for this where the command's own value error names the grammar it
+accepts. Long options are unaffected and keep their did-you-mean, and `seek -- -1m` still works and needs no
+declaration.
 
 ```kotlin
 val port    = option("--port", "-p").int().default(8080)           //  Int
@@ -1655,18 +1671,24 @@ Everything klap adds on top of them is additive by construction:
 > undefined.
 
 So `--` ends options and everything after it is an operand even if it starts with a dash; a lone `-` is an
-operand; `-abc value` clusters the way the guidelines describe; a dash-led token is an option, and an
-undeclared one is an error rather than a silently-accepted filename. `lastWins` is guideline 11's own
+operand; `-abc value` clusters the way the guidelines describe; a dash-led token is an option by default,
+and an undeclared one is an error rather than a silently-accepted filename. `lastWins` is guideline 11's own
 "documented to override any incompatible options preceding it" clause, not an invention.
 
 One deliberate consequence worth knowing: a **single-dash multi-character option** (`find -name`) is not
 expressible, because guideline 3 says an option name is one character.
 
-`.optionalValue(whenBare)` is the one place klap steps outside a guideline, and only for the option that
+`.optionalValue(whenBare)` is one place klap steps outside a guideline, and only for the option that
 asks for it: guideline 7 says option-arguments should not be optional, because `--color auto` is genuinely
 ambiguous between a value and an operand without a rule. Calling it takes that one option outside the
 guideline, knowingly; every option that does not call it stays conforming, and `PosixConformanceTest` pins
 both halves. See [Options whose value is optional](#options-whose-value-is-optional).
+
+`dashLed()` is another: guideline 14 says a token identifiable as an option should be treated as one, and
+`dashLed()` takes one operand outside that guideline, knowingly, so a single-dash token that resolves to no
+declared option binds there instead of being rejected as an unknown option. It is per-argument, the author
+opts in, and every argument that does not call it keeps the conforming reading; `PosixConformanceTest` pins
+both halves here too. See [Numbers on the command line](#numbers-on-the-command-line).
 
 The rest of what klap adds is outside the guidelines' model rather than against it, so a conforming line
 has no token for any of it to reach: long options, their `--config=value` spellings, and — where a tree

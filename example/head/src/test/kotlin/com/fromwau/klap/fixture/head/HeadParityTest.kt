@@ -102,6 +102,18 @@ class HeadParityTest {
             expected = NOTHING_BOUND.copy(lines = "3", files = listOf("f")),
         )
 
+        // The same looseness costs a real filename. `head -5 -1` on a file named `-1` answers "invalid
+        // trailing option -- 1" in real head, so the file is reachable only as `-- -1` or `./-1`. Here the
+        // alias takes the token as a count instead, leaving NO operand, so the line silently reads stdin.
+        parity.bindsLoosely(
+            "-5", "-1",
+            because = "real head: invalid trailing option -- 1",
+            expected = NOTHING_BOUND.copy(lines = "1"),
+        )
+        // Both spellings real head documents for that file work here too, which is what keeps it reachable.
+        parity.binds("-5", "--", "-1", expected = NOTHING_BOUND.copy(lines = "5", files = listOf("-1")))
+        parity.binds("-n5", "./-1", expected = NOTHING_BOUND.copy(lines = "5", files = listOf("./-1")))
+
         // klap's injected built-ins reach a tool that has neither. Real head answers `head -h f` with
         // "invalid option -- 'h'", and treats `__complete` as an ordinary filename.
         parity.shortCircuits("-h", "f", because = "klap's built-in -h outranks head's own option letters")
