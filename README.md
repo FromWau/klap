@@ -122,8 +122,8 @@ after an operand, `--opt=value`, only give meaning to input POSIX leaves undefin
 
 Each guideline is executed as a test in `PosixConformanceTest`, quoting the standard's text at the
 assertion, so this is verified on every build rather than claimed here. Every extension is paired there
-with the conforming line it must not disturb. The full account, including the one option-level opt-out and
-the one switch that trades an extension back, is in [the guide](docs/guide.md#posix-conformance).
+with the conforming line it must not disturb. The full account, including each opt-out and the switch that
+trades an extension back, is in [the guide](docs/guide.md#posix-conformance).
 
 ## License
 
