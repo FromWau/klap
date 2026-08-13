@@ -90,15 +90,15 @@ class AbbreviationModeTest {
 
     private fun head(mode: Abbreviation) = cli("head") {
         abbreviation = mode
-        val lines = option("--lines", "-n")
-        numericAlias(lines)
+        val named = option("--lines", "-n")
+        val lines = lastOneWins(named, numberOption())
         argument("file").multiple()
         action<String>(human = { it }) { Ok("n=${lines()}") }
     }
 
     @Test
-    fun `a numeric alias is untouched by every mode`() {
-        // The alias is short-side, so no mode may reach it: `-5` is `-n 5` in all three.
+    fun `a number input is untouched by every mode`() {
+        // The input is short-side, so no mode may reach it: `-5` is `-n 5` in all three.
         for (mode in Abbreviation.entries) {
             assertEquals("n=5", head(mode).bindText("-5", "f"), mode.name)
             assertEquals("n=5", head(mode).bindText("-n", "5", "f"), mode.name)

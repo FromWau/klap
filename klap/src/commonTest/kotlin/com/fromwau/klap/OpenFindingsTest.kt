@@ -2,7 +2,6 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
-import com.fromwau.kern.result.map
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -77,16 +76,15 @@ class RequiredIfTriggerReachTest {
     }
 }
 
-class NumericAliasClusterTest {
+class NumberOptionClusterTest {
 
     @Test
-    fun `a mixed global local cluster outranks the alias`() {
+    fun `a mixed global local cluster outranks the number`() {
         val tree = cli("app") {
             globalFlag("--two", "-2")
             command("head") {
                 val zero = flag("--zero", "-0")
-                val lines = option("--lines", "-n").int()
-                numericAlias(lines)
+                val lines = numberOption().int()
                 action { Ok("zero=${zero()} lines=${lines()}") }
             }
         }

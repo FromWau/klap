@@ -258,6 +258,23 @@ class GlobalAndLocalNameCollisionTest {
     }
 
     @Test
+    fun `global option with a digit short beside a number input fails at build`() {
+        // The pre-strip reads a cluster against the globals alone, so `-25` matches `-2` on the run's first
+        // digit and takes `5` as its value before the command owning the number input is ever resolved,
+        // where every other walk reads the number 25. Refuse the pair instead of letting them disagree.
+        val ex = assertFailsWith<IllegalArgumentException> {
+            cli("bad") {
+                globalOption("--two", "-2")
+                command("go") {
+                    numberOption().int()
+                    action { Ok("") }
+                }
+            }
+        }
+        assertTrue("digit short '-2'" in ex.message.orEmpty(), ex.message)
+    }
+
+    @Test
     fun `non colliding local negatable flag and global still build`() {
         val cmd = cli("ok") {
             globalFlag("--bar")

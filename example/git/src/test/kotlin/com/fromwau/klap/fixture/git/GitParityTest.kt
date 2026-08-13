@@ -222,8 +222,13 @@ class GitParityTest {
             expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(execPath = "/usr/lib/git-core")),
         )
 
-        // `-5` is git's shorthand for `-n 5`; numericAlias binds it to maxCount like any other real invocation.
+        // `-5` is git's shorthand for `-n 5`; the number input binds it like any other real invocation.
         parity.binds("log", "-5", expected = NOTHING_LOG.copy(maxCount = 5))
+        // The two spellings are one quantity, so the last one written is the one that holds.
+        parity.binds("log", "-n", "3", "-5", expected = NOTHING_LOG.copy(maxCount = 5))
+        parity.binds("log", "-5", "-n", "3", expected = NOTHING_LOG.copy(maxCount = 3))
+        // Two runs are two occurrences of ONE input, so the ordinary last-occurrence rule settles them.
+        parity.binds("log", "-2", "-1", expected = NOTHING_LOG.copy(maxCount = 1))
         // The `--` separator between git's two operand groups is not expressible: `--` only ends option
         // parsing, and its tokens join the same flat positional list. Real git means "paths only" here.
         parity.binds("log", "--", "src/", expected = NOTHING_LOG.copy(revisionRange = "src/"))

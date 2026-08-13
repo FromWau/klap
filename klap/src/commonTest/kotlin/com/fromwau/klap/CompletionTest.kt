@@ -2,9 +2,6 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
-import com.fromwau.kern.result.map
-import com.fromwau.kern.terminal.green
-import com.fromwau.kern.terminal.red
 import com.fromwau.klap.internal.parse.sift
 import com.fromwau.klap.internal.render.BuiltinOptionHelp
 import com.fromwau.klap.internal.render.Candidate
@@ -1571,5 +1568,36 @@ class CompletionConditionalOperandTest {
         // The same line parses as `mode=null files=[a]` and `--help` renders `[<mode>]`, so offering the
         // mode values here would make completion the only one of the three that still sees the slot.
         assertEquals(listOf(COMPLETE_FILES), chmodLike().candidateValuesFor("--reference=r", ""))
+    }
+}
+
+/** A digit run is something the cluster readers step over, exactly as they step over a flag character. */
+class NumberOptionCompletionTest {
+
+    private val cli = cli("tasks") {
+        command("list") {
+            numberOption(help = "show at most this many")
+            flag("--reverse", "-r", help = "newest first")
+            flag("--long", "-l", help = "show due date and tags")
+            option("--status", "-n", help = "filter by status").choice("pending", "done")
+            action { Ok("") }
+        }
+    }
+
+    @Test
+    fun `a cluster opening with a run still offers the remaining shorts`() {
+        val candidates = cli.completionsFor("list", "-5")
+        assertTrue("-5r" in candidates, "expected -5r among $candidates")
+        assertTrue("-5l" in candidates, "expected -5l among $candidates")
+    }
+
+    @Test
+    fun `a value taking short after a run still completes the next word`() {
+        assertEquals(listOf("pending", "done"), cli.completionsFor("list", "-5n", ""))
+    }
+
+    @Test
+    fun `a value glued after a run still completes`() {
+        assertEquals(listOf("pending"), cli.completionsFor("list", "-5np"))
     }
 }

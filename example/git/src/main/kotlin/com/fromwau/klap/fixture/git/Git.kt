@@ -239,9 +239,16 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
     }
 
     val log = command("log", "show commit logs") {
-        val maxCount = option("--max-count", "-n", help = "limit the number of commits to output")
+        val namedMaxCount = option("--max-count", "-n", help = "limit the number of commits to output")
             .int()
             .validate("must be a positive count") { it > 0 }
+
+        // `git log -5` is git's shorthand for `-n 5`, and the last of the two wins.
+        val directMaxCount = numberOption(help = "same as -n NUM")
+            .int()
+            .validate("must be a positive count") { it > 0 }
+
+        val maxCount = lastOneWins(namedMaxCount, directMaxCount)
 
         val skip = option("--skip", help = "skip <n> commits before starting to show output").int()
 
@@ -269,9 +276,6 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         // either, since a command allows at most one trailing variadic.
         val revisionRange = argument("revision-range", "which commits to show, e.g. main..HEAD").optional()
         val paths = argument("path", "limit output to commits touching these paths").file().multiple()
-
-        // `git log -5` is shorthand for `-n 5`; numericAlias binds the bare number straight to maxCount.
-        numericAlias(maxCount)
 
         action {
             val filters = listOfNotNull(
