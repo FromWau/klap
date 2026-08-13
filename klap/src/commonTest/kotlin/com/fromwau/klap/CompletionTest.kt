@@ -11,6 +11,7 @@ import com.fromwau.klap.internal.render.Candidate
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 private fun sampleTree(): Cli = cli("todo") {
@@ -453,6 +454,21 @@ class OptionValueCandidateTest {
             }
         }
         assertEquals(listOf("lines", "words"), tree.completeCandidates(listOf("add", "-o", "")).map { it.value })
+    }
+
+    @Test
+    fun `a choice completes on the same case rule the parser matches on`() {
+        // `.choice()` lowers both sides to match, so `--sort=SIZE` binds. Filtering the candidates
+        // case-sensitively would leave TAB dead on a spelling the parser accepts.
+        val tree = cli("app") {
+            command("go") {
+                val sort = option("--sort").choice("size", "time", "none")
+                action { Ok(sort().orEmpty()) }
+            }
+        }
+        assertIs<Result.Success<Invocation>>(tree.parse(listOf("go", "--sort", "SIZE")))
+        assertEquals(listOf("size"), tree.completeCandidates(listOf("go", "--sort", "S")).map { it.value })
+        assertEquals(listOf("size"), tree.completeCandidates(listOf("go", "--sort", "s")).map { it.value })
     }
 }
 

@@ -22,6 +22,12 @@ internal sealed interface ActionError : IError {
     data class RenderFailed(val message: String?) : ActionError
 }
 
+/**
+ * What a successful action leaves for the runner: the text to print, and the code to exit with. They
+ * travel as a pair because the code is a projection of the value, which is erased by the time [text] is.
+ */
+internal class Rendered(val text: String, val exitCode: Int)
+
 /** The erased, non-generic face of an [ActionSpec]: run the action for its rendered output, or for its raw value. */
 internal sealed interface Action {
     /**
@@ -35,7 +41,7 @@ internal sealed interface Action {
      * Run the action and render its result to display text (`--json` or human), for the
      * [com.fromwau.klap.run] terminal path.
      */
-    suspend fun renderOutput(scope: ActionScope, json: Boolean): Result<String, ActionError>
+    suspend fun renderOutput(scope: ActionScope, json: Boolean): Result<Rendered, ActionError>
 
     /**
      * Run the action and return its own typed result, unrendered, for the
@@ -55,12 +61,30 @@ internal class ActionSpec<T>(
     override val suspending: Boolean,
     private val serializer: () -> KSerializer<T>,
     private val human: (ActionScope.(T) -> String)?,
+    private val exitCode: (ActionScope.(T) -> Int)?,
 ) : Action {
-    override suspend fun renderOutput(scope: ActionScope, json: Boolean): Result<String, ActionError> =
+    override suspend fun renderOutput(scope: ActionScope, json: Boolean): Result<Rendered, ActionError> =
         scope.block().fold(
             onError = { error -> Err(ActionError.Failed(error)) },
-            onSuccess = { value -> if (json) renderJson(value) else renderHuman(scope, value) },
+            onSuccess = { value -> renderSuccess(scope, value, json) },
         )
+
+    private fun renderSuccess(scope: ActionScope, value: T, json: Boolean): Result<Rendered, ActionError> {
+        // Only on this arm: an error carries its own exit code, so consulting the projection there would
+        // give two answers for one run. Guarded like [renderHuman], because it is consumer code running
+        // inside klap's never-throw boundary.
+        val code = try {
+            exitCode?.invoke(scope, value) ?: 0
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return Err(ActionError.RenderFailed(e.message))
+        }
+        return when (val text = if (json) renderJson(value) else renderHuman(scope, value)) {
+            is Result.Error -> text
+            is Result.Success -> Ok(Rendered(text.value, code))
+        }
+    }
 
     private fun renderJson(value: T): Result<String, ActionError> {
         val resolved = try {
