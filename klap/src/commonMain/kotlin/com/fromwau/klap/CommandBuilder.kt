@@ -149,8 +149,9 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
         suspending: Boolean,
         serializer: () -> KSerializer<T>,
         human: (ActionScope.(T) -> String)?,
+        exitCode: (ActionScope.(T) -> Int)?,
     ) {
-        actionSpec = ActionSpec(block, suspending, serializer, human)
+        actionSpec = ActionSpec(block, suspending, serializer, human, exitCode)
     }
 
     /**
@@ -168,16 +169,21 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * @param human turns the returned value into the line printed on success; without it the value's
      *   `toString()` is printed. A `--json` run serializes the value instead of calling this, so [T] must be
      *   `@Serializable` for a CLI that offers `--json`.
+     * @param exitCode what the process exits with when [block] succeeds; without it a success exits 0. Use
+     *   it for the `diff` and `grep` convention, where a non-zero exit is the answer rather than a failure:
+     *   the value is still printed and still serialized, and only the exit code changes. Clamped to
+     *   `0..255`, and never consulted when [block] returns an error, which carries its own code.
      * @param block the work itself, returning `Ok(value)` or a typed [CliError] that klap renders to stderr
      *   and turns into the exit code.
      */
     public inline fun <reified T> action(
         noinline human: (ActionScope.(T) -> String)? = null,
+        noinline exitCode: (ActionScope.(T) -> Int)? = null,
         noinline block: ActionScope.() -> Result<T, CliError>,
     ) {
         // `{ block() }` rather than `block`: a non-suspend function type is not a subtype of the suspend
         // one. The signature above is what makes `suspending = false` honest.
-        registerAction({ block() }, suspending = false, { serializer<T>() }, human)
+        registerAction({ block() }, suspending = false, { serializer<T>() }, human, exitCode)
     }
 
     /**
@@ -196,13 +202,18 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * @param human turns the returned value into the line printed on success; without it the value's
      *   `toString()` is printed. A `--json` run serializes the value instead of calling this, so [T] must be
      *   `@Serializable` for a CLI that offers `--json`.
+     * @param exitCode what the process exits with when [block] succeeds; without it a success exits 0. Use
+     *   it for the `diff` and `grep` convention, where a non-zero exit is the answer rather than a failure:
+     *   the value is still printed and still serialized, and only the exit code changes. Clamped to
+     *   `0..255`, and never consulted when [block] returns an error, which carries its own code.
      * @param block the work itself, returning `Ok(value)` or a typed [CliError] that klap renders to stderr
      *   and turns into the exit code. It may suspend.
      */
     public inline fun <reified T> actionSuspending(
         noinline human: (ActionScope.(T) -> String)? = null,
+        noinline exitCode: (ActionScope.(T) -> Int)? = null,
         noinline block: suspend ActionScope.() -> Result<T, CliError>,
     ) {
-        registerAction(block, suspending = true, { serializer<T>() }, human)
+        registerAction(block, suspending = true, { serializer<T>() }, human, exitCode)
     }
 }

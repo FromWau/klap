@@ -1158,6 +1158,38 @@ everything itself returns `Ok("")`, and klap writes no line for an empty success
 not carry over to a CLI that offers `--json`, where an empty `String` is a perfectly good value and
 serializes to `""` rather than to nothing.
 
+That holds for any type, not just `String`. Under `--json` klap serializes **the value you return**, never
+the line `human` would have printed, so a placeholder meaning "I already printed everything" is a document
+too. Print your output, then return a placeholder, and stdout carries two documents: yours and the
+placeholder's. The human renderer hides it, because the placeholder renders to nothing there.
+
+### When a non-zero exit is the answer
+
+A success exits 0 unless the command says otherwise. `exitCode` declares what it says, as a function of
+the value, beside the `human` that turns the same value into text:
+
+```kotlin
+command("check") {
+    action(
+        human = { it.report() },
+        exitCode = { if (it.failed == 0) 0 else 1 },
+    ) { Ok(runChecks()) }
+}
+```
+
+That is `diff`'s and `grep`'s convention, where a non-zero exit is the answer rather than a failure: the
+value still goes to stdout, `--json` still serializes it, and only the process's exit code changes. The
+projection runs on the success path alone. A returned `CliError` keeps its own `exitCode`, so one run
+never has two answers.
+
+The two codes are clamped differently, and the asymmetry is the point. A failure is clamped to `1..255`,
+so it can never claim success; a success is clamped to `0..255`, so it may report anything. A non-zero
+exit therefore no longer implies a failure, while `exit 0` still implies success.
+
+Reach for this instead of printing the value yourself and returning a placeholder. That shape renders on
+two paths, and the placeholder is a second document on stdout under `--json`, invisible until someone
+pipes it into `jq`. With `exitCode` there is one renderer, klap's, on every path.
+
 ## Color output
 
 klap has one color story: its own help chrome and anything your action colors itself resolve a style
