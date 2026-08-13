@@ -117,4 +117,34 @@ class ClusteredShortFlagsTest {
         assertContains(result.out, "-Dp high")
         assertContains(result.out, "-rln 5")
     }
+
+    @Test
+    fun `a count opening a cluster binds beside the flag after it`() = withTempStore { path ->
+        val cli = taskManagerCli()
+        for (n in 1..7) cli.captureWithFile(path, "add", "Task $n")
+
+        // `list -5r` is a count opening a cluster whose remaining character is an ordinary flag. Neither
+        // spelling of the limit is written out.
+        val result = cli.captureWithFile(path, "list", "-5r")
+        assertEquals(0, result.exitCode, result.err)
+
+        val lines = result.out.trim().lines()
+        assertEquals(5, lines.size, result.out)
+        // -r: newest first, so the trim keeps the five NEWEST rather than the five oldest.
+        assertContains(lines[0], "Task 7")
+        assertContains(lines[4], "Task 3")
+    }
+
+    @Test
+    fun `the declared range rejects an out of range count under the number spelling`() = withTempStore { path ->
+        val cli = taskManagerCli()
+        cli.captureWithFile(path, "add", "Task 1")
+
+        // The same `.range(1..100)` the `--limit` spelling carries, reached through the digits, and named
+        // by the input's own label rather than by an option the user never wrote.
+        val result = cli.captureWithFile(path, "list", "-101")
+        assertEquals(USAGE_ERROR_EXIT, result.exitCode, result.out)
+        assertContains(result.err, "-<NUM>")
+        assertContains(result.err, "must be in 1..100")
+    }
 }

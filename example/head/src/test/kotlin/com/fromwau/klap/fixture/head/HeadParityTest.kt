@@ -55,7 +55,7 @@ class HeadParityTest {
         parity.rejects("--lines", because = "real head: option '--lines' requires an argument")
         parity.rejects("-n", "abc", "f", because = "real head: invalid number of lines: 'abc'")
         parity.rejects("--bytes=abc", "f", because = "real head: invalid number of bytes: 'abc'")
-        // The numeric alias claims an all-digit token only, so this falls through to the short cluster.
+        // `5` is a number and `x` names nothing, so the cluster is reported at the character that is wrong.
         parity.rejects("-5x", "f", because = "real head: invalid trailing option -- x")
         // klap's --version is injected, head's --verbose is declared, and the two share this prefix: the
         // scan that answers --version runs before the walk, so it has to see the declared long as well or
@@ -86,14 +86,25 @@ class HeadParityTest {
 
     @Test
     fun `known divergence from real head`() {
-        // `head -5 f` is the obsolete spelling of `head -n 5 f`, which real head accepts; `numericAlias`
-        // binds it through `lines`, for any N.
+        // `head -5 f` is the obsolete spelling of `head -n 5 f`, which real head accepts; the number input
+        // binds it, for any N.
         parity.binds("-5", "f", expected = NOTHING_BOUND.copy(lines = "5", files = listOf("f")))
         parity.binds("-100", expected = NOTHING_BOUND.copy(lines = "100"))
+        // Real head accepts a run OPENING a cluster, at any length, so these two are parity.
+        parity.binds("-5v", "f", expected = NOTHING_BOUND.copy(lines = "5", verbose = true, files = listOf("f")))
+        parity.binds("-12v", "f", expected = NOTHING_BOUND.copy(lines = "12", verbose = true, files = listOf("f")))
+        // A run that does NOT open the token is where the two part company. Real head's rule exists because
+        // a value-taking short takes the rest of its cluster, which makes `-v12` ambiguous to a reader;
+        // klap resolves it from the declarations, so this is looseness rather than parity.
+        parity.bindsLoosely(
+            "-v12", "f",
+            because = "real head: invalid trailing option -- 1",
+            expected = NOTHING_BOUND.copy(lines = "12", verbose = true, files = listOf("f")),
+        )
 
         // Real head honours the obsolete form only as the FIRST argument: anywhere else it answers
-        // "invalid trailing option -- 3". klap's numericAlias claims `-NUM` wherever it appears, and the
-        // occurrence carries its position, so a later `-3` takes the unit back off an earlier `-c`. klap
+        // "invalid trailing option -- 3". klap's number input claims a digit run wherever it appears, and
+        // the occurrence carries its position, so a later `-3` takes the unit back off an earlier `-c`. klap
         // is LOOSER than the real tool here, which is the direction that makes a fixture lie about the
         // tool it models, so it is called out as such rather than left to read as parity.
         parity.bindsLoosely(
@@ -104,7 +115,7 @@ class HeadParityTest {
 
         // The same looseness costs a real filename. `head -5 -1` on a file named `-1` answers "invalid
         // trailing option -- 1" in real head, so the file is reachable only as `-- -1` or `./-1`. Here the
-        // alias takes the token as a count instead, leaving NO operand, so the line silently reads stdin.
+        // number input takes the token as a count instead, leaving NO operand, so the line reads stdin.
         parity.bindsLoosely(
             "-5", "-1",
             because = "real head: invalid trailing option -- 1",

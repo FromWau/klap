@@ -378,8 +378,8 @@ public abstract class ConverterScope internal constructor() {
      * }
      * ```
      *
-     * Anything the tree declares still wins: a flag, a short cluster, a long option, an abbreviation, a
-     * `numericAlias`, or a built-in like `-h`. Only a token that resolves to none of those reaches this
+     * Anything the tree declares still wins: a flag, a short cluster, a long option, an abbreviation,
+     * a number input, or a built-in like `-h`. Only a token that resolves to none of those reaches this
      * slot, and `--` remains the escape for a value that genuinely collides. Marking one slot does not
      * change how any other slot behaves: a single-dash token that reaches an operand slot without this
      * modifier is still reported as an unknown option, naming the whole word.

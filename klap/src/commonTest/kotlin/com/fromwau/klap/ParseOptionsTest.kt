@@ -4,7 +4,6 @@ import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
-import com.fromwau.kern.result.map
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.render.message
 import kotlin.test.Test
@@ -1783,43 +1782,39 @@ class DigitShortTest {
     }
 }
 
-/** `head -5` is not a flag named 5, it is shorthand for `-n 5`, so it is modelled as an alias. */
-class NumericAliasTest {
+/** `head -5` is not a flag named 5, it is a count the command declares as an input of its own. */
+class NumberInputTest {
 
     private fun headTree(): Cli = cli("head") {
-        val lines = option("--lines", "-n", help = "print the first NUM lines").int()
-        numericAlias(lines)
+        val lines = numberOption(help = "print the first NUM lines").int()
         val files = argument("file").multiple(min = 0)
         action { Ok("${lines()}:${files()}") }
     }
 
     @Test
-    fun `a numeric alias binds through the option it aliases`() {
+    fun `a number input binds the digits it is written with`() {
         assertEquals("5:[f]\n", headTree().execAndCapture(listOf("-5", "f")))
-        assertEquals("5:[f]\n", headTree().execAndCapture(listOf("-n", "5", "f")))
         // Any N, not a fixed set of declared shorts.
         assertEquals("20:[f]\n", headTree().execAndCapture(listOf("-20", "f")))
     }
 
     @Test
-    fun `a numeric alias feeds the options own converter and validation`() {
+    fun `a number input feeds its own converter and validation`() {
         val tree = cli("head") {
-            val lines = option("--lines", "-n").int().range(1..10)
-            numericAlias(lines)
+            val lines = numberOption().int().range(1..10)
             action { Ok(lines().toString()) }
         }
         assertEquals(
-            CliError.BadValue("--lines", "99", "must be in 1..10"),
+            CliError.BadValue("-<NUM>", "99", "must be in 1..10"),
             assertIs<Result.Error<CliError>>(tree.parse(listOf("-99"))).error,
         )
     }
 
     @Test
-    fun `a declared digit short wins over the numeric alias`() {
+    fun `a declared digit short wins over the number input`() {
         val tree = cli("app") {
             val ipv4 = flag("-4", help = "IPv4 only")
-            val lines = option("--lines", "-n").int()
-            numericAlias(lines)
+            val lines = numberOption().int()
             action { Ok("4=${ipv4()} n=${lines()}") }
         }
         assertEquals("4=true n=null\n", tree.execAndCapture(listOf("-4")))
@@ -1827,8 +1822,8 @@ class NumericAliasTest {
     }
 
     @Test
-    fun `a digit token is an unknown option without a numeric alias`() {
-        // Real `ls -5` and `sleep -1` both reject. A tree that declares no numeric alias must too, rather
+    fun `a digit token is an unknown option without a number input`() {
+        // Real `ls -5` and `sleep -1` both reject. A tree that declares no number input must too, rather
         // than silently binding a file named "-5".
         val tree = cli("ls") {
             val files = argument("file").multiple(min = 0)
@@ -1838,17 +1833,16 @@ class NumericAliasTest {
     }
 
     @Test
-    fun `a numeric alias claims only an all digit token`() {
-        // `-5x` is not a number, so the alias must not take it; it stays a short cluster.
+    fun `an undeclared character in a cluster is blamed rather than the run`() {
         assertEquals(
-            CliError.UnknownOption("-5", cluster = "-5x"),
+            CliError.UnknownOption("-x", cluster = "-5x"),
             assertIs<Result.Error<CliError>>(headTree().parse(listOf("-5x"))).error,
         )
     }
 
     @Test
-    fun `the aliased options help row advertises the numeric form`() {
-        assertTrue("-NUM" in headTree().helpText(), headTree().helpText())
+    fun `the number input has its own help row`() {
+        assertTrue("-<NUM>" in headTree().helpText(), headTree().helpText())
     }
 }
 

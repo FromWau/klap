@@ -21,6 +21,11 @@ and still hold**, so the remaining case for the rewrite is intact. Line citation
 symbol names, which do not rot, and the `Parser.kt:320-321` quotation below no longer exists in the
 source. The verdict and the argument are left exactly as written.
 
+**Also since:** `numericAlias` was deleted and replaced by the number input
+(`2026-08-14-number-option-design.md`), which binds a maximal run of digits rather than an all-digit token.
+Named in place above; it changes nothing about the argument, since the walk must know one rule either way,
+but it does mean the file counts below are stale and the cluster-reading walks now number nine.
+
 ## What this buys, and what the first draft wrongly claimed it buys
 
 The first draft was sold on deleting the `positions` family. It cannot. That claim is retracted here rather
@@ -85,7 +90,7 @@ Read off the source at `25329b9` on 2026-08-13, not recalled.
 > root's alone."
 
 It descends into subcommands, resolves longs against the reached command's pool, walks clusters char by char
-against local-then-global specs, knows `numericAlias`, knows `optionsEndAtFirstOperand`, and knows which
+against local-then-global specs, knows the number input, knows `optionsEndAtFirstOperand`, and knows which
 built-ins take a value. Then it discards all of it and returns `Set<Int>`: the argv indices holding a value.
 
 Citations below name symbols rather than lines, repointed 2026-08-14; every row was re-checked then and
@@ -462,7 +467,7 @@ terms.
 
 | File | Change |
 |---|---|
-| `internal/parse/Walk.kt` | New. The walk: descent, long and cluster resolution against the command in scope, globals, the two built-in readings, `numericAlias`, dash-led admission, `--`, `optionsEndAtFirstOperand`, deferral with ordinals. |
+| `internal/parse/Walk.kt` | New. The walk: descent, long and cluster resolution against the command in scope, globals, the two built-in readings, the number input, dash-led admission, `--`, `optionsEndAtFirstOperand`, deferral with ordinals. |
 | `internal/parse/Walked.kt` | New. `Resolved`, `BuiltinSighting`, `PendingValue`, `Walked`, `toSifted()`. |
 | `internal/parse/Bind.kt` | Extracted. `bindFlags`/`bindOptions`/`bindPositionals`/`checkConstraints` move out of the then-1627-line file, code unchanged. (Done at `86462fc`; `Sifted.kt` split out too.) |
 | `internal/parse/ArgvScan.kt` | Deleted. |
@@ -495,7 +500,7 @@ Captured on a green `master` **before any code changes** and committed.
   runs today, so this is a directory rather than a build change. JVM-only is sound because the parse path is
   entirely common Kotlin and the module's single `expect` is not in it.
 - **Trees:** the 15 parity fixtures plus one synthetic kitchen sink covering globals, `dashLed`,
-  `numericAlias`, `lastWins`, `requireExactlyOne`, `optionalValue`, negatable and counted flags, aliases,
+  `numberOption`, `lastWins`, `lastOneWins`, `requireExactlyOne`, `optionalValue`, negatable and counted flags, aliases,
   depth-2 subcommands, `optionsEndAtFirstOperand`, group nodes, built-in nodes, and each `Abbreviation` mode.
 - **Projection:** for an error, its type and rendered message; for a success, the `Invocation` kind, the
   resolved command path, and the bound sink in declaration order.
@@ -591,7 +596,7 @@ a real win, but this comparison is now the decision rather than a formality.
 - Converters, arity, cross-input constraints and `bindPositionals` keep their current behaviour and, apart
   from moving file, their current code. Their *inputs* are produced by `toSifted()` rather than `sift`.
 - The public API. No signature in `CommandBuilder`, `CliBuilder` or `Cli` changes.
-- `NumericAliasPlacement` (`2026-08-13-numeric-alias-placement-design.md`).
+- The number input (`2026-08-14-number-option-design.md`).
 - Error message wording. Messages are parity-checked, not improved.
 
 ## Open questions

@@ -41,13 +41,18 @@ public fun headCli(): TypedCli<HeadInputs> = cliOf("head") {
     example("head -qv a.txt b.txt", "two operands; the later of -q/-v decides whether headers print")
 
     // A dash-led NUM reaches this option's value slot in both forms: `-n -5` and `--lines -5`.
-    val lines = option("--lines", "-n", help = "print the first NUM lines instead of the first 10")
+    val named = option("--lines", "-n", help = "print the first NUM lines instead of the first 10")
         .validate("invalid number of lines") { HEAD_NUM.matches(it) }
         .placeholder("[-]NUM")
 
-    // Real head's obsolete `head -5 f` is shorthand for `-n 5`, not a flag named 5. Declared as the alias
-    // it is, so the count reads back off `lines` like any other spelling.
-    numericAlias(lines)
+    // Real head's obsolete `head -5 f` is shorthand for `-n 5`, not a flag named 5. Its own help text
+    // rather than a copy of `--lines`': the two render as two rows, and repeating the sentence would
+    // read as two settings that happen to be described identically.
+    val direct = numberOption(help = "same as -n NUM; the obsolete form real head still accepts")
+
+    // The two spellings of one quantity, folded so the action reads a line count without knowing which was
+    // written; the fold then takes part in the unit override below as one member.
+    val lines = lastOneWins(named, direct)
 
     val bytes = option("--bytes", "-c", help = "print the first NUM bytes of each file")
         .validate("invalid number of bytes") { HEAD_NUM.matches(it) }
@@ -67,7 +72,7 @@ public fun headCli(): TypedCli<HeadInputs> = cliOf("head") {
     val zeroTerminated = flag("--zero-terminated", "-z", help = "line delimiter is NUL, not newline")
 
     // Deliberately NOT `dashLed()`, unlike chmod's mode: real head rejects a dash-led FILE, so `head -x f`
-    // must stay an unknown option here too. Only `-NUM` slips through, claimed by the alias above.
+    // must stay an unknown option here too. Only `-NUM` slips through, claimed by the number input above.
     val files = argument("file", "file to print the head of; '-' means standard input")
         .file()
         .multiple()

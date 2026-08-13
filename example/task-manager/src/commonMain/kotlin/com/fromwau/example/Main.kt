@@ -117,7 +117,11 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
     command("list", "show your tasks") {
         aliases = listOf("ls")
         val status = option("--status", "-s", help = "filter by status").choice("pending", "done")
-        val limit = option("--limit", "-n", help = "show at most this many").int().range(1..100)
+        val namedLimit = option("--limit", "-n", help = "show at most this many").int().range(1..100)
+        // Both spellings carry the range independently: the fold picks a winner, it does not share a
+        // converter chain, so dropping it from either would let that spelling through unchecked.
+        val directLimit = numberOption(help = "same as -n NUM").int().range(1..100)
+        val limit = lastOneWins(namedLimit, directLimit)
         val reverse = flag("--reverse", "-r", help = "newest first")
         // Display-only, unlike --reverse: it never changes which tasks are chosen or their order,
         // only how much of each one the human renderer shows, so it is read in that renderer alongside

@@ -4,6 +4,7 @@ import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
 import com.fromwau.klap.internal.builder.BuilderImpl
+import com.fromwau.klap.internal.builder.validateGlobalDigitShorts
 import com.fromwau.klap.internal.builder.validateReservedNames
 import com.fromwau.klap.internal.spec.Builtin
 
@@ -193,6 +194,9 @@ private fun <T> build(name: String, block: CliBuilder.() -> T): Pair<Cli, T> {
     // `builtins { }`, and a subcommand's own build() ran back when its `command(...)` was declared, possibly
     // before that block was reached. Walking the finished tree makes the rule independent of that order.
     validateReservedNames(base, builder.builtGlobals(), builtins)
+    // Also deferred: the pair it refuses is a global at the root and a number input on a command, and only
+    // the finished tree holds both.
+    validateGlobalDigitShorts(base, builder.builtGlobals())
 
     // __complete is unconditional: it is hidden plumbing for `.completeWith` providers, reachable through
     // the public renderCompletion() escape hatch even when the `completion` built-in itself is declined.
@@ -212,7 +216,6 @@ private fun <T> build(name: String, block: CliBuilder.() -> T): Pair<Cli, T> {
         constraints = base.constraints,
         subcommands = base.subcommands + injected,
         action = base.action,
-        numericAlias = base.numericAlias,
         globalSpecs = builder.builtGlobals(),
         display = base.display,
         builtins = builtins,

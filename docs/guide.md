@@ -13,7 +13,7 @@ ships, so if you are building against a release, read this file at that release'
 | [Inputs and converters](#inputs-and-converters)            | spellings, dash-led values, numbers, dependent and optional-value operands        |
 | [Flags](#flags-boolean-counted-negatable)                  | boolean, counted, negatable                                                       |
 | [Abbreviation](#abbreviation)                              | how far a partially typed name resolves, git's rationale, choosing a mode         |
-| [Cross-input constraints](#cross-input-constraints)        | `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `requiredIf`                 |
+| [Cross-input constraints](#cross-input-constraints)        | `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `lastOneWins`, `requiredIf`  |
 | [Global / persistent options](#global--persistent-options) | options shared by every subcommand, which built-in answers, declining one         |
 | [Typed results and errors](#typed-results-and-errors)      | kern's `Result`, `IError`, `CliError`, exit codes, did-you-mean                   |
 | [Suspending actions](#suspending-actions)                  | `actionSuspending`, `runSuspending`, the caller-owned scope, no suspending `main` |
@@ -73,7 +73,7 @@ Those receivers have names, and you will want them the first time you factor a d
 
 | Receiver         | Where it is the receiver | What it carries                                                                                                                                                                                                                                                       |
 |------------------|--------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `CommandBuilder` | `command(name) { }`      | `argument`, `option`, `flag`, `command`, `group`, `example`, `action`; the cross-input rules `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `numericAlias`; the per-command settings `description`, `aliases`, `epilogue`, `hidden`, `optionsEndAtFirstOperand` |
+| `CommandBuilder` | `command(name) { }`      | `argument`, `option`, `flag`, `numberOption`, `command`, `group`, `example`, `action`; the cross-input rules `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `lastOneWins`; the per-command settings `description`, `aliases`, `epilogue`, `hidden`, `optionsEndAtFirstOperand` |
 | `CliBuilder`     | `cli(name) { }`          | everything on `CommandBuilder`, plus the root-only `globalOption`, `globalFlag`, `version`, `author`, `abbreviation`, `builtins { }`                                                                                                                                  |
 | `ConverterScope` | the base of both         | every converter: `.int()`, `.map()`, `.default()`, `.range()`, `.count()`, `.negatable()`, `.absentWhen()`, `.completeWith()`, ...                                                                                                                                    |
 
@@ -223,27 +223,46 @@ These declarations give it a meaning:
 
 ```kotlin
 flag("-4")                       // curl -4: an ordinary short whose character is a digit
-numericAlias(lines)              // head -5, git log -5: -<NUM> is shorthand for another option
+numberOption()                     // head -5, git log -5: -<NUM> is an input of its own
 argument("n").int()              // app -- -100: a negative OPERAND
 ```
 
-`numericAlias` aliases `-<NUM>`, for any N, onto an option you already declared; the digits become its
-value and run through its converter, so the count reads back off the same handle:
+`numberOption()` declares a run of digits as an input. The digits are the value, so it takes the same
+converters and validation as `option` and reads back the same way:
 
 ```kotlin
-val lines = option("--lines", "-n", help = "print the first NUM lines").int()
-numericAlias(lines)
-// head -5 f  ==  head -n 5 f, and `--lines <NUM> (or -NUM)` says so in --help
+val lines = numberOption(help = "print the first NUM lines").int().range(1..1000)
+// head -5 f, head -5v f and head -v12 f all bind, and `-<NUM> (1..1000)` says so in --help
 ```
 
-At most one per command, and a short the command declares itself wins: a tree with both `flag("-4")` and an
-alias binds `-4` to the flag and `-5` to the alias. A negative **option value** needs no escape at all —
-`-n -5` is the dash-led-value rule above. A negative **operand** needs the `--` escape, unless its slot is
-marked with `dashLed()`, covered next.
+The run is maximal and it may sit anywhere in the token, so `-12v` is twelve then `v`, never one then two.
+A run every character of which names a declared short is that cluster instead: a tree with both `flag("-4")`
+and a number input binds `-4` to the flag and `-45` to the number, which is what lets a tool have both. A
+flag's negative spellings are declared too, so `.negatable("-3")` keeps `-3` as the negation.
 
-A number carrying a **unit** (`-1m`, `-500ms`) fits none of the three: `numericAlias` claims all-digit
-tokens only, so `-1m` splits as the cluster `-1` `-m` and reports the first char it cannot place. Mark the
-operand instead:
+One combination klap refuses at build: a **global option** with a digit short, on a tree where any command
+declares a number input. Globals are pulled out before the command is known, so that option would claim the
+first digit of a run and take the rest as its value. Give it a non-digit short, or declare it with
+`globalFlag`, which takes no value and leaves the run whole.
+
+One per command. A negative **option value** needs no escape at all — `-n -5` is the dash-led-value rule
+above. A negative **operand** needs the `--` escape, unless its slot is marked with `dashLed()`, covered next.
+
+Where one quantity has both spellings, fold them so your action reads a single handle:
+
+```kotlin
+val named = option("--lines", "-n").int()
+val lines = lastOneWins(named, numberOption().int())
+lastWins(lines, bytes)          // the fold is an ordinary member of a further rule
+```
+
+`lastOneWins` reports whichever member was written last. Reading `named() ?: direct()` instead is wrong the
+moment either gains a `.default()`: a loser binds what it would have bound had you never written it, which is
+that default, so the fallback answers with the loser.
+
+A number carrying a **unit** (`-1m`, `-500ms`) is not one of these: a run stops at the first non-digit, so on
+a tree declaring a number input `-1m` binds 1 and then reports `-m`, and on a tree declaring none it is the
+cluster `-1` `-m`. Mark the operand instead:
 
 ```kotlin
 command("seek") {
@@ -674,6 +693,12 @@ occurrence to order and nothing a loser could be reset to. Nor can a member whos
 fall back on, a `.required()` or `.multiple()` option, since losing would leave its accessor with
 nothing to return; both are rejected when the tree is constructed. Its help hint reads
 `(last of -i, -f wins)` and its usage group `[-i|-f]`.
+
+**`lastOneWins` is the same rule with a value.** It folds several spellings of *one* quantity and returns a
+handle reading whichever was written last, and that handle is an ordinary input: pass it to `lastWins` to
+give the folded quantity an override partner, as `head` does over its line count and its byte count. Its
+members follow the rules above, and the fold itself may not be `.required()`, since nothing on the command
+line spells it. [Numbers on the command line](#numbers-on-the-command-line) is the worked case.
 
 ### `requiredIf`: a conditional requirement
 
