@@ -45,7 +45,8 @@ public sealed interface Invocation {
         // Global options block lists the tree's built-ins, and only the root knows which it still offers.
         internal val builtins: Builtins = Builtins.DEFAULT,
     ) : Invocation
-    public data class ShowVersion(val cli: Cli) : Invocation
+    /** [json] prints the version as a JSON object rather than the plain `name version` line. */
+    public data class ShowVersion(val cli: Cli, val json: Boolean = false) : Invocation
     public data class ShowCompletion(val cli: Cli, val shell: CompletionShell) : Invocation
     public data class ShowDocs(val cli: Cli, val format: DocFormat) : Invocation
 

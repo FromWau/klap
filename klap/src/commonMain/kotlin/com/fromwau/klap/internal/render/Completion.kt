@@ -243,17 +243,20 @@ private fun List<ArgumentSpec>.slotForOperand(index: Int): ArgumentSpec? {
 
 /**
  * Walks [argv] down the subcommand tree as far as it routes, returning the deepest command reached and the
- * tokens left over for it. Extracted so the planner binds the resolved command to a `val`: two lazy blocks
- * below close over it, and while the walk always completes before either is forced, a captured `var` would
- * leave that a matter of reading order rather than of the type.
+ * tokens left over for it. It stops at the first token naming no subcommand exactly as `parse` does — the
+ * two must agree on where a line routes, or Tab offers the inputs of a command the parse never reaches.
+ * Extracted so the planner binds the resolved command to a `val`: two lazy blocks below close over it, and
+ * while the walk always completes before either is forced, a captured `var` would leave that a matter of
+ * reading order rather than of the type.
  */
 private fun Cli.walkTo(argv: List<String>): Pair<Command, List<String>> {
+    val infer = abbreviation == Abbreviation.All
+    // Keep the while form: a for/withIndex loop reassigning `cmd` miscompiles on Kotlin/Native 2.4.10 debug
+    // builds (KT-87261, fixed in 2.4.20-Beta2) and passes on the JVM; retest before converting.
     var cmd: Command = this
     var rest = argv
     while (rest.isNotEmpty()) {
-        val child = (cmd.resolveSubcommand(rest.first(), abbreviation == Abbreviation.All) as? SubcommandMatch.One)
-            ?.command
-            ?: break
+        val child = (cmd.resolveSubcommand(rest.first(), infer) as? SubcommandMatch.One)?.command ?: break
         cmd = child
         rest = rest.drop(1)
     }

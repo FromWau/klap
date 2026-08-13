@@ -42,6 +42,21 @@ class OperandTerminatedOptionsTest {
     }
 
     @Test
+    fun `an undeclared tail cluster carrying a global's letter stays an operand`() {
+        // Only a cluster resolving in FULL is the ambiguous one. `-cvf` is a word that happens to contain
+        // a global's letter, and refusing it would take every tar-shaped tail with it.
+        val tree = cli("app") {
+            globalFlag("--verbose", "-v")
+            command("run") {
+                optionsEndAtFirstOperand = true
+                val rest = argument("rest").multiple()
+                action<String>(human = { it }) { Ok("rest=${rest()}") }
+            }
+        }
+        assertEquals("rest=[tar, -cvf, x]", tree.bindText("run", "tar", "-cvf", "x"))
+    }
+
+    @Test
     fun `the end of options marker ends options under the switch too`() {
         assertEquals("v=true l=null cmd=[ls, -la]", sshLike().bindText("-v", "--", "web1", "ls", "-la"))
     }
@@ -63,10 +78,9 @@ class OperandTerminatedOptionsTest {
     }
 
     @Test
-    fun `a mixed cluster after the first operand drops the global`() {
-        // siftGlobals leaves a global-plus-local cluster whole for THIS command's own sift to split, but
-        // that split never runs once f1 has already ended options, so -fs and its value x bind as literal
-        // operands instead of splitting into force=true sort=x.
+    fun `a mixed cluster after the first operand is refused`() {
+        // Neither reading survives here: the cluster cannot split (that would bind -f past the end of
+        // options) and cannot pass through whole (that would drop -s silently), so it is refused.
         val tree = cli("app") {
             optionsEndAtFirstOperand = true
             val sort = globalOption("--sort", "-s")
@@ -74,6 +88,35 @@ class OperandTerminatedOptionsTest {
             val files = argument("file").multiple()
             action<String>(human = { it }) { Ok("sort=${sort()} force=${force()} files=${files()}") }
         }
-        assertEquals("sort=null force=false files=[f1, -fs, x, f2]", tree.bindText("f1", "-fs", "x", "f2"))
+        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("f1", "-fs", "x", "f2"))).error
+        assertEquals(CliError.MixedClusterAfterOperands("-fs", "-s"), err)
+    }
+
+    @Test
+    fun `a cluster of only global shorts after the first operand still binds`() {
+        // The neighbour of the refusal above, and the reason it can stay narrow: siftGlobals claims a
+        // wholly-global cluster before this command ever sifts, so it never reaches that branch.
+        val tree = cli("app") {
+            val sort = globalOption("--sort", "-s")
+            val verbose = globalFlag("--verbose", "-v")
+            command("run") {
+                optionsEndAtFirstOperand = true
+                val files = argument("file").multiple()
+                action<String>(human = { it }) { Ok("sort=${sort()} verbose=${verbose()} files=${files()}") }
+            }
+        }
+        assertEquals("sort=x verbose=true files=[f1]", tree.bindText("run", "f1", "-vs", "x"))
+    }
+
+    @Test
+    fun `a mixed cluster after the separator stays a literal operand`() {
+        val tree = cli("app") {
+            optionsEndAtFirstOperand = true
+            val sort = globalOption("--sort", "-s")
+            flag("--force", "-f")
+            val files = argument("file").multiple()
+            action<String>(human = { it }) { Ok("sort=${sort()} files=${files()}") }
+        }
+        assertEquals("sort=null files=[-fs]", tree.bindText("--", "-fs"))
     }
 }

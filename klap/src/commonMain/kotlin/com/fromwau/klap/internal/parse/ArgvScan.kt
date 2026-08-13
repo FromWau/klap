@@ -53,9 +53,6 @@ internal class ArgvScan(
      */
     fun names(long: String): Boolean = open.any { '=' !in tokens[it] && matched(tokens[it]) == long }
 
-    /** Whether the literal short [token] is on the line. A short never abbreviates, so this stays literal. */
-    fun namesShort(token: String): Boolean = open.any { tokens[it] == token }
-
     /**
      * The value of a position-independent `--<long> value` / `--<long>=value` meta-option: the value,
      * `null` when it is absent, or MissingOptionValue when it is present without one. The LAST occurrence
@@ -134,15 +131,13 @@ internal fun Cli.optionValueSlots(argv: List<String>): Set<Int> {
 }
 
 /**
- * What a scanned token does: whether it claims the token after it as a value ([takesNext]), whether it is
- * one of the tokens klap removes before the subcommand walk ([preStripped]), and whether it is a mixed
- * short cluster [siftGlobals] defers whole ([deferred]). The walk continues past either of the latter two:
- * a deferred cluster is unresolved here but still binds at the reached command's own [sift].
+ * What a scanned token does: whether it claims the token after it as a value ([takesNext]), and whether it
+ * is one of the tokens klap removes before the subcommand walk ([preStripped]). Only a pre-stripped token
+ * lets routing carry on past it, since every other spelling is one the subcommand walk stops at.
  */
-private class Claim(val takesNext: Boolean, val preStripped: Boolean, val deferred: Boolean = false)
+private class Claim(val takesNext: Boolean, val preStripped: Boolean)
 
 private val CLAIMS_NOTHING = Claim(takesNext = false, preStripped = false)
-private val DEFERRED_CLUSTER = Claim(takesNext = false, preStripped = false, deferred = true)
 
 /**
  * The left-to-right walk behind [optionValueSlots]. It tracks the command the tokens belong to as it goes,
@@ -150,25 +145,14 @@ private val DEFERRED_CLUSTER = Claim(takesNext = false, preStripped = false, def
  * the root's alone.
  */
 private class ArityWalk(private val cli: Cli) {
-    // A throwaway accumulator holding no occurrences: only its spec lists and the pool it builds are read,
-    // and taking them from here is what keeps this walk's reading of a token identical to [sift]'s.
-    private val globals =
-        GlobalSift(emptyMap(), emptyMap(), emptyMap())
-            .accumulator(
-                cli.globalSpecs,
-                cli.version,
-                cli.builtins,
-                cli.metaOptions,
-                cli.declaredLongs,
-                cli.abbreviation,
-            )
+    private val globals = cli.globalLookup()
 
     private var cmd: Command = cli
     private var pool: List<String> = cli.longMatchPool(globals)
 
-    // The subcommand walk stops at the first token klap can neither strip nor defer as a global before it,
-    // and every token after that belongs to `cmd`'s own segment; descending past one would resolve later
-    // options against a command the parse never reaches.
+    // The subcommand walk stops at the first token klap cannot strip as a global before it, and every token
+    // after that belongs to `cmd`'s own segment; descending past one would resolve later options against a
+    // command the parse never reaches.
     private var routing = true
 
     fun slots(head: List<String>): Set<Int> {
@@ -196,7 +180,7 @@ private class ArityWalk(private val cli: Cli) {
             val next = head.getOrNull(i + 1)
             val claim = if (token.startsWith("--")) longClaim(token, next) else clusterClaim(token, next)
             if (claim.takesNext) slots += i + 1
-            routing = routing && (claim.preStripped || claim.deferred)
+            routing = routing && claim.preStripped
             i += if (claim.takesNext) 2 else 1
         }
         return slots
@@ -252,6 +236,13 @@ private class ArityWalk(private val cli: Cli) {
         var allGlobal = true
         var j = 0
         while (j < chars.length) {
+            if (globals.isHelpShort(chars[j])) {
+                // Reads on past it like any other resolved char, but siftGlobals cannot strip a cluster
+                // carrying klap's own short, so the token survives into the walk and stops the routing.
+                allGlobal = false
+                j += 1
+                continue
+            }
             val ch = chars[j].toString()
             if (cmd.flags.findFlag("-$ch") != null || cmd.flags.findNegatedShort(ch) != null) {
                 allGlobal = false
@@ -264,15 +255,7 @@ private class ArityWalk(private val cli: Cli) {
             }
             val local = cmd.options.findOption(null, ch)
             val option = local ?: globals.optionSpecs.findOption(null, ch)
-            if (option == null) {
-                // `cmd` is only the command reached so far, so a char resolving nowhere here may still sit
-                // in a cluster siftGlobals deferred; the reached leaf's own sift is where that binds.
-                return if (clusterTouchesGlobal(chars, globals.flagSpecs, globals.optionSpecs)) {
-                    DEFERRED_CLUSTER
-                } else {
-                    CLAIMS_NOTHING
-                }
-            }
+            if (option == null) return CLAIMS_NOTHING
             if (local != null) allGlobal = false
             val attached = chars.length > j + 1
             return Claim(takesValue(option, inline = attached, next = next), preStripped = allGlobal)
