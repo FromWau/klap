@@ -14,6 +14,7 @@ import com.fromwau.klap.internal.render.helpTextAll
 import com.fromwau.klap.internal.render.renderActionError
 import com.fromwau.klap.internal.render.renderError
 import com.fromwau.klap.internal.spec.ActionError
+import com.fromwau.klap.internal.spec.Rendered
 import com.fromwau.klap.internal.spec.completeWithoutSuspending
 
 /**
@@ -135,12 +136,14 @@ private inline fun Invocation.render(
 }
 
 /** Turn a finished action outcome into output on [terminal] and an exit code. Shared by both paths. */
-private fun Invocation.Execute.renderOutcome(outcome: Result<String, ActionError>, terminal: Terminal): Int =
+private fun Invocation.Execute.renderOutcome(outcome: Result<Rendered, ActionError>, terminal: Terminal): Int =
     outcome.fold(
         onError = { renderActionError(it, globals.json, terminal) },
-        onSuccess = { text ->
-            if (text.isNotEmpty()) terminal.out(text + "\n")
-            0
+        onSuccess = { rendered ->
+            if (rendered.text.isNotEmpty()) terminal.out(rendered.text + "\n")
+            // Clamped at the render boundary like a failure's code, but from 0 rather than 1: a success may
+            // report any code, while [renderError] keeps a failure from ever claiming 0.
+            rendered.exitCode.coerceIn(0, 255)
         },
     )
 
