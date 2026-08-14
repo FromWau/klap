@@ -45,9 +45,7 @@ public fun headCli(): TypedCli<HeadInputs> = cliOf("head") {
         .validate("invalid number of lines") { HEAD_NUM.matches(it) }
         .placeholder("[-]NUM")
 
-    // Real head's obsolete `head -5 f` is shorthand for `-n 5`, not a flag named 5. Its own help text
-    // rather than a copy of `--lines`': the two render as two rows, and repeating the sentence would
-    // read as two settings that happen to be described identically.
+    // Real head's obsolete `head -5 f` is shorthand for `-n 5`, not a flag named 5.
     val direct = numberOption(help = "same as -n NUM; the obsolete form real head still accepts")
 
     // The two spellings of one quantity, folded so the action reads a line count without knowing which was
