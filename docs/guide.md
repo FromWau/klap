@@ -223,7 +223,7 @@ These declarations give it a meaning:
 
 ```kotlin
 flag("-4")                       // curl -4: an ordinary short whose character is a digit
-numberOption()                     // head -5, git log -5: -<NUM> is an input of its own
+numberOption()                   // head -5, git log -5: -<NUM> is an input of its own
 argument("n").int()              // app -- -100: a negative OPERAND
 ```
 
@@ -232,7 +232,13 @@ converters and validation as `option` and reads back the same way:
 
 ```kotlin
 val lines = numberOption(help = "print the first NUM lines").int().range(1..1000)
-// head -5 f, head -5v f and head -v12 f all bind, and `-<NUM> (1..1000)` says so in --help
+// head -5 f, head -5v f and head -v12 f all bind
+```
+
+It gets a help row of its own, under the label errors name it by:
+
+```
+  -<NUM>   print the first NUM lines (1..1000; optional)
 ```
 
 The run is maximal and it may sit anywhere in the token, so `-12v` is twelve then `v`, never one then two.
@@ -252,17 +258,19 @@ Where one quantity has both spellings, fold them so your action reads a single h
 
 ```kotlin
 val named = option("--lines", "-n").int()
-val lines = lastOneWins(named, numberOption().int())
-lastWins(lines, bytes)          // the fold is an ordinary member of a further rule
+val direct = numberOption().int()
+val bytes = option("--bytes", "-c").int()
+val lines = lastOneWins(named, direct)
+lastWins(lines, bytes)           // the fold is an ordinary member of a further rule
 ```
 
 `lastOneWins` reports whichever member was written last. Reading `named() ?: direct()` instead is wrong the
 moment either gains a `.default()`: a loser binds what it would have bound had you never written it, which is
 that default, so the fallback answers with the loser.
 
-A number carrying a **unit** (`-1m`, `-500ms`) is not one of these: a run stops at the first non-digit, so on
-a tree declaring a number input `-1m` binds 1 and then reports `-m`, and on a tree declaring none it is the
-cluster `-1` `-m`. Mark the operand instead:
+A number carrying a **unit** (`-1m`, `-500ms`) is not one of these: a run stops at the first non-digit, so
+`-1m` is an unknown option either way — naming `-m` on a tree that declares a number input, and `-1` on one
+that does not. Mark the operand instead:
 
 ```kotlin
 command("seek") {
