@@ -123,18 +123,55 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
     public abstract fun lastWins(vararg inputs: Input)
 
     /**
-     * Makes `-<NUM>`, any number rather than a fixed set, shorthand for [option]: `head -5` means
-     * `head -n 5` and `tail -20` means `tail -n 20`. The digits become the option's value and run through
-     * its own converter and validation, so you read them back off the handle you already hold.
+     * Folds several spellings of one quantity into a single handle reporting whichever the user wrote last,
+     * and returns that handle so it can join a further rule:
      *
-     * Without this a dash-led number is an unknown option, which is what real `ls -5` and `sleep -1` say.
-     * A short the command declares itself outranks the alias, so declaring `flag("-4")` alongside leaves
-     * `-4` the flag and `-5` the alias.
+     * ```kotlin
+     * val named = option("--lines", "-n").int()
+     * val direct = numberOption().int()
+     * val bytes = option("--bytes", "-c").int()
+     * val lines = lastOneWins(named, direct)
+     * lastWins(lines, bytes)
+     * ```
      *
-     * One per command, and [option] must belong to this command; both are checked when it is built. A
-     * `Flag` cannot be aliased, since `-5` carries a value and a flag has nowhere to put one.
+     * Reading `named() ?: direct()` instead is wrong the moment either one gains a `.default()`: a loser
+     * binds what it would have bound had you never written it, which is that default, so the fallback
+     * answers with the loser.
+     *
+     * @param inputs the spellings to fold, at least two, each declared on this command. They follow
+     *   [lastWins]'s membership rules, so none may be `.required()` or `.multiple()`.
+     * @return a handle reading the winner, or the absent reading when the user wrote none of them. It is an
+     *   input like any other: pass it to [lastWins] to give the folded quantity an override partner.
      */
-    public abstract fun numericAlias(option: Opt<*>)
+    public abstract fun <T> lastOneWins(vararg inputs: Opt<T>): Opt<T>
+
+    /**
+     * Declares `-<NUM>`, any run of digits, as an input of this command: `head -5`, `head -5v`, `git log -2`.
+     *
+     * The digits are the value, so the handle takes the same converters and validation as [option] and is
+     * read back the same way:
+     *
+     * ```kotlin
+     * command("head") {
+     *     val lines = numberOption(help = "print the first NUM lines").int().range(1..1000)
+     *     action { Ok("${lines() ?: 10} line(s)") }
+     * }
+     * ```
+     *
+     * A run every character of which names a declared short is that cluster instead, so a tool may declare
+     * both `flag("-4")` and this: `-4` is the flag and `-45` is the number. Without this declaration a
+     * dash-led number stays an unknown option, which is what real `ls -5` and `sleep -1` answer.
+     *
+     * One per command, and no global option on the tree may hold a digit short: globals are resolved before
+     * the command is known, so such an option would claim the first digit of a run and take the rest as its
+     * value. Declare it with [CliBuilder.globalFlag] instead, or give it a non-digit short.
+     *
+     * The input has no spelling a user can type, so `-<NUM>` is the label help rows and error messages name
+     * it by.
+     *
+     * @param help the description shown on its `--help` row.
+     */
+    public abstract fun numberOption(help: String = ""): Opt<String?>
 
     /** One example invocation shown under an `Examples:` heading in `--help`. */
     public abstract fun example(command: String, description: String = "")

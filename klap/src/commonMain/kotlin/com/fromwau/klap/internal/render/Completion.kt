@@ -18,6 +18,7 @@ import com.fromwau.klap.internal.parse.activeArguments
 import com.fromwau.klap.internal.parse.completionValues
 import com.fromwau.klap.internal.parse.isFlagLike
 import com.fromwau.klap.internal.parse.longMatchPool
+import com.fromwau.klap.internal.parse.numberRunAt
 import com.fromwau.klap.internal.parse.resolveLong
 import com.fromwau.klap.internal.parse.sift
 import com.fromwau.klap.internal.parse.siftGlobals
@@ -156,12 +157,11 @@ internal fun Cli.completeCandidates(words: List<String>): List<Candidate> {
         }
         // A short cluster in progress (`-r`, `-rl`): guideline 5 bundles one-character options into a
         // single token, so offer each remaining short as a continuation of what has been typed rather
-        // than only the exact match. Gated on every typed char being a FLAG, because a value-taking
-        // option ends the cluster by consuming the remainder of the token, so nothing may follow it.
+        // than only the exact match. Gated on every typed char being a flag or part of a digit run,
+        // because a value-taking option ends the cluster by consuming the remainder of the token.
         val typedShorts = current.removePrefix("-")
         if (!current.startsWith("--") && typedShorts.isNotEmpty()) {
-            val flagSpecs = cmd.flagLookup(globalAcc)
-            if (typedShorts.all { flagSpecs.byName("-$it") != null }) {
+            if (cmd.firstNonFlagShort(typedShorts, globalAcc) < 0) {
                 names += names
                     .filter { it.value.length == 2 && !it.value.startsWith("--") }
                     .filterNot { it.value[1] in typedShorts }
@@ -364,8 +364,7 @@ private fun Command.trailingValueOption(prev: String, globalAcc: GlobalAccumulat
         // Short cluster only: a whole `--opt` is already resolved above, and `--`/`-` are not clusters.
         if (!prev.startsWith("-") || prev.startsWith("--")) return null
         val chars = prev.removePrefix("-")
-        val flagSpecs = flagLookup(globalAcc)
-        val optIndex = chars.indexOfFirst { flagSpecs.byName("-$it") == null }
+        val optIndex = firstNonFlagShort(chars, globalAcc)
         // The option must be the cluster's LAST char: sift only lets a trailing bare option char take the
         // following token, since a glued value (`-vp8`) ends the option itself.
         if (optIndex < 0 || optIndex != chars.lastIndex) return null
@@ -378,8 +377,29 @@ private fun Command.trailingValueOption(prev: String, globalAcc: GlobalAccumulat
 }
 
 /**
+ * The index of the first character of [chars] that is neither a flag nor part of a digit run the number
+ * input claims, or -1 when every character is one. A narrower peel than [sift]'s own cluster walk, which
+ * steps over klap's help short and a flag's negative shorts too: on those this stops early, so completion
+ * offers nothing where the parse would still have reached an option — the safe direction of the two.
+ */
+private fun Command.firstNonFlagShort(chars: String, globalAcc: GlobalAccumulator): Int {
+    val flagSpecs = flagLookup(globalAcc)
+    var j = 0
+    while (j < chars.length) {
+        val run = numberRunAt(chars, j, globalAcc)
+        if (run != null) {
+            j += run.length
+            continue
+        }
+        if (flagSpecs.byName("-${chars[j]}") == null) return j
+        j += 1
+    }
+    return -1
+}
+
+/**
  * This command's flags plus position-independent globals, for peeling leading flag chars off a short
- * cluster in [trailingValueOption] and [attachedValueOption].
+ * cluster in [firstNonFlagShort].
  */
 private fun Command.flagLookup(globalAcc: GlobalAccumulator): List<FlagSpec> = flags + globalAcc.flagSpecs
 
@@ -410,9 +430,8 @@ private fun Command.attachedValueOption(
     }
 
     // Short cluster: peel leading flag chars; the first non-flag char is the option, the rest its glued value.
-    val flagSpecs = flagLookup(globalAcc)
     val chars = current.removePrefix("-")
-    val optIndex = chars.indexOfFirst { flagSpecs.byName("-$it") == null }
+    val optIndex = firstNonFlagShort(chars, globalAcc)
     if (optIndex < 0) return null
 
     val partial = chars.substring(optIndex + 1)

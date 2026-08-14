@@ -107,11 +107,14 @@ internal fun ValueSpec.display(value: Any?): String {
 }
 
 /**
- * The word-form of an option/flag: every spelling, shorts first (options add `<placeholder>`, or
- * `[=<placeholder>]` when the value is optional; a negatable flag shows `--[no-]long`, or both real
- * halves when the negative one has its own spellings).
+ * The word-form of an option/flag: every spelling, shorts first, or the display label when it has no
+ * spelling at all (options add `<placeholder>`, or `[=<placeholder>]` when the value is optional; a
+ * negatable flag shows `--[no-]long`, or both real halves when the negative one has its own spellings).
  */
 internal fun NamedSpec.words(): String {
+    // An input with no spelling of its own (`-<NUM>`, a lastOneWins fold) has nothing to join, and the
+    // digits ARE the value, so there is no placeholder to append either.
+    if (this is OptionSpec && names.isEmpty()) return name
     val generatedNegation = this is FlagSpec && negatable && negativeNames.isEmpty()
     val negatedShorts = if (this is FlagSpec) negativeShorts else emptyList()
     // Suppressed for the generated form: `--[no-]x` below already states it, so listing the generated

@@ -137,21 +137,32 @@ internal class ArgumentSpec(
     }
 }
 
+/** The display name of the `-<NUM>` input: it has no spelling, so this is what help and errors name it by. */
+internal const val NUMBER_LABEL: String = "-<NUM>"
+
 @PublishedApi
 internal class OptionSpec(
     override val names: List<String>,
     override val help: String,
     override var convert: (String) -> Result<Any?, ConversionError>,
     override var section: String? = null,
+    // What an input with no spelling of its own is named by: `-<NUM>` for the number input, and the folded
+    // members' own tokens for a lastOneWins handle. Both are read off a handle rather than typed, so there
+    // is no spelling for [name] to take and every error and help row would otherwise name nothing.
+    label: String? = null,
+    // Set by numberOption(): this input binds a maximal run of digits rather than a spelling.
+    val isNumber: Boolean = false,
+    // Set by lastOneWins(): the members whose last-written occurrence this handle reports.
+    val folds: List<OptionSpec> = emptyList(),
 ) : ValueSpec, NamedSpec {
     // Above `name` deliberately: initializers run in declaration order, so a nameless declaration must
     // reach this require() before names.first() turns it into a NoSuchElementException.
     init {
-        require(names.isNotEmpty()) { "invalid option: at least one name is required" }
+        require(names.isNotEmpty() || label != null) { "invalid option: at least one name is required" }
         names.forEach { requireValidSpelling("option", it) }
     }
 
-    override val name: String = names.first()
+    override val name: String = label ?: names.first()
     override var cardinality: Cardinality = Cardinality.Optional
     override var choices: List<String>? = null
     override var validate: ((Any?) -> String?)? = null

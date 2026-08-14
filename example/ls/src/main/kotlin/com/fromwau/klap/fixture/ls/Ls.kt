@@ -71,7 +71,7 @@ public fun lsCli(): TypedCli<LsInputs> = cliOf("ls") {
         // This fixture is deliberately the mirror of `head`, and the pair is the point: real ls REJECTS
         // every OTHER digit (`ls -5` exits 2 with "invalid option -- '5'", verified) where real head
         // ACCEPTS `-5` as a count. Neither is a global rule, so each tool declares what it means: ls
-        // declares this one short and no numericAlias, which is exactly what makes `ls -5` unknown.
+        // declares this one short and no number input, which is exactly what makes `ls -5` unknown.
         val singleColumn = flag("-1", help = "list one file per line")
 
         val format = option(

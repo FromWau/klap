@@ -307,8 +307,8 @@ class PosixConformanceTest {
     @Test
     fun `guideline 14 a dash led number is an option too`() {
         // The same reading applied to digits, which is why `ls -5` errors rather than binding a file
-        // named "-5". `numericAlias` is sugar that gives such a token a meaning only when a tool asks
-        // for one; without it, guideline 14 holds.
+        // named "-5". `numberOption()` is the opt-in that gives such a token a meaning; without it,
+        // guideline 14 holds.
         val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("-5"))).error
         assertEquals(CliError.UnknownOption("-5"), err)
     }
@@ -355,13 +355,12 @@ class PosixConformanceTest {
     }
 
     @Test
-    fun `extension numeric alias claims only what no declared short does`() {
-        // Multi-digit `-20` is outside guideline 3, so `numericAlias` is sugar. A DECLARED short wins,
-        // so the conforming reading of `-2...` as an option cluster is never overridden by it.
+    fun `extension a number claims only what no declared short does`() {
+        // Multi-digit `-20` is outside guideline 3, so the number input is an extension. A DECLARED short
+        // wins, so the conforming reading of `-2...` as an option cluster is never overridden by it.
         val tree = cli("head") {
             val two = flag("-2")
-            val lines = option("--lines", "-n").int()
-            numericAlias(lines)
+            val lines = numberOption().int()
             action { Ok("two=${two()} lines=${lines()}") }
         }
         fun run(vararg argv: String) = RecordingTerminal().let { term ->
@@ -374,8 +373,7 @@ class PosixConformanceTest {
         val bothDeclared = cli("head") {
             val two = flag("-2")
             val zero = flag("-0")
-            val lines = option("--lines", "-n").int()
-            numericAlias(lines)
+            val lines = numberOption().int()
             action { Ok("two=${two()} zero=${zero()} lines=${lines()}") }
         }
         val term = RecordingTerminal()

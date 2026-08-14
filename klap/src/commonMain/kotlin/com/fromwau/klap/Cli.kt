@@ -28,9 +28,6 @@ public open class Command internal constructor(
     internal val constraints: List<InputConstraint> = emptyList(),
     public val subcommands: List<Command>,
     internal val action: Action?,
-    // The option `-<NUM>` is shorthand for, if `numericAlias(...)` declared one; null is the default, and
-    // then a dash-led number is simply an unknown option.
-    internal val numericAlias: OptionSpec? = null,
     internal val display: Display = Display(),
     // Non-null only for the completion/docs/__complete nodes cli() injects: names the builtin so parse()
     // routes it to the matching render invocation, since the node carries no action. A user command is null.
@@ -47,6 +44,10 @@ public open class Command internal constructor(
     // options ahead of all flags. Help renders from this so a related --verbose/--quiet pair the author
     // wrote together stays together.
     internal val namedInputs: List<NamedSpec> get() = specs.filterIsInstance<NamedSpec>()
+
+    // Derived rather than stored: a second source of truth could disagree with [specs] about which input
+    // the digits bind to, and the builder already refuses a second one.
+    internal val numberInput: OptionSpec? get() = options.firstOrNull { it.isNumber }
 
     // Presentation, read straight off [display]; description/epilogue stay public, the rest is the
     // render walk's concern. section/hidden mirror HolderSpec's own, so a subcommand and an input read
@@ -115,7 +116,6 @@ public class Cli internal constructor(
     constraints: List<InputConstraint>,
     subcommands: List<Command>,
     action: Action?,
-    numericAlias: OptionSpec? = null,
     internal val globalSpecs: List<NamedSpec> = emptyList(),
     display: Display = Display(),
     // Which built-ins this tree offers, resolved once from the root's `builtins { }` block. Threaded from
@@ -132,7 +132,6 @@ public class Cli internal constructor(
     constraints = constraints,
     subcommands = subcommands,
     action = action,
-    numericAlias = numericAlias,
     display = display,
     optionsEndAtFirstOperand = optionsEndAtFirstOperand,
 ) {

@@ -118,11 +118,37 @@ internal fun validateLastWinsMembers(name: String, constraints: List<InputConstr
 }
 
 /**
+ * The two cardinalities a `lastOneWins` fold can never satisfy, both because the fold's own [OptionSpec]
+ * never gets a raw occurrence (only its members do). `.required()` makes `bindFlagsAndOptions` take the
+ * missing-required branch on every line, even one that supplied a member, and name the fold's synthetic
+ * label, which nothing on the command line spells. `.multiple()` leaves `resolveFolds` writing
+ * [com.fromwau.klap.internal.parse.absentValue] — null — into an accessor whose own type is a non-null
+ * `List`, and the NPE lands inside user code.
+ *
+ * Checked over the finished spec list rather than inside `lastOneWins(...)`: both mutate the shared spec and
+ * may legally run after the `lastOneWins(...)` line, so a check at the call site would pass or fail on
+ * declaration order alone. Same reasoning as [validateLastWinsMembers].
+ */
+internal fun validateFoldCardinality(name: String, specs: List<HolderSpec>) {
+    for (spec in specs.filterIsInstance<OptionSpec>().filter { it.folds.isNotEmpty() }) {
+        val fold = "lastOneWins(${spec.folds.joinToString(", ") { it.constraintToken() }})"
+        require(spec.cardinality != Cardinality.Required) {
+            "command '$name': $fold cannot be .required(); the fold itself is never written, so require " +
+                "one of its members instead"
+        }
+        require(spec.cardinality !is Cardinality.Multiple) {
+            "command '$name': $fold cannot be .multiple(); the fold reports the one member written last " +
+                "rather than accumulating occurrences, so collect them on a member instead"
+        }
+    }
+}
+
+/**
  * Two rules over a conditional operand, both checkable only once the spec list is finished.
  *
  * The trigger must be one of this command's own inputs, and `.absentWhen()`/`.requiredUnless()` write it
  * straight onto the shared [ArgumentSpec] from inside [com.fromwau.klap.ConverterScope], which never sees
- * that list (unlike [com.fromwau.klap.CommandBuilder.numericAlias] or the `requireExactlyOne`/`lastWins`
+ * that list (unlike [com.fromwau.klap.CommandBuilder.numberOption] or the `requireExactlyOne`/`lastWins`
  * family, both implemented on [BuilderImpl] itself, where the list lives).
  *
  * Each also pairs with exactly one cardinality, and `.multiple()` mutates the shared spec and may legally
@@ -181,6 +207,7 @@ internal fun validateRequiredIfTriggers(name: String, specs: List<HolderSpec>, g
 internal fun revalidateAgainstLaterMutation(command: Command) {
     validatePositionals(command.name, command.specs)
     validateLastWinsMembers(command.name, command.constraints)
+    validateFoldCardinality(command.name, command.specs)
     validateConditionalOperandTriggers(command.name, command.specs)
     command.subcommands.forEach(::revalidateAgainstLaterMutation)
 }
@@ -466,6 +493,40 @@ internal fun validateReservedNames(
 
     check(root.name, root.specs, globalSpecs)
     root.subcommands.forEach(::walk)
+}
+
+/**
+ * A global OPTION with a digit short, on a tree where some command declares a `numberOption()`. The pre-strip
+ * reads a short cluster against the globals alone, so it matches that option on the FIRST digit of a run and
+ * takes the rest of the token as its value — `-25` binds `5` — where every other walk reads the run whole
+ * and binds 25. The pre-strip runs before any command is resolved, so it cannot consult the number input to
+ * settle the disagreement; the pair is refused here instead.
+ *
+ * A global FLAG is exempt: that arm is all-or-nothing over the cluster, so a run it does not cover in full
+ * leaves the whole token to the command's own sift, which does know about the number input.
+ *
+ * Runs over the FINISHED tree from [com.fromwau.klap.cli] rather than per-node inside `build()`, like
+ * [validateReservedNames]: the offending pair is one declaration at the root and another on a command whose
+ * own build() ran when its `command(...)` was declared.
+ */
+internal fun validateGlobalDigitShorts(root: Command, globalSpecs: List<NamedSpec>) {
+    val (spec, short) = globalSpecs
+        .filterIsInstance<OptionSpec>()
+        .firstNotNullOfOrNull { option ->
+            option.shorts.firstOrNull { it.singleOrNull()?.isDigit() == true }?.let { option to it }
+        } ?: return
+
+    fun numberOwner(command: Command): Command? =
+        command.takeIf { it.numberInput != null } ?: command.subcommands.firstNotNullOfOrNull(::numberOwner)
+
+    val owner = numberOwner(root)
+    require(owner == null) {
+        "cli '${root.name}': global option '${spec.token()}' declares the digit short '-$short', and " +
+            "command '${owner?.name}' declares a number input; the pre-strip claims '-$short' from the " +
+            "first digit of a run and takes the rest of the token as its value, so '-${short}5' would bind " +
+            "'5' instead of the number ${short}5. Give the global a non-digit short, or declare it with " +
+            "globalFlag, which takes no value and so leaves the run whole"
+    }
 }
 
 /**

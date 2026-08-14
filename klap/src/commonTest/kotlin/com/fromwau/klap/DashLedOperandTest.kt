@@ -197,11 +197,10 @@ class DashLedOperandTest {
     }
 
     @Test
-    fun `a numeric alias wins against a marked slot`() {
+    fun `a number wins against a marked slot`() {
         val tree = cli("app") {
             command("go") {
-                val lines = option("--lines", "-n").int()
-                numericAlias(lines)
+                val lines = numberOption().int()
                 val rest = argument("rest").dashLed().optional()
                 action { Ok("lines=${lines()} rest=${rest()}") }
             }

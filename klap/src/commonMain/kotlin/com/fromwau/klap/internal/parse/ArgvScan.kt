@@ -228,14 +228,19 @@ private class ArityWalk(private val cli: Cli) {
     }
 
     private fun clusterClaim(token: String, next: String?): Claim {
-        // `-<NUM>` under a numericAlias carries its own value in the digits, and no pass strips it.
-        if (cmd.numericAliasValue(token, globals) != null) return CLAIMS_NOTHING
         val chars = token.removePrefix("-")
         // A cluster is pre-stripped only when EVERY char is a global; one local char leaves it whole for
         // the reached command's own sift, exactly as siftGlobals does.
         var allGlobal = true
         var j = 0
         while (j < chars.length) {
+            val run = cmd.numberRunAt(chars, j, globals)
+            if (run != null) {
+                // The number input is the command's own, so the cluster carrying it is never pre-stripped.
+                allGlobal = false
+                j += run.length
+                continue
+            }
             if (globals.isHelpShort(chars[j])) {
                 // Reads on past it like any other resolved char, but siftGlobals cannot strip a cluster
                 // carrying klap's own short, so the token survives into the walk and stops the routing.
