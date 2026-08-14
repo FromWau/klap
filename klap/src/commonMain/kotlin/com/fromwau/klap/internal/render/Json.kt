@@ -14,3 +14,13 @@ internal fun jsonErrorEnvelope(message: String, code: Int): String =
             put("code", code)
         },
     )
+
+/** The `--json` shape of `--version`: the same two values the plain line carries, as fields. */
+internal fun jsonVersionEnvelope(name: String, version: String): String =
+    Json.encodeToString(
+        JsonObject.serializer(),
+        buildJsonObject {
+            put("name", name)
+            put("version", version)
+        },
+    )

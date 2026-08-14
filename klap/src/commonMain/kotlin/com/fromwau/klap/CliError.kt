@@ -106,6 +106,15 @@ public sealed interface CliError : IError {
     /** A real subcommand typed after `--`, which ends command parsing so the name is read as an operand. */
     public data class SubcommandAfterSeparator(val command: String, val parent: String) : CliError
 
+    /**
+     * A real subcommand of [parent] read as an operand, because an earlier token stopped subcommand
+     * routing. An option belonging to [parent] itself is the usual cause.
+     *
+     * Declare that option with `globalOption`/`globalFlag` and it can be used alongside a subcommand.
+     * Reordering the line is no remedy: [parent]'s own options are out of scope once a subcommand is named.
+     */
+    public data class UnroutedSubcommand(val command: String, val parent: String) : CliError
+
     public data class MissingArgument(val command: String, val argument: String) : CliError
 
     /** [option] is the primary spelling, dashes included, which may be a short one. */
@@ -155,6 +164,14 @@ public sealed interface CliError : IError {
         val extras: List<String>,
         val suggestion: String? = null,
     ) : CliError
+
+    /**
+     * A short cluster naming both [global] and an option local to the command, written after the first
+     * operand on a command where operands end the options. Neither reading is available there: splitting it
+     * would bind a local option past the end of options, and keeping it whole would drop [global] without
+     * saying so. Write [global] before the first operand instead.
+     */
+    public data class MixedClusterAfterOperands(val cluster: String, val global: String) : CliError
 
     public data class TooFewOccurrences(val option: String, val min: Int, val actual: Int) : CliError
 

@@ -52,6 +52,10 @@ internal fun CliError.message(): String = when (this) {
     is CliError.AmbiguousOption ->
         "option '$token' is ambiguous; possibilities: ${candidates.joinToString(" ") { "'$it'" }}"
 
+    is CliError.UnroutedSubcommand ->
+        "'$command' is a command of '$parent', but the tokens before it already ended command parsing; " +
+            "run '$parent $command' on its own"
+
     is CliError.SubcommandAfterSeparator ->
         "'$command' is a command of '$parent', but '--' ends command parsing; put '--' after the command"
 
@@ -67,6 +71,10 @@ internal fun CliError.message(): String = when (this) {
 
     is CliError.AmbiguousValue ->
         "value '$value' for $name is ambiguous; possibilities: ${candidates.joinToString(" ") { "'$it'" }}"
+
+    is CliError.MixedClusterAfterOperands ->
+        "'$cluster' mixes the global '$global' with a local option after the first operand; " +
+            "write '$global' before the operands"
 
     is CliError.TooManyArguments ->
         "unexpected extra argument${if (extras.size > 1) "s" else ""}: ${extras.joinToString(" ")}" +

@@ -182,8 +182,9 @@ class PosixConformanceTest {
 
     @Test
     fun `guideline 10 the delimiter is not swallowed as an option argument`() {
-        // "...that is not an option-argument": `--config --` leaves the option without a value rather
-        // than binding "--" as one, so the FIRST `--` here is still the delimiter.
+        // klap's own choice, not the guideline's: read plainly, "the first -- argument that is not an
+        // option-argument" leaves a `--` in a value slot free to BE that value, which is what getopt_long
+        // does. klap keeps `--` structural everywhere and offers `--config=--` for the literal.
         val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("--config", "--"))).error
         assertEquals(CliError.MissingOptionValue("--config"), err)
     }

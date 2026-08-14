@@ -113,7 +113,9 @@ public fun curlCli(): TypedCli<CurlInputs> = cliOf("curl") {
     val urls = argument("url", "URL(s) to fetch").multiple()
 
     // KLAP-GAP: `-h, --help <subject>` (curl's help takes a value) and `-V, --version` cannot be
-    // declared with those spellings — klap's help/version built-ins are reserved unconditionally.
+    // declared with those spellings — klap's help/version built-ins are reserved unconditionally. Even
+    // spelled otherwise the subject would not reach it: klap's help takes no value, so `curl --help http`
+    // (verified against 8.21.0) prints curl's own help rather than the http category.
 
     action<String>(human = { it }) {
         val effectiveUrls = urls() + urlOption()

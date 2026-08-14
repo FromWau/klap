@@ -55,7 +55,7 @@ class ParseResolutionTest {
     fun `unknown subcommand is an error`() {
         val out = tree().parse(listOf("config", "bogus"))
         val err = assertIs<Result.Error<CliError>>(out).error
-        assertEquals(CliError.UnknownSubcommand("config", "bogus"), err)
+        assertEquals(CliError.UnknownSubcommand("todo config", "bogus"), err)
     }
 
     @Test
@@ -135,6 +135,19 @@ class ParseResolutionTest {
         // Regression: a bad option ahead of a REAL subcommand must blame the option, not the subcommand.
         val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("--wat", "ping"))).error
         assertEquals(CliError.UnknownOption("--wat"), err)
+    }
+
+    @Test
+    fun `a local option of the parent stops the walk so its subcommand never routes`() {
+        val app = cli("app") {
+            val workdir = option("--workdir")
+            command("build") { action { Ok("built") } }
+            action { Ok("root ${workdir()}") }
+        }
+        // globalOption is the mechanism for an option usable alongside a subcommand; a local one ends
+        // routing, so "build" arrives as an operand of a root that declares no slot for it.
+        val err = assertIs<Result.Error<CliError>>(app.parse(listOf("--workdir", "/tmp", "build"))).error
+        assertEquals(CliError.UnroutedSubcommand("build", "app"), err)
     }
 
     @Test

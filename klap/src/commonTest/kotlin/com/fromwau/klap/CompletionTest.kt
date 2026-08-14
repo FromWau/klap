@@ -11,6 +11,7 @@ import com.fromwau.klap.internal.render.Candidate
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -397,6 +398,64 @@ class FileCompletionSentinelTest {
         assertTrue(compgenIndex >= 0, bash)
         assertTrue(compoptIndex >= 0, bash)
         assertTrue(compgenIndex < compoptIndex, bash)
+    }
+}
+
+/**
+ * Routing stops at a short cluster mixing a local char with a global one, because the local half is not in
+ * scope until the command declaring it is reached. The completion planner has to stop in the same place
+ * `parse` does, or Tab offers the inputs of a command the line never reaches.
+ */
+class MixedClusterRoutingCompletionTest {
+
+    private fun tree(): Cli = cli("app") {
+        globalFlag("--pretty", "-p", help = "pretty output")
+        command("list") {
+            flag("--long", "-l", help = "long form")
+            option("--tag", help = "tag").choice("alpha", "beta")
+            action { Ok("") }
+        }
+    }
+
+    @Test
+    fun `a mixed cluster before the subcommand keeps the child's option values out of reach`() {
+        assertEquals(listOf("alpha", "beta"), tree().completeCandidates(listOf("list", "--tag", "")).map { it.value })
+        // `-lp list --tag alpha` is refused for the out-of-scope `-l`, so `--tag` is not the option under
+        // the cursor here and has no values to offer.
+        assertEquals(
+            emptyList<String>(),
+            tree().completeCandidates(listOf("-lp", "list", "--tag", "")).map { it.value },
+        )
+    }
+
+    @Test
+    fun `a mixed cluster before the subcommand keeps the child's flag names out of reach`() {
+        val reached = tree().completeCandidates(listOf("-lp", "list", "-")).map { it.value }
+        assertTrue("--pretty" in reached, reached.toString())
+        assertFalse("--tag" in reached, reached.toString())
+        assertFalse("--long" in reached, reached.toString())
+    }
+
+    /**
+     * A shadowed short is where a planner that routed further than the parse would go visibly wrong: `-o`
+     * resolves against the ROOT here, taking `list` as its value, so the cursor after it is the root's
+     * first operand slot — not the CHILD's `-o` value, which only the routed spelling reaches.
+     */
+    @Test
+    fun `a shadowed short in a mixed cluster is completed against the command that owns the token`() {
+        val tree = cli("app") {
+            globalFlag("--pretty", "-p")
+            option("--rootopt", "-o")
+            command("list") {
+                option("--listopt", "-o").choice("x", "y")
+                argument("env").choice("prod", "staging").multiple()
+                action { Ok("") }
+            }
+            action { Ok("root") }
+        }
+        // The root's own first-operand view, subcommand names and all, is what proves the walk stopped there.
+        assertEquals(listOf("list"), tree.completeCandidates(listOf("-po", "list", "")).map { it.value })
+        assertEquals(listOf("x", "y"), tree.completeCandidates(listOf("list", "-po", "")).map { it.value })
     }
 }
 
