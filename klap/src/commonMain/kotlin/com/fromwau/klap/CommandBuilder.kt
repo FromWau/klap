@@ -162,8 +162,12 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * both `flag("-4")` and this: `-4` is the flag and `-45` is the number. Without this declaration a
      * dash-led number stays an unknown option, which is what real `ls -5` and `sleep -1` answer.
      *
-     * One per command. The input has no spelling a user can type, so `-<NUM>` is the label help rows and
-     * error messages name it by.
+     * One per command, and no global option on the tree may hold a digit short: globals are resolved before
+     * the command is known, so such an option would claim the first digit of a run and take the rest as its
+     * value. Declare it with [CliBuilder.globalFlag] instead, or give it a non-digit short.
+     *
+     * The input has no spelling a user can type, so `-<NUM>` is the label help rows and error messages name
+     * it by.
      *
      * @param help the description shown on its `--help` row.
      */
