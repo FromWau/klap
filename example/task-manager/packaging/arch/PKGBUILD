@@ -10,12 +10,14 @@
 # runs — they share build/ directories.
 
 pkgname=klap-example
-pkgver=0.1.0
+# Must match the `version =` the CLI itself declares (src/commonMain/.../Main.kt), or `pacman -Q` and
+# `klapExample --version` disagree about one binary. makepkg needs a literal here, so it cannot be derived.
+pkgver=0.3.0
 pkgrel=1
 pkgdesc="klap example CLI: a tiny file-backed task manager (self-contained native binary)"
 arch=('x86_64')
 url="https://github.com/FromWau/klap"
-license=('GPL-3.0-or-later')
+license=('Apache-2.0')
 makedepends=('jdk-openjdk')
 depends=('glibc')
 optdepends=('bash-completion: tab completion for bash (zsh and fish need nothing extra)')

@@ -4,8 +4,9 @@ The complete reference for [klap](../README.md). Start at the [README](../README
 how to add it; start at [`example/`](../example/README.md) for runnable programs to copy from.
 
 **This guide tracks `master`, which can be ahead of the published artifact.** A rename lands here before it
-ships, so if you are building against a release, read this file at that release's tag
-([`v0.1.0`](https://github.com/FromWau/klap/blob/v0.1.0/docs/guide.md), and so on) rather than here.
+ships, so if you are building against a release, read this file at that release's tag —
+`https://github.com/FromWau/klap/blob/v$klapVersion/docs/guide.md`, with every tag listed
+[here](https://github.com/FromWau/klap/tags) — rather than here.
 
 |                                                            |                                                                                   |
 |------------------------------------------------------------|-----------------------------------------------------------------------------------|
