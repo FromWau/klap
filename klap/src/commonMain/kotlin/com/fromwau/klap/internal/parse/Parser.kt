@@ -52,32 +52,51 @@ internal enum class BindPolicy { Strict, DeferRequired, Lenient }
  * What follows the dash is not consulted, including a leading digit: exempting `-100` so it could reach a
  * numeric positional would make `ls -5` bind a FILE named `-5`, where real `ls` reports an unknown option
  * — a silent mis-binding no tool wants. A dash-led number means what a tool declares it to mean: nothing
- * (an unknown option, the default), a digit short it declares (`curl -4`), or its [Command.numericAlias]
+ * (an unknown option, the default), a digit short it declares (`curl -4`), or a number input it declares
  * (`head -5`). A genuinely negative operand is written after `--`, and an option VALUE needs no escape
  * at all.
  */
 internal fun String.isFlagLike(): Boolean =
     startsWith("-") && this != END_OF_OPTIONS && this != "-"
 
-/** The `-<digits>` shorthand [Command.numericAlias] claims, if [token] is one; the digits are its value. */
-internal fun Command.numericAliasValue(
-    token: String,
-    globalAcc: GlobalAccumulator?,
-): Pair<OptionSpec, String>? {
-    val alias = numericAlias ?: return null
-    val digits = token.removePrefix("-")
-    if (digits.isEmpty() || !digits.all { it.isDigit() }) return null
-    // POSIX.1 XBD 12.2 guideline 14: a token identifiable as an option, OR as a group of options behind
-    // one '-', must be treated as one — so the alias may only claim a number that no complete cluster
-    // reading covers. `-4` where `flag("-4")` is declared is that flag; `-40` where only `-4` is declared
-    // is NOT a valid group (nothing declares `0`), so the alias takes it whole. A global's shorts count as
-    // much as this command's own: a cluster mixing the two reaches this sift whole ([siftGlobals]).
-    val shorts = shortsOf(namedInputs + globalAcc?.flagSpecs.orEmpty() + globalAcc?.optionSpecs.orEmpty())
-    if (digits.all { it.toString() in shorts }) return null
-    return alias to digits
-}
+/**
+ * Every short spelling [specs] answer to, a negatable flag's negative shorts included: `.negatable("-3")`
+ * declares `-3` as surely as `flag("-4")` declares `-4`, and a run that swallowed it would leave a declared
+ * spelling no line could reach.
+ */
+private fun declaredShortsOf(specs: List<NamedSpec>): Set<String> =
+    specs.flatMapTo(mutableSetOf()) { spec ->
+        if (spec is FlagSpec) spec.shorts + spec.negativeShorts else spec.shorts
+    }
 
-private fun shortsOf(specs: List<NamedSpec>): Set<String> = specs.flatMapTo(mutableSetOf()) { it.shorts }
+/**
+ * The maximal run of digits at [chars] index [at] that binds this command's number input, or null when
+ * nothing there is one: no number input is declared, the character is not a digit, or every character of
+ * the run names a declared short.
+ *
+ * That last case is POSIX.1 XBD 12.2 guideline 14 — a token identifiable as a group of options must be
+ * treated as one — scoped to the RUN rather than to the whole token. `-4` where `flag("-4")` is declared is
+ * that flag; `-45` where only `-4` is declared is not a valid group, so it is the number 45. A global's
+ * shorts count as much as this command's own, since a cluster mixing the two reaches this sift whole
+ * ([siftGlobals]), and a flag's negative shorts count as much as its positive ones ([declaredShortsOf]).
+ *
+ * The run is cut out before the per-character walk reaches inside it, which is what settles `-25` beside a
+ * value-taking `option("--two", "-2")`: the run wins and the number is 25, rather than `-2` taking `5` as
+ * its value. Where the run IS fully covered (`-2 5`) this declines and the ordinary cluster reading holds.
+ */
+internal fun Command.numberRunAt(
+    chars: String,
+    at: Int,
+    globalAcc: GlobalAccumulator?,
+): String? {
+    // Cheapest test first: [numberInput] and [declaredShortsOf] both walk spec lists, and this is asked once
+    // per character of every short cluster the parser reads.
+    if (at >= chars.length || !chars[at].isDigit()) return null
+    if (numberInput == null) return null
+    val run = chars.substring(at).takeWhile { it.isDigit() }
+    val shorts = declaredShortsOf(namedInputs + globalAcc?.flagSpecs.orEmpty() + globalAcc?.optionSpecs.orEmpty())
+    return if (run.all { it.toString() in shorts }) null else run
+}
 
 /**
  * Whether [ch] is klap's own help short here. Asked ahead of every declared lookup, which costs nothing:
@@ -164,6 +183,9 @@ internal fun Command.bind(
         sink,
         globalAcc?.inferNames ?: false,
     ).getOrElse { return Result.Error(it) }
+    // Ahead of resolveLastWins: a fold reads its winner's bound value, and an ENCLOSING set that overrode
+    // the fold must then be free to reset it.
+    resolveFolds(sifted, sink)
     resolveLastWins(sifted, sink)
     bindPositionals(sifted.positionals, sink, sifted, globalAcc?.inferNames ?: false, qualifiedName = qualifiedName)
         .getOrElse { return Result.Error(it) }
@@ -195,6 +217,22 @@ private fun Command.checkConditionalRequirements(
         if (triggered && opt !in sifted.options) return CliError.MissingRequiredOption(opt.token())
     }
     return null
+}
+
+/**
+ * Give each `lastOneWins` handle the value of whichever member the user wrote last, or its absent reading
+ * when they wrote none.
+ */
+private fun Command.resolveFolds(sifted: Sifted, sink: MutableMap<HolderSpec, Any?>) {
+    for (fold in options.filter { it.folds.isNotEmpty() }) {
+        // lastPosition, not the raw sift map: a member that is itself a fold is never a key there (it is
+        // never written on the line), which is exactly what lets a nested fold win here.
+        val winner = fold.folds
+            .mapNotNull { member -> member.lastPosition(sifted)?.let { member to it } }
+            .maxByOrNull { it.second }
+            ?.first
+        sink[fold] = if (winner != null) sink[winner] else fold.absentValue()
+    }
 }
 
 /**
@@ -237,7 +275,12 @@ private fun InputConstraint.losers(sifted: Sifted): List<HolderSpec> {
 /** Where [spec] sat on the line, or null when the user did not write it; the two maps the sift keeps. */
 private fun HolderSpec.lastPosition(sifted: Sifted): Int? = when (this) {
     is FlagSpec -> sifted.flagPositions[this]
-    is OptionSpec -> sifted.optionPositions[this]
+    // A fold is never written itself, so it stands where its latest member stands. Recursive, because a
+    // member may be a fold too, and reading the sift map directly would leave that one standing nowhere.
+    is OptionSpec ->
+        if (folds.isEmpty()) sifted.optionPositions[this]
+        else folds.mapNotNull { it.lastPosition(sifted) }.maxOrNull()
+
     is ArgumentSpec -> null
 }
 
@@ -245,8 +288,8 @@ private fun HolderSpec.lastPosition(sifted: Sifted): Int? = when (this) {
  * What this input binds when it is absent: what a loser must bind ([resolveLastWins]), and what an operand
  * slot removed by its `.absentWhen()` trigger binds ([bindPositionals]). Falling to null for an option
  * without a `.default()` is sound only because `validateLastWinsMembers` keeps `.required()` and
- * `.multiple()` options out of a set: their accessors are non-null, so a null here would NPE inside the
- * action.
+ * `.multiple()` options out of a set, and `validateFoldCardinality` off a fold ([resolveFolds] reaches here
+ * too): their accessors are non-null, so a null here would NPE inside the action.
  */
 internal fun HolderSpec.absentValue(): Any? = when {
     this is FlagSpec && isCount -> 0
@@ -273,7 +316,9 @@ internal fun Command.supplied(
     // it as "create was selected" would make `--no-create --extract` a conflict. sift records the last
     // polarity seen, which is the one the bind would have used.
     is FlagSpec -> if (spec.negatable) sifted.negations[spec] == true else (sifted.flags[spec] ?: 0) > 0
-    is OptionSpec -> sifted.options[spec]?.isNotEmpty() == true
+    is OptionSpec ->
+        if (spec.folds.isEmpty()) sifted.options[spec]?.isNotEmpty() == true
+        else spec.folds.any { supplied(it, sifted, overridden) }
     // Positionals fill left to right and a variadic must come last (validatePositionals), so the operand
     // at this spec's index exists exactly when the spec received one.
     is ArgumentSpec -> arguments.indexOf(spec).let { it >= 0 && sifted.positionals.size > it }
@@ -535,7 +580,6 @@ internal fun Command.sift(
     var endedBySeparator = false
     while (i < segment.size) {
         val token = segment[i]
-        val aliasHit = numericAliasValue(token, globalAcc)
         when {
             optionsEnded -> {
                 // Refused rather than kept: neither reading survives here (see MixedClusterAfterOperands),
@@ -648,14 +692,6 @@ internal fun Command.sift(
                 }
             }
 
-            // `-<NUM>` where the command declared what NUM means: the digits are the aliased option's
-            // value. Ahead of the cluster walk, which would otherwise read them as one flag char each.
-            aliasHit != null -> {
-                optionValues.getOrPut(aliasHit.first) { mutableListOf() } += aliasHit.second
-                optionPositions[aliasHit.first] = clusterPosition(positions.getOrNull(i) ?: i)
-                i += 1
-            }
-
             else -> {
                 // Short cluster: each char is a flag until one names an option, which takes the rest (`-p8080`)
                 // or the next token. A char that is not local is tried against the globals ([globalAcc]) so a
@@ -678,6 +714,15 @@ internal fun Command.sift(
 
                 var j = 0
                 while (j < chars.length) {
+                    val run = numberRunAt(chars, j, globalAcc)
+                    if (run != null) {
+                        val spec = numberInput!!
+                        optionValues.getOrPut(spec) { mutableListOf() } += run
+                        optionPositions[spec] = clusterPosition(positions.getOrNull(i) ?: i, j)
+                        j += run.length
+                        continue
+                    }
+
                     if (globalAcc.isHelpShort(chars[j])) {
                         // Klap's own, so it binds nothing here; the help ladder answers it. An inline
                         // `=value` on it is the same usage error a declared boolean short reports.
@@ -812,18 +857,34 @@ private fun Command.shortClusterResolvesInFull(
  * requiring every character to resolve would demand the same of `8080` and hand a declared option's own
  * token to an operand slot.
  *
- * Call this from inside the cluster branch. A `numericAlias` resolves in a branch ahead of it and is none
- * of these lookups, so checking earlier would read `head -5` as an operand.
+ * Recognition lives INSIDE this function rather than ahead of its callers: the dash-led admission asks this
+ * before the binding walk starts, so there is no "before" left to put it in.
  */
 private fun Command.firstUnresolvedShort(
     chars: String,
     globalAcc: GlobalAccumulator?,
 ): String? {
-    for (c in chars) {
-        if (globalAcc.isHelpShort(c)) continue
+    var j = 0
+    while (j < chars.length) {
+        val run = numberRunAt(chars, j, globalAcc)
+        if (run != null) {
+            j += run.length
+            continue
+        }
+        val c = chars[j]
+        if (globalAcc.isHelpShort(c)) {
+            j += 1
+            continue
+        }
         val ch = c.toString()
-        if (globalAcc.clusterHit(findFlag("-$ch")) { flagSpecs.findFlag("-$ch") } != null) continue
-        if (globalAcc.clusterHit(findNegatedShort(ch)) { flagSpecs.findNegatedShort(ch) } != null) continue
+        if (globalAcc.clusterHit(findFlag("-$ch")) { flagSpecs.findFlag("-$ch") } != null) {
+            j += 1
+            continue
+        }
+        if (globalAcc.clusterHit(findNegatedShort(ch)) { flagSpecs.findNegatedShort(ch) } != null) {
+            j += 1
+            continue
+        }
         // An option takes the rest of the cluster as its value, so nothing after it has to resolve.
         val option = globalAcc.clusterHit(findOption(null, ch)) { optionSpecs.findOption(null, ch) }
         return if (option != null) null else "-$ch"
@@ -842,15 +903,26 @@ private fun Command.firstUnresolvedShort(
  */
 internal fun Command.namesHelpShort(token: String, globalAcc: GlobalAccumulator?): Boolean {
     if (!token.isFlagLike() || token.startsWith("--")) return false
-    if (numericAliasValue(token, globalAcc) != null) return false
     val chars = token.removePrefix("-")
     if (hasDashLedSlot && !shortClusterResolvesInFull(chars, globalAcc)) return false
-    for (j in chars.indices) {
+    var j = 0
+    while (j < chars.length) {
+        val run = numberRunAt(chars, j, globalAcc)
+        if (run != null) {
+            j += run.length
+            continue
+        }
         // An `=value` on a boolean built-in is a usage error, raised where the sift walks the cluster.
         if (globalAcc.isHelpShort(chars[j])) return chars.getOrNull(j + 1) != '='
         val ch = chars[j].toString()
-        if (globalAcc.clusterHit(findFlag("-$ch")) { flagSpecs.findFlag("-$ch") } != null) continue
-        if (globalAcc.clusterHit(findNegatedShort(ch)) { flagSpecs.findNegatedShort(ch) } != null) continue
+        if (globalAcc.clusterHit(findFlag("-$ch")) { flagSpecs.findFlag("-$ch") } != null) {
+            j += 1
+            continue
+        }
+        if (globalAcc.clusterHit(findNegatedShort(ch)) { flagSpecs.findNegatedShort(ch) } != null) {
+            j += 1
+            continue
+        }
         return false
     }
     return false
@@ -862,10 +934,14 @@ internal fun ArgvScan.namesHelpShort(cmd: Command, globalAcc: GlobalAccumulator?
 
 /**
  * The error for an unrecognized char at `chars[j]` inside a short cluster (the chars before it, `chars[0
- * until j]`, all matched flags, since an option match would have ended the loop already). A `=` right
+ * until j]`, were all consumed by the walk — a flag, a negative short, klap's help short, or a digit run
+ * the number input claimed — since an option match would have ended the loop already). A `=` right
  * after a flag char is the short form of `--flag=value`, so it reports the same no-value error the long
  * form does. It names the preceding flag rather than the phantom `-=` a bare `"-$ch"` would fabricate;
  * both callers back [findFlag] with [findFlagOrNegatedShort], so a preceding NEGATIVE short is named too.
+ * That lookup is per-character, so where a run was consumed the char before the `=` is its last DIGIT, and
+ * `-12=x` beside `flag("-2")` blames `-2` — a spelling the run swallowed. Left as it is: the `=` is a usage
+ * error under either reading.
  * Any other stray non-alphanumeric char (e.g. the
  * `-` in `-f-y`) blames the whole original [token] instead of fabricating `"-$ch"` (which for `ch == '-'`
  * would misreport as the end-of-options marker `--`). A genuinely unknown LETTER/digit still names just

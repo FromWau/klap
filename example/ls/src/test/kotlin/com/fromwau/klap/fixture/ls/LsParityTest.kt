@@ -116,7 +116,7 @@ class LsParityTest {
         parity.rejects("--zzz", because = "real ls: unrecognized option '--zzz'")
         parity.rejects("--colour=never", because = "real ls: unrecognized option '--colour=never'")
         parity.rejects("-Q", "f", because = "real ls: invalid option -- 'Q'")
-        // The mirror of `head -5`: ls declares one digit short and no numericAlias, so every OTHER digit
+        // The mirror of `head -5`: ls declares one digit short and no number input, so every OTHER digit
         // is an unknown option here exactly as it is in real ls.
         parity.rejects("-5", because = "real ls: invalid option -- '5'")
         parity.rejects("-100", because = "real ls: invalid option -- '0'")

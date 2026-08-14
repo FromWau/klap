@@ -204,31 +204,15 @@ class AuthorTest {
     }
 
     @Test
-    fun `asecond numeric alias on one command fails to build`() {
+    fun `a second number input on one command fails to build`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("head") {
-                val lines = option("--lines", "-n").int()
-                val bytes = option("--bytes", "-c").int()
-                numericAlias(lines)
-                numericAlias(bytes)
+                numberOption().int()
+                numberOption().int()
                 action { Ok("") }
             }
         }
         assertTrue("already declared" in ex.message.orEmpty(), ex.message)
-    }
-
-    @Test
-    fun `a numeric alias naming another commands option fails to build`() {
-        val ex = assertFailsWith<IllegalArgumentException> {
-            cli("app") {
-                val lines = globalOption("--lines", "-n").int()
-                command("go") {
-                    numericAlias(lines)
-                    action { Ok("") }
-                }
-            }
-        }
-        assertTrue("not declared on 'go'" in ex.message.orEmpty(), ex.message)
     }
 
     @Test

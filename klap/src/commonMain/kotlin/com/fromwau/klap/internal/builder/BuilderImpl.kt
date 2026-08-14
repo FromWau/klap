@@ -23,12 +23,13 @@ import com.fromwau.klap.internal.spec.Display
 import com.fromwau.klap.internal.spec.FlagSpec
 import com.fromwau.klap.internal.spec.HolderSpec
 import com.fromwau.klap.internal.spec.InputConstraint
+import com.fromwau.klap.internal.spec.NUMBER_LABEL
 import com.fromwau.klap.internal.spec.NamedSpec
 import com.fromwau.klap.internal.spec.OptionSpec
+import com.fromwau.klap.internal.spec.constraintHintToken
 import com.fromwau.klap.internal.spec.constraintToken
 import com.fromwau.klap.internal.spec.hint
 import com.fromwau.klap.internal.spec.requireValidName
-import com.fromwau.klap.internal.spec.token
 import com.fromwau.klap.resolve
 
 /** Identity converter: a raw string passes through unchanged until a type transformer replaces it. */
@@ -85,6 +86,22 @@ internal class BuilderImpl(
         return Opt(spec)
     }
 
+    override fun numberOption(help: String): Opt<String?> {
+        require(specs.none { it is OptionSpec && it.isNumber }) {
+            "command '$name': numberOption is already declared; `-<NUM>` can only mean one input"
+        }
+        val spec = OptionSpec(
+            names = emptyList(),
+            help = help,
+            convert = passthrough,
+            section = currentSection,
+            label = NUMBER_LABEL,
+            isNumber = true,
+        )
+        specs += spec
+        return Opt(spec)
+    }
+
     override fun flag(vararg names: String, help: String): Flag {
         val spec = FlagSpec(names.toList(), help, currentSection)
         specs += spec
@@ -103,23 +120,6 @@ internal class BuilderImpl(
         return Flag(spec)
     }
 
-    private var numericAliasSpec: OptionSpec? = null
-
-    override fun numericAlias(option: Opt<*>) {
-        val spec = option.spec
-        require(numericAliasSpec == null) {
-            "command '$name': numericAlias is already declared on '${numericAliasSpec?.token()}'; " +
-                    "`-<NUM>` can only mean one option"
-        }
-        require(specs.any { it === spec }) {
-            "command '$name': numericAlias names '${spec.token()}', which is not declared on '$name'; " +
-                    "the alias binds through one of this command's own options"
-        }
-        numericAliasSpec = spec
-        // Help-only: the row has to advertise the spelling, or `-5` is a feature nobody can discover.
-        spec.valueHint = listOfNotNull(spec.valueHint, "or -NUM").joinToString("; ")
-    }
-
     private val constraints = mutableListOf<InputConstraint>()
 
     override fun requireExactlyOne(vararg inputs: Input): Unit =
@@ -130,6 +130,24 @@ internal class BuilderImpl(
 
     override fun lastWins(vararg inputs: Input): Unit =
         addConstraint(ConstraintArity.LastWins, "lastWins", inputs)
+
+    override fun <T> lastOneWins(vararg inputs: Opt<T>): Opt<T> {
+        // Ahead of the fold spec, so a malformed set fails before this command grows an input for it.
+        addConstraint(ConstraintArity.LastWins, "lastOneWins", inputs)
+        val members = inputs.map { it.spec }
+        val fold = OptionSpec(
+            names = emptyList(),
+            help = "",
+            convert = passthrough,
+            label = members.joinToString("/") { it.constraintHintToken() },
+            folds = members,
+        )
+        // The members carry their own rows and the set's note; a second row for the fold would describe
+        // nothing the reader can type.
+        fold.hidden = true
+        specs += fold
+        return Opt(fold)
+    }
 
     /**
      * Record one cross-input rule, rejecting a malformed set on the spot rather than at parse time: a
@@ -219,6 +237,7 @@ internal class BuilderImpl(
         )
         validateSectionTitles(name, specs)
         validateLastWinsMembers(name, constraints)
+        validateFoldCardinality(name, specs)
         validateConditionalOperandTriggers(name, specs)
         validateRequiredIfTriggers(name, specs, reachableGlobalSpecs)
         validateCanActOrDispatch(name, actionSpec != null, subs.isNotEmpty(), builtinKind != null)
@@ -229,7 +248,6 @@ internal class BuilderImpl(
             constraints = constraints.toList(),
             subcommands = subs.toList(),
             action = actionSpec,
-            numericAlias = numericAliasSpec,
             optionsEndAtFirstOperand = optionsEndAtFirstOperand,
             display = Display(
                 description = description,
