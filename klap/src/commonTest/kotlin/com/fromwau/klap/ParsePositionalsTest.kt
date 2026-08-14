@@ -54,19 +54,19 @@ class ParsePositionalsTest {
     @Test
     fun `missing required argument`() {
         val err = assertIs<Result.Error<CliError>>(posTree().parse(listOf("add"))).error
-        assertEquals(CliError.MissingArgument("add", "text"), err)
+        assertEquals(CliError.MissingArgument("todo add", "text"), err)
     }
 
     @Test
     fun `variadic min enforced`() {
         val err = assertIs<Result.Error<CliError>>(posTree().parse(listOf("sum"))).error
-        assertEquals(CliError.MissingArgument("sum", "nums"), err)
+        assertEquals(CliError.MissingArgument("todo sum", "nums"), err)
     }
 
     @Test
     fun `too many arguments rejected`() {
         val err = assertIs<Result.Error<CliError>>(posTree().parse(listOf("ping", "extra"))).error
-        assertEquals(CliError.TooManyArguments("ping", listOf("extra")), err)
+        assertEquals(CliError.TooManyArguments("todo ping", listOf("extra")), err)
     }
 
     @Test
@@ -257,9 +257,13 @@ class NonLastVariadicTest {
 
     @Test
     fun `the trailing slot is filled before the variadic takes anything`() {
-        // One token cannot satisfy both, and the fixed slot is the one that must hold: the variadic is
-        // left short and reports its own minimum rather than swallowing the destination.
-        assertIs<Result.Error<CliError>>(cpTree().parse(listOf("a")))
+        // One token cannot satisfy both. It feeds the variadic's minimum and the starved destination is
+        // the one blamed, as GNU `cp a` does; blaming the variadic would answer `cp a` and bare `cp`
+        // with the same sentence.
+        val one = assertIs<Result.Error<CliError>>(cpTree().parse(listOf("a"))).error
+        assertEquals(CliError.MissingArgument("cp", "dest"), one)
+        val none = assertIs<Result.Error<CliError>>(cpTree().parse(emptyList())).error
+        assertEquals(CliError.MissingArgument("cp", "source"), none)
     }
 
     @Test

@@ -14,7 +14,7 @@ ships, so if you are building against a release, read this file at that release'
 | [Flags](#flags-boolean-counted-negatable)                  | boolean, counted, negatable                                                       |
 | [Abbreviation](#abbreviation)                              | how far a partially typed name resolves, git's rationale, choosing a mode         |
 | [Cross-input constraints](#cross-input-constraints)        | `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `requiredIf`                 |
-| [Global / persistent options](#global--persistent-options) | options shared by every subcommand, and declining a built-in                      |
+| [Global / persistent options](#global--persistent-options) | options shared by every subcommand, which built-in answers, declining one         |
 | [Typed results and errors](#typed-results-and-errors)      | kern's `Result`, `IError`, `CliError`, exit codes, did-you-mean                   |
 | [Suspending actions](#suspending-actions)                  | `actionSuspending`, `runSuspending`, the caller-owned scope, no suspending `main` |
 | [Structured `--json`](#structured---json)                  | one `Ok(value)`, two renderings, actions that print as they go                    |
@@ -253,9 +253,8 @@ command("seek") {
 ```
 
 `dashLed()` lets that one slot take a single-dash token that resolves to nothing. Anything declared still
-wins, and a cluster counts as resolved only when every character in it does. A built-in like `-h` is matched
-as a whole token before that check runs, so `h` inside a cluster resolves to nothing at all: `-1h` reaches
-the operand because neither of its characters resolves, not because a declared `-h` was shadowed.
+wins, klap's own `-h` included, and a cluster counts as resolved only when every character in it does:
+`-1h` reaches the operand because `1` resolves to nothing, even though `h` does.
 
 The trade is on that command only. A mistyped short option now binds as the operand instead of being
 reported as an unknown option, so reach for this where the command's own value error names the grammar it
@@ -502,8 +501,9 @@ negatives: `-L, -P, --dereference, --no-dereference`.
 to a short as `-ovalue`; a short option does **not** accept `-o=value` (the `=` is taken as part of the
 value). Short flags cluster (`-abc` = `-a -b -c`), and a value-taking short ends a cluster, taking the
 rest of the token or the next argument (`-n5` or `-n 5`). Local and global short flags cluster together
-in any order (`-fv` binds the same as `-vf`); the built-ins `-h` / `--help` / `--version` are recognized
-as standalone tokens, not inside a cluster. `--` ends option parsing: every token after it is positional.
+in any order (`-fv` binds the same as `-vf`), and the built-in `-h` clusters with them (`-vh` asks for
+help). A cluster is refused at the leftmost character it cannot place, so an undeclared one is reported
+even beside `-h`. `--` ends option parsing: every token after it is positional.
 An option that takes a value takes the next token whatever it looks like, dash-led or not; see
 [Dash-led values](#dash-led-values) above.
 
@@ -712,6 +712,12 @@ one place: a value-taking option's argument slot belongs to that option, so `fle
 gives `-e` the literal string `--verbose` and leaves the global at its default — see
 [Dash-led values](#dash-led-values).
 
+That freedom belongs to the global's own token. A *cluster* means exactly what its characters mean
+written apart (`-abc` = `-a -b -c`), so a global short bundled with a subcommand's own short is read
+where the subcommand's short is legal and nowhere else: `fleet build -vf` binds both, while
+`fleet -vf build` is refused for `-f` — `build` declares it and the root does not, exactly as
+`fleet -v -f build` is refused. Write the global on its own when it has to come first.
+
 ```kotlin
 cli("fleet") {
     val verbose = globalFlag("--verbose", "-v", help = "log everything")
@@ -759,6 +765,44 @@ A required global (or any required input) never blocks klap's built-ins: `--help
 `completion` / `docs` / `__complete` builtins render before required-input checks run, so
 `mytool completion fish` works even when a `--config` global is `required()`.
 
+### Which built-in answers
+
+Which built-in answers is fixed, and never a question of where you wrote it: `mytool --version --help`
+and `mytool --help --version` both print the version, and `mytool --docs man --completion bash` and the
+reverse both print the completion script. Highest first:
+
+1. `--version`
+2. `--help-all`
+3. `--help` / `-h`
+4. `--completion <shell>`
+5. `--docs <format>`
+
+A dispatcher's `completion` / `docs` subcommands sit on those same bottom two rungs, so
+`mytool completion bash --help` describes that command instead of emitting the script. `--json` and
+`--color` are not rungs at all: they never answer a line, only shape whatever does.
+
+So a line naming two built-ins answers only the higher one, and the lower one is never looked at:
+`mytool --help --completion bsh` prints help and says nothing about the misspelled shell.
+
+### Which command help documents
+
+Help documents the deepest command the line names, wherever the request itself sits, so a tree is
+explored by appending:
+
+```
+mytool --help                   # mytool
+mytool --help remote            # mytool remote
+mytool --help remote add        # mytool remote add
+```
+
+`mytool remote add --help` names the same command and answers the same way. The short behaves
+identically, clustered or not: `mytool -vh remote` documents `remote`, since `-v` is a global and `-h`
+is the help short, and both resolve before the walk knows which command it reaches.
+
+A short belonging to a command the line has *not* reached stops the walk instead, because written apart
+it is an option of somewhere else: with `--force` declared on `add`, `mytool -vf remote add` is an
+unknown option rather than a request for `add`'s help.
+
 ### Declining a built-in
 
 When your tool's own interface needs one of those names, a root-only `builtins { }` block declines the
@@ -789,7 +833,7 @@ it only exists when you set `version`.
 
 An `action { }` returns `Result<T, CliError>`:
 
-- `Ok(value)` succeeds; klap renders `value` and exits `0`.
+- `Ok(value)` succeeds; klap renders `value` and exits `0`, or with the code an `action(exitCode = …)` returns.
 - `Err(error)` fails; klap prints the message and exits with `error.exitCode`.
 
 `Result` is not klap's own type. It comes from
@@ -1112,9 +1156,10 @@ Errors follow suit: under `--json` a failure prints `{"error":"...","code":n}` t
 pipeline sees JSON on both streams. Returning a `String` or primitive needs no setup; returning an
 `@Serializable` type requires the `kotlin("plugin.serialization")` plugin in the consuming module.
 
-`--json` shapes an action's result (and its errors). It does not apply to `--help` or `--version`, which
-always print their normal text; a failure's exit code is clamped to `1..255` (a `Failure(exitCode = 0)`
-becomes `1`, since a failure must not report success).
+`--json` shapes an action's result (and its errors). It does not apply to `--help`, which always prints
+its normal text. `--version` does honour it, printing `{"name":"...","version":"..."}` instead of the
+plain line, so a script asking a tool its version gets a parseable answer. A failure's exit code is
+clamped to `1..255` (a `Failure(exitCode = 0)` becomes `1`, since a failure must not report success).
 
 A `@Serializable sealed interface` / `sealed class` works too: `kotlinx.serialization` adds a `"type"`
 discriminator field, defaulting to the fully qualified class name (package plus enclosing type and
@@ -1750,13 +1795,14 @@ another program (`git bisect run`) sits beside siblings that must keep permuting
 still ends options wherever options have not already ended.
 
 It has one edge a wrapper should know about: klap's own position-independent built-ins (`--json`,
-`--color`, `--help`, `--version`, `--completion`, `--docs`), a long global, and a short cluster made
+`--color`, `--help` / `-h`, `--version`, `--completion`, `--docs`), a long global, and a short cluster made
 entirely of global characters are all claimed wherever they sit in the tail, since ending options here
 does not end *their* reach. (The one place none of them reach is a value-taking option's argument slot,
-which belongs to that option on every command — see [Dash-led values](#dash-led-values).) A cluster that
-*mixes* a global character with a local one goes the other way and binds whole into the tail, so the
-global silently keeps its default. A tail that must carry one of those spellings literally still needs
-its own `--`.
+which belongs to that option on every command — see [Dash-led values](#dash-led-values).) A cluster
+*mixing* a global character with a local one is refused there: it cannot split without binding a local
+option past the end of options, and it cannot pass through whole without losing the global, so klap asks
+you to write the global before the operands. A tail that must carry one of those spellings literally
+still needs its own `--`.
 
 Each guideline is executed as a test in `PosixConformanceTest`, quoting the standard's text at the
 assertion, so conformance is verified on every build rather than claimed here. Every extension above is

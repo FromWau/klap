@@ -11,6 +11,7 @@ import com.fromwau.klap.internal.render.HelpStyle
 import com.fromwau.klap.internal.render.completeCandidates
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.render.helpTextAll
+import com.fromwau.klap.internal.render.jsonVersionEnvelope
 import com.fromwau.klap.internal.render.renderActionError
 import com.fromwau.klap.internal.render.renderError
 import com.fromwau.klap.internal.spec.ActionError
@@ -19,14 +20,16 @@ import com.fromwau.klap.internal.spec.completeWithoutSuspending
 
 /**
  * Parses [argv], runs whatever it resolved to, writes the result to [terminal] and hands back the exit
- * code. Nothing is thrown and the process is not terminated, which is what makes it the entry point to use
- * from a test or from inside a larger program.
+ * code. A parse or action failure is rendered and reported as that code rather than thrown, and the process
+ * is not terminated, which is what makes it the entry point to use from a test or from inside a larger
+ * program.
  *
  * ```kotlin
  * assertEquals(0, app.run(listOf("greet", "ada"), recorder))
  * ```
  *
- * A CLI declaring any `actionSuspending { }` is refused here; use [runSuspending].
+ * A CLI declaring any `actionSuspending { }` is refused here with an [IllegalArgumentException], since this
+ * entry point cannot drive one; use [runSuspending].
  */
 public fun Cli.run(argv: Collection<String>, terminal: Terminal): Int {
     val path = suspendingPath
@@ -119,7 +122,12 @@ private inline fun Invocation.render(
         terminal.outputLine(text)
     }
 
-    is Invocation.ShowVersion -> terminal.outputLine("${cli.name} ${cli.version}")
+    is Invocation.ShowVersion -> {
+        // One expression for both shapes: `version` is non-null for anything parse() produces, but this
+        // class is publicly constructible, so the two branches must not disagree about a null one.
+        val version = cli.version.orEmpty()
+        terminal.outputLine(if (json) jsonVersionEnvelope(cli.name, version) else "${cli.name} $version")
+    }
     is Invocation.ShowCompletion -> terminal.outputLine(cli.renderCompletion(shell))
     is Invocation.ShowDocs -> terminal.outputLine(cli.renderDocs(format))
 

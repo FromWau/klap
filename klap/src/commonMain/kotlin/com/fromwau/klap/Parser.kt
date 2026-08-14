@@ -4,22 +4,25 @@ import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.getOrElse
 import com.fromwau.klap.internal.parse.ArgvScan
 import com.fromwau.klap.internal.parse.END_OF_OPTIONS
+import com.fromwau.klap.internal.parse.GlobalAccumulator
 import com.fromwau.klap.internal.parse.accumulator
 import com.fromwau.klap.internal.parse.bind
 import com.fromwau.klap.internal.parse.bindGlobals
-import com.fromwau.klap.internal.parse.clusterTouchesGlobal
+import com.fromwau.klap.internal.parse.globalLookup
 import com.fromwau.klap.internal.parse.isFlagLike
+import com.fromwau.klap.internal.parse.namesHelpShort
 import com.fromwau.klap.internal.parse.optionValueSlots
 import com.fromwau.klap.internal.parse.resolveChoice
 import com.fromwau.klap.internal.parse.resolvedLongPool
+import com.fromwau.klap.internal.parse.sift
 import com.fromwau.klap.internal.parse.siftGlobals
 import com.fromwau.klap.internal.parse.subcommandCandidates
 import com.fromwau.klap.internal.parse.suggest
 import com.fromwau.klap.internal.spec.Builtin
 import com.fromwau.klap.internal.spec.FlagSpec
 import com.fromwau.klap.internal.spec.HolderSpec
-import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.longs
+import com.fromwau.klap.internal.spec.shorts
 import com.fromwau.klap.internal.spec.negativeLongs
 
 /** How `--color` resolves; see [colorMode] (lenient extraction) and `parse` (the strict, error-reporting form). */
@@ -136,7 +139,8 @@ internal fun List<String>.colorMode(
  * that name. The error names the spelling the user wrote, abbreviated or not.
  */
 private fun Cli.builtinInlineValueError(scan: ArgvScan): CliError? {
-    // A short never abbreviates, so `-h=` stays the literal scan it always was.
+    // The whole-token form only, and literal since a short never abbreviates: inside a cluster the same
+    // shape is reported by the sift that resolves the character (`-vh=x`).
     if (builtins.helpShort && scan.openTokens.any { it.startsWith("-h=") }) {
         return CliError.FlagTakesNoValue("--help", null)
     }
@@ -154,16 +158,17 @@ private fun Cli.builtinInlineValueError(scan: ArgvScan): CliError? {
 }
 
 /**
- * Whether [scan] carries a help request; `-h` counts only while the root still offers that short.
+ * Whether [scan] carries a help request. `-h` counts only while the root still offers that short, and is
+ * read as [cmd] would read the token, so it takes part in a cluster exactly as a declared short does.
  *
- * Alone among the `--help` lookups this resolves against the TREE-WIDE pool rather than the reached
- * command's, because it runs before the walk: it gates the `--completion`/`--docs` short-circuit, and those
- * are themselves matched before the tree knows its command. It decides precedence only, never what binds,
- * so the price is confined to a hybrid root given `--h` alongside `--completion <shell>` on one line, where
- * a sibling's long can make the abbreviation ambiguous here and let the meta-option run instead.
+ * Asked once before the walk and once after it. The pre-walk ask can only offer the ROOT as [cmd], and
+ * resolves longs against the tree-wide pool, because it gates the `--completion`/`--docs` short-circuit and
+ * those are themselves matched before the tree knows its command. It decides precedence only, never what
+ * binds, so the price is confined to a hybrid root given one line carrying `--completion <shell>` alongside
+ * either a `--h` a sibling's long makes ambiguous or a cluster whose other chars belong to a subcommand.
  */
-private fun Cli.hasHelpRequest(scan: ArgvScan): Boolean =
-    scan.names("help") || scan.names("help-all") || (builtins.helpShort && scan.namesShort("-h"))
+private fun Cli.hasHelpRequest(scan: ArgvScan, cmd: Command, globalAcc: GlobalAccumulator): Boolean =
+    scan.names("help") || scan.names("help-all") || scan.namesHelpShort(cmd, globalAcc)
 
 /**
  * The same [CliError.UnknownSubcommand] `Command.bind`'s group branch raises for a group handed a leading
@@ -175,11 +180,32 @@ private fun Cli.hasHelpRequest(scan: ArgvScan): Boolean =
  * positional business, never an unknown-subcommand question, so `rm abc --help` (a real command, a bad
  * value) still answers with help — which is what someone who mistyped a value wants.
  */
-private fun Cli.unknownSubcommandBeforeHelp(cmd: Command, rest: List<String>): CliError.UnknownSubcommand? {
-    val leadingToken = rest.firstOrNull() ?: return null
+/**
+ * Whether the subcommand walk may step over [token] instead of stopping at it: an exact help spelling, or
+ * a short cluster whose every character is one of [globalFlagShorts] or the help short. Those all resolve
+ * before the walk knows which command it reaches, so stepping over cannot change what follows.
+ *
+ * Exact long spellings only. An abbreviation resolves against the pool of the command the walk reaches,
+ * which is precisely what is not known yet here.
+ */
+private fun Cli.routesTransparently(token: String, globalFlagShorts: Set<String>): Boolean = when {
+    token == "--help" || token == "--help-all" -> true
+    token.startsWith("--") || !token.startsWith("-") || token.length < 2 -> false
+    else -> token.drop(1).all { it.toString() in globalFlagShorts || (builtins.helpShort && it == 'h') }
+}
+
+private fun Cli.unknownSubcommandBeforeHelp(
+    cmd: Command,
+    rest: List<String>,
+    qualifiedName: String,
+    globalFlagShorts: Set<String>,
+): CliError.UnknownSubcommand? {
+    // Past whatever the walk stepped over, since those tokens survive into [rest]: the name the user meant
+    // as a subcommand sits behind the help request in `app --help bogus`.
+    val leadingToken = rest.firstOrNull { !routesTransparently(it, globalFlagShorts) } ?: return null
     if (!cmd.isGroup || leadingToken.isFlagLike()) return null
     if (cmd.resolveSubcommand(leadingToken, abbreviation == Abbreviation.All) !is SubcommandMatch.None) return null
-    return CliError.UnknownSubcommand(cmd.name, leadingToken, suggest(leadingToken, cmd.subcommandCandidates()))
+    return CliError.UnknownSubcommand(qualifiedName, leadingToken, suggest(leadingToken, cmd.subcommandCandidates()))
 }
 
 /**
@@ -234,9 +260,11 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
             if (ColorMode.fromOrNull(resolved) == null) {
                 return Result.Error(
                     CliError.InvalidChoice(
-                        "--color", raw, COLOR_MODE_NAMES,
-                        suggest(raw, COLOR_MODE_NAMES)
-                    )
+                        "--color",
+                        raw,
+                        COLOR_MODE_NAMES,
+                        suggest(raw, COLOR_MODE_NAMES),
+                    ),
                 )
             }
         }
@@ -246,13 +274,13 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
     }
 
     if (version != null && scan.names("version")) {
-        return Result.Success(Invocation.ShowVersion(this))
+        return Result.Success(Invocation.ShowVersion(this, json))
     }
 
     // Single-command roots expose completion/docs as position-independent, print-and-exit meta-options
     // (dispatchers use subcommands). Recognized here like --version, before the walk and binding.
     // --help / -h outrank the meta-options (design precedence: version, help, then completion/docs).
-    if (metaOptions && !hasHelpRequest(scan)) {
+    if (metaOptions && !hasHelpRequest(scan, this, globalLookup())) {
         if (builtins.completion) {
             withoutColor.value("completion").getOrElse { return Result.Error(it) }
                 ?.let { raw ->
@@ -261,9 +289,11 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
                     val shell = CompletionShell.fromOrNull(resolved)
                         ?: return Result.Error(
                             CliError.InvalidChoice(
-                                "--completion", raw, COMPLETION_SHELL_NAMES,
-                                suggest(raw, COMPLETION_SHELL_NAMES)
-                            )
+                                "--completion",
+                                raw,
+                                COMPLETION_SHELL_NAMES,
+                                suggest(raw, COMPLETION_SHELL_NAMES),
+                            ),
                         )
                     return Result.Success(Invocation.ShowCompletion(this, shell))
                 }
@@ -275,9 +305,11 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
                 val format = DocFormat.fromOrNull(resolved)
                     ?: return Result.Error(
                         CliError.InvalidChoice(
-                            "--docs", raw, DOC_FORMAT_NAMES,
-                            suggest(raw, DOC_FORMAT_NAMES)
-                        )
+                            "--docs",
+                            raw,
+                            DOC_FORMAT_NAMES,
+                            suggest(raw, DOC_FORMAT_NAMES),
+                        ),
                     )
                 return Result.Success(Invocation.ShowDocs(this, format))
             }
@@ -289,16 +321,15 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
     val preStrip = globalSpecs.siftGlobals(withoutColor, builtinPool)
     val globalSift = preStrip.sift
 
-    // Read once for the routing walk below: a short cluster carries a global exactly when one of its chars
-    // resolves against these, the same question siftGlobals's own cluster branch already answers.
-    val globalFlagSpecs = globalSpecs.filterIsInstance<FlagSpec>()
-    val globalOptionSpecs = globalSpecs.filterIsInstance<OptionSpec>()
+    // Valueless globals only: the walk cannot tell a value-taking global's argument from a subcommand
+    // name, so stepping over one would misread the token after it.
+    val globalFlagShorts = globalSpecs.filterIsInstance<FlagSpec>().flatMap { it.shorts }.toSet()
 
     var cmd: Command = this
     val path = mutableListOf(name)
     // Indices into `preStrip.cleaned` this walk consumes as subcommand-name tokens. Every other index
-    // survives into `rest` untouched and in argv order, including a deferred cluster the walk below skips
-    // over without ever removing — the reached leaf's own sift is the one place it actually binds.
+    // survives into `rest` untouched and in argv order, including a help token the walk below steps over
+    // without ever removing.
     val consumed = mutableSetOf<Int>()
     var idx = 0
     while (idx < preStrip.cleaned.size) {
@@ -314,14 +345,12 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
             is SubcommandMatch.Ambiguous ->
                 return Result.Error(CliError.AmbiguousSubcommand(cmd.name, token, match.candidates))
 
+            // Stepped over only when every part of the token already resolves HERE, so stepping cannot
+            // change what the tokens after it mean: `app --help build` and `app -vh build` both document
+            // build, the way `git --help commit` documents commit. A local short stops the walk, since
+            // apart it is an option of a command not yet reached.
             SubcommandMatch.None -> {
-                // A mixed short cluster is never a subcommand name, but siftGlobals left it whole rather
-                // than rejecting it, and the same cluster written after the subcommand still binds its
-                // global — so skip it here instead of stopping. Shares siftGlobals's own resolution rule,
-                // reused rather than restated, so this walk and ArityWalk cannot drift apart.
-                val deferred = token.isFlagLike() && !token.startsWith("--") &&
-                    clusterTouchesGlobal(token.removePrefix("-"), globalFlagSpecs, globalOptionSpecs)
-                if (!deferred) break
+                if (!routesTransparently(token, globalFlagShorts)) break
                 idx += 1
             }
         }
@@ -350,10 +379,16 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
         rest,
         restPositions,
     )
+    val helpRequested = hasHelpRequest(segment, cmd, globalAcc)
     // Gated on the help request: without one the same error already comes from cmd.bind() below, where a
     // global-sift error rightly outranks it. Firing unconditionally here would invert that precedence.
-    if (hasHelpRequest(segment)) {
-        unknownSubcommandBeforeHelp(cmd, rest)?.let { return Result.Error(it) }
+    if (helpRequested) {
+        unknownSubcommandBeforeHelp(cmd, rest, qualifiedName, globalFlagShorts)?.let { return Result.Error(it) }
+        // The same split one level down: an unresolvable NAME outranks help, a bad ARGUMENT does not.
+        // A spelling the tree declares nowhere is a mistake help would otherwise answer at exit 0, teaching
+        // the user the option works; a missing value or an unmet requirement is exactly when help is wanted.
+        (cmd.sift(rest, globalAcc, restPositions).error as? CliError.UnknownOption)
+            ?.let { return Result.Error(it) }
     }
 
     // --help-all outranks --help (a more specific request for the same node); both sit below --version.
@@ -369,7 +404,7 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
             )
         )
     }
-    if ((builtins.helpShort && segment.namesShort("-h")) || segment.names("help")) {
+    if (helpRequested) {
         return Result.Success(
             Invocation.ShowHelp(cmd, qualifiedName, globalSpecs, version != null, builtins = builtins)
         )
@@ -382,7 +417,7 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
     // A resolved built-in renders the whole tree via this root, so route it straight to its Show* invocation
     // using `this`, with no binding, no action, no self-reference. Its node exists only to be listed/documented.
     // Placed after --help (so `completion --help` shows the node's help) and after the hard global-sift error.
-    cmd.builtinKind?.let { return routeBuiltin(it, rest) }
+    cmd.builtinKind?.let { return routeBuiltin(it, rest, qualifiedName) }
 
     // Every resolved input is recorded in this per-parse sink, never on the shared specs, so the tree stays
     // immutable during parsing (concurrent parses each own their own sink). It is frozen into the Execute's
@@ -403,9 +438,7 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
                     // Output mode resolves here, not in run() where the color switch waits for a terminal, so
                     // an embedder driving parse() + runAction() reads the same mode the terminal path gives.
                     val exec = invocation.copy(scope = ActionScope(sink, json = invocation.globals.json))
-                    deferredGlobalErrors.firstOrNull()?.let { Result.Error(it) } ?: Result.Success(
-                        exec
-                    )
+                    deferredGlobalErrors.firstOrNull()?.let { Result.Error(it) } ?: Result.Success(exec)
                 }
 
                 is Invocation.ShowHelp -> Result.Success(
@@ -435,10 +468,14 @@ public fun Cli.parse(argv: Array<String>): Result<Invocation, CliError> = parseT
  * [args] with the same `CompletionShell.fromOrNull`/`DocFormat.fromOrNull` the `--completion`/`--docs` use, so
  * both forms report an unknown value identically. The root is `this`, handed straight to the invocation.
  */
-private fun Cli.routeBuiltin(kind: Builtin, args: List<String>): Result<Invocation, CliError> =
+private fun Cli.routeBuiltin(
+    kind: Builtin,
+    args: List<String>,
+    qualifiedName: String,
+): Result<Invocation, CliError> =
     when (kind) {
         Builtin.Completion -> {
-            val raw = args.firstOrNull() ?: return Result.Error(CliError.MissingArgument("completion", "shell"))
+            val raw = args.firstOrNull() ?: return Result.Error(CliError.MissingArgument(qualifiedName, "shell"))
             val resolved = when (val r = resolveBuiltinChoice("completion", raw, COMPLETION_SHELL_NAMES)) {
                 is Result.Error -> return r
                 is Result.Success -> r.value
@@ -446,18 +483,20 @@ private fun Cli.routeBuiltin(kind: Builtin, args: List<String>): Result<Invocati
             val shell = CompletionShell.fromOrNull(resolved)
                 ?: return Result.Error(
                     CliError.InvalidChoice(
-                        "completion", raw, COMPLETION_SHELL_NAMES,
-                        suggest(raw, COMPLETION_SHELL_NAMES)
-                    )
+                        "completion",
+                        raw,
+                        COMPLETION_SHELL_NAMES,
+                        suggest(raw, COMPLETION_SHELL_NAMES),
+                    ),
                 )
             // The node declares exactly one argument; reject a surplus operand instead of dropping it,
             // matching bindPositionals (a builtin routes before binding, so it enforces arity itself).
-            if (args.size > 1) return Result.Error(CliError.TooManyArguments("completion", args.drop(1)))
+            if (args.size > 1) return Result.Error(CliError.TooManyArguments(qualifiedName, args.drop(1)))
             Result.Success(Invocation.ShowCompletion(this, shell))
         }
 
         Builtin.Docs -> {
-            val raw = args.firstOrNull() ?: return Result.Error(CliError.MissingArgument("docs", "format"))
+            val raw = args.firstOrNull() ?: return Result.Error(CliError.MissingArgument(qualifiedName, "format"))
             val resolved = when (val r = resolveBuiltinChoice("docs", raw, DOC_FORMAT_NAMES)) {
                 is Result.Error -> return r
                 is Result.Success -> r.value
@@ -465,11 +504,13 @@ private fun Cli.routeBuiltin(kind: Builtin, args: List<String>): Result<Invocati
             val format = DocFormat.fromOrNull(resolved)
                 ?: return Result.Error(
                     CliError.InvalidChoice(
-                        "docs", raw, DOC_FORMAT_NAMES,
-                        suggest(raw, DOC_FORMAT_NAMES)
-                    )
+                        "docs",
+                        raw,
+                        DOC_FORMAT_NAMES,
+                        suggest(raw, DOC_FORMAT_NAMES),
+                    ),
                 )
-            if (args.size > 1) return Result.Error(CliError.TooManyArguments("docs", args.drop(1)))
+            if (args.size > 1) return Result.Error(CliError.TooManyArguments(qualifiedName, args.drop(1)))
             Result.Success(Invocation.ShowDocs(this, format))
         }
         // The completion driver invokes `__complete -- <words>`; drop the leading end-of-options marker so
