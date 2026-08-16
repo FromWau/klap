@@ -1,5 +1,6 @@
 package com.fromwau.example
 
+import com.fromwau.klap.USAGE_ERROR_EXIT
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -25,5 +26,21 @@ class TagGroupTest {
 
         val afterRemove = Json.decodeFromString<List<Task>>(cli.captureWithFile(path, "list", "--json").out.trim())
         assertEquals(emptyList(), afterRemove.single().tags)
+    }
+
+    @Test
+    fun `removing a tag the task never carried is refused`() = withTempStore { path ->
+        val cli = taskManagerCli()
+        cli.captureWithFile(path, "add", "Ship it")
+        cli.captureWithFile(path, "tag", "add", "1", "urgent")
+
+        val result = cli.captureWithFile(path, "tag", "rm", "1", "later")
+        assertEquals(USAGE_ERROR_EXIT, result.exitCode, result.out)
+        assertContains(result.err, "later")
+        assertContains(result.err, "does not carry that tag")
+
+        // Refused means unchanged: the tag it does carry is still there.
+        val after = Json.decodeFromString<List<Task>>(cli.captureWithFile(path, "list", "--json").out.trim())
+        assertEquals(listOf("urgent"), after.single().tags)
     }
 }
