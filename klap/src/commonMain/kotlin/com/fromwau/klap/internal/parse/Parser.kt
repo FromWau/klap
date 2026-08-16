@@ -273,7 +273,7 @@ private fun InputConstraint.losers(sifted: Sifted): List<HolderSpec> {
 }
 
 /** Where [spec] sat on the line, or null when the user did not write it; the two maps the sift keeps. */
-private fun HolderSpec.lastPosition(sifted: Sifted): Int? = when (this) {
+private fun HolderSpec.lastPosition(sifted: Sifted): ClusterPosition? = when (this) {
     is FlagSpec -> sifted.flagPositions[this]
     // A fold is never written itself, so it stands where its latest member stands. Recursive, because a
     // member may be a fold too, and reading the sift map directly would leave that one standing nowhere.
@@ -558,8 +558,8 @@ internal fun Command.sift(
         if (error == null) error = build()
     }
 
-    val flagPositions = mutableMapOf<FlagSpec, Int>()
-    val optionPositions = mutableMapOf<OptionSpec, Int>()
+    val flagPositions = mutableMapOf<FlagSpec, ClusterPosition>()
+    val optionPositions = mutableMapOf<OptionSpec, ClusterPosition>()
 
     // Loop-invariant, but built only once a long token actually needs it: a segment of operands and short
     // clusters must not pay for a list it never reads.
@@ -568,7 +568,7 @@ internal fun Command.sift(
     // Loop-invariant; the property behind it walks the specs on every read.
     val dashLedSlot = hasDashLedSlot
 
-    fun hit(flag: FlagSpec, polarity: Boolean, at: Int) {
+    fun hit(flag: FlagSpec, polarity: Boolean, at: ClusterPosition) {
         flagCounts[flag] = (flagCounts[flag] ?: 0) + 1
         flagPositions[flag] = at
         if (flag.negatable) negations[flag] = polarity
@@ -580,6 +580,9 @@ internal fun Command.sift(
     var endedBySeparator = false
     while (i < segment.size) {
         val token = segment[i]
+        // This token's place in the ORIGINAL argv, which is what every position recorded below is
+        // measured in; a segment the caller did not map falls back to its own index.
+        val tokenIndex = positions.getOrNull(i) ?: i
         when {
             optionsEnded -> {
                 // Refused rather than kept: neither reading survives here (see MixedClusterAfterOperands),
@@ -644,13 +647,13 @@ internal fun Command.sift(
                                 )
                             }
                         }
-                        hit(flag, true, clusterPosition(positions.getOrNull(i) ?: i))
+                        hit(flag, true, ClusterPosition(tokenIndex))
                         i += 1
                     }
 
                     negated != null -> {
                         if (inlineValue != null) record { CliError.FlagTakesNoValue(spelled) }
-                        hit(negated, false, clusterPosition(positions.getOrNull(i) ?: i))
+                        hit(negated, false, ClusterPosition(tokenIndex))
                         i += 1
                     }
 
@@ -684,7 +687,7 @@ internal fun Command.sift(
 
                             else -> {
                                 optionValues.getOrPut(opt) { mutableListOf() } += taken.value
-                                optionPositions[opt] = clusterPosition(positions.getOrNull(i) ?: i)
+                                optionPositions[opt] = ClusterPosition(tokenIndex)
                                 i += if (taken.consumedNext) 2 else 1
                             }
                         }
@@ -714,11 +717,14 @@ internal fun Command.sift(
 
                 var j = 0
                 while (j < chars.length) {
+                    // One position per character, shared by the local record and the global top-up below, which
+                    // must agree about where this character sat.
+                    val at = ClusterPosition(tokenIndex, j)
                     val run = numberRunAt(chars, j, globalAcc)
                     if (run != null) {
                         val spec = numberInput!!
                         optionValues.getOrPut(spec) { mutableListOf() } += run
-                        optionPositions[spec] = clusterPosition(positions.getOrNull(i) ?: i, j)
+                        optionPositions[spec] = at
                         j += run.length
                         continue
                     }
@@ -735,8 +741,8 @@ internal fun Command.sift(
                     val flagHit = globalAcc.clusterHit(findFlag("-$ch")) { flagSpecs.findFlag("-$ch") }
                     if (flagHit != null) {
                         val globals = flagHit.globals
-                        if (globals != null) globals.hitFlag(flagHit.spec, positions.getOrNull(i))
-                        else hit(flagHit.spec, true, clusterPosition(positions.getOrNull(i) ?: i, j))
+                        if (globals != null) globals.hitFlag(flagHit.spec, at)
+                        else hit(flagHit.spec, true, at)
                         j += 1
                         continue
                     }
@@ -744,8 +750,8 @@ internal fun Command.sift(
                     val negatedHit = globalAcc.clusterHit(findNegatedShort(ch)) { flagSpecs.findNegatedShort(ch) }
                     if (negatedHit != null) {
                         val globals = negatedHit.globals
-                        if (globals != null) globals.hitFlag(negatedHit.spec, positions.getOrNull(i), on = false)
-                        else hit(negatedHit.spec, false, clusterPosition(positions.getOrNull(i) ?: i, j))
+                        if (globals != null) globals.hitFlag(negatedHit.spec, at, on = false)
+                        else hit(negatedHit.spec, false, at)
                         j += 1
                         continue
                     }
@@ -767,10 +773,10 @@ internal fun Command.sift(
                     }
                     val globals = optHit.globals
                     if (globals != null) {
-                        globals.addOptionValue(opt, taken.value, positions.getOrNull(i))
+                        globals.addOptionValue(opt, taken.value, at)
                     } else {
                         optionValues.getOrPut(opt) { mutableListOf() } += taken.value
-                        optionPositions[opt] = clusterPosition(positions.getOrNull(i) ?: i, j)
+                        optionPositions[opt] = at
                     }
                     advance = if (taken.consumedNext) 2 else 1
                     j = chars.length
@@ -1065,7 +1071,7 @@ internal fun List<HolderSpec>.siftGlobals(
         keptPositions += at
     }
 
-    fun hit(flag: FlagSpec, polarity: Boolean, at: Int) {
+    fun hit(flag: FlagSpec, polarity: Boolean, at: ClusterPosition?) {
         flagCounts[flag] = (flagCounts[flag] ?: 0) + 1
         if (flag.negatable) negations.recordPolarity(flag, polarity, at)
     }
@@ -1112,14 +1118,14 @@ internal fun List<HolderSpec>.siftGlobals(
                                 if (flag.negatable) flag.negativeLongs.firstOrNull() else null,
                             )
                         }
-                        hit(flag, true, at)
+                        hit(flag, true, ClusterPosition(at))
                         i += 1
                     }
 
                     negated != null -> {
                         if (inlineValue != null && error == null) error =
                             CliError.FlagTakesNoValue(spelled)
-                        hit(negated, false, at)
+                        hit(negated, false, ClusterPosition(at))
                         i += 1
                     }
 
@@ -1133,7 +1139,7 @@ internal fun List<HolderSpec>.siftGlobals(
                             keep(token, at)
                             i += 1
                         } else {
-                            optionValues.getOrPut(opt) { mutableListOf() } += Occurrence(taken.value, at)
+                            optionValues.getOrPut(opt) { mutableListOf() } += Occurrence(taken.value, ClusterPosition(at))
                             i += if (taken.consumedNext) 2 else 1
                         }
                     }
@@ -1152,9 +1158,11 @@ internal fun List<HolderSpec>.siftGlobals(
                 // (global-aware) sift, so a local-then-global cluster like `-fv` still binds the global there.
                 // `-vc`, `-vp8080`.
                 val chars = token.removePrefix("-")
-                val pendingFlags = mutableListOf<FlagSpec>()
-                val pendingNegatedFlags = mutableListOf<FlagSpec>()
-                var pendingOption: Pair<OptionSpec, String>? = null
+                // Paired with the character each sat at, so two globals in one cluster order against
+                // each other exactly as two of a command's own do.
+                val pendingFlags = mutableListOf<Pair<FlagSpec, Int>>()
+                val pendingNegatedFlags = mutableListOf<Pair<FlagSpec, Int>>()
+                var pendingOption: Triple<OptionSpec, String, Int>? = null
                 var pendingDangling: OptionSpec? = null
                 var pendingEqError: CliError? = null
                 var fullyGlobal = true
@@ -1164,13 +1172,13 @@ internal fun List<HolderSpec>.siftGlobals(
                     val ch = chars[j].toString()
                     val flag = flagSpecs.findFlag("-$ch")
                     if (flag != null) {
-                        pendingFlags += flag
+                        pendingFlags += flag to j
                         j += 1
                         continue
                     }
                     val negated = flagSpecs.findNegatedShort(ch)
                     if (negated != null) {
-                        pendingNegatedFlags += negated
+                        pendingNegatedFlags += negated to j
                         j += 1
                         continue
                     }
@@ -1180,7 +1188,7 @@ internal fun List<HolderSpec>.siftGlobals(
                             val attached = chars.substring(j + 1).ifEmpty { null }
                             val taken = opt.valueFrom(attached) { head.getOrNull(i + 1) }
                             if (taken.value == null) pendingDangling = opt else {
-                                pendingOption = opt to taken.value
+                                pendingOption = Triple(opt, taken.value, j)
                                 if (taken.consumedNext) advance = 2
                             }
                         }
@@ -1196,10 +1204,10 @@ internal fun List<HolderSpec>.siftGlobals(
                     break
                 }
                 if (fullyGlobal) {
-                    pendingFlags.forEach { hit(it, true, at) }
-                    pendingNegatedFlags.forEach { hit(it, false, at) }
-                    pendingOption?.let { (opt, value) ->
-                        optionValues.getOrPut(opt) { mutableListOf() } += Occurrence(value, at)
+                    pendingFlags.forEach { (flag, charAt) -> hit(flag, true, ClusterPosition(at, charAt)) }
+                    pendingNegatedFlags.forEach { (flag, charAt) -> hit(flag, false, ClusterPosition(at, charAt)) }
+                    pendingOption?.let { (opt, value, charAt) ->
+                        optionValues.getOrPut(opt) { mutableListOf() } += Occurrence(value, ClusterPosition(at, charAt))
                     }
                     pendingDangling?.let { opt ->
                         // A recognized value-taking global with no value is a hard error, same as the long form.
@@ -1268,10 +1276,10 @@ internal class GlobalPreStrip(
  * A null [position] means the caller tracks none (completion, which never orders anything); the later write
  * then simply wins outright.
  */
-internal class Polarity(val on: Boolean, val position: Int?)
+internal class Polarity(val on: Boolean, val position: ClusterPosition?)
 
 /** Keep whichever polarity sits LAST in argv; an unordered observation (see [Polarity]) always wins. */
-private fun MutableMap<FlagSpec, Polarity>.recordPolarity(flag: FlagSpec, on: Boolean, at: Int?) {
+private fun MutableMap<FlagSpec, Polarity>.recordPolarity(flag: FlagSpec, on: Boolean, at: ClusterPosition?) {
     val seenAt = this[flag]?.position
     if (seenAt != null && at != null && at < seenAt) return
     this[flag] = Polarity(on, at)
@@ -1287,7 +1295,7 @@ private fun MutableMap<FlagSpec, Polarity>.recordPolarity(flag: FlagSpec, on: Bo
  * A null [position] means the caller tracks none (completion), and such an occurrence sorts after every
  * positioned one, so the later pass's observation simply wins.
  */
-internal class Occurrence(val value: String, val position: Int?)
+internal class Occurrence(val value: String, val position: ClusterPosition?)
 
 /**
  * A mutable running tally of global occurrences: seeded from [siftGlobals]' position-independent pass, then
@@ -1315,7 +1323,7 @@ internal class GlobalAccumulator(
      * on the line, but the polarity only sticks if [position] is at or past the one already recorded, so a
      * later-in-argv occurrence survives this pass; see [Polarity].
      */
-    fun hitFlag(spec: FlagSpec, position: Int? = null, on: Boolean = true) {
+    fun hitFlag(spec: FlagSpec, position: ClusterPosition? = null, on: Boolean = true) {
         flags[spec] = (flags[spec] ?: 0) + 1
         if (spec.negatable) negations.recordPolarity(spec, on = on, at = position)
     }
@@ -1334,7 +1342,7 @@ internal class GlobalAccumulator(
         if (spec.negatable) negations[spec]?.on == true else (flags[spec] ?: 0) > 0
 
     /** Record an option occurrence; [position] orders it against the pass before, see [Occurrence]. */
-    fun addOptionValue(spec: OptionSpec, value: String, position: Int?) {
+    fun addOptionValue(spec: OptionSpec, value: String, position: ClusterPosition?) {
         options.getOrPut(spec) { mutableListOf() } += Occurrence(value, position)
     }
 

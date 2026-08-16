@@ -12,10 +12,12 @@ import com.fromwau.klap.ConversionError
 import com.fromwau.klap.Invocation
 import com.fromwau.klap.Opt
 import com.fromwau.klap.RecordingTerminal
+import com.fromwau.klap.USAGE_ERROR_EXIT
 import com.fromwau.klap.ValueScope
 import com.fromwau.klap.bindText
 import com.fromwau.klap.cli
 import com.fromwau.klap.cliOf
+import com.fromwau.klap.name
 import com.fromwau.klap.parse
 import com.fromwau.klap.run
 import kotlin.test.Test
@@ -205,5 +207,119 @@ class GuideConversionErrorSnippetTest {
         val bad = assertIs<CliError.BadValue>(err)
         assertEquals(ConversionError.NotAnInteger, bad.cause)
         assertEquals("not an integer", bad.reason)
+    }
+}
+
+// --- "Cross-input constraints": the validateInputs snippets, transcribed ---
+
+/**
+ * Stands in for the guide snippet's date helpers. Only the ordering the snippet relies on is modelled, and
+ * against a fixed day rather than the clock, so the transcription cannot start failing on a date.
+ */
+private const val GUIDE_TODAY = "2026-08-15"
+
+private fun String.looksLikeDate(): Boolean = Regex("""\d{4}-\d{2}-\d{2}""").matches(this)
+
+private fun String.isPast(): Boolean = this < GUIDE_TODAY
+
+private fun guideValidateInputsCli() = cli("app") {
+    command("add") {
+        val title = argument("title")
+        val due = option("--due", "-d").validate("must be YYYY-MM-DD") { it.looksLikeDate() }
+        val done = flag("--done", "-D")
+
+        validateInputs {
+            val d = due()
+            if (d != null && !done() && d.isPast()) {
+                CliError.Usage("--due $d is earlier than today; pass --done")
+            } else {
+                null
+            }
+        }
+
+        action { Ok("added ${title()}") }
+    }
+}
+
+class GuideValidateInputsSnippetTest {
+
+    @Test
+    fun `the guides validateInputs snippet rejects a past due date only without --done`() {
+        val refused = RecordingTerminal()
+        assertEquals(
+            USAGE_ERROR_EXIT,
+            guideValidateInputsCli().run(arrayOf("add", "Ship it", "--due", "2020-01-01"), refused),
+        )
+        // The message the guide prints under the snippet, verbatim.
+        assertEquals("error: --due 2020-01-01 is earlier than today; pass --done\n", refused.err.toString())
+
+        val excused = RecordingTerminal()
+        assertEquals(
+            0,
+            guideValidateInputsCli().run(arrayOf("add", "Ship it", "--due", "2020-01-01", "--done"), excused),
+        )
+        assertEquals("added Ship it\n", excused.out.toString())
+    }
+
+    @Test
+    fun `a per-value validate still reports ahead of the deferred block`() {
+        // The guide's "prefer .validate whenever a value can be judged alone": a malformed date is caught
+        // during conversion, so --done never gets the chance to excuse it.
+        val t = RecordingTerminal()
+        guideValidateInputsCli().run(arrayOf("add", "x", "--due", "nope", "--done"), t)
+        assertEquals("error: invalid value 'nope' for --due: must be YYYY-MM-DD\n", t.err.toString())
+    }
+
+    @Test
+    fun `the guides Input name idiom renders like klaps own value errors`() {
+        val tree = cli("app") {
+            val tag = option("--tag")
+            validateInputs {
+                val typed = tag() ?: return@validateInputs null
+                if (typed == "known") null else CliError.BadValue(tag.name, typed, "no such tag")
+            }
+            action { Ok("ok") }
+        }
+        val t = RecordingTerminal()
+        assertEquals(USAGE_ERROR_EXIT, tree.run(arrayOf("--tag", "bogus"), t))
+        // Indistinguishable from a `.validate` rejection, which is the point of building it off `tag.name`.
+        assertEquals("error: invalid value 'bogus' for --tag: no such tag\n", t.err.toString())
+    }
+
+    @Test
+    fun `several blocks run in declaration order and report the first failure`() {
+        val tree = cli("app") {
+            validateInputs { CliError.Usage("first") }
+            validateInputs { CliError.Usage("second") }
+            action { Ok("unreachable") }
+        }
+        val t = RecordingTerminal()
+        tree.run(arrayOf<String>(), t)
+        assertEquals("error: first\n", t.err.toString())
+    }
+
+    @Test
+    fun `a block never runs for --help or --version`() {
+        val tree = cli("app") {
+            version = "1.0.0"
+            validateInputs { CliError.Usage("must not reach this") }
+            action { Ok("ran") }
+        }
+        for (builtin in listOf("--help", "--version")) {
+            val t = RecordingTerminal()
+            assertEquals(0, tree.run(arrayOf(builtin), t), builtin)
+            assertEquals("", t.err.toString(), builtin)
+        }
+    }
+
+    @Test
+    fun `a root block does not run when a subcommand does`() {
+        val tree = cli("app") {
+            validateInputs { CliError.Usage("root rule") }
+            command("sub") { action { Ok("sub ran") } }
+        }
+        val t = RecordingTerminal()
+        assertEquals(0, tree.run(arrayOf("sub"), t))
+        assertEquals("sub ran\n", t.out.toString())
     }
 }

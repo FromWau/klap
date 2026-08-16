@@ -120,6 +120,11 @@ private fun storeBusy(file: Path, lock: Path) = CliError.Failure(
 )
 
 private fun storeIoError(file: Path, cause: IOException) =
-    CliError.Failure("could not access task store $file: ${cause.message}", exitCode = EXIT_IO_ERROR)
+    CliError.Failure("could not access task store $file: ${cause.reason()}", exitCode = EXIT_IO_ERROR)
+
+// kotlinx-io renders these as "Failed to <op> <path> with <reason>", so keeping only the trailing reason
+// stops the path printing twice; a message in any other shape has no " with " and survives whole.
+private fun IOException.reason(): String =
+    message?.substringAfterLast(" with ")?.takeIf { it.isNotBlank() } ?: "unknown I/O error"
 
 

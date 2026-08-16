@@ -26,6 +26,9 @@ public open class Command internal constructor(
     // Cross-input rules over [specs], in declaration order; the parse-time source of truth for them (the
     // `(one of ...)` note help shows is derived onto each member spec at build time).
     internal val constraints: List<InputConstraint> = emptyList(),
+    // Cross-input value rules from validateInputs {}, in declaration order. Unlike [constraints], which read
+    // only which inputs were supplied, these read the bound values, so they run once binding is complete.
+    internal val validations: List<ActionScope.() -> CliError?> = emptyList(),
     public val subcommands: List<Command>,
     internal val action: Action?,
     internal val display: Display = Display(),
@@ -114,6 +117,7 @@ public class Cli internal constructor(
     public val version: String?,
     specs: List<HolderSpec>,
     constraints: List<InputConstraint>,
+    validations: List<ActionScope.() -> CliError?> = emptyList(),
     subcommands: List<Command>,
     action: Action?,
     internal val globalSpecs: List<NamedSpec> = emptyList(),
@@ -130,6 +134,7 @@ public class Cli internal constructor(
     aliases = emptyList(),
     specs = specs,
     constraints = constraints,
+    validations = validations,
     subcommands = subcommands,
     action = action,
     display = display,

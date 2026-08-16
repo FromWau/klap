@@ -9,10 +9,14 @@
 # `KLAP_REPO=/path/to/klap makepkg`. Do NOT run another Gradle build in the same tree while makepkg
 # runs — they share build/ directories.
 
+_repo="${KLAP_REPO:-$HOME/Projects/klap}"
+
+_klap_version() {
+    sed -n 's/^klapVersion *= *"\(.*\)"/\1/p' "$_repo/gradle/libs.versions.toml"
+}
+
 pkgname=klap-example
-# Must match the `version =` the CLI itself declares (src/commonMain/.../Main.kt), or `pacman -Q` and
-# `klapExample --version` disagree about one binary. makepkg needs a literal here, so it cannot be derived.
-pkgver=0.3.0
+pkgver=$(_klap_version)
 pkgrel=1
 pkgdesc="klap example CLI: a tiny file-backed task manager (self-contained native binary)"
 arch=('x86_64')
@@ -20,11 +24,10 @@ url="https://github.com/FromWau/klap"
 license=('Apache-2.0')
 makedepends=('jdk-openjdk')
 depends=('glibc')
-optdepends=('bash-completion: tab completion for bash (zsh and fish need nothing extra)')
+optdepends=('bash-completion: tab completion for bash')
 # Stripping a Kotlin/Native binary corrupts it.
 options=('!strip')
 
-_repo="${KLAP_REPO:-$HOME/Projects/klap}"
 _bin="$_repo/example/task-manager/build/bin/linuxX64/releaseExecutable/klapExample.kexe"
 
 build() {

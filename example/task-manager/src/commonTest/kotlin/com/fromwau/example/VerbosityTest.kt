@@ -11,18 +11,18 @@ class VerbosityTest {
     @Test
     fun `repeated global verbose reveals more of each task`() = withTempStore { path ->
         val cli = taskManagerCli()
-        cli.captureWithFile(path, "add", "Ship it", "--due", "2026-01-01", "--tag", "release")
+        cli.captureWithFile(path, "add", "Ship it", "--due", DUE_EARLIER, "--tag", "release")
 
         val quiet = cli.captureWithFile(path, "list").out
-        assertFalse("2026-01-01" in quiet, quiet)
+        assertFalse(DUE_EARLIER in quiet, quiet)
         assertFalse("release" in quiet, quiet)
 
         val onceVerbose = cli.captureWithFile(path, "-v", "list").out
-        assertContains(onceVerbose, "2026-01-01")
+        assertContains(onceVerbose, DUE_EARLIER)
         assertFalse("release" in onceVerbose, onceVerbose)
 
         val twiceVerbose = cli.captureWithFile(path, "-vv", "list").out
-        assertContains(twiceVerbose, "2026-01-01")
+        assertContains(twiceVerbose, DUE_EARLIER)
         assertContains(twiceVerbose, "release")
     }
 }

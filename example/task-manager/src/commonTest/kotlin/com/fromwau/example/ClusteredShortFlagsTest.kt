@@ -17,8 +17,8 @@ class ClusteredShortFlagsTest {
     @Test
     fun `a pure boolean cluster sets both reverse and long`() = withTempStore { path ->
         val cli = taskManagerCli()
-        cli.captureWithFile(path, "add", "First task", "--due", "2026-01-01", "--tag", "alpha")
-        cli.captureWithFile(path, "add", "Second task", "--due", "2026-02-02", "--tag", "beta")
+        cli.captureWithFile(path, "add", "First task", "--due", DUE_EARLIER, "--tag", "alpha")
+        cli.captureWithFile(path, "add", "Second task", "--due", DUE_LATER, "--tag", "beta")
 
         // `-rl` clusters two booleans with nothing left over: no value-taker, so no attached/next-token value.
         val result = cli.captureWithFile(path, "list", "-rl")
@@ -29,7 +29,7 @@ class ClusteredShortFlagsTest {
         // -r: newest first, so task 2 renders before task 1.
         assertContains(lines[0], "Second task")
         // -l: due date and tags shown even though -v was never given.
-        assertContains(lines[0], "2026-02-02")
+        assertContains(lines[0], DUE_LATER)
         assertContains(lines[0], "beta")
         assertContains(lines[1], "First task")
     }
@@ -70,8 +70,8 @@ class ClusteredShortFlagsTest {
     @Test
     fun `a counted global before the subcommand and a clustered local after both bind`() = withTempStore { path ->
         val cli = taskManagerCli()
-        cli.captureWithFile(path, "add", "First task", "--due", "2026-01-01")
-        cli.captureWithFile(path, "add", "Second task", "--due", "2026-02-02")
+        cli.captureWithFile(path, "add", "First task", "--due", DUE_EARLIER)
+        cli.captureWithFile(path, "add", "Second task", "--due", DUE_LATER)
 
         // -vv is global and precedes the subcommand; -rl is local and follows it. Neither cluster reaches
         // into the other's specs, so both must still bind from the same command line.
@@ -81,7 +81,7 @@ class ClusteredShortFlagsTest {
         val lines = result.out.trim().lines()
         assertEquals(2, lines.size)
         assertContains(lines[0], "Second task")
-        assertContains(lines[0], "2026-02-02")
+        assertContains(lines[0], DUE_LATER)
         assertContains(lines[1], "First task")
     }
 

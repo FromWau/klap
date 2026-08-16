@@ -40,6 +40,7 @@ except pulse's row, which points at its module rather than a single file.
 | A value parsed into your own enum                                                                           | [`task-manager`](task-manager/)                                 | `.enum<E>()`                        |
 | A number with bounds (`--max-time`, `-p PORT`)                                                              | [`find`](find/), [`ssh`](ssh/), [`curl`](curl/)                 | `.int()`, `.range()`                |
 | Rejecting a malformed value with your own message                                                           | [`head`](head/), [`mkdir`](mkdir/), [`git`](git/)               | `.validate()`                       |
+| Rejecting a value only wrong because of another input (`--due` in the past unless `--done`)                 | [`task-manager`](task-manager/)                                 | `validateInputs { }`                |
 | An input kept out of `--help`                                                                               | [`git`](git/), [`task-manager`](task-manager/)                  | `hidden`                            |
 | Taking `-h` back from klap so it can mean something else                                                    | [`ls`](ls/), [`pacman`](pacman/)                                | `builtins { }`                      |
 | Tab completion that reads your CLI's own parsed inputs                                                      | [`task-manager`](task-manager/), [`chmod`](chmod/), [`dd`](dd/) | `completeWith { }`                  |
@@ -174,14 +175,15 @@ The last row is exempt for two different reasons, not one:
 
 ## The task-manager showcase
 
-[`task-manager/`](task-manager/src/commonMain/kotlin/com/fromwau/example/Main.kt) is `klapExample`, a
-file-backed task manager with `add` / `list` / `done` / `rm` and a nested `tag` group. It exercises most of
-klap in one program: subcommands and nested groups, a command alias, a global `--file` and a counting
-global `-v`, group-scoped options, enum/choice/multiple/validate converters, a `.range()`-bounded
-`--limit`, colorized output through a `ColorScope` helper, a `hidden` diagnostic subcommand, typed errors
-with custom exit codes, structured `--json`, and value-aware completion that resolves `--file` through the
-same accessor the action uses.
-
+[`task-manager/`](task-manager/src/commonMain/kotlin/com/fromwau/example/Main.kt) is `klapExample`,
+a file-backed task manager with `add` / `list` / `done` / `rm` / `tags` and a nested `tag` group.
+The two tag commands are deliberately a pair: `tag add` / `tag rm` act on one task's labels, while
+`tags` reports every label in the store. It exercises most of klap in one program: subcommands and
+nested groups, a command alias, a global `--file` and a counting global `-v`, group-scoped options,
+enum/choice/multiple/validate converters, `validateInputs` rules for the checks no single input can
+make, a `.range()`-bounded `--limit`, colorized output through a `ColorScope` helper, a `hidden`
+diagnostic subcommand, typed errors with custom exit codes, structured `--json`, and value-aware
+completion that resolves `--file` through the same accessor the action uses.
 Unlike the fixtures it stays on plain `cli(name) { }`. It is a program: its values are read inside
 `action { }` and nowhere else, so it needs no projection. Its tests drive `run(argv, terminal)` and
 assert rendered output and exit codes, which is the other half of the same rule — `inputs` is for binding,
@@ -229,7 +231,7 @@ klapExample.kexe: ELF 64-bit LSB executable, x86-64, dynamically linked
 klapExample.exe:  PE32+ executable for MS Windows 6.00 (console), x86-64
 
 $ time ./klapExample.kexe --version
-klapExample 1.0.0
+klapExample 0.3.0
 0.004 total
 ```
 
