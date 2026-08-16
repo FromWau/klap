@@ -8,6 +8,14 @@ import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.files.SystemTemporaryDirectory
 
+/**
+ * Due dates for tests. `--due` rejects anything earlier than today, so a literal near the present stops
+ * being addable the day the suite outlives it; these two are far enough out that they cannot expire.
+ */
+internal const val DUE_EARLIER = "2999-12-30"
+
+internal const val DUE_LATER = "2999-12-31"
+
 /** Collects written text so a test can assert on rendered output and exit code, never real stdio. */
 internal class RecordingTerminal : Terminal {
     val out = StringBuilder()

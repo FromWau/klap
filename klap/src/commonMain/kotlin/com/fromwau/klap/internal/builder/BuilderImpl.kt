@@ -3,10 +3,12 @@ package com.fromwau.klap.internal.builder
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.map
 import com.fromwau.klap.Abbreviation
+import com.fromwau.klap.ActionScope
 import com.fromwau.klap.Arg
 import com.fromwau.klap.Builtins
 import com.fromwau.klap.BuiltinsBuilder
 import com.fromwau.klap.CliBuilder
+import com.fromwau.klap.CliError
 import com.fromwau.klap.Command
 import com.fromwau.klap.CommandBuilder
 import com.fromwau.klap.ConversionError
@@ -149,6 +151,12 @@ internal class BuilderImpl(
         return Opt(fold)
     }
 
+    private val validations = mutableListOf<ActionScope.() -> CliError?>()
+
+    override fun validateInputs(block: ActionScope.() -> CliError?) {
+        validations += block
+    }
+
     /**
      * Record one cross-input rule, rejecting a malformed set on the spot rather than at parse time: a
      * one-member set states nothing, a repeated member would make its own presence count twice, and a
@@ -246,6 +254,7 @@ internal class BuilderImpl(
             aliases = aliases.toList(),
             specs = specs.toList(),
             constraints = constraints.toList(),
+            validations = validations.toList(),
             subcommands = subs.toList(),
             action = actionSpec,
             optionsEndAtFirstOperand = optionsEndAtFirstOperand,

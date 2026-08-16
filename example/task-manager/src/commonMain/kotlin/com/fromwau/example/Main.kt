@@ -20,6 +20,11 @@ import com.fromwau.klap.Opt
 import com.fromwau.klap.ValueScope
 import com.fromwau.klap.cli
 import com.fromwau.klap.main
+import com.fromwau.klap.name
+import kotlin.time.Clock
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.todayIn
 import kotlinx.io.files.Path
 
 fun main(args: Array<String>) {
@@ -35,7 +40,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
     // `--json`, and `klapExample add --priority hi` reaches `high` (verified).
     abbreviation = Abbreviation.All
     description = "A tiny file-backed task manager"
-    version = "1.0.0"
+    version = VERSION
     author = "The klap example"
     epilogue =
         "Tasks live in a JSON file in the working directory; point --file elsewhere to keep separate lists."
@@ -70,11 +75,22 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
         tasks.filter(include).forEach { candidate(it.id.toString(), it.title) }
     }
 
+    // Every tag already in use, for the inputs that take one: filtering by a tag nothing carries, or
+    // spelling an existing tag a second way, are both mistakes Tab can prevent outright.
+    fun CompletionScope.knownTagCandidates() {
+        val tasks = taskStore().load().getOrElse { return }
+        candidates(tasks.allTags())
+    }
+
     command("add", "create a new task") {
         // Per-command, unlike the root's: `klapExample add --help` closes with this one, never the root's.
         epilogue = "Repeat --tag to attach several labels; --done records work that is already finished."
 
+        // Required only guarantees the token is present: `add ""` satisfies the parser otherwise.
+        // Validated before the trim so the rejection quotes what was typed.
         val title = argument("title", "what needs doing")
+            .validate(MUST_NOT_BE_BLANK) { it.isNotBlank() }
+            .map { it.trim() }
 
         // Plain `val`s, not `lateinit var`s: group's callsInPlace contract makes assigning them inside
         // the block legal, so the compiler still guarantees each one is initialised exactly once.
@@ -88,12 +104,27 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
                 .enum<Priority>()
                 .default(Priority.MEDIUM)
 
-            tags = option("--tag", "-t", help = "label the task").multiple()
+            // Checked and trimmed before .multiple(), so each repeat is validated on its own rather
+            // than the assembled list.
+            tags = option("--tag", "-t", help = "label the task")
+                .validate(MUST_NOT_BE_BLANK) { it.isNotBlank() }
+                .map { it.trim() }
+                .multiple()
 
-            due = option("--due", "-d", help = "when it's due, e.g. 2026-08-01")
-                .validate("must look like YYYY-MM-DD") { it.matches(Regex("""\d{4}-\d{2}-\d{2}""")) }
+            // Shape only. Whether a past date is wrong depends on --done, which no per-value check can
+            // read, so that half is decided by the validateInputs below.
+            // No sample date in the help: any literal here is one that later stops being acceptable.
+            due = option("--due", "-d", help = "when it's due, YYYY-MM-DD (past needs --done)")
+                .validate(DUE_NOT_A_DATE) { it.asDate() != null }
 
             done = flag("--done", "-D", help = "record something you have already finished")
+        }
+
+        // Belongs to the pair, not to either input: a past date is a typo on work still to do and
+        // ordinary on work already finished, so neither value is wrong on its own.
+        validateInputs {
+            val dueDate = due()
+            if (dueDate != null && !done() && dueDate.isPastDue()) pastDue(dueDate) else null
         }
 
         action(human = { task -> "${green("added")} ${dim("#${task.id}:")} ${bold(task.title)}" }) {
@@ -128,6 +159,13 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
         // --verbose rather than here.
         val long = flag("--long", "-l", help = "show due date and tags regardless of -v")
 
+        // Checked and trimmed exactly like `add --tag`: stored tags carry no padding, so a padded
+        // filter would quietly match nothing instead of the tag that was plainly meant.
+        val onlyTag = option("--tag", "-t", help = "filter by tag")
+            .validate(MUST_NOT_BE_BLANK) { it.isNotBlank() }
+            .map { it.trim() }
+            .completeWith { knownTagCandidates() }
+
         action(
             human = { tasks ->
                 val verbosity = verbose()
@@ -136,11 +174,12 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
             },
         ) {
             val tasks = taskStore().load().getOrElse { return@action Err(it) }
-            val filtered = when (status()) {
+            val byStatus = when (status()) {
                 "pending" -> tasks.filterNot { it.done }
                 "done" -> tasks.filter { it.done }
                 else -> tasks
             }
+            val filtered = onlyTag()?.let { tag -> byStatus.filter { tag in it.tags } } ?: byStatus
             // Newest first reorders before the trim below, so `-rn 5` means the five NEWEST rather than
             // the oldest five re-shown backwards. --reverse joins --limit here, not the human renderer,
             // for the same reason: it shapes the data `--json` emits.
@@ -195,10 +234,9 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
             // The mirror of `tag rm`'s provider: that one narrows to a single task's tags, this one
             // offers every tag already in use, so a second spelling of an existing tag is a Tab away.
             val tag = argument("tag", "tag to attach")
-                .completeWith {
-                    val tasks = taskStore().load().getOrElse { return@completeWith }
-                    candidates(tasks.flatMap { it.tags }.distinct().sorted())
-                }
+                .validate(MUST_NOT_BE_BLANK) { it.isNotBlank() }
+                .map { it.trim() }
+                .completeWith { knownTagCandidates() }
 
             action(
                 human = { task ->
@@ -233,6 +271,16 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
                     candidates(tags)
                 }
 
+            // Enforces what the provider above already knows: removing a tag the task never carried used
+            // to succeed silently. Blamed on `tag` by its own handle, so a rename cannot leave the message
+            // naming an input that no longer exists. A missing task or unreadable store is left to the
+            // action, which reports either properly instead of as a bad tag.
+            validateInputs {
+                val tasks = taskStore().load().getOrElse { return@validateInputs null }
+                val task = tasks.find { it.id == id() } ?: return@validateInputs null
+                if (tag() in task.tags) null else CliError.BadValue(tag.name, tag(), NO_SUCH_TAG)
+            }
+
             action(
                 human = { task ->
                     val tags = if (task.tags.isEmpty()) dim("none") else cyan(task.tags.joinToString(", "))
@@ -249,6 +297,18 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
                     Ok(updated)
                 }
             }
+        }
+    }
+
+    // A sibling of `tag` rather than a `tag list` subcommand: this answers about the store as a whole,
+    // where every `tag` subcommand acts on one task. Exact spellings beat prefixes, so both full names
+    // stay reachable; the cost is that `t` and `ta` now name two commands and stop resolving.
+    command("tags", "list every tag in use") {
+        action(
+            human = { tags -> if (tags.isEmpty()) "no tags" else tags.joinToString("\n") { cyan(it) } },
+        ) {
+            val tasks = taskStore().load().getOrElse { return@action Err(it) }
+            Ok(tasks.allTags())
         }
     }
 
@@ -291,6 +351,25 @@ private val Priority.style: Style
         Priority.MEDIUM -> yellow
         Priority.LOW -> green
     }
+
+/** Sorted so `tags` and Tab agree on an order, and neither depends on which task was added first. */
+private fun List<Task>.allTags(): List<String> = flatMap { it.tags }.distinct().sorted()
+
+private const val MUST_NOT_BE_BLANK = "must not be blank"
+
+private const val NO_SUCH_TAG = "task does not carry that tag"
+
+private const val DUE_NOT_A_DATE = "must be a real date in YYYY-MM-DD form"
+
+/** Parsing rather than shape-matching is what rejects 2026-13-45, which a `\d{4}-\d{2}-\d{2}` accepts. */
+private fun String.asDate(): LocalDate? = runCatching { LocalDate.parse(this) }.getOrNull()
+
+// Reached only once the format check has passed, so an unparsable value is nobody's idea of overdue.
+private fun String.isPastDue(): Boolean =
+    asDate()?.let { it < Clock.System.todayIn(TimeZone.currentSystemDefault()) } ?: false
+
+private fun pastDue(due: String) =
+    CliError.Usage("--due $due is earlier than today; pass --done to record work already finished")
 
 private fun notFound(id: Int) = CliError.Failure("no task with id $id", exitCode = EXIT_NOT_FOUND)
 
