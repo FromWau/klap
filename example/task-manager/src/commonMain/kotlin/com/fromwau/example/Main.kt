@@ -271,16 +271,6 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
                     candidates(tags)
                 }
 
-            // Enforces what the provider above already knows: removing a tag the task never carried used
-            // to succeed silently. Blamed on `tag` by its own handle, so a rename cannot leave the message
-            // naming an input that no longer exists. A missing task or unreadable store is left to the
-            // action, which reports either properly instead of as a bad tag.
-            validateInputs {
-                val tasks = taskStore().load().getOrElse { return@validateInputs null }
-                val task = tasks.find { it.id == id() } ?: return@validateInputs null
-                if (tag() in task.tags) null else CliError.BadValue(tag.name, tag(), NO_SUCH_TAG)
-            }
-
             action(
                 human = { task ->
                     val tags = if (task.tags.isEmpty()) dim("none") else cyan(task.tags.joinToString(", "))
@@ -291,6 +281,9 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
                 store.withLock {
                     val tasks = store.load().getOrElse { return@withLock Err(it) }
                     val task = tasks.find { it.id == id() } ?: return@withLock Err(notFound(id()))
+                    // Here rather than in validateInputs: a rule that reads the store has to hold the lock
+                    // it checked under, and nothing holds between that block and this write.
+                    if (tag() !in task.tags) return@withLock Err(CliError.BadValue(tag.name, tag(), NO_SUCH_TAG))
                     val updated = task.copy(tags = task.tags.filterNot { it == tag() })
                     store.save(tasks.map { if (it.id == task.id) updated else it })
                         .getOrElse { return@withLock Err(it) }
