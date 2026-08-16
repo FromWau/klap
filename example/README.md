@@ -231,7 +231,7 @@ klapExample.kexe: ELF 64-bit LSB executable, x86-64, dynamically linked
 klapExample.exe:  PE32+ executable for MS Windows 6.00 (console), x86-64
 
 $ time ./klapExample.kexe --version
-klapExample 0.3.0
+klapExample <version>
 0.004 total
 ```
 
