@@ -221,6 +221,7 @@ private fun <T> build(name: String, block: CliBuilder.() -> T): Pair<Cli, T> {
         builtins = builtins,
         abbreviation = builder.abbreviation,
         optionsEndAtFirstOperand = base.optionsEndAtFirstOperand,
+        validations = base.validations,
     ) to handles
 }
 

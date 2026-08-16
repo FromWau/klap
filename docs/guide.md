@@ -14,7 +14,7 @@ ships, so if you are building against a release, read this file at that release'
 | [Inputs and converters](#inputs-and-converters)            | spellings, dash-led values, numbers, dependent and optional-value operands        |
 | [Flags](#flags-boolean-counted-negatable)                  | boolean, counted, negatable                                                       |
 | [Abbreviation](#abbreviation)                              | how far a partially typed name resolves, git's rationale, choosing a mode         |
-| [Cross-input constraints](#cross-input-constraints)        | `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `lastOneWins`, `requiredIf`  |
+| [Cross-input constraints](#cross-input-constraints)        | `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `lastOneWins`, `requiredIf`, `validateInputs`  |
 | [Global / persistent options](#global--persistent-options) | options shared by every subcommand, which built-in answers, declining one         |
 | [Typed results and errors](#typed-results-and-errors)      | kern's `Result`, `IError`, `CliError`, exit codes, did-you-mean                   |
 | [Suspending actions](#suspending-actions)                  | `actionSuspending`, `runSuspending`, the caller-owned scope, no suspending `main` |
@@ -74,7 +74,7 @@ Those receivers have names, and you will want them the first time you factor a d
 
 | Receiver         | Where it is the receiver | What it carries                                                                                                                                                                                                                                                       |
 |------------------|--------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `CommandBuilder` | `command(name) { }`      | `argument`, `option`, `flag`, `numberOption`, `command`, `group`, `example`, `action`; the cross-input rules `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `lastOneWins`; the per-command settings `description`, `aliases`, `epilogue`, `hidden`, `optionsEndAtFirstOperand` |
+| `CommandBuilder` | `command(name) { }`      | `argument`, `option`, `flag`, `numberOption`, `command`, `group`, `example`, `action`; the cross-input rules `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `lastOneWins`, `validateInputs`; the per-command settings `description`, `aliases`, `epilogue`, `hidden`, `optionsEndAtFirstOperand` |
 | `CliBuilder`     | `cli(name) { }`          | everything on `CommandBuilder`, plus the root-only `globalOption`, `globalFlag`, `version`, `author`, `abbreviation`, `builtins { }`                                                                                                                                  |
 | `ConverterScope` | the base of both         | every converter: `.int()`, `.map()`, `.default()`, `.range()`, `.count()`, `.negatable()`, `.absentWhen()`, `.completeWith()`, ...                                                                                                                                    |
 
@@ -409,7 +409,9 @@ error: invalid value 'bogus' for --level (choose from debug, info, warn, error) 
 ```
 
 `.range(a..b)` is sugar over `.validate` that also prints `(a..b)` in the help row. Keep single-input
-constraints here; cross-field or business rules belong in `action { }` with a typed `Err`.
+constraints here; a rule weighing one input against another belongs in
+[`validateInputs { }`](#validateinputs-a-rule-over-the-bound-values), which runs once everything is
+bound, and genuine business logic belongs in `action { }` with a typed `Err`.
 
 klap appends its own hint to a help row based on the input's shape, so you do not repeat it in your help
 text: `(required)`, `(optional)` (any nullable input, not only `.optional()`), `(default: v)`,
@@ -738,6 +740,61 @@ tree is constructed, as an `IllegalArgumentException` thrown at startup. (`.requ
 as above: its condition may be a global.) Constraints are independent of `group(...)`, which is a help
 heading and nothing else; you can use either without the other.
 
+### `validateInputs`: a rule over the bound values
+
+Every constraint above reads which inputs were **supplied**. `validateInputs { }` reads what they
+**hold**. It runs once every input is bound and before the action, and returns the `CliError` to fail
+with, or null to accept:
+
+```kotlin
+command("add") {
+    val due  = option("--due", "-d").validate("must be YYYY-MM-DD") { it.asDate() != null }
+    val done = flag("--done", "-D")
+
+    validateInputs {
+        val d = due()
+        if (d != null && !done() && d.isPast()) {
+            CliError.Usage("--due $d is earlier than today; pass --done")
+        } else {
+            null
+        }
+    }
+
+    action { ... }
+}
+```
+```
+$ app add "Ship it" --due 2020-01-01
+error: --due 2020-01-01 is earlier than today; pass --done     # exit 2
+```
+
+A past due date is a typo on work still to do and ordinary on work already finished, so neither value is
+wrong on its own — the fault is the pair, which is what makes this the right home for it rather than
+`.validate`.
+
+To blame a single input, build the error against that input's own spelling with `Input.name` rather than
+a string literal, so a later rename cannot leave the message pointing at an option that no longer exists:
+
+```kotlin
+validateInputs {
+    if (tag() in tagsOf(id())) null else CliError.BadValue(tag.name, tag(), "task does not carry that tag")
+}
+```
+
+Declaring several runs them in declaration order and reports the first failure. Unlike the set
+constraints, a block may read a `globalOption` / `globalFlag`, since it reads bound values rather than
+naming member inputs.
+
+**Prefer `.validate` whenever a value can be judged alone.** It runs earlier — during conversion, which
+is also the only point a repeated input's values exist one at a time, so it can name *which* repeat
+failed. It is also what `.range(a..b)` is built on, and being input-scoped it travels with the input when
+that declaration moves. A rule reaching a sibling cannot run there, because argv may not have reached
+that sibling yet; that is the gap this fills.
+
+Blocks run only for a real invocation. `--help`, `--version`, completion and the generated docs resolve
+without binding values, so a half-typed line is never refused by a rule about values it has not got yet.
+They are also scoped to the command that runs: a block on the root does not run when a subcommand does.
+
 ## Global / persistent options
 
 Declared once on the root with `globalOption` / `globalFlag`, a global is recognized anywhere on the
@@ -984,18 +1041,20 @@ exits `2` for that (`USAGE_ERROR_EXIT`, the POSIX convention), so a rule you enf
 too. Use `CliError.Usage(detail)` — a `Failure` whose exit code is fixed at `2`:
 
 ```kotlin
-action {
+validateInputs {
     val from = since()
     val to = until()
-    if (from != null && to != null && from > to)
-        return@action Err(CliError.Usage("--since must not be later than --until"))
-    Ok(query(from, to))
+    if (from != null && to != null && from > to) CliError.Usage("--since must not be later than --until")
+    else null
 }
 ```
 
 Reach for it whenever the rule is about *how the command was invoked* rather than what happened when it
 ran. `requireExactlyOne` / `requireAtMostOne` / `lastWins` / `.requiredIf` already cover the declarative
-rules; `Usage` is for the ones that need to read values.
+rules; `Usage` is the error a value-reading rule returns, and
+[`validateInputs`](#validateinputs-a-rule-over-the-bound-values) is where that rule belongs — ahead of the
+action, so a refused invocation does nothing at all. Returning it from `action { }` still works, and is
+what you want when the rule only becomes checkable partway through the work.
 
 You are not limited to `Failure` and `Usage`, either. An action may return **any** `CliError` variant,
 and it renders byte-identically to the parse-time original, exit code included — useful when a

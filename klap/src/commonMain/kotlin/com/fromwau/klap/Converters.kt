@@ -339,6 +339,9 @@ public abstract class ConverterScope internal constructor() {
     /**
      * Checks [predicate] on each converted value; call before `.multiple()`. Failure renders as
      * CliError.BadValue, never InvalidChoice.
+     *
+     * Judges the value alone: it runs during conversion, so no sibling input is readable yet. For a rule
+     * weighing one input against another, see [CommandBuilder.validateInputs].
      */
     public fun <T> Arg<T>.validate(message: String, predicate: (T) -> Boolean): Arg<T> {
         spec.applyValidate(message, predicate)
@@ -566,7 +569,10 @@ public abstract class ConverterScope internal constructor() {
 
     // --- Opt validation ---
 
-    /** Checks [predicate] on the converted value; failure renders as CliError.BadValue, never InvalidChoice. */
+    /**
+     * Checks [predicate] on the converted value; failure renders as CliError.BadValue, never InvalidChoice.
+     * Judges the value alone; for one weighed against another input, see [CommandBuilder.validateInputs].
+     */
     public fun <T> Opt<T?>.validate(message: String, predicate: (T) -> Boolean): Opt<T?> {
         spec.applyValidate(message, predicate)
         return Opt(spec)
