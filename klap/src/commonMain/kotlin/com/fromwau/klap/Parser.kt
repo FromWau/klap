@@ -438,7 +438,11 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
                     // Output mode resolves here, not in run() where the color switch waits for a terminal, so
                     // an embedder driving parse() + runAction() reads the same mode the terminal path gives.
                     val exec = invocation.copy(scope = ActionScope(sink, json = invocation.globals.json))
-                    deferredGlobalErrors.firstOrNull()?.let { Result.Error(it) } ?: Result.Success(exec)
+                    deferredGlobalErrors.firstOrNull()?.let { return Result.Error(it) }
+                    // Only this branch: a validateInputs block reads bound values, which --help, --version,
+                    // completion and docs never produce, and must not refuse to render over an input they
+                    // were never going to use.
+                    runValidations(exec)?.let { Result.Error(it) } ?: Result.Success(exec)
                 }
 
                 is Invocation.ShowHelp -> Result.Success(
@@ -522,3 +526,11 @@ private fun Cli.routeBuiltin(
             ),
         )
     }
+
+/**
+ * Runs the command's `validateInputs {}` blocks in declaration order, stopping at the first failure. They
+ * read bound values, so this is the earliest point they can run — and, being before the action, still early
+ * enough that a refused line does nothing.
+ */
+private fun runValidations(exec: Invocation.Execute): CliError? =
+    exec.command.validations.firstNotNullOfOrNull { it(exec.scope) }

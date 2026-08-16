@@ -173,6 +173,27 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      */
     public abstract fun numberOption(help: String = ""): Opt<String?>
 
+    /**
+     * A rule no single input can answer, checked once every one of them is bound and before the action runs.
+     * Return null to accept, or the [CliError] to fail with:
+     *
+     * ```kotlin
+     * validateInputs { if (due() != null && !done()) tooLate(due()) else null }
+     * ```
+     *
+     * `.validate()` is the counterpart for a value judged alone, and runs earlier — during conversion, which
+     * is also the only point a repeated input's values exist one at a time. Use it wherever it suffices; a
+     * rule reaching a sibling cannot run there, because argv may not have reached that sibling yet.
+     *
+     * To blame one input, build the error against its own spelling rather than a literal, so a rename cannot
+     * make the message lie: `CliError.BadValue(tag.name, tag(), "no such tag")`. Several blocks run in
+     * declaration order and the first failure is reported.
+     *
+     * Only a real invocation runs one — never `--help`, `--version`, completion or docs — and only on the
+     * command that runs, so a block declared on the root does not fire when a subcommand does.
+     */
+    public abstract fun validateInputs(block: ActionScope.() -> CliError?)
+
     /** One example invocation shown under an `Examples:` heading in `--help`. */
     public abstract fun example(command: String, description: String = "")
 

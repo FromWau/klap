@@ -396,7 +396,7 @@ private fun Command.tooManyArguments(extras: List<String>, qualifiedName: String
 
 /** These occurrences' values in argv order; an unpositioned one (see [Occurrence]) comes last. */
 private fun List<Occurrence>.inArgvOrder(): List<String> =
-    sortedBy { it.position ?: Int.MAX_VALUE }.map { it.value }
+    sortedWith(compareBy(nullsLast()) { it.position }).map { it.value }
 
 /**
  * The lenient counterpart to [com.fromwau.klap.parse]'s bind phase, for tab completion: bind everything the

@@ -134,4 +134,29 @@ class LastOneWinsTest {
         }
         assertTrue("cannot be .multiple()" in ex.message.orEmpty(), ex.message)
     }
+    /**
+     * A short cluster orders by the character within it, and a position encoding that packed that character
+     * into the token index had a width past which a long cluster reached into the NEXT token's range — so a
+     * member written last stopped winning once enough flags preceded it. Padded well past any such width,
+     * with the pad flags irrelevant to the set: only where `-b` and `-c` sit decides this.
+     */
+    @Test
+    fun `a long short cluster does not reorder a later token`() {
+        val padded = cli("app") {
+            val a = option("--alpha", "-a").int()
+            val b = option("--beta", "-b").int()
+            val c = option("--gamma", "-c").int()
+            val pad = flag("--pad", "-p")
+            val ab = lastOneWins(a, b)
+            lastWins(ab, c)
+            action { Ok("ab=${ab()} c=${c()} pad=${pad()}") }
+        }
+        for (width in listOf(1, 999, 1000, 1001, 4096)) {
+            val cluster = "-" + "p".repeat(width) + "b"
+            // `-c` is written last, so `-c` takes the set at every cluster width.
+            assertEquals("ab=null c=5 pad=true", padded.bindText(cluster, "2", "-c", "5"), "width $width")
+            // ...and the mirror: `-b` last means the fold takes it, again at every width.
+            assertEquals("ab=2 c=null pad=true", padded.bindText("-c", "5", cluster, "2"), "width $width")
+        }
+    }
 }
