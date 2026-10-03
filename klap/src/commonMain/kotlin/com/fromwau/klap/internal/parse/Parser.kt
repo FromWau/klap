@@ -1,5 +1,6 @@
 package com.fromwau.klap.internal.parse
 
+import com.fromwau.kern.fuzzy.didYouMean
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.getOrElse
 import com.fromwau.kern.result.getOrNull
@@ -144,7 +145,7 @@ internal fun Command.bind(
                     // unknown is worse than naming nothing.
                     val offending = if (long != null) firstToken
                     else firstUnresolvedShort(firstToken.removePrefix("-"), globalAcc) ?: "-${firstToken[1]}"
-                    val suggestion = long?.let { suggest(offending, longOptionCandidates(globalAcc)) }
+                    val suggestion = long?.let { didYouMean(offending, longOptionCandidates(globalAcc)) }
                     Result.Error(CliError.UnknownOption(offending, suggestion, firstToken.takeIf { it != offending }))
                 }
             }
@@ -160,7 +161,7 @@ internal fun Command.bind(
                     Result.Error(
                         CliError.UnknownSubcommand(
                             qualifiedName, token,
-                            suggest(token, subcommandCandidates()),
+                            didYouMean(token, subcommandCandidates()),
                         )
                     )
                 }
@@ -461,7 +462,7 @@ private fun Command.ambiguousOrUnknown(
         // One survivor still reports the whole list rather than binding it: the pre-strip already declined
         // this token, so resolving it here would bind what an earlier pass refused.
         filtered.size == 1 -> CliError.AmbiguousOption(token, candidates)
-        else -> CliError.UnknownOption(token, suggest(token, longOptionCandidates(globalAcc)))
+        else -> CliError.UnknownOption(token, didYouMean(token, longOptionCandidates(globalAcc)))
     }
 }
 
@@ -552,7 +553,7 @@ internal fun Command.sift(
     val dashLedAdmitted = mutableSetOf<Int>()
     var error: CliError? = null
 
-    // A lambda, not a value: only the first call's build() actually executes, so suggest()'s edit-distance
+    // A lambda, not a value: only the first call's build() actually executes, so didYouMean's edit-distance
     // scan runs at most once even though the walk keeps going after an error.
     fun record(build: () -> CliError) {
         if (error == null) error = build()
@@ -672,7 +673,7 @@ internal fun Command.sift(
                                 record {
                                     CliError.UnknownOption(
                                         spelled,
-                                        suggest(spelled, longOptionCandidates(globalAcc)),
+                                        didYouMean(spelled, longOptionCandidates(globalAcc)),
                                     )
                                 }
                                 // Skipped, never demoted to a positional: the tokens after it still fill

@@ -1089,12 +1089,14 @@ stays intact, and the `when` that unwraps it stays exhaustive.
 
 ### Did-you-mean, in your own messages
 
-`suggest(token, candidates)` is the same nearest-match helper the parser uses for an unknown option or
-subcommand, exposed so a rule you write yourself is phrased and thresholded identically:
+klap's suggestions come from `didYouMean(written, candidates)` in kern's `fuzzy` module, which klap
+exposes to you, so a rule you write yourself is phrased and thresholded identically:
 
 ```kotlin
-suggest("lst", listOf("list", "add"))   // "list"
-suggest("zzzzzzzz", listOf("list"))     // null - nothing close enough
+import com.fromwau.kern.fuzzy.didYouMean
+
+didYouMean("lst", listOf("list", "add"))   // "list"
+didYouMean("zzzzzzzz", listOf("list"))     // null - nothing close enough
 ```
 
 Both `Usage.detail` and `Failure.detail` are yours to word, so a newline in one renders as a real line
@@ -1245,12 +1247,33 @@ layout while `--json` still emits the full object. Nothing ties its text back to
 a stale `human` renders wrong prose while `--json` stays correct; klap cannot check this, keep it in sync
 by hand.
 
-Errors follow suit: under `--json` a failure prints `{"error":"...","code":n}` to stderr, so a
-pipeline sees JSON on both streams. Returning a `String` or primitive needs no setup; returning an
-`@Serializable` type requires the `kotlin("plugin.serialization")` plugin in the consuming module.
+Errors follow suit: under `--json` a failure prints `{"error":{...},"code":n}` to stderr, so a pipeline
+sees JSON on both streams. The error is data, never a sentence: its variant under `type` and its fields,
+such as `{"error":{"type":"UnknownOption","token":"--verbos","suggestion":"--verbose"},"code":2}`. A
+`CliError.Domain` writes the `json` you give it, so a program reading the output gets your error's own
+structure:
 
-`--json` shapes an action's result (and its errors). It does not apply to `--help`, which always prints
-its normal text. `--version` does honour it, printing `{"name":"...","version":"..."}` instead of the
+```kotlin
+action<Report> {
+    store.load()
+        .mapError { CliError.Domain(it, it.describe(), json = Json.encodeToJsonElement(StoreError.serializer(), it)) }
+}
+```
+
+Without `json`, a `Domain` writes `{"type":"Domain","detail":"..."}`; a `Usage` or `Failure` writes its
+`detail` the same way. Returning a `String` or primitive needs no setup; returning an `@Serializable` type
+requires the `kotlin("plugin.serialization")` plugin in the consuming module.
+
+`--json` shapes an action's result (and its errors), and `--help --json` prints the help as data: the
+command, its usage line, and each argument, option, subcommand, global option and example as fields
+(`names`, `help`, `value`, `required`, `repeatable`, `default`, `choices`, and for an argument
+`absentWith` or `optionalWith`, the input that removes it or makes it optional), leaving out what does not
+apply.
+`--help-all --json` prints an array of that, one per command.
+
+A command that only groups subcommands, run without one, shows its help, except under `--json`: there it is
+the usage error `{"error":{"type":"MissingSubcommand","parent":"..."},"code":2}`, since help text is not data.
+`--version` honours `--json` too, printing `{"name":"...","version":"..."}` instead of the
 plain line, so a script asking a tool its version gets a parseable answer. A failure's exit code is
 clamped to `1..255` (a `Failure(exitCode = 0)` becomes `1`, since a failure must not report success).
 

@@ -1,5 +1,5 @@
 [versions]
-klapVersion = "0.4.0"
+klapVersion = "0.5.0"
 
 agp = "9.3.1"
 android-compileSdk = "37"
@@ -7,7 +7,7 @@ android-minSdk = "24"
 jdk = "25"
 
 dotenv = "4.0.0"
-kern = "0.2.0"
+kern = "0.4.0"
 kotlin = "2.4.10"
 kotlinx-coroutines = "1.11.0"
 kotlinx-datetime = "0.8.0"
@@ -17,6 +17,7 @@ kotlinx-serialization = "1.11.0"
 [libraries]
 kern-result = { module = "com.fromwau.kern:result", version.ref = "kern" }
 kern-terminal = { module = "com.fromwau.kern:terminal", version.ref = "kern" }
+kern-fuzzy = { module = "com.fromwau.kern:fuzzy", version.ref = "kern" }
 kotlin-gradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }

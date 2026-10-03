@@ -11,6 +11,7 @@ import com.fromwau.klap.internal.render.HelpStyle
 import com.fromwau.klap.internal.render.completeCandidates
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.render.helpTextAll
+import com.fromwau.klap.internal.render.helpJsonText
 import com.fromwau.klap.internal.render.jsonVersionEnvelope
 import com.fromwau.klap.internal.render.renderActionError
 import com.fromwau.klap.internal.render.renderError
@@ -117,8 +118,11 @@ private inline fun Invocation.render(
     execute: (Invocation.Execute) -> Int,
 ): Int = when (this) {
     is Invocation.ShowHelp -> {
-        val text = if (recursive) command.helpTextAll(qualifiedName, globalSpecs, style, rootVersioned, builtins)
-        else command.helpText(qualifiedName, globalSpecs, style, rootVersioned, builtins)
+        val text = when {
+            json -> command.helpJsonText(qualifiedName, globalSpecs, rootVersioned, builtins, recursive)
+            recursive -> command.helpTextAll(qualifiedName, globalSpecs, style, rootVersioned, builtins)
+            else -> command.helpText(qualifiedName, globalSpecs, style, rootVersioned, builtins)
+        }
         terminal.outputLine(text)
     }
 

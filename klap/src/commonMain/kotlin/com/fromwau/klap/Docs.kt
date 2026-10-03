@@ -7,6 +7,7 @@ import com.fromwau.klap.internal.render.markdownFor
 import com.fromwau.klap.internal.render.mdAnchor
 import com.fromwau.klap.internal.render.mdText
 import com.fromwau.klap.internal.render.roffEscape
+import com.fromwau.klap.internal.render.visibleTree
 
 public enum class DocFormat {
     MARKDOWN, MAN,
@@ -25,23 +26,6 @@ public enum class DocFormat {
 internal val DOC_FORMAT_NAMES: List<String> = DocFormat.entries.map { it.name.lowercase() }
 
 /**
- * Every command pre-order (self first, then each subtree), paired with its space-joined qualified
- * path from the root (e.g. "fleet disk attach"). Unlike a BFS walk deduped by bare name, this walk
- * keeps every node at its own depth, so distinct commands that share a name at different depths both
- * appear. A hidden subcommand is skipped, mirroring `--help` and completion: a doc mirrors what a user
- * can discover, not internal plumbing like `__complete`.
- */
-private fun Cli.docNodes(): List<Pair<Command, String>> {
-    val out = mutableListOf<Pair<Command, String>>()
-    fun visit(node: Command, path: String) {
-        out += node to path
-        node.subcommands.filterNot { it.hidden }.forEach { visit(it, "$path ${it.name}") }
-    }
-    visit(this, name)
-    return out
-}
-
-/**
  * Renders the whole CLI as one markdown page: a table of contents, then a section per command, built from
  * the same rows `--help` shows, so your docs cannot drift from your tool. A tool with no subcommands has
  * nothing to list, so it gets no table of contents.
@@ -49,7 +33,7 @@ private fun Cli.docNodes(): List<Pair<Command, String>> {
  * This is what the built-in `docs markdown` command prints; call it yourself to commit the page to a repo.
  */
 public fun Cli.renderMarkdownDocs(): String {
-    val nodes = docNodes()
+    val nodes = visibleTree(name)
     return buildString {
         appendLine("# $name")
         // A single-command tool's one node renders this description again in its own section below
@@ -111,7 +95,7 @@ public fun Cli.renderMarkdownDocs(): String {
 public fun Cli.renderManPage(date: String? = null): String {
     val stamp = date.orEmpty()
     val source = listOfNotNull(name, version).joinToString(" ")
-    val nodes = docNodes()
+    val nodes = visibleTree(name)
     return buildString {
         val titleName = roffEscape(name.uppercase())
         val titleDate = roffEscape(stamp)

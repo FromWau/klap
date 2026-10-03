@@ -44,6 +44,8 @@ public sealed interface Invocation {
         // The ROOT's built-in surface, threaded down for the same reason [rootVersioned] is: a subcommand's
         // Global options block lists the tree's built-ins, and only the root knows which it still offers.
         internal val builtins: Builtins = Builtins.DEFAULT,
+        // Set by --json: print the help as data rather than text.
+        internal val json: Boolean = false,
     ) : Invocation
     /** [json] prints the version as a JSON object rather than the plain `name version` line. */
     public data class ShowVersion(val cli: Cli, val json: Boolean = false) : Invocation

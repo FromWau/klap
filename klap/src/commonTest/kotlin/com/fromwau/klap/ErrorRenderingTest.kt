@@ -2,7 +2,6 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
-import com.fromwau.klap.internal.render.jsonErrorEnvelope
 import com.fromwau.klap.internal.render.message
 import com.fromwau.klap.internal.render.renderError
 import kotlin.test.Test
@@ -169,10 +168,9 @@ class ErrorRenderingTest {
 
     @Test
     fun `json envelope escapes quotes`() {
-        assertEquals(
-            """{"error":"say \"hi\"","code":2}""",
-            jsonErrorEnvelope("say \"hi\"", 2),
-        )
+        val t = RecordingTerminal()
+        renderError(CliError.Usage("say \"hi\""), json = true, terminal = t)
+        assertEquals("""{"error":{"type":"Usage","detail":"say \"hi\""},"code":2}""" + "\n", t.err.toString())
     }
 
     @Test
@@ -184,7 +182,7 @@ class ErrorRenderingTest {
         val code = cli("encodeboom") { action { Ok(ExplodingWithControlChar()) } }.run(arrayOf("--json"), t)
         assertEquals(1, code)
         assertEquals(
-            jsonErrorEnvelope("--json encoding failed: boom\\x7Fboom", 1) + "\n",
+            """{"error":{"type":"EncodeFailed","message":"boom\u007fboom"},"code":1}""" + "\n",
             t.err.toString(),
         )
     }
@@ -240,7 +238,8 @@ class ErrorRenderingTest {
         val structured = RecordingTerminal()
         renderError(CliError.Usage(detail), json = true, terminal = structured)
         assertEquals(
-            """{"error":"no such environment 'prd'\nhint: did you mean 'prod'?","code":2}""" + "\n",
+            """{"error":{"type":"Usage","detail":"no such environment 'prd'\nhint: did you mean 'prod'?"},"code":2}""" +
+                "\n",
             structured.err.toString(),
         )
     }

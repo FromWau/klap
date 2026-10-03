@@ -1,7 +1,6 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.klap.internal.render.jsonErrorEnvelope
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -151,13 +150,7 @@ class StructuredJsonTest {
         val t = RecordingTerminal()
         val code = nonSerializableTool().run(arrayOf("--json"), t)
         assertEquals(1, code)
-        assertEquals(
-            jsonErrorEnvelope(
-                "--json is not available: the command's return type is not @Serializable",
-                1
-            ) + "\n",
-            t.err.toString(),
-        )
+        assertEquals("""{"error":{"type":"NotSerializable"},"code":1}""" + "\n", t.err.toString())
     }
 
     @Test
@@ -168,12 +161,7 @@ class StructuredJsonTest {
         val t = RecordingTerminal()
         val code = cli("boom") { action { Ok(Exploding()) } }.run(arrayOf("--json"), t)
         assertEquals(1, code)
-        val err = t.err.toString()
-        assertTrue("--json encoding failed" in err, err)
-        assertTrue("boom" in err, err)
-        assertTrue("not @Serializable" !in err, err)
-        assertTrue(err.trim().startsWith("{\"error\":"), err)
-        assertTrue("\"code\":1" in err, err)
+        assertEquals("""{"error":{"type":"EncodeFailed","message":"boom"},"code":1}""" + "\n", t.err.toString())
     }
 
     @Test
@@ -184,12 +172,6 @@ class StructuredJsonTest {
         val t = RecordingTerminal()
         val code = cli("boom2") { action { Ok(ExplodingRuntime()) } }.run(arrayOf("--json"), t)
         assertEquals(1, code)
-        val err = t.err.toString()
-        assertTrue("--json encoding failed" in err, err)
-        assertTrue("boom" in err, err)
-        assertEquals(
-            jsonErrorEnvelope("--json encoding failed: boom", 1) + "\n",
-            err,
-        )
+        assertEquals("""{"error":{"type":"EncodeFailed","message":"boom"},"code":1}""" + "\n", t.err.toString())
     }
 }

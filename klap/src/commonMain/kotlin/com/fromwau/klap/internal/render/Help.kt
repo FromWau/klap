@@ -331,34 +331,49 @@ internal fun Command.helpSections(
         .filter { !it.hidden }
         .map { it.helpRow() }
         .toMutableList()
-    // --help is never declinable; only its -h short is, and dropping it leaves the row aligned with the
-    // short-less padding [words] uses.
-    globalRows += InputRow(if (builtins.helpShort) "-h, --help" else "    --help", BuiltinOptionHelp.HELP)
-    // --help-all is only meaningful (and only advertised) where there are subcommands to expand.
-    if (subcommands.any { !it.hidden }) globalRows += InputRow("    --help-all", "Show help for every subcommand")
-    if (builtins.json) globalRows += InputRow("    --json", BuiltinOptionHelp.JSON)
-    // --color is universal (like --json), so it advertises on every node the tree still offers it on.
-    if (builtins.color) {
-        globalRows += InputRow("    --color <${COLOR_MODE_NAMES.joinToString("|")}>", BuiltinOptionHelp.COLOR)
-    }
-    // version/metaOptions are root-only ([Cli]) facts; a plain node relies on the caller's [rootVersioned].
-    if ((this is Cli && version != null) || rootVersioned) {
-        globalRows += InputRow("    --version", BuiltinOptionHelp.VERSION)
-    }
-    if (this is Cli && metaOptions) {
-        if (builtins.completion) {
-            globalRows += InputRow(
-                "    --completion <${COMPLETION_SHELL_NAMES.joinToString("|")}>",
-                BuiltinOptionHelp.COMPLETION,
-            )
-        }
-        if (builtins.docs) {
-            globalRows += InputRow("    --docs <${DOC_FORMAT_NAMES.joinToString("|")}>", BuiltinOptionHelp.DOCS)
-        }
-    }
+    globalRows += builtinOptions(rootVersioned, builtins).map { it.row() }
     sections += HelpSection("Global options", globalRows)
 
     return sections
+}
+
+/** A built-in global option as both help forms list it; [choices] are the values it takes, if it takes one. */
+internal data class BuiltinOption(
+    val names: List<String>,
+    val help: String,
+    val choices: List<String>? = null,
+)
+
+/** The built-in options this node's help lists, in the order help shows them. */
+internal fun Command.builtinOptions(
+    rootVersioned: Boolean,
+    builtins: Builtins,
+): List<BuiltinOption> = buildList {
+    // --help is never declinable; only its -h short is.
+    add(BuiltinOption(if (builtins.helpShort) listOf("-h", "--help") else listOf("--help"), BuiltinOptionHelp.HELP))
+    // --help-all is only meaningful (and only advertised) where there are subcommands to expand.
+    if (subcommands.any { !it.hidden }) add(BuiltinOption(listOf("--help-all"), "Show help for every subcommand"))
+    if (builtins.json) add(BuiltinOption(listOf("--json"), BuiltinOptionHelp.JSON))
+    // --color is universal (like --json), so it advertises on every node the tree still offers it on.
+    if (builtins.color) add(BuiltinOption(listOf("--color"), BuiltinOptionHelp.COLOR, COLOR_MODE_NAMES))
+    // version/metaOptions are root-only ([Cli]) facts; a plain node relies on the caller's [rootVersioned].
+    val node = this@builtinOptions
+    if ((node is Cli && node.version != null) || rootVersioned) {
+        add(BuiltinOption(listOf("--version"), BuiltinOptionHelp.VERSION))
+    }
+    if (node is Cli && node.metaOptions) {
+        if (builtins.completion) {
+            add(BuiltinOption(listOf("--completion"), BuiltinOptionHelp.COMPLETION, COMPLETION_SHELL_NAMES))
+        }
+        if (builtins.docs) add(BuiltinOption(listOf("--docs"), BuiltinOptionHelp.DOCS, DOC_FORMAT_NAMES))
+    }
+}
+
+/** This option as a text help row, padded like a short-less [words] when it has no short. */
+private fun BuiltinOption.row(): InputRow {
+    val spelled = names.joinToString(", ")
+    val signature = if (names.first().startsWith("--")) "    $spelled" else spelled
+    return InputRow(choices?.let { "$signature <${it.joinToString("|")}>" } ?: signature, help)
 }
 
 // --- style ---
@@ -526,13 +541,23 @@ internal fun Command.helpTextAll(
     rootVersioned: Boolean,
     builtins: Builtins = Builtins.DEFAULT,
 ): String {
-    val blocks = mutableListOf<String>()
+    return visibleTree(qualifiedName).joinToString("\n\n\n") { (node, path) ->
+        node.helpText(path, globalSpecs, style, rootVersioned, builtins)
+    }
+}
+
+/**
+ * This command and every command under it pre-order (self first, then each subtree), each paired with its
+ * space-joined qualified path (e.g. "fleet disk attach"). Every node keeps its own depth, so distinct commands
+ * that share a name at different depths both appear. A hidden subcommand is skipped, as `--help` and completion
+ * skip it: help and docs mirror what a user can discover, not internal plumbing like `__complete`.
+ */
+internal fun Command.visibleTree(qualifiedName: String): List<Pair<Command, String>> = buildList {
     fun visit(node: Command, path: String) {
-        blocks += node.helpText(path, globalSpecs, style, rootVersioned, builtins)
+        add(node to path)
         node.subcommands.filterNot { it.hidden }.forEach { visit(it, "$path ${it.name}") }
     }
-    visit(this, qualifiedName)
-    return blocks.joinToString("\n\n\n")
+    visit(this@visibleTree, qualifiedName)
 }
 
 private fun HelpStyle.wrapExampleDescription(description: String): List<String> {
