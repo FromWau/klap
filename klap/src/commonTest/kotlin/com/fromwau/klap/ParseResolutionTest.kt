@@ -2,7 +2,6 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
-import com.fromwau.klap.internal.parse.suggest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -76,43 +75,6 @@ class ParseResolutionTest {
         val out = tree().parse(listOf("cofnig"))
         val err = assertIs<Result.Error<CliError>>(out).error
         assertEquals(CliError.UnknownSubcommand("todo", "cofnig", "config"), err)
-    }
-
-    @Test
-    fun `suggest never returns an exact match`() {
-        // A token equal to a candidate is not really unknown; "did you mean <the same word>" must never happen.
-        assertEquals(null, suggest("config", listOf("config", "ping")))
-        assertEquals("config", suggest("cofnig", listOf("config", "ping")))
-    }
-
-    @Test
-    fun `suggest folds case before excluding the self match`() {
-        // Regression: the self-match check must compare against the folded needle, not the raw token, so an
-        // ignoreCase call never suggests a candidate that is the same word under the very fold it applies.
-        assertEquals(null, suggest("FAST", listOf("fast"), ignoreCase = true))
-        // Case-sensitively "Fast" is genuinely not "fast", so the same pair still suggests without folding.
-        assertEquals("fast", suggest("Fast", listOf("fast")))
-        // A folded prefix still resolves to the one reachable candidate.
-        assertEquals("fast", suggest("FA", listOf("fast"), ignoreCase = true))
-        // The suggestion carries the candidate's declared spelling, never the lowered needle.
-        assertEquals("FAST", suggest("fa", listOf("FAST"), ignoreCase = true))
-    }
-
-    @Test
-    fun `a blank token prefixes every candidate and so answers only when there is one`() {
-        // Every string carries the empty prefix, so the prefix rule reaches a lone candidate and ties on
-        // any larger pool; the distance rule cannot rescue it either, since 0 is outside its 1..n bound.
-        assertEquals("only", suggest("", listOf("only")))
-        assertEquals(null, suggest("", listOf("one", "two")))
-        assertEquals(null, suggest("", emptyList()))
-    }
-
-    @Test
-    fun `suggest rejects a wholly different short token`() {
-        // A short candidate is never suggested for a token every character of which is an edit, so a
-        // 2-char alias does not match an unrelated 2-char word; a single-typo near-miss still fires.
-        assertEquals(null, suggest("xy", listOf("ls", "rm")))
-        assertEquals("ls", suggest("lx", listOf("ls", "rm")))
     }
 
     @Test

@@ -44,6 +44,7 @@ private fun stripTerminalEscapes(text: String, allowWhitespace: Boolean = false)
 /** The one place a CliError becomes human text; nothing upstream produces user-facing strings. */
 internal fun CliError.message(): String = when (this) {
     is CliError.UnknownSubcommand -> "unknown subcommand '$token' for '$parent'" + suggestion.didYouMean()
+    is CliError.MissingSubcommand -> "missing subcommand for '$parent'"
     is CliError.AmbiguousSubcommand ->
         "subcommand '$token' is ambiguous; possibilities: ${candidates.joinToString(" ") { "'$it'" }}"
 
@@ -101,15 +102,10 @@ internal fun renderActionError(error: ActionError, json: Boolean, terminal: Term
     when (error) {
         is ActionError.Failed -> return renderError(error.error, json, terminal)
         ActionError.NotSerializable ->
-            terminal.err(
-                jsonErrorEnvelope(
-                    "--json is not available: the command's return type is not @Serializable",
-                    1,
-                ) + "\n"
-            )
+            terminal.err(jsonErrorEnvelope(encodeFailureJson("NotSerializable", null), 1) + "\n")
 
         is ActionError.EncodeFailed ->
-            terminal.err(jsonErrorEnvelope(stripTerminalEscapes("--json encoding failed: ${error.message}"), 1) + "\n")
+            terminal.err(jsonErrorEnvelope(encodeFailureJson("EncodeFailed", error.message), 1) + "\n")
 
         is ActionError.RenderFailed ->
             terminal.err("error: ${stripTerminalEscapes("could not render output: ${error.message}")}\n")
@@ -122,13 +118,15 @@ internal fun renderError(error: CliError, json: Boolean, terminal: Terminal): In
     // out-of-range value would wrap on the OS), so it is clamped here at the render boundary, and the
     // JSON envelope's `code` field uses the same clamped value so it always matches the actual exit.
     val code = error.exitCode.coerceIn(1, 255)
-    // Who wrote the sentence picks the sanitizer, and the same choice holds on both output paths. A Usage,
-    // Failure or Domain detail is the consumer's own prose, so its newlines and tabs survive; every other
-    // variant echoes a token straight from argv, where a newline would let a caller forge a second
-    // `error:` line.
+    if (json) {
+        terminal.err(jsonErrorEnvelope(error.toJson(), code) + "\n")
+        return code
+    }
+    // Who wrote the sentence picks the sanitizer. A Usage, Failure or Domain detail is the consumer's own
+    // prose, so its newlines and tabs survive; every other variant echoes a token straight from argv, where a
+    // newline would let a caller forge a second `error:` line.
     val authored = error is CliError.Usage || error is CliError.Failure || error is CliError.Domain
-    val rendered = stripTerminalEscapes(error.message(), allowWhitespace = authored)
-    terminal.err(if (json) jsonErrorEnvelope(rendered, code) + "\n" else "error: $rendered\n")
+    terminal.err("error: ${stripTerminalEscapes(error.message(), allowWhitespace = authored)}\n")
     return code
 }
 

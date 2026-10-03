@@ -1,5 +1,6 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.fuzzy.didYouMean
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.getOrElse
 import com.fromwau.klap.internal.parse.ArgvScan
@@ -17,7 +18,6 @@ import com.fromwau.klap.internal.parse.resolvedLongPool
 import com.fromwau.klap.internal.parse.sift
 import com.fromwau.klap.internal.parse.siftGlobals
 import com.fromwau.klap.internal.parse.subcommandCandidates
-import com.fromwau.klap.internal.parse.suggest
 import com.fromwau.klap.internal.spec.Builtin
 import com.fromwau.klap.internal.spec.FlagSpec
 import com.fromwau.klap.internal.spec.HolderSpec
@@ -206,7 +206,11 @@ private fun Cli.unknownSubcommandBeforeHelp(
     val leadingToken = rest.firstOrNull { !routesTransparently(it, globalFlagShorts) } ?: return null
     if (!cmd.isGroup || leadingToken.isFlagLike()) return null
     if (cmd.resolveSubcommand(leadingToken, abbreviation == Abbreviation.All) !is SubcommandMatch.None) return null
-    return CliError.UnknownSubcommand(qualifiedName, leadingToken, suggest(leadingToken, cmd.subcommandCandidates()))
+    return CliError.UnknownSubcommand(
+        qualifiedName,
+        leadingToken,
+        didYouMean(leadingToken, cmd.subcommandCandidates()),
+    )
 }
 
 /**
@@ -264,7 +268,7 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
                         "--color",
                         raw,
                         COLOR_MODE_NAMES,
-                        suggest(raw, COLOR_MODE_NAMES),
+                        didYouMean(raw, COLOR_MODE_NAMES),
                     ),
                 )
             }
@@ -293,7 +297,7 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
                                 "--completion",
                                 raw,
                                 COMPLETION_SHELL_NAMES,
-                                suggest(raw, COMPLETION_SHELL_NAMES),
+                                didYouMean(raw, COMPLETION_SHELL_NAMES),
                             ),
                         )
                     return Result.Success(Invocation.ShowCompletion(this, shell))
@@ -309,7 +313,7 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
                             "--docs",
                             raw,
                             DOC_FORMAT_NAMES,
-                            suggest(raw, DOC_FORMAT_NAMES),
+                            didYouMean(raw, DOC_FORMAT_NAMES),
                         ),
                     )
                 return Result.Success(Invocation.ShowDocs(this, format))
@@ -402,12 +406,13 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
                 version != null,
                 recursive = true,
                 builtins = builtins,
+                json = json,
             )
         )
     }
     if (helpRequested) {
         return Result.Success(
-            Invocation.ShowHelp(cmd, qualifiedName, globalSpecs, version != null, builtins = builtins)
+            Invocation.ShowHelp(cmd, qualifiedName, globalSpecs, version != null, builtins = builtins, json = json)
         )
     }
 
@@ -446,15 +451,20 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
                     runValidations(exec)?.let { Result.Error(it) } ?: Result.Success(exec)
                 }
 
-                is Invocation.ShowHelp -> Result.Success(
-                    Invocation.ShowHelp(
-                        invocation.command,
-                        invocation.qualifiedName,
-                        globalSpecs,
-                        version != null,
-                        builtins = builtins,
-                    ),
-                )
+                // A group run without a subcommand: help for a person, but text is not data under --json.
+                is Invocation.ShowHelp -> if (json) {
+                    Result.Error(CliError.MissingSubcommand(invocation.qualifiedName))
+                } else {
+                    Result.Success(
+                        Invocation.ShowHelp(
+                            invocation.command,
+                            invocation.qualifiedName,
+                            globalSpecs,
+                            version != null,
+                            builtins = builtins,
+                        ),
+                    )
+                }
                 // bind() only ever yields Execute or ShowHelp; the rest keep the when exhaustive.
                 is Invocation.ShowVersion -> outcome
                 is Invocation.ShowCompletion -> outcome
@@ -491,7 +501,7 @@ private fun Cli.routeBuiltin(
                         "completion",
                         raw,
                         COMPLETION_SHELL_NAMES,
-                        suggest(raw, COMPLETION_SHELL_NAMES),
+                        didYouMean(raw, COMPLETION_SHELL_NAMES),
                     ),
                 )
             // The node declares exactly one argument; reject a surplus operand instead of dropping it,
@@ -512,7 +522,7 @@ private fun Cli.routeBuiltin(
                         "docs",
                         raw,
                         DOC_FORMAT_NAMES,
-                        suggest(raw, DOC_FORMAT_NAMES),
+                        didYouMean(raw, DOC_FORMAT_NAMES),
                     ),
                 )
             if (args.size > 1) return Result.Error(CliError.TooManyArguments(qualifiedName, args.drop(1)))

@@ -1,5 +1,6 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.fuzzy.didYouMean
 import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
@@ -257,24 +258,16 @@ class PublicSurfaceTest {
     }
 
     @Test
-    fun `the did you mean helper is public and matches the parsers own`() {
-        // Qualified so this reaches the public re-export even if a future import in this file shadows it.
-        assertEquals("list", com.fromwau.klap.suggest("lst", listOf("list", "add")))
-        // Past the threshold: nothing is close enough, and an exact match is never "did you mean".
-        assertNull(com.fromwau.klap.suggest("zzzzzzzz", listOf("list", "add")))
-        assertNull(com.fromwau.klap.suggest("list", listOf("list", "add")))
-        // ignoreCase folds both sides before the exact-match check, same as the internal helper it wraps.
-        assertNull(com.fromwau.klap.suggest("FAST", listOf("fast"), ignoreCase = true))
-    }
-
-    @Test
     fun `the did you mean helper agrees with the parser on the same token`() {
         val tree = cli("app") {
             command("build") { action { Ok("") } }
             command("add") { action { Ok("") } }
         }
         val error = assertIs<Result.Error<CliError>>(tree.parse(listOf("biuld"))).error
-        assertEquals(suggest("biuld", listOf("build", "add")), (error as CliError.UnknownSubcommand).suggestion)
+        assertEquals(
+            didYouMean("biuld", listOf("build", "add")),
+            (error as CliError.UnknownSubcommand).suggestion,
+        )
     }
 
     @Test

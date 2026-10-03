@@ -1,6 +1,7 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.IError
+import kotlinx.serialization.json.JsonElement
 
 /** POSIX convention: a command-line usage error exits 2. */
 public const val USAGE_ERROR_EXIT: Int = 2
@@ -36,8 +37,9 @@ public sealed interface ConversionError : IError {
 
     /**
      * Your own error from a `.convert { }`, carried through with its payload intact, plus the [detail] klap
-     * should print for it. Mirrors [CliError.Domain] one level down: klap never inspects [error], so your
-     * hierarchy keeps its own sealed root and a `parse` caller can match on it.
+     * should print for it and the [json] it writes for it under `--json`. Mirrors [CliError.Domain] one level
+     * down: klap never inspects [error], so your hierarchy keeps its own sealed root and a `parse` caller can
+     * match on it.
      *
      * ```kotlin
      * sealed interface PortError : IError {
@@ -53,7 +55,11 @@ public sealed interface ConversionError : IError {
      * }
      * ```
      */
-    public data class Domain(val error: IError, val detail: String) : ConversionError
+    public data class Domain(
+        val error: IError,
+        val detail: String,
+        val json: JsonElement? = null,
+    ) : ConversionError
 }
 
 /**
@@ -69,6 +75,12 @@ public sealed interface CliError : IError {
         val token: String,
         val suggestion: String? = null,
     ) : CliError
+
+    /**
+     * A command that only groups subcommands was run without one under `--json`, where its help text would not be
+     * data. Without `--json` klap shows that command's help instead.
+     */
+    public data class MissingSubcommand(val parent: String) : CliError
 
     /**
      * An abbreviated subcommand naming more than one declared spelling. [candidates] are the full spellings
@@ -204,10 +216,20 @@ public sealed interface CliError : IError {
      *
      * klap never looks inside [error]; [IError] is the only thing asked of it, so your hierarchy keeps its
      * own sealed root and stays exhaustive at the `when` that unwraps it.
+     *
+     * Under `--json`, klap writes [json] as the failure, so a program reading the output gets your error's
+     * own structure rather than [detail]. Encode it with your error's serializer:
+     *
+     * ```kotlin
+     * Err(CliError.Domain(error, error.describe(), json = Json.encodeToJsonElement(StoreError.serializer(), error)))
+     * ```
+     *
+     * Without [json], `--json` writes `{"type":"Domain","detail":...}`.
      */
     public data class Domain(
         val error: IError,
         val detail: String,
         override val exitCode: Int = 1,
+        val json: JsonElement? = null,
     ) : CliError
 }

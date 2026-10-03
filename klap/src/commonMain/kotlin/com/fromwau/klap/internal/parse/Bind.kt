@@ -1,5 +1,6 @@
 package com.fromwau.klap.internal.parse
 
+import com.fromwau.kern.fuzzy.didYouMean
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.getOrElse
 import com.fromwau.klap.Cli
@@ -346,7 +347,7 @@ private fun ValueSpec.convertOne(raw: String, inferValues: Boolean): Result<Any?
                 // mean" suggestion ignores case too, rather than penalizing a near-miss for wrong case.
                 CliError.InvalidChoice(
                     name, raw, choices!!,
-                    suggest(raw, choices!!, ignoreCase = true),
+                    didYouMean(raw, choices!!),
                 )
             } else {
                 CliError.BadValue(name, raw, cause.reason(), cause)
@@ -391,7 +392,7 @@ private fun Command.tooManyArguments(extras: List<String>, qualifiedName: String
     // token on the line that is a declared command. Visible names only: a hidden command should not be
     // revealed by an error message.
     needle?.takeIf { it in commandNames }?.let { return CliError.UnroutedSubcommand(it, qualifiedName) }
-    return CliError.TooManyArguments(qualifiedName, extras, needle?.let { suggest(it, commandNames) })
+    return CliError.TooManyArguments(qualifiedName, extras, needle?.let { didYouMean(it, commandNames) })
 }
 
 /** These occurrences' values in argv order; an unpositioned one (see [Occurrence]) comes last. */

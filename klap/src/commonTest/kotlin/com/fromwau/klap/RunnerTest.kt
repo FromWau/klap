@@ -59,7 +59,7 @@ class RunnerTest {
         val code = app().run(arrayOf("fail", "--json"), t)
         assertEquals(3, code)
         val err = t.err.toString()
-        assertTrue("\"error\":\"fail\"" in err, err)
+        assertTrue("\"error\":{\"type\":\"Failure\",\"detail\":\"fail\"}" in err, err)
         assertTrue("\"code\":3" in err, err)
     }
 
@@ -216,9 +216,9 @@ class RunnerTest {
         val code = tool.run(arrayOf("\u001B[31mred", "--json"), t)
         assertEquals(2, code)
         val err = t.err.toString()
-        // stripTerminalEscapes now turns the raw ESC (0x1B) into the literal text \x1B, which kotlinx then
-        // JSON-escapes to \\x1B; no raw control byte survives on the --json path.
-        assertTrue("\\\\x1b" in err.lowercase(), err)
+        // JSON escapes the ESC itself, so the token is carried exactly and no raw control byte reaches stderr.
+        assertTrue(Char(0x1B) !in err, err)
+        assertTrue(""""value":"\u001b[31mred"""" in err, err)
     }
 
     @Test

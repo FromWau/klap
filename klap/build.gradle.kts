@@ -61,6 +61,7 @@ kotlin {
             dependencies {
                 api(libs.kern.result)
                 api(libs.kern.terminal)
+                api(libs.kern.fuzzy)
                 api(libs.kotlinx.serialization.json)
             }
         }
