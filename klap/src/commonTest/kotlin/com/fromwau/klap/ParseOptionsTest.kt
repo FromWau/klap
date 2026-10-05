@@ -170,9 +170,9 @@ class OptionValueAndChoiceTest {
                 action { Ok(mode() ?: "") }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("dial", "--mode", "sctp"))).error
-        // `sctp` is within edit distance of `tcp`, so InvalidChoice carries that suggestion.
-        assertEquals(CliError.InvalidChoice("--mode", "sctp", listOf("tcp", "udp"), "tcp"), err)
+        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("dial", "--mode", "tpc"))).error
+        // `tpc` is one swap from `tcp`, so InvalidChoice carries that suggestion.
+        assertEquals(CliError.InvalidChoice("--mode", "tpc", listOf("tcp", "udp"), "tcp"), err)
     }
 
     @Test

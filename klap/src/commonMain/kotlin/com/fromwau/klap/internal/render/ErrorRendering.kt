@@ -1,6 +1,7 @@
 package com.fromwau.klap.internal.render
 
 import com.fromwau.kern.terminal.BROKEN_PIPE_EXIT
+import com.fromwau.kern.terminal.Stream
 import com.fromwau.kern.terminal.Terminal
 import com.fromwau.kern.terminal.WriteError
 import com.fromwau.klap.CliError
@@ -118,16 +119,20 @@ internal fun renderActionError(error: ActionError, json: Boolean, terminal: Term
 /**
  * A run that succeeded but whose output was lost. A closed pipe is the reader's choice, so it exits 141 and
  * says nothing, as a tool killed by SIGPIPE would; so does a failure the platform cannot explain. A write the
- * system refused, such as on a full disk, is an error the user needs to see.
+ * system refused, such as on a full disk, is an error the user needs to see, named by its stream.
  */
 internal fun renderWriteFailed(error: WriteError, json: Boolean, terminal: Terminal): Int = when (error) {
-    WriteError.BrokenPipe, is WriteError.Unknown -> BROKEN_PIPE_EXIT
+    is WriteError.BrokenPipe, is WriteError.Unknown -> BROKEN_PIPE_EXIT
     is WriteError.Refused -> {
         if (json) {
-            terminal.err(jsonErrorEnvelope(encodeFailureJson("WriteFailed", error.detail), 1) + "\n")
+            terminal.err(jsonErrorEnvelope(writeFailedJson(error.stream, error.detail), 1) + "\n")
         } else {
+            val name = when (error.stream) {
+                Stream.Out -> "standard output"
+                Stream.Err -> "standard error"
+            }
             val reason = error.detail?.let { ": ${stripTerminalEscapes(it)}" }.orEmpty()
-            terminal.err("error: cannot write to standard output$reason\n")
+            terminal.err("error: cannot write to $name$reason\n")
         }
         1
     }
