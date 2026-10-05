@@ -4,6 +4,7 @@ import com.fromwau.kern.result.EmptyResult
 import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.terminal.Stream
 import com.fromwau.kern.terminal.WriteError
 import com.fromwau.kern.terminal.yellow
 import com.fromwau.klap.internal.render.Candidate
@@ -70,38 +71,46 @@ class RunnerTest {
 
     @Test
     fun `a closed pipe turns success into 141 and says nothing`() {
-        val terminal = failingWith(WriteError.BrokenPipe)
+        val terminal = failingWith(WriteError.BrokenPipe(Stream.Out))
         assertEquals(141, app().run(arrayOf("ping"), terminal))
         assertEquals("", terminal.err.toString())
     }
 
     @Test
     fun `a failure the platform cannot explain turns success into 141 and says nothing`() {
-        val terminal = failingWith(WriteError.Unknown("Broken pipe"))
+        val terminal = failingWith(WriteError.Unknown(Stream.Out, "Broken pipe"))
         assertEquals(141, app().run(arrayOf("ping"), terminal))
         assertEquals("", terminal.err.toString())
     }
 
     @Test
     fun `a refused write turns success into exit 1 with a message`() {
-        val terminal = failingWith(WriteError.Refused("No space left on device"))
+        val terminal = failingWith(WriteError.Refused(Stream.Out, "No space left on device"))
         assertEquals(1, app().run(arrayOf("ping"), terminal))
         assertEquals("error: cannot write to standard output: No space left on device\n", terminal.err.toString())
     }
 
     @Test
     fun `a refused write under json is a WriteFailed envelope`() {
-        val terminal = failingWith(WriteError.Refused("No space left on device"))
+        val terminal = failingWith(WriteError.Refused(Stream.Out, "No space left on device"))
         assertEquals(1, app().run(arrayOf("ping", "--json"), terminal))
         assertEquals(
-            """{"error":{"type":"WriteFailed","message":"No space left on device"},"code":1}""" + "\n",
+            """{"error":{"type":"WriteFailed","stream":"stdout","message":"No space left on device"},""" +
+                """"code":1}""" + "\n",
             terminal.err.toString(),
         )
     }
 
     @Test
+    fun `a refused write to standard error names standard error`() {
+        val terminal = failingWith(WriteError.Refused(Stream.Err, "No space left on device"))
+        assertEquals(1, app().run(arrayOf("ping"), terminal))
+        assertEquals("error: cannot write to standard error: No space left on device\n", terminal.err.toString())
+    }
+
+    @Test
     fun `a failed write keeps a failure's own code`() {
-        assertEquals(3, app().run(arrayOf("fail"), failingWith(WriteError.Refused(null))))
+        assertEquals(3, app().run(arrayOf("fail"), failingWith(WriteError.Refused(Stream.Out, null))))
     }
 
     @Test

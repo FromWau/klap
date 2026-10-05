@@ -1,5 +1,6 @@
 package com.fromwau.klap.internal.render
 
+import com.fromwau.kern.terminal.Stream
 import com.fromwau.klap.CliError
 import com.fromwau.klap.ConversionError
 import kotlinx.serialization.json.JsonElement
@@ -107,6 +108,18 @@ internal fun ConversionError.toJson(): JsonElement = when (this) {
 /** klap's own failure to write an action's value under `--json`. */
 internal fun encodeFailureJson(type: String, message: String?): JsonElement =
     typed(type) { putIfPresent("message", message) }
+
+/** Output the system refused to take on [stream]. */
+internal fun writeFailedJson(stream: Stream, message: String?): JsonElement = typed("WriteFailed") {
+    put(
+        "stream",
+        when (stream) {
+            Stream.Out -> "stdout"
+            Stream.Err -> "stderr"
+        },
+    )
+    putIfPresent("message", message)
+}
 
 private fun typed(type: String, fields: JsonObjectBuilder.() -> Unit): JsonObject = buildJsonObject {
     put("type", type)
