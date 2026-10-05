@@ -2,7 +2,6 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.fold
-import com.fromwau.kern.terminal.BROKEN_PIPE_EXIT
 import com.fromwau.kern.terminal.Terminal
 import com.fromwau.kern.terminal.defaultTerminal
 import com.fromwau.klap.internal.platform.platformExit
@@ -15,6 +14,7 @@ import com.fromwau.klap.internal.render.helpJsonText
 import com.fromwau.klap.internal.render.jsonVersionEnvelope
 import com.fromwau.klap.internal.render.renderActionError
 import com.fromwau.klap.internal.render.renderError
+import com.fromwau.klap.internal.render.renderWriteFailed
 import com.fromwau.klap.internal.spec.ActionError
 import com.fromwau.klap.internal.spec.Rendered
 import com.fromwau.klap.internal.spec.completeWithoutSuspending
@@ -101,7 +101,11 @@ private inline fun Cli.runCore(
         }
     }
 
-    return if (code == 0 && terminal.writeErrored()) BROKEN_PIPE_EXIT else code
+    if (code != 0) return code
+    return when (val written = terminal.writeResult()) {
+        is Result.Success -> code
+        is Result.Error -> renderWriteFailed(written.error, json, terminal)
+    }
 }
 
 /**

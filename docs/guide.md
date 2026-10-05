@@ -1351,6 +1351,16 @@ Reach for this instead of printing the value yourself and returning a placeholde
 two paths, and the placeholder is a second document on stdout under `--json`, invisible until someone
 pipes it into `jq`. With `exitCode` there is one renderer, klap's, on every path.
 
+### When the output cannot be written
+
+A run that succeeded but whose output was lost does not exit 0. When a downstream `| head` stops reading,
+the run exits 141, the shell's code for a broken pipe, and prints nothing, as a tool killed by `SIGPIPE`
+would. When the system refuses the write, as on a full disk or a closed stdout, it exits 1 and prints
+`error: cannot write to standard output: No space left on device` on stderr, or
+`{"error":{"type":"WriteFailed","message":"No space left on device"},"code":1}` under `--json`. On the JVM
+the two cannot be told apart, so a lost write there always exits 141 without a message. A run that already
+failed keeps its own exit code.
+
 ## Color output
 
 klap has one color story: its own help chrome and anything your action colors itself resolve a style
