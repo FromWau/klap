@@ -3,7 +3,8 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.render.message
 import kotlin.test.Test
@@ -73,14 +74,14 @@ class ParseOptionsTest {
 
     @Test
     fun `unknown option is rejected`() {
-        val err = assertIs<Result.Error<CliError>>(optTree().parse(listOf("call", "--nope"))).error
+        val err = optTree().parse(listOf("call", "--nope")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("--nope"), err)
     }
 
     @Test
     fun `bad int value is rejected`() {
         // A built-in converter has no payload, so cause is the reason-only case and restates reason.
-        val err = assertIs<Result.Error<CliError>>(optTree().parse(listOf("call", "--port", "abc"))).error
+        val err = optTree().parse(listOf("call", "--port", "abc")).assertError<CliError.BadValue>()
         assertEquals(CliError.BadValue("--port", "abc", "not an integer", ConversionError.NotAnInteger), err)
     }
 
@@ -96,8 +97,7 @@ class ParseOptionsTest {
             action { Ok("ok") }
         }
 
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--port", "70000"))).error
-        val bad = assertIs<CliError.BadValue>(err)
+        val bad = tree.parse(listOf("--port", "70000")).assertError<CliError.BadValue>()
         assertEquals("70000 is outside 1..65535", bad.reason)
         assertEquals(PortRejected("70000"), assertIs<ConversionError.Domain>(bad.cause).error)
     }
@@ -111,7 +111,7 @@ class ParseOptionsTest {
                 command("child") { action { Ok("") } }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(app.parse(listOf("grp", "--", "-x"))).error
+        val err = app.parse(listOf("grp", "--", "-x")).assertError<CliError.UnknownSubcommand>()
         assertEquals(CliError.UnknownSubcommand("app grp", "-x"), err)
     }
 
@@ -120,7 +120,7 @@ class ParseOptionsTest {
         val app = cli("app") {
             command("grp") { command("child") { action { Ok("") } } }
         }
-        val err = assertIs<Result.Error<CliError>>(app.parse(listOf("grp", "-"))).error
+        val err = app.parse(listOf("grp", "-")).assertError<CliError.UnknownSubcommand>()
         assertEquals(CliError.UnknownSubcommand("app grp", "-"), err)
     }
 
@@ -129,7 +129,7 @@ class ParseOptionsTest {
         val app = cli("app") {
             command("grp") { command("child") { action { Ok("") } } }
         }
-        val err = assertIs<Result.Error<CliError>>(app.parse(listOf("grp", "--", "--"))).error
+        val err = app.parse(listOf("grp", "--", "--")).assertError<CliError.UnknownSubcommand>()
         assertEquals(CliError.UnknownSubcommand("app grp", "--"), err)
     }
 }
@@ -146,7 +146,7 @@ class OptionValueAndChoiceTest {
                 action { Ok(host()) }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("dial"))).error
+        val err = tree.parse(listOf("dial")).assertError<CliError.MissingRequiredOption>()
         assertEquals(CliError.MissingRequiredOption("--host"), err)
     }
 
@@ -158,7 +158,7 @@ class OptionValueAndChoiceTest {
                 action { Ok(host() ?: "") }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("dial", "--host"))).error
+        val err = tree.parse(listOf("dial", "--host")).assertError<CliError.MissingOptionValue>()
         assertEquals(CliError.MissingOptionValue("--host"), err)
     }
 
@@ -170,7 +170,7 @@ class OptionValueAndChoiceTest {
                 action { Ok(mode() ?: "") }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("dial", "--mode", "tpc"))).error
+        val err = tree.parse(listOf("dial", "--mode", "tpc")).assertError<CliError.InvalidChoice>()
         // `tpc` is one swap from `tcp`, so InvalidChoice carries that suggestion.
         assertEquals(CliError.InvalidChoice("--mode", "tpc", listOf("tcp", "udp"), "tcp"), err)
     }
@@ -198,7 +198,7 @@ class OptionValueAndChoiceTest {
                 action { Ok(mode() ?: "") }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("dial", "--mode", "quick"))).error
+        val err = tree.parse(listOf("dial", "--mode", "quick")).assertError<CliError.InvalidChoice>()
         assertEquals(CliError.InvalidChoice("--mode", "quick", listOf("fast", "slow"), null), err)
     }
 
@@ -211,7 +211,7 @@ class OptionValueAndChoiceTest {
             }
         }
         // "SLOQ" is one edit away from "slow" only once case differences are ignored.
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("dial", "--mode", "SLOQ"))).error
+        val err = tree.parse(listOf("dial", "--mode", "SLOQ")).assertError<CliError.InvalidChoice>()
         assertEquals(CliError.InvalidChoice("--mode", "SLOQ", listOf("fast", "slow"), "slow"), err)
     }
 
@@ -224,7 +224,7 @@ class OptionValueAndChoiceTest {
             }
         }
         // `--host --` must not bind host="--"; the -- is the terminator, so host has no value.
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("dial", "--host", "--"))).error
+        val err = tree.parse(listOf("dial", "--host", "--")).assertError<CliError.MissingOptionValue>()
         assertEquals(CliError.MissingOptionValue("--host"), err)
     }
 
@@ -256,7 +256,7 @@ class ShortClusterErrorTest {
             }
         }
         // -vz: v is a known flag, z is unknown -> error names -z, not -vz.
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("dial", "-vz"))).error
+        val err = tree.parse(listOf("dial", "-vz")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-z", cluster = "-vz"), err)
     }
 
@@ -265,17 +265,17 @@ class ShortClusterErrorTest {
         // -v=x: v is a boolean flag, so the `=` is the short form of `--verbose=x`; the error must name
         // the flag exactly as the user typed it (-v), never a fabricated "-=" token and never the long
         // declared name. --verbose=x separately reports the long form it was typed as.
-        val shortErr = assertIs<Result.Error<CliError>>(clusterTree().parse(listOf("run", "-v=x"))).error
+        val shortErr = clusterTree().parse(listOf("run", "-v=x")).assertError<CliError.FlagTakesNoValue>()
         assertEquals(CliError.FlagTakesNoValue("-v"), shortErr)
-        val longErr = assertIs<Result.Error<CliError>>(clusterTree().parse(listOf("run", "--verbose=x"))).error
+        val longErr = clusterTree().parse(listOf("run", "--verbose=x")).assertError<CliError.FlagTakesNoValue>()
         assertEquals(CliError.FlagTakesNoValue("--verbose"), longErr)
     }
 
     @Test
     fun `short and long boolean flag inline value render the flag as typed`() {
-        val shortErr = assertIs<Result.Error<CliError>>(clusterTree().parse(listOf("run", "-v=x"))).error
+        val shortErr = clusterTree().parse(listOf("run", "-v=x")).assertError<CliError.FlagTakesNoValue>()
         assertEquals("flag '-v' does not take a value", shortErr.message())
-        val longErr = assertIs<Result.Error<CliError>>(clusterTree().parse(listOf("run", "--verbose=x"))).error
+        val longErr = clusterTree().parse(listOf("run", "--verbose=x")).assertError<CliError.FlagTakesNoValue>()
         assertEquals("flag '--verbose' does not take a value", longErr.message())
     }
 
@@ -283,7 +283,7 @@ class ShortClusterErrorTest {
     fun `short cluster stray dash reports the whole token not a fabricated double dash`() {
         // -f-y: f is a flag, then a stray '-' that names no option; the offender must be the whole
         // original token, never the phantom "--" that "-$ch" would produce for ch = '-'.
-        val err = assertIs<Result.Error<CliError>>(clusterTree().parse(listOf("run", "-f-y"))).error
+        val err = clusterTree().parse(listOf("run", "-f-y")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-f-y"), err)
     }
 
@@ -291,7 +291,7 @@ class ShortClusterErrorTest {
     fun `short cluster unknown letter still names just that char`() {
         // -fz: f is a flag, z is an unknown LETTER (not a stray non-alphanumeric char), so the
         // single-char reporting from `unknown char in cluster names that char` above must still hold.
-        val err = assertIs<Result.Error<CliError>>(clusterTree().parse(listOf("run", "-fz"))).error
+        val err = clusterTree().parse(listOf("run", "-fz")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-z", cluster = "-fz"), err)
     }
 
@@ -315,7 +315,7 @@ class ConverterAndValidationTest {
                 action { Ok(port()?.toString() ?: "") }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("dial", "--port", "-5"))).error
+        val err = tree.parse(listOf("dial", "--port", "-5")).assertError<CliError.BadValue>()
         assertEquals(CliError.BadValue("--port", "-5", "must be positive"), err)
     }
 
@@ -329,7 +329,7 @@ class ConverterAndValidationTest {
                 action { Ok(mode()?.name ?: "") }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("dial", "--mode", "low"))).error
+        val err = tree.parse(listOf("dial", "--mode", "low")).assertError<CliError.BadValue>()
         assertEquals(CliError.BadValue("--mode", "low", "must be HIGH"), err)
     }
 
@@ -352,7 +352,7 @@ class ConverterAndValidationTest {
                 action { Ok(port()?.toString() ?: "") }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("dial", "--port", "70000"))).error
+        val err = tree.parse(listOf("dial", "--port", "70000")).assertError<CliError.BadValue>()
         assertEquals(CliError.BadValue("--port", "70000", "must be in 1..65535"), err)
     }
 
@@ -380,7 +380,7 @@ class RepeatedAndDefaultedValueTest {
                 action { Ok(header().joinToString(",")) }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("call", "-H", "a"))).error
+        val err = tree.parse(listOf("call", "-H", "a")).assertError<CliError.TooFewOccurrences>()
         assertEquals(CliError.TooFewOccurrences("--header", 2, 1), err)
     }
 
@@ -405,7 +405,7 @@ class RepeatedAndDefaultedValueTest {
                 action { Ok(file().joinToString(",")) }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("send", "a"))).error
+        val err = tree.parse(listOf("send", "a")).assertError<CliError.TooFewOccurrences>()
         assertEquals(CliError.TooFewOccurrences("file", 2, 1), err)
     }
 
@@ -419,7 +419,7 @@ class RepeatedAndDefaultedValueTest {
                 action { Ok(file().joinToString(",")) }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("send"))).error
+        val err = tree.parse(listOf("send")).assertError<CliError.MissingArgument>()
         assertEquals(CliError.MissingArgument("net send", "file"), err)
     }
 
@@ -444,7 +444,7 @@ class RepeatedAndDefaultedValueTest {
                 action { Ok(num().joinToString(",")) }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("call", "-n", "1", "-n", "abc"))).error
+        val err = tree.parse(listOf("call", "-n", "1", "-n", "abc")).assertError<CliError.BadValue>()
         assertEquals(CliError.BadValue("--num", "abc", "not an integer", ConversionError.NotAnInteger), err)
     }
 
@@ -460,7 +460,7 @@ class RepeatedAndDefaultedValueTest {
             }
         }
         assertEquals("1,2\n", tree.execAndCapture(listOf("call", "-n", "1", "-n", "2")))
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("call", "-n", "1", "-n", "x"))).error
+        val err = tree.parse(listOf("call", "-n", "1", "-n", "x")).assertError<CliError.BadValue>()
         // The converter SUCCEEDED with null rather than throwing, so there is no ConversionError
         // behind this: cause stays null even though the wording matches the thrown-converter case.
         assertEquals(CliError.BadValue("--num", "x", "conversion failed"), err)
@@ -575,20 +575,20 @@ class UnknownOptionSuggestionTest {
     fun `unknown option suggests nearest long name`() {
         // The near-miss must not be a PREFIX of the name it suggests, here and in the sibling tests below:
         // a prefix resolves as an abbreviation and binds, so it never reaches did-you-mean at all.
-        val err = assertIs<Result.Error<CliError>>(optTree().parse(listOf("call", "--verbse"))).error
+        val err = optTree().parse(listOf("call", "--verbse")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("--verbse", "--verbose"), err)
     }
 
     @Test
     fun `unknown option far miss has no suggestion`() {
-        val err = assertIs<Result.Error<CliError>>(optTree().parse(listOf("call", "--zzzznope"))).error
+        val err = optTree().parse(listOf("call", "--zzzznope")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("--zzzznope"), err)
     }
 
     @Test
     fun `unknown option short single char has no suggestion`() {
         // Single-char short options never get a suggestion, even next to a near-miss long flag.
-        val err = assertIs<Result.Error<CliError>>(optTree().parse(listOf("call", "-z"))).error
+        val err = optTree().parse(listOf("call", "-z")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-z"), err)
     }
 }
@@ -708,7 +708,7 @@ class MixedShortClusterTest {
             }
         }
         // -fvz: f local, v global, z unknown -> the error still names the offending char, -z.
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("build", "-fvz"))).error
+        val err = tree.parse(listOf("build", "-fvz")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-z", cluster = "-fvz"), err)
     }
 
@@ -721,7 +721,7 @@ class MixedShortClusterTest {
         // `app` is a group (a subcommand, no root action). `-vz` mixes the global -v with an undeclared
         // char; the error names the first offending char -z, matching a leaf sift's granularity (not the
         // whole `-vz` token).
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("-vz"))).error
+        val err = tree.parse(listOf("-vz")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-z", cluster = "-vz"), err)
     }
 
@@ -737,7 +737,7 @@ class MixedShortClusterTest {
         // A cluster means what its characters mean written apart, in every position: `-v -f build` is
         // refused for the out-of-scope `-f`, so `-vf build` is too. Anchored to the after-subcommand line
         // as well, since a cluster that stopped binding everywhere would satisfy the refusal on its own.
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("-vf", "build"))).error
+        val err = tree.parse(listOf("-vf", "build")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-f", cluster = "-vf"), err)
         assertEquals("v=true f=true\n", tree.execAndCapture(listOf("build", "-vf")))
     }
@@ -753,7 +753,7 @@ class MixedShortClusterTest {
         }
         // -xz: neither char is declared anywhere, local or global, so there is no global hit ahead of the
         // offending one and the report falls on the very first character.
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("-xz", "build"))).error
+        val err = tree.parse(listOf("-xz", "build")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-x", cluster = "-xz"), err)
     }
 
@@ -765,7 +765,7 @@ class MixedShortClusterTest {
         }
         // -hv is a help request: the built-in short clusters like any declared one. Both characters
         // resolve before routing, so the walk steps over the token and `build` is still reached.
-        val shown = assertIs<Result.Success<Invocation>>(tree.parse(listOf("-hv", "build"))).value
+        val shown = tree.parse(listOf("-hv", "build")).assertSuccess()
         assertEquals("app build", assertIs<Invocation.ShowHelp>(shown).qualifiedName)
     }
 }
@@ -782,7 +782,7 @@ class SuggestionAcrossTheTreeTest {
             version = "1.0"
             command("build") { action { Ok("") } }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--verssion"))).error
+        val err = tree.parse(listOf("--verssion")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("--verssion", "--version"), err)
     }
 
@@ -792,7 +792,7 @@ class SuggestionAcrossTheTreeTest {
             globalFlag("--verbose", "-v")
             command("build") { action { Ok("") } }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--verbse"))).error
+        val err = tree.parse(listOf("--verbse")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("--verbse", "--verbose"), err)
     }
 
@@ -804,10 +804,10 @@ class SuggestionAcrossTheTreeTest {
                 action { Ok("") }
             }
         }
-        val near = assertIs<Result.Error<CliError>>(tree.parse(listOf("deploy", "--env", "prd"))).error
+        val near = tree.parse(listOf("deploy", "--env", "prd")).assertError<CliError.InvalidChoice>()
         assertEquals(CliError.InvalidChoice("--env", "prd", listOf("dev", "staging", "prod"), "prod"), near)
         // A value far from every choice gets no suggestion.
-        val far = assertIs<Result.Error<CliError>>(tree.parse(listOf("deploy", "--env", "xyzzy"))).error
+        val far = tree.parse(listOf("deploy", "--env", "xyzzy")).assertError<CliError.InvalidChoice>()
         assertEquals(CliError.InvalidChoice("--env", "xyzzy", listOf("dev", "staging", "prod"), null), far)
     }
 
@@ -818,7 +818,7 @@ class SuggestionAcrossTheTreeTest {
         }
         // `--` ends command parsing, so `build` after it is an operand, not a route; the error names the
         // misplacement instead of claiming the real command is unknown.
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--", "build"))).error
+        val err = tree.parse(listOf("--", "build")).assertError<CliError.SubcommandAfterSeparator>()
         assertEquals(CliError.SubcommandAfterSeparator("build", "app"), err)
     }
 
@@ -830,10 +830,10 @@ class SuggestionAcrossTheTreeTest {
         }
         // A single-command tool has no injected `docs` subcommand (docs is the `--docs` meta-option),
         // so a near-miss like `docz` has nothing to match and gets no suggestion.
-        val hit = assertIs<Result.Error<CliError>>(tree.parse(listOf("--image", "x", "docz", "markdown"))).error
+        val hit = tree.parse(listOf("--image", "x", "docz", "markdown")).assertError<CliError.TooManyArguments>()
         assertEquals(CliError.TooManyArguments("app", listOf("docz", "markdown"), null), hit)
         // An extra far from any command name carries no suggestion either.
-        val far = assertIs<Result.Error<CliError>>(tree.parse(listOf("--image", "x", "zzzz"))).error
+        val far = tree.parse(listOf("--image", "x", "zzzz")).assertError<CliError.TooManyArguments>()
         assertEquals(CliError.TooManyArguments("app", listOf("zzzz"), null), far)
     }
 
@@ -843,7 +843,7 @@ class SuggestionAcrossTheTreeTest {
             action { Ok("") }
             command("build") { action { Ok("") } }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("biuld"))).error
+        val err = tree.parse(listOf("biuld")).assertError<CliError.TooManyArguments>()
         assertEquals(CliError.TooManyArguments("app", listOf("biuld"), "build"), err)
     }
 
@@ -856,7 +856,7 @@ class SuggestionAcrossTheTreeTest {
             action { Ok("") }
             command("rm") { action { Ok("") } }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--", "-rm"))).error
+        val err = tree.parse(listOf("--", "-rm")).assertError<CliError.TooManyArguments>()
         assertEquals(CliError.TooManyArguments("app", listOf("-rm"), null), err)
     }
 }
@@ -887,11 +887,11 @@ class GlobalBindPolicyTest {
             }
         }
         // A bare group with no args just shows help; the unset required global must not block that.
-        val bareGroup = assertIs<Result.Success<Invocation>>(tree.parse(listOf("grp")))
-        assertIs<Invocation.ShowHelp>(bareGroup.value)
+        val bareGroup = tree.parse(listOf("grp")).assertSuccess()
+        assertIs<Invocation.ShowHelp>(bareGroup)
 
         // A leaf that actually executes needs the required global.
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("grp", "child"))).error
+        val err = tree.parse(listOf("grp", "child")).assertError<CliError.MissingRequiredOption>()
         assertEquals(CliError.MissingRequiredOption("--token"), err)
 
         // Provided, the leaf resolves normally.
@@ -907,11 +907,11 @@ class GlobalBindPolicyTest {
             }
         }
         // A bare group shows help; an unmet global minimum must not block that (help wins).
-        val bareGroup = assertIs<Result.Success<Invocation>>(tree.parse(listOf("grp")))
-        assertIs<Invocation.ShowHelp>(bareGroup.value)
+        val bareGroup = tree.parse(listOf("grp")).assertSuccess()
+        assertIs<Invocation.ShowHelp>(bareGroup)
 
         // A leaf that executes needs at least one occurrence, and reports the precise error.
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("grp", "child"))).error
+        val err = tree.parse(listOf("grp", "child")).assertError<CliError.TooFewOccurrences>()
         assertEquals(CliError.TooFewOccurrences("--tag", 1, 0), err)
 
         // Provided, the leaf resolves normally.
@@ -924,9 +924,9 @@ class GlobalBindPolicyTest {
             val workspace = globalOption("--workspace", "-w")
             command("plan") { action { Ok(workspace() ?: "") } }
         }
-        val longErr = assertIs<Result.Error<CliError>>(tree.parse(listOf("plan", "--workspace"))).error
+        val longErr = tree.parse(listOf("plan", "--workspace")).assertError<CliError.MissingOptionValue>()
         assertEquals(CliError.MissingOptionValue("--workspace"), longErr)
-        val shortErr = assertIs<Result.Error<CliError>>(tree.parse(listOf("plan", "-w"))).error
+        val shortErr = tree.parse(listOf("plan", "-w")).assertError<CliError.MissingOptionValue>()
         assertEquals(CliError.MissingOptionValue("--workspace"), shortErr)
     }
 }
@@ -943,7 +943,7 @@ class FlagInlineValueTest {
                 action { Ok(yes().toString()) }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("run", "--yes=false"))).error
+        val err = tree.parse(listOf("run", "--yes=false")).assertError<CliError.FlagTakesNoValue>()
         assertEquals(CliError.FlagTakesNoValue("--yes"), err)
     }
 
@@ -955,7 +955,7 @@ class FlagInlineValueTest {
                 action { Ok(tint().toString()) }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("run", "--tint=false"))).error
+        val err = tree.parse(listOf("run", "--tint=false")).assertError<CliError.FlagTakesNoValue>()
         assertEquals(CliError.FlagTakesNoValue("--tint", "no-tint"), err)
     }
 
@@ -969,7 +969,7 @@ class FlagInlineValueTest {
                 action { Ok(tint().toString()) }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("run", "--no-tint=false"))).error
+        val err = tree.parse(listOf("run", "--no-tint=false")).assertError<CliError.FlagTakesNoValue>()
         assertEquals(CliError.FlagTakesNoValue("--no-tint"), err)
     }
 
@@ -979,7 +979,7 @@ class FlagInlineValueTest {
             val debug = globalFlag("--debug")
             command("run") { action { Ok(debug().toString()) } }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("run", "--debug=1"))).error
+        val err = tree.parse(listOf("run", "--debug=1")).assertError<CliError.FlagTakesNoValue>()
         assertEquals(CliError.FlagTakesNoValue("--debug"), err)
     }
 
@@ -991,9 +991,9 @@ class FlagInlineValueTest {
             globalFlag("--verbose", "-v")
             command("flags") { action { Ok("") } }
         }
-        val before = assertIs<Result.Error<CliError>>(tree.parse(listOf("-v=x", "flags"))).error
+        val before = tree.parse(listOf("-v=x", "flags")).assertError<CliError.FlagTakesNoValue>()
         assertEquals(CliError.FlagTakesNoValue("-v"), before)
-        val after = assertIs<Result.Error<CliError>>(tree.parse(listOf("flags", "-v=x"))).error
+        val after = tree.parse(listOf("flags", "-v=x")).assertError<CliError.FlagTakesNoValue>()
         assertEquals(CliError.FlagTakesNoValue("-v"), after)
     }
 
@@ -1005,9 +1005,9 @@ class FlagInlineValueTest {
             globalFlag("--paginate", "-p").negatable("-P")
             command("flags") { action { Ok("") } }
         }
-        val before = assertIs<Result.Error<CliError>>(tree.parse(listOf("-P=x", "flags"))).error
+        val before = tree.parse(listOf("-P=x", "flags")).assertError<CliError.FlagTakesNoValue>()
         assertEquals(CliError.FlagTakesNoValue("-P"), before)
-        val after = assertIs<Result.Error<CliError>>(tree.parse(listOf("flags", "-P=x"))).error
+        val after = tree.parse(listOf("flags", "-P=x")).assertError<CliError.FlagTakesNoValue>()
         assertEquals(CliError.FlagTakesNoValue("-P"), after)
     }
 
@@ -1039,7 +1039,7 @@ class HiddenAndBuiltinSuggestionTest {
         }
         // "--debug-internall" is one edit away from the hidden "--debug-internal"; a hidden input must
         // never be revealed via a did-you-mean suggestion.
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("call", "--debug-internall"))).error
+        val err = tree.parse(listOf("call", "--debug-internall")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("--debug-internall"), err)
     }
 
@@ -1049,7 +1049,7 @@ class HiddenAndBuiltinSuggestionTest {
             globalOption("--global-secret").hidden()
             command("build") { action { Ok("") } }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("build", "--global-secrett"))).error
+        val err = tree.parse(listOf("build", "--global-secrett")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("--global-secrett"), err)
     }
 
@@ -1060,7 +1060,7 @@ class HiddenAndBuiltinSuggestionTest {
             command("build") { action { Ok("") } }
         }
         // The candidate set for did-you-mean must include globals, not just this command's own locals.
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("build", "--verbse"))).error
+        val err = tree.parse(listOf("build", "--verbse")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("--verbse", "--verbose"), err)
     }
 
@@ -1069,7 +1069,7 @@ class HiddenAndBuiltinSuggestionTest {
         val tree = cli("app") {
             command("build") { action { Ok("") } }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("build", "--hepl"))).error
+        val err = tree.parse(listOf("build", "--hepl")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("--hepl", "--help"), err)
     }
 
@@ -1079,7 +1079,7 @@ class HiddenAndBuiltinSuggestionTest {
             version = "1.0.0"
             command("build") { action { Ok("") } }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("build", "--versoin"))).error
+        val err = tree.parse(listOf("build", "--versoin")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("--versoin", "--version"), err)
     }
 }
@@ -1094,7 +1094,7 @@ class BuiltinInlineValueTest {
             argument("a")
             action { Ok("") }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--help=x"))).error
+        val err = tree.parse(listOf("--help=x")).assertError<CliError.FlagTakesNoValue>()
         assertEquals(CliError.FlagTakesNoValue("--help", null), err)
     }
 
@@ -1104,7 +1104,7 @@ class BuiltinInlineValueTest {
             argument("a")
             action { Ok("") }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--json=x"))).error
+        val err = tree.parse(listOf("--json=x")).assertError<CliError.FlagTakesNoValue>()
         assertEquals(CliError.FlagTakesNoValue("--json", null), err)
     }
 
@@ -1115,7 +1115,7 @@ class BuiltinInlineValueTest {
             argument("a")
             action { Ok("") }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--version=x"))).error
+        val err = tree.parse(listOf("--version=x")).assertError<CliError.FlagTakesNoValue>()
         assertEquals(CliError.FlagTakesNoValue("--version", null), err)
     }
 
@@ -1127,7 +1127,7 @@ class BuiltinInlineValueTest {
             argument("a")
             action { Ok("") }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--version=x"))).error
+        val err = tree.parse(listOf("--version=x")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("--version"), err)
     }
 
@@ -1137,7 +1137,7 @@ class BuiltinInlineValueTest {
             argument("a")
             action { Ok("") }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("-h=x"))).error
+        val err = tree.parse(listOf("-h=x")).assertError<CliError.FlagTakesNoValue>()
         assertEquals(CliError.FlagTakesNoValue("--help", null), err)
     }
 
@@ -1147,7 +1147,7 @@ class BuiltinInlineValueTest {
             argument("a")
             action { Ok("") }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--help="))).error
+        val err = tree.parse(listOf("--help=")).assertError<CliError.FlagTakesNoValue>()
         assertEquals(CliError.FlagTakesNoValue("--help", null), err)
     }
 }
@@ -1191,7 +1191,7 @@ class DefaultSubstitutionTest {
                 action { Ok(port().toString()) }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("dial", "--port", "abc"))).error
+        val err = tree.parse(listOf("dial", "--port", "abc")).assertError<CliError.BadValue>()
         assertEquals(CliError.BadValue("--port", "abc", "not an integer", ConversionError.NotAnInteger), err)
         assertEquals("5\n", tree.execAndCapture(listOf("dial", "--port", "5")))
         assertEquals("0\n", tree.execAndCapture(listOf("dial")))
@@ -1206,7 +1206,7 @@ class DefaultSubstitutionTest {
             val a = argument("a")
             action { Ok(a()) }
         }
-        val inv = assertIs<Result.Success<Invocation>>(tree.parse(listOf("--", "--help=x"))).value
+        val inv = tree.parse(listOf("--", "--help=x")).assertSuccess()
         assertIs<Invocation.Execute>(inv)
         assertEquals("--help=x\n", tree.execAndCapture(listOf("--", "--help=x")))
     }
@@ -1236,9 +1236,8 @@ class NeverThrowContractTest {
             val v = option("-v").map { it.ifEmpty { null } }.boolean()
             action { Ok(v().toString()) }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("-v", ""))).error
+        val err = tree.parse(listOf("-v", "")).assertError<CliError.BadValue>()
         // reason is the platform-dependent cast exception message, so only the type and name are pinned.
-        assertIs<CliError.BadValue>(err)
         assertEquals("-v", err.name)
     }
 }
@@ -1267,8 +1266,7 @@ class ShortOnlyOptionTest {
                 action { Ok("Z=${context() ?: ""}") }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("go", "--Z", "9"))).error
-        assertIs<CliError.UnknownOption>(err)
+        tree.parse(listOf("go", "--Z", "9")).assertError<CliError.UnknownOption>()
     }
 
     @Test
@@ -1280,7 +1278,7 @@ class ShortOnlyOptionTest {
                 action { Ok("Z=${context() ?: ""}") }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("go", "--z"))).error
+        val err = tree.parse(listOf("go", "--z")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("--z"), err)
     }
 }
@@ -1340,9 +1338,9 @@ class MultipleSpellingsTest {
                 action { Ok(context()) }
             }
         }
-        val missing = assertIs<Result.Error<CliError>>(tree.parse(listOf("run"))).error
+        val missing = tree.parse(listOf("run")).assertError<CliError.MissingRequiredOption>()
         assertEquals(CliError.MissingRequiredOption("-Z"), missing)
-        val noValue = assertIs<Result.Error<CliError>>(tree.parse(listOf("run", "-Z"))).error
+        val noValue = tree.parse(listOf("run", "-Z")).assertError<CliError.MissingOptionValue>()
         assertEquals(CliError.MissingOptionValue("-Z"), noValue)
     }
 
@@ -1354,7 +1352,7 @@ class MultipleSpellingsTest {
                 action { Ok(output()) }
             }
         }
-        val missing = assertIs<Result.Error<CliError>>(tree.parse(listOf("run"))).error
+        val missing = tree.parse(listOf("run")).assertError<CliError.MissingRequiredOption>()
         assertEquals(CliError.MissingRequiredOption("-o"), missing)
     }
 
@@ -1366,7 +1364,7 @@ class MultipleSpellingsTest {
                 action { Ok(host() ?: "") }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("dial", "--host"))).error
+        val err = tree.parse(listOf("dial", "--host")).assertError<CliError.MissingOptionValue>()
         assertEquals("option --host requires a value", err.message())
     }
 
@@ -1378,7 +1376,7 @@ class MultipleSpellingsTest {
                 action { Ok("x=${extract()}") }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("go", "-x=1"))).error
+        val err = tree.parse(listOf("go", "-x=1")).assertError<CliError.FlagTakesNoValue>()
         assertEquals(CliError.FlagTakesNoValue("-x", "no-extract"), err)
     }
 
@@ -1587,14 +1585,14 @@ class DashLedOptionValueTest {
     @Test
     fun `a trailing value less option still reports missing value`() {
         // The one case the greedy rule must NOT swallow: there is no next token at all.
-        val err = assertIs<Result.Error<CliError>>(messageTree().parse(listOf("--message"))).error
+        val err = messageTree().parse(listOf("--message")).assertError<CliError.MissingOptionValue>()
         assertEquals(CliError.MissingOptionValue("--message"), err)
     }
 
     @Test
     fun `end of options still terminates rather than binding as a value`() {
         // `--` is structural, not a value: `app --message -- x` must not bind "--" as the message.
-        val err = assertIs<Result.Error<CliError>>(messageTree().parse(listOf("--message", "--"))).error
+        val err = messageTree().parse(listOf("--message", "--")).assertError<CliError.MissingOptionValue>()
         assertEquals(CliError.MissingOptionValue("--message"), err)
     }
 
@@ -1733,7 +1731,10 @@ class DigitShortTest {
             val n = argument("n").int()
             action { Ok(n().toString()) }
         }
-        assertEquals(CliError.UnknownOption("-1", cluster = "-100"), assertIs<Result.Error<CliError>>(tree.parse(listOf("-100"))).error)
+        assertEquals(
+            CliError.UnknownOption("-1", cluster = "-100"),
+            tree.parse(listOf("-100")).assertError<CliError.UnknownOption>(),
+        )
     }
 
     @Test
@@ -1757,7 +1758,7 @@ class DigitShortTest {
             action { Ok("1=${one()} rest=${rest()}") }
         }
         assertEquals("1=true rest=[]\n", tree.execAndCapture(listOf("-1")))
-        assertEquals(CliError.UnknownOption("-2"), assertIs<Result.Error<CliError>>(tree.parse(listOf("-2"))).error)
+        assertEquals(CliError.UnknownOption("-2"), tree.parse(listOf("-2")).assertError<CliError.UnknownOption>())
     }
 
     @Test
@@ -1806,7 +1807,7 @@ class NumberInputTest {
         }
         assertEquals(
             CliError.BadValue("-<NUM>", "99", "must be in 1..10"),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("-99"))).error,
+            tree.parse(listOf("-99")).assertError<CliError.BadValue>(),
         )
     }
 
@@ -1829,14 +1830,14 @@ class NumberInputTest {
             val files = argument("file").multiple(min = 0)
             action { Ok(files().toString()) }
         }
-        assertEquals(CliError.UnknownOption("-5"), assertIs<Result.Error<CliError>>(tree.parse(listOf("-5"))).error)
+        assertEquals(CliError.UnknownOption("-5"), tree.parse(listOf("-5")).assertError<CliError.UnknownOption>())
     }
 
     @Test
     fun `an undeclared character in a cluster is blamed rather than the run`() {
         assertEquals(
             CliError.UnknownOption("-x", cluster = "-5x"),
-            assertIs<Result.Error<CliError>>(headTree().parse(listOf("-5x"))).error,
+            headTree().parse(listOf("-5x")).assertError<CliError.UnknownOption>(),
         )
     }
 
@@ -1916,7 +1917,7 @@ class OptionalValueTest {
         }
         assertEquals(
             CliError.BadValue("--depth", "abc", "not an integer", ConversionError.NotAnInteger),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("--depth=abc"))).error,
+            tree.parse(listOf("--depth=abc")).assertError<CliError.BadValue>(),
         )
     }
 
@@ -1929,7 +1930,7 @@ class OptionalValueTest {
         }
         assertEquals(
             CliError.MissingOptionValue("--out"),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("--out"))).error,
+            tree.parse(listOf("--out")).assertError<CliError.MissingOptionValue>(),
         )
         assertEquals("x\n", tree.execAndCapture(listOf("--out", "x")))
     }

@@ -1,7 +1,8 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -38,7 +39,7 @@ class DashLedOperandTest {
 
     @Test
     fun `an unmarked command still rejects a dash led operand`() {
-        val error = assertIs<Result.Error<CliError>>(seekTree(mark = false).parse(listOf("seek", "-1m"))).error
+        val error = seekTree(mark = false).parse(listOf("seek", "-1m")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-1", cluster = "-1m"), error)
     }
 
@@ -80,9 +81,7 @@ class DashLedOperandTest {
 
     @Test
     fun `a declared builtin still wins against a marked slot`() {
-        val invocation = assertIs<Result.Success<Invocation>>(
-            seekTree(mark = true).parse(listOf("seek", "-h")),
-        ).value
+        val invocation = seekTree(mark = true).parse(listOf("seek", "-h")).assertSuccess()
         assertIs<Invocation.ShowHelp>(invocation)
     }
 
@@ -97,10 +96,7 @@ class DashLedOperandTest {
                 action { Ok("pos=${position()}") }
             }
         }
-        val error = assertIs<Result.Error<CliError>>(
-            tree.parse(listOf("seek", "--verbsoe")),
-        ).error
-        val unknown = assertIs<CliError.UnknownOption>(error)
+        val unknown = tree.parse(listOf("seek", "--verbsoe")).assertError<CliError.UnknownOption>()
         assertEquals("--verbose", unknown.suggestion)
     }
 
@@ -147,7 +143,7 @@ class DashLedOperandTest {
             }
         }
         // The first slot is marked, so the sift admits both words; only bind can tell that `to` is not.
-        val error = assertIs<Result.Error<CliError>>(tree.parse(listOf("seek", "-1m", "-2m"))).error
+        val error = tree.parse(listOf("seek", "-1m", "-2m")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-2m"), error)
     }
 
@@ -160,7 +156,7 @@ class DashLedOperandTest {
                 action { Ok("from=${from()} rest=${rest().joinToString(",")}") }
             }
         }
-        val error = assertIs<Result.Error<CliError>>(tree.parse(listOf("seek", "-1m", "-2m", "f"))).error
+        val error = tree.parse(listOf("seek", "-1m", "-2m", "f")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-2m"), error)
     }
 
@@ -238,9 +234,7 @@ class DashLedOperandTest {
     fun `a dash led token past the last slot is an extra argument`() {
         // It lands in no slot at all, so the honest error is the one `seek a b` gets rather than the
         // unknown-option report the same input draws on an unmarked command.
-        val error = assertIs<Result.Error<CliError>>(
-            seekTree(mark = true).parse(listOf("seek", "-1m", "-2m")),
-        ).error
+        val error = seekTree(mark = true).parse(listOf("seek", "-1m", "-2m")).assertError<CliError.TooManyArguments>()
         assertEquals(CliError.TooManyArguments("echoctl seek", listOf("-2m")), error)
     }
 
@@ -272,7 +266,7 @@ class DashLedOperandTest {
         // Rule 3 refuses `-2m` in the unmarked `to` slot on a real parse. Completion runs the same binder
         // under Lenient, which must never fail, or a provider reading that slot goes dark exactly when the
         // user is asking what to type.
-        assertIs<Result.Error<CliError>>(tree.parse(listOf("go", "-1m", "-2m")))
+        tree.parse(listOf("go", "-1m", "-2m")).assertError<CliError.UnknownOption>()
         assertEquals(
             listOf("saw -2m"),
             tree.completeCandidates(listOf("go", "-1m", "-2m", "")).map { it.value },

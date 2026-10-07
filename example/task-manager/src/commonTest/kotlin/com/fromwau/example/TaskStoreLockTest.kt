@@ -2,11 +2,11 @@ package com.fromwau.example
 
 import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import com.fromwau.klap.CliError
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
@@ -33,15 +33,14 @@ class TaskStoreLockTest {
 
         val result = store.withLock { Ok(Unit) }
 
-        val error = assertIs<Result.Error<CliError>>(result).error
-        assertEquals(EXIT_STORE_BUSY, assertIs<CliError.Failure>(error).exitCode)
+        assertEquals(EXIT_STORE_BUSY, result.assertError<CliError.Failure>().exitCode)
     }
 
     @Test
     fun `the lock is released once the block succeeds`() = withTempStore { path ->
         val store = TaskStore(Path(path))
 
-        assertIs<Result.Success<Unit>>(store.withLock { store.save(listOf(Task(id = 1, title = "Buy milk"))) })
+        store.withLock { store.save(listOf(Task(id = 1, title = "Buy milk"))) }.assertSuccess()
         assertEquals(false, SystemFileSystem.exists(store.lockPath))
     }
 
@@ -49,7 +48,7 @@ class TaskStoreLockTest {
     fun `the lock is released when the block returns an error`() = withTempStore { path ->
         val store = TaskStore(Path(path))
 
-        assertIs<Result.Error<CliError>>(store.withLock { Err(CliError.Failure("boom", exitCode = EXIT_NOT_FOUND)) })
+        store.withLock { Err(CliError.Failure("boom", exitCode = EXIT_NOT_FOUND)) }.assertError<CliError.Failure>()
         assertEquals(false, SystemFileSystem.exists(store.lockPath))
     }
 
@@ -57,7 +56,7 @@ class TaskStoreLockTest {
     fun `a later writer enters once the earlier one has finished`() = withTempStore { path ->
         val store = TaskStore(Path(path), lockTimeout = 50.milliseconds)
 
-        assertIs<Result.Success<Unit>>(store.withLock { store.save(listOf(Task(id = 1, title = "first"))) })
-        assertIs<Result.Success<Unit>>(store.withLock { store.save(listOf(Task(id = 2, title = "second"))) })
+        store.withLock { store.save(listOf(Task(id = 1, title = "first"))) }.assertSuccess()
+        store.withLock { store.save(listOf(Task(id = 2, title = "second"))) }.assertSuccess()
     }
 }

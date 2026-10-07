@@ -1,7 +1,8 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import com.fromwau.kern.result.map
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
@@ -24,15 +25,15 @@ private fun Cli.helpOutput(vararg argv: String = arrayOf("--help")): String {
 private fun Cli.globalOptionsBlock(): String = helpOutput().substringAfter("Global options:").trim()
 
 private fun Cli.execute(vararg argv: String): Invocation.Execute =
-    assertIs<Invocation.Execute>(assertIs<Result.Success<Invocation>>(parse(argv.toList())).value)
+    assertIs<Invocation.Execute>(parse(argv.toList()).assertSuccess())
 
 /** Runs the resolved action for its binding side effects, asserting it succeeded. */
 private fun Invocation.Execute.run() {
-    assertIs<Result.Success<Any?>>(runAction())
+    runAction().assertSuccess()
 }
 
-private fun Cli.parseError(vararg argv: String): CliError =
-    assertIs<Result.Error<CliError>>(parse(argv.toList())).error
+private inline fun <reified F : CliError> Cli.parseError(vararg argv: String): F =
+    parse(argv.toList()).assertError<F>()
 
 private fun Cli.candidates(vararg words: String): List<String> =
     completeCandidates(words.toList()).map { it.value }
@@ -70,12 +71,12 @@ class BuiltinsOptOutTest {
         // 2. every one still parsed as a built-in
         assertTrue(tree.execute("--json", "go").globals.json)
         assertEquals(ColorMode.NEVER, listOf("--color=never", "go").colorMode())
-        assertIs<Invocation.ShowHelp>(assertIs<Result.Success<Invocation>>(tree.parse(listOf("-h"))).value)
+        assertIs<Invocation.ShowHelp>(tree.parse(listOf("-h")).assertSuccess())
         assertIs<Invocation.ShowCompletion>(
-            assertIs<Result.Success<Invocation>>(tree.parse(listOf("completion", "bash"))).value,
+            tree.parse(listOf("completion", "bash")).assertSuccess(),
         )
         assertIs<Invocation.ShowDocs>(
-            assertIs<Result.Success<Invocation>>(tree.parse(listOf("docs", "man"))).value,
+            tree.parse(listOf("docs", "man")).assertSuccess(),
         )
     }
 
@@ -125,9 +126,9 @@ class BuiltinsOptOutTest {
         }
 
         // Not stripped, not short-circuited: it reaches the command and fails as an unknown option.
-        assertEquals(CliError.UnknownOption("--json", null), tree.parseError("go", "--json"))
+        assertEquals(CliError.UnknownOption("--json", null), tree.parseError<CliError.UnknownOption>("go", "--json"))
         // The inline form is not klap's "this flag takes no value" either.
-        assertIs<CliError.UnknownOption>(tree.parseError("go", "--json=1"))
+        tree.parseError<CliError.UnknownOption>("go", "--json=1")
         // A --json anywhere on the line does not flip Globals.json.
         assertFalse(tree.execute("go").globals.json)
     }
@@ -146,7 +147,7 @@ class BuiltinsOptOutTest {
         assertFalse("""\-\-json""" in tree.renderManPage(), tree.renderManPage())
         assertFalse("--json" in tree.candidates("--"))
         // The did-you-mean set drops it too, so a typo is never pointed at a flag this tree does not have.
-        assertEquals(CliError.UnknownOption("--jsonn", null), tree.parseError("go", "--jsonn"))
+        assertEquals(CliError.UnknownOption("--jsonn", null), tree.parseError<CliError.UnknownOption>("go", "--jsonn"))
     }
 
     // --- color ---
@@ -168,7 +169,7 @@ class BuiltinsOptOutTest {
         assertEquals("never", seen)
 
         // No choice validation and no rendering effect: the value is the app's business now.
-        assertIs<Result.Success<Invocation>>(tree.parse(listOf("--color=bogus", "p")))
+        tree.parse(listOf("--color=bogus", "p")).assertSuccess()
         assertEquals(ColorMode.AUTO, listOf("--color=always").colorMode(Builtins(color = false)))
     }
 
@@ -215,7 +216,10 @@ class BuiltinsOptOutTest {
             action { Ok("") }
         }
 
-        assertEquals(CliError.UnknownOption("--completion", null), tree.parseError("--completion", "bash"))
+        assertEquals(
+            CliError.UnknownOption("--completion", null),
+            tree.parseError<CliError.UnknownOption>("--completion", "bash"),
+        )
         assertFalse("--completion" in tree.helpOutput(), tree.helpOutput())
         assertFalse("--completion" in tree.renderMarkdownDocs(), tree.renderMarkdownDocs())
         assertFalse("--completion" in tree.candidates("--"))
@@ -230,7 +234,7 @@ class BuiltinsOptOutTest {
 
         assertNull(tree.subcommand("completion"))
         assertNotNull(tree.subcommand("docs"))
-        assertIs<Result.Error<CliError>>(tree.parse(listOf("completion", "bash")))
+        tree.parse(listOf("completion", "bash")).assertError<CliError.UnknownSubcommand>()
         assertFalse("completion" in tree.helpOutput(), tree.helpOutput())
         assertFalse("completion" in tree.candidates(""))
     }
@@ -265,7 +269,7 @@ class BuiltinsOptOutTest {
             action { Ok("") }
         }
 
-        assertEquals(CliError.UnknownOption("--docs", null), tree.parseError("--docs", "man"))
+        assertEquals(CliError.UnknownOption("--docs", null), tree.parseError<CliError.UnknownOption>("--docs", "man"))
         assertFalse("--docs" in tree.helpOutput(), tree.helpOutput())
         assertFalse("--docs" in tree.renderMarkdownDocs(), tree.renderMarkdownDocs())
         assertFalse("--docs" in tree.candidates("--"))
@@ -280,7 +284,7 @@ class BuiltinsOptOutTest {
 
         assertNull(tree.subcommand("docs"))
         assertNotNull(tree.subcommand("completion"))
-        assertIs<Result.Error<CliError>>(tree.parse(listOf("docs", "man")))
+        tree.parse(listOf("docs", "man")).assertError<CliError.UnknownSubcommand>()
         assertFalse("docs" in tree.helpOutput(), tree.helpOutput())
         assertFalse("docs" in tree.candidates(""))
     }
@@ -313,9 +317,9 @@ class BuiltinsOptOutTest {
         }
 
         // --help itself is never declinable.
-        assertIs<Invocation.ShowHelp>(assertIs<Result.Success<Invocation>>(tree.parse(listOf("--help"))).value)
+        assertIs<Invocation.ShowHelp>(tree.parse(listOf("--help")).assertSuccess())
         // -h does not request help here; with nothing declared under it, it is simply unknown.
-        assertIs<CliError.UnknownOption>(tree.parseError("go", "-h"))
+        tree.parseError<CliError.UnknownOption>("go", "-h")
 
         val help = tree.helpOutput()
         assertFalse("-h, --help" in help, help)

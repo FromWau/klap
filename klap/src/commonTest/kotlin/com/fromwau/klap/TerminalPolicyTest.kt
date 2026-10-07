@@ -1,11 +1,10 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertSuccess
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class TerminalPolicyTest {
@@ -59,7 +58,7 @@ class TerminalPolicyTest {
             abbreviation = Abbreviation.Options
             command("go") { action { Ok("") } }
         }
-        assertIs<Result.Success<Invocation>>(tree.parse(listOf("--color", "al", "--help")))
+        tree.parse(listOf("--color", "al", "--help")).assertSuccess()
 
         val esc = Char(27)
         val recorder = RecordingTerminal()

@@ -4,6 +4,7 @@ import com.fromwau.kern.result.EmptyResult
 import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertSuccess
 import com.fromwau.kern.terminal.Stream
 import com.fromwau.kern.terminal.WriteError
 import com.fromwau.kern.terminal.yellow
@@ -118,12 +119,12 @@ class RunnerTest {
         // The embedding escape hatch: parse, then run the resolved action yourself and get its own
         // Result<Any?, CliError> (Ok value or typed Failure) — no output, no exit code.
         val ping = assertIs<Invocation.Execute>(
-            assertIs<Result.Success<Invocation>>(app().parse(listOf("ping"))).value,
+            app().parse(listOf("ping")).assertSuccess(),
         )
         assertEquals(Result.Success("pong"), ping.runAction())
 
         val fail = assertIs<Invocation.Execute>(
-            assertIs<Result.Success<Invocation>>(app().parse(listOf("fail"))).value,
+            app().parse(listOf("fail")).assertSuccess(),
         )
         assertEquals(Result.Error(CliError.Failure("fail", exitCode = 3)), fail.runAction())
     }
@@ -289,7 +290,7 @@ class RunnerTest {
         val seen = mutableListOf<Boolean>()
         val tree = cli("app") { command("go") { action { seen += json; Ok("done") } } }
         assertIs<Invocation.Execute>(
-            assertIs<Result.Success<Invocation>>(tree.parse(listOf("--json", "go"))).value,
+            tree.parse(listOf("--json", "go")).assertSuccess(),
         ).runAction()
         assertEquals(listOf(true), seen)
     }

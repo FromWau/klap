@@ -1,10 +1,9 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
 
 /**
  * The cluster walks a parse-level assertion cannot reach on its own: the arity walk that decides which argv
@@ -60,7 +59,7 @@ class NumberOptionWalksTest {
         }
         assertEquals(
             CliError.UnknownOption("-5"),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("-5", "go"))).error,
+            tree.parse(listOf("-5", "go")).assertError<CliError.UnknownOption>(),
         )
         assertEquals("n=5", tree.bindText("go", "-5"))
     }
@@ -81,7 +80,7 @@ class NumberOptionWalksTest {
         }
         assertEquals(
             CliError.MixedClusterAfterOperands("-5g", "-g"),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("go", "f", "-5g"))).error,
+            tree.parse(listOf("go", "f", "-5g")).assertError<CliError.MixedClusterAfterOperands>(),
         )
     }
 }

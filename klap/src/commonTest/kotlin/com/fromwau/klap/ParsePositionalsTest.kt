@@ -1,7 +1,8 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import com.fromwau.kern.result.map
 import com.fromwau.klap.internal.render.argSummary
 import com.fromwau.klap.internal.render.helpText
@@ -9,7 +10,6 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 private fun posTree(): Cli = cli("todo") {
@@ -53,19 +53,19 @@ class ParsePositionalsTest {
 
     @Test
     fun `missing required argument`() {
-        val err = assertIs<Result.Error<CliError>>(posTree().parse(listOf("add"))).error
+        val err = posTree().parse(listOf("add")).assertError<CliError.MissingArgument>()
         assertEquals(CliError.MissingArgument("todo add", "text"), err)
     }
 
     @Test
     fun `variadic min enforced`() {
-        val err = assertIs<Result.Error<CliError>>(posTree().parse(listOf("sum"))).error
+        val err = posTree().parse(listOf("sum")).assertError<CliError.MissingArgument>()
         assertEquals(CliError.MissingArgument("todo sum", "nums"), err)
     }
 
     @Test
     fun `too many arguments rejected`() {
-        val err = assertIs<Result.Error<CliError>>(posTree().parse(listOf("ping", "extra"))).error
+        val err = posTree().parse(listOf("ping", "extra")).assertError<CliError.TooManyArguments>()
         assertEquals(CliError.TooManyArguments("todo ping", listOf("extra")), err)
     }
 
@@ -76,14 +76,14 @@ class ParsePositionalsTest {
 
     @Test
     fun `bad positional value is rejected`() {
-        val err = assertIs<Result.Error<CliError>>(posTree().parse(listOf("sum", "abc"))).error
+        val err = posTree().parse(listOf("sum", "abc")).assertError<CliError.BadValue>()
         assertEquals(CliError.BadValue("nums", "abc", "not an integer", ConversionError.NotAnInteger), err)
     }
 
     @Test
     fun `validate failure on argument yields bad value`() {
         val tree = validateTree()
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("add", " "))).error
+        val err = tree.parse(listOf("add", " ")).assertError<CliError.BadValue>()
         assertEquals(CliError.BadValue("text", " ", "must not be blank"), err)
     }
 
@@ -102,7 +102,7 @@ class ParsePositionalsTest {
             }
         }
         assertEquals("30\n", tree.exec(listOf("age", "30")))
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("age", "200"))).error
+        val err = tree.parse(listOf("age", "200")).assertError<CliError.BadValue>()
         assertEquals(CliError.BadValue("n", "200", "must be in 0..120"), err)
     }
 
@@ -170,9 +170,8 @@ class ParsePositionalsTest {
             val files = argument("files").multiple().validate("need at least two") { it.size >= 2 }
             action { Ok(files().joinToString(",")) }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("a"))).error
+        val err = tree.parse(listOf("a")).assertError<CliError.BadValue>()
         // reason is the platform-dependent cast exception message, so only the type and name are pinned.
-        assertIs<CliError.BadValue>(err)
         assertEquals("files", err.name)
     }
 }
@@ -195,7 +194,7 @@ class VariadicPositionalArityTest {
     @Test
     fun `multiple with min zero accepts zero operands`() {
         val outcome = variadicTree().parse(listOf("list"))
-        assertIs<Result.Success<Invocation>>(outcome)
+        outcome.assertSuccess()
     }
 
     @Test
@@ -208,8 +207,7 @@ class VariadicPositionalArityTest {
     fun `multiple with min one still rejects zero operands`() {
         // The guard must key on min, not on emptiness: a declared minimum is still enforced.
         val outcome = variadicTree().parse(listOf("strict"))
-        val error = assertIs<Result.Error<CliError>>(outcome).error
-        assertIs<CliError.MissingArgument>(error)
+        val error = outcome.assertError<CliError.MissingArgument>()
         assertEquals("file", error.argument)
     }
 
@@ -260,9 +258,9 @@ class NonLastVariadicTest {
         // One token cannot satisfy both. It feeds the variadic's minimum and the starved destination is
         // the one blamed, as GNU `cp a` does; blaming the variadic would answer `cp a` and bare `cp`
         // with the same sentence.
-        val one = assertIs<Result.Error<CliError>>(cpTree().parse(listOf("a"))).error
+        val one = cpTree().parse(listOf("a")).assertError<CliError.MissingArgument>()
         assertEquals(CliError.MissingArgument("cp", "dest"), one)
-        val none = assertIs<Result.Error<CliError>>(cpTree().parse(emptyList())).error
+        val none = cpTree().parse(emptyList()).assertError<CliError.MissingArgument>()
         assertEquals(CliError.MissingArgument("cp", "source"), none)
     }
 

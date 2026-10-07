@@ -4,7 +4,8 @@ import com.fromwau.kern.fuzzy.didYouMean
 import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.render.message
 import com.fromwau.klap.internal.render.renderError
@@ -227,8 +228,8 @@ class AuthorTest {
             short = flag("-x", help = "the short one")
             action { Ok("") }
         }
-        val parsed = assertIs<Result.Success<Invocation>>(tree.parse(listOf("--x", "value", "-x")))
-        with(assertIs<Invocation.Execute>(parsed.value).inputs) {
+        val parsed = tree.parse(listOf("--x", "value", "-x")).assertSuccess()
+        with(assertIs<Invocation.Execute>(parsed).inputs) {
             assertEquals("value", long())
             assertTrue(short())
         }
@@ -263,10 +264,10 @@ class PublicSurfaceTest {
             command("build") { action { Ok("") } }
             command("add") { action { Ok("") } }
         }
-        val error = assertIs<Result.Error<CliError>>(tree.parse(listOf("biuld"))).error
+        val error = tree.parse(listOf("biuld")).assertError<CliError.UnknownSubcommand>()
         assertEquals(
             didYouMean("biuld", listOf("build", "add")),
-            (error as CliError.UnknownSubcommand).suggestion,
+            error.suggestion,
         )
     }
 

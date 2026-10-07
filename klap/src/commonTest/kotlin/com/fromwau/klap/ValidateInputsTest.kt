@@ -1,10 +1,10 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
@@ -22,8 +22,7 @@ class ValidateInputsTest {
             validateInputs { error("boom") }
             action { Ok("name=${name()}") }
         }
-        val error = assertIs<Result.Error<CliError>>(tree.parse(listOf("--name", "x"))).error
-        val failure = assertIs<CliError.Failure>(error)
+        val failure = tree.parse(listOf("--name", "x")).assertError<CliError.Failure>()
         assertTrue("boom" in failure.detail, failure.detail)
     }
 
@@ -36,9 +35,9 @@ class ValidateInputsTest {
             validateInputs { CliError.Usage("always refuses") }
             action { Ok("ran") }
         }
-        assertIs<Result.Success<Invocation>>(tree.parse(listOf("--completion", "bash")))
-        assertIs<Result.Success<Invocation>>(tree.parse(listOf("--docs", "man")))
-        assertIs<Result.Success<Invocation>>(tree.parse(listOf("__complete", "--na")))
+        tree.parse(listOf("--completion", "bash")).assertSuccess()
+        tree.parse(listOf("--docs", "man")).assertSuccess()
+        tree.parse(listOf("__complete", "--na")).assertSuccess()
     }
 
     @Test
@@ -51,10 +50,10 @@ class ValidateInputsTest {
                 action { Ok("name=${name()}") }
             }
         }
-        assertIs<Result.Success<Invocation>>(tree.parse(listOf("go", "--name", "x")))
+        tree.parse(listOf("go", "--name", "x")).assertSuccess()
         assertEquals(
             CliError.Usage("saw the global"),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("go", "--name", "x", "-v"))).error,
+            tree.parse(listOf("go", "--name", "x", "-v")).assertError<CliError.Usage>(),
         )
     }
 
@@ -65,10 +64,10 @@ class ValidateInputsTest {
             validateInputs { if (rest().size > 2) CliError.Usage("at most two") else null }
             action { Ok("rest=${rest()}") }
         }
-        assertIs<Result.Success<Invocation>>(tree.parse(listOf("a", "b")))
+        tree.parse(listOf("a", "b")).assertSuccess()
         assertEquals(
             CliError.Usage("at most two"),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("a", "b", "c"))).error,
+            tree.parse(listOf("a", "b", "c")).assertError<CliError.Usage>(),
         )
     }
 
@@ -84,7 +83,7 @@ class ValidateInputsTest {
                 Ok("ran")
             }
         }
-        assertIs<Result.Error<CliError>>(tree.parse(listOf()))
+        tree.parse(listOf()).assertError<CliError.Usage>()
         assertEquals(false, ran, "the action ran despite a refusal")
     }
 }

@@ -2,6 +2,7 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
 import com.fromwau.klap.internal.render.message
 import com.fromwau.klap.internal.render.renderError
 import kotlin.test.Test
@@ -277,10 +278,9 @@ class ErrorRenderingTest {
                 action { Ok(n().toString()) }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("go", "somevalue"))).error
-        val bad = assertIs<CliError.BadValue>(err)
-        assertEquals("conversion failed", bad.reason)
-        assertIs<IllegalStateException>(assertIs<ConversionError.Threw>(bad.cause).thrown)
+        val err = tree.parse(listOf("go", "somevalue")).assertError<CliError.BadValue>()
+        assertEquals("conversion failed", err.reason)
+        assertIs<IllegalStateException>(assertIs<ConversionError.Threw>(err.cause).thrown)
         assertEquals("invalid value 'somevalue' for n: conversion failed", err.message())
     }
 }

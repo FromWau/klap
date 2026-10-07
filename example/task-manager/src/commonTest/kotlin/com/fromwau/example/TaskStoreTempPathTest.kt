@@ -1,9 +1,8 @@
 package com.fromwau.example
 
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertSuccess
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -29,7 +28,7 @@ class TaskStoreTempPathTest {
 
         val result = store.save(listOf(Task(id = 1, title = "Buy milk")))
 
-        assertIs<Result.Success<Unit>>(result)
+        result.assertSuccess()
         assertEquals(false, SystemFileSystem.exists(store.tempPath))
     }
 }

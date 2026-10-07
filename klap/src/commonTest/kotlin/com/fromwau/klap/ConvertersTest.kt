@@ -3,6 +3,7 @@ package com.fromwau.klap
 import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.map
 import com.fromwau.kern.terminal.blue
 import com.fromwau.kern.terminal.green
@@ -14,7 +15,6 @@ import com.fromwau.klap.internal.spec.OptionSpec
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
@@ -43,7 +43,7 @@ class ConvertersTest : ConverterScope() {
         assertEquals(spec, typed.spec)
         val converted = spec.convert("42")
         assertEquals(Result.Success(42), converted)
-        assertIs<Result.Error<ConversionError>>(spec.convert("nope"))
+        spec.convert("nope").assertError<ConversionError.NotAnInteger>()
     }
 
     @Test
@@ -52,7 +52,7 @@ class ConvertersTest : ConverterScope() {
         val opt = Opt<String?>(spec).map { it.toInt().seconds }
         assertEquals(Result.Success(5.seconds), spec.convert("5"))
         // A thrown parse exception becomes a clean error, not a crash.
-        assertIs<Result.Error<ConversionError>>(spec.convert("abc"))
+        spec.convert("abc").assertError<ConversionError.Threw>()
         boundTo(spec, 5.seconds) { assertEquals(5.seconds, opt()) }
     }
 
@@ -103,7 +103,7 @@ class ConvertersTest : ConverterScope() {
         assertEquals(Result.Success("fast"), spec.convert("FAST"))
         assertEquals(Result.Success("fast"), spec.convert("Fast"))
         assertEquals(Result.Success("fast"), spec.convert("fast"))
-        assertIs<Result.Error<ConversionError>>(spec.convert("quick"))
+        spec.convert("quick").assertError<ConversionError.NotOneOf>()
         boundTo(spec, "fast") { assertEquals("fast", arg()) }
     }
 
@@ -113,7 +113,7 @@ class ConvertersTest : ConverterScope() {
         val opt = Opt<String?>(spec).choice("fast", "slow")
         assertEquals(listOf("fast", "slow"), spec.choices)
         assertEquals(Result.Success("fast"), spec.convert("FAST"))
-        assertIs<Result.Error<ConversionError>>(spec.convert("quick"))
+        spec.convert("quick").assertError<ConversionError.NotOneOf>()
         boundTo(spec, "fast") { assertEquals("fast", opt()) }
     }
 
@@ -296,7 +296,7 @@ class ConvertersTest : ConverterScope() {
         val spec = optSpec()
         Opt<String?>(spec).boolean()
         assertEquals(Result.Success(true), spec.convert("true"))
-        assertIs<Result.Error<ConversionError>>(spec.convert("yes"))
+        spec.convert("yes").assertError<ConversionError.NotABoolean>()
     }
 
     @Test
@@ -381,7 +381,7 @@ class ConvertersTest : ConverterScope() {
             if (s == "ok") Result.Success(1) else Result.Error(ConversionError.Domain(Rejected, "bad"))
         }
         assertEquals(Result.Success(1), spec.convert("ok"))
-        assertIs<Result.Error<ConversionError>>(spec.convert("no"))
+        spec.convert("no").assertError<ConversionError.Domain>()
     }
 
     @Test
@@ -445,7 +445,7 @@ class ConvertersTest : ConverterScope() {
         // Case-insensitive choice still applies before the map stage runs.
         assertEquals(Result.Success("A"), spec.convert("A"))
         // Choice validation must not be bypassed by the later .map().
-        assertIs<Result.Error<ConversionError>>(spec.convert("z"))
+        spec.convert("z").assertError<ConversionError.NotOneOf>()
     }
 
     @Test
@@ -462,7 +462,7 @@ class ConvertersTest : ConverterScope() {
         Arg<String>(spec).choice("1", "2").int()
         assertEquals(Result.Success(1), spec.convert("1"))
         // Not one of the choices: rejected before int-parsing ever runs.
-        assertIs<Result.Error<ConversionError>>(spec.convert("9"))
+        spec.convert("9").assertError<ConversionError.NotOneOf>()
     }
 
     @Test
@@ -546,7 +546,7 @@ class ConvertersTest : ConverterScope() {
         val spec = optSpec()
         Opt<String?>(spec).choice("a", "b").map { it.uppercase() }
         assertEquals(Result.Success("A"), spec.convert("a"))
-        assertIs<Result.Error<ConversionError>>(spec.convert("z"))
+        spec.convert("z").assertError<ConversionError.NotOneOf>()
     }
 
     @Test

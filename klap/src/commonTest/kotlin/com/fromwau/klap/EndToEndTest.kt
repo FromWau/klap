@@ -1,7 +1,7 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertSuccess
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -52,7 +52,7 @@ class EndToEndTest {
             loud = flag("--loud", "-l", help = "shout")
             action { ran = true; Ok("") }
         }
-        val parsed = assertIs<Result.Success<Invocation>>(tree.parse(listOf("-n", "ada", "--loud"))).value
+        val parsed = tree.parse(listOf("-n", "ada", "--loud")).assertSuccess()
         val exec = assertIs<Invocation.Execute>(parsed)
         with(exec.inputs) {
             assertEquals("ada", name())
