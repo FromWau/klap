@@ -2,6 +2,7 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertSuccess
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.spec.shorts
 import kotlin.test.Test
@@ -1013,11 +1014,11 @@ class CommandCanActOrDispatchTest {
     @Test
     fun `a group needs no action of its own`() {
         val tree = cli("app") { command("group") { command("leaf") { action { Ok("ran") } } } }
-        assertIs<Invocation.ShowHelp>(assertIs<Result.Success<Invocation>>(tree.parse(listOf("group"))).value)
+        assertIs<Invocation.ShowHelp>(tree.parse(listOf("group")).assertSuccess())
         assertEquals(
             Result.Success("ran"),
             assertIs<Invocation.Execute>(
-                assertIs<Result.Success<Invocation>>(tree.parse(listOf("group", "leaf"))).value,
+                tree.parse(listOf("group", "leaf")).assertSuccess(),
             ).runAction(),
         )
     }

@@ -1,7 +1,8 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import com.fromwau.klap.internal.parse.sift
 import com.fromwau.klap.internal.render.BuiltinOptionHelp
 import com.fromwau.klap.internal.render.Candidate
@@ -9,7 +10,6 @@ import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 private fun sampleTree(): Cli = cli("todo") {
@@ -522,7 +522,7 @@ class OptionValueCandidateTest {
                 action { Ok(sort().orEmpty()) }
             }
         }
-        assertIs<Result.Success<Invocation>>(tree.parse(listOf("go", "--sort", "SIZE")))
+        tree.parse(listOf("go", "--sort", "SIZE")).assertSuccess()
         assertEquals(listOf("size"), tree.completeCandidates(listOf("go", "--sort", "S")).map { it.value })
         assertEquals(listOf("size"), tree.completeCandidates(listOf("go", "--sort", "s")).map { it.value })
     }
@@ -1288,7 +1288,7 @@ class SiftAccumulationTest {
         // The tree's two required arguments are also unsatisfied, so this proves sift's recorded error is
         // raised BEFORE binding — not merely that some error comes back.
         val outcome = tree.parse(listOf("go", "--bogus", "--alsobogus"))
-        val error = (outcome as Result.Error).error as CliError.UnknownOption
+        val error = outcome.assertError<CliError.UnknownOption>()
         assertEquals("--bogus", error.token)
     }
 }

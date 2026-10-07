@@ -1,12 +1,12 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import com.fromwau.klap.internal.render.helpText
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
@@ -101,7 +101,7 @@ class PosixConformanceTest {
     fun `guideline 7 an option argument is never optional unless the tool asks for it`() {
         // klap's default conforms: a value-taking option demands its value, and a bare occurrence is an
         // error rather than a silently-absent value.
-        val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("--config"))).error
+        val err = tree().parse(listOf("--config")).assertError<CliError.MissingOptionValue>()
         assertEquals(CliError.MissingOptionValue("--config"), err)
     }
 
@@ -185,7 +185,7 @@ class PosixConformanceTest {
         // klap's own choice, not the guideline's: read plainly, "the first -- argument that is not an
         // option-argument" leaves a `--` in a value slot free to BE that value, which is what getopt_long
         // does. klap keeps `--` structural everywhere and offers `--config=--` for the literal.
-        val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("--config", "--"))).error
+        val err = tree().parse(listOf("--config", "--")).assertError<CliError.MissingOptionValue>()
         assertEquals(CliError.MissingOptionValue("--config"), err)
     }
 
@@ -300,7 +300,7 @@ class PosixConformanceTest {
         // `-w` is identifiable as an option per guidelines 3 and 4,
         // so it must be treated as one rather than demoted to an operand. An undeclared one is therefore
         // an ERROR, not a filename — which is also what stops a typo binding silently.
-        val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("-w", "notes.txt"))).error
+        val err = tree().parse(listOf("-w", "notes.txt")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-w"), err)
     }
 
@@ -309,7 +309,7 @@ class PosixConformanceTest {
         // The same reading applied to digits, which is why `ls -5` errors rather than binding a file
         // named "-5". `numberOption()` is the opt-in that gives such a token a meaning; without it,
         // guideline 14 holds.
-        val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("-5"))).error
+        val err = tree().parse(listOf("-5")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-5"), err)
     }
 
@@ -319,10 +319,10 @@ class PosixConformanceTest {
         // option binds as its value instead. It is per-argument and the author asks for it, so the
         // conforming reading above is what a CLI gets unless it says otherwise.
         val conforming = cli("app") { command("go") { argument("n"); action { Ok("") } } }
-        assertIs<Result.Error<CliError>>(conforming.parse(listOf("go", "-5")))
+        conforming.parse(listOf("go", "-5")).assertError<CliError.UnknownOption>()
 
         val optedIn = cli("app") { command("go") { argument("n").dashLed(); action { Ok("") } } }
-        assertIs<Result.Success<Invocation>>(optedIn.parse(listOf("go", "-5")))
+        optedIn.parse(listOf("go", "-5")).assertSuccess()
     }
 
     // --- The extensions, each paired with the conforming line it must not disturb ---

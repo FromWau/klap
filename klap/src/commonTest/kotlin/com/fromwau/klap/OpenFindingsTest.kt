@@ -1,11 +1,11 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /*
@@ -59,7 +59,7 @@ class RequiredIfTriggerReachTest {
                 action { Ok("token=${token()}") }
             }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("c", "--verbose"))).error
+        val err = tree.parse(listOf("c", "--verbose")).assertError<CliError.MissingRequiredOption>()
         assertEquals(CliError.MissingRequiredOption("--token"), err)
     }
 
@@ -72,7 +72,7 @@ class RequiredIfTriggerReachTest {
                 action { Ok("token=${token()}") }
             }
         }
-        assertIs<Result.Success<Invocation>>(tree.parse(listOf("c", "--no-remote")))
+        tree.parse(listOf("c", "--no-remote")).assertSuccess()
     }
 }
 

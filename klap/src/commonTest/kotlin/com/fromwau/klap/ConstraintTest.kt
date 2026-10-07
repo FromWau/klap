@@ -1,7 +1,8 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import com.fromwau.kern.result.map
 import com.fromwau.klap.internal.render.completeCandidates
 import com.fromwau.klap.internal.render.helpText
@@ -29,9 +30,6 @@ private fun tarTree(): Cli = cli("tar") {
     }
 }
 
-private fun Cli.err(argv: List<String>): CliError =
-    assertIs<Result.Error<CliError>>(parse(argv)).error
-
 private fun Cli.out(argv: List<String>): String {
     val term = RecordingTerminal()
     val code = run(argv.toTypedArray(), term)
@@ -43,7 +41,7 @@ class RequireExactlyOneTest {
 
     @Test
     fun `none given is an error`() {
-        val error = tarTree().err(listOf("run", "-f", "a.tar"))
+        val error = tarTree().parse(listOf("run", "-f", "a.tar")).assertError<CliError.ExactlyOneRequired>()
         assertEquals(CliError.ExactlyOneRequired(listOf("--create", "--extract", "--list")), error)
         assertEquals("exactly one of --create, --extract, --list is required", error.message())
     }
@@ -58,14 +56,16 @@ class RequireExactlyOneTest {
 
     @Test
     fun `two given is an error`() {
-        val error = tarTree().err(listOf("run", "-c", "-x", "-f", "a.tar"))
+        val error = tarTree().parse(listOf("run", "-c", "-x", "-f", "a.tar")).assertError<CliError.MutuallyExclusive>()
         assertEquals(CliError.MutuallyExclusive(listOf("--create", "--extract")), error)
         assertEquals("--create and --extract are mutually exclusive", error.message())
     }
 
     @Test
     fun `three given is an error naming all three`() {
-        val error = tarTree().err(listOf("run", "-c", "-x", "-t", "-f", "a.tar"))
+        val error = tarTree()
+            .parse(listOf("run", "-c", "-x", "-t", "-f", "a.tar"))
+            .assertError<CliError.MutuallyExclusive>()
         // Comma-then-"and", so a three-way conflict does not read as "a and b and c".
         assertEquals("--create, --extract and --list are mutually exclusive", error.message())
     }
@@ -100,7 +100,9 @@ class RequireAtMostOneTest {
 
     @Test
     fun `two given is an error`() {
-        val error = tarTree().err(listOf("run", "-c", "-z", "-j", "-f", "a.tar"))
+        val error = tarTree()
+            .parse(listOf("run", "-c", "-z", "-j", "-f", "a.tar"))
+            .assertError<CliError.MutuallyExclusive>()
         assertEquals(CliError.MutuallyExclusive(listOf("--gzip", "--bzip2")), error)
         assertEquals("--gzip and --bzip2 are mutually exclusive", error.message())
     }
@@ -113,22 +115,20 @@ class ConstraintOrderingTest {
         // The whole reason the check runs before binding: `-f` is required and absent here, so the bind
         // would report `missing required option --file` and bury the real mistake. GNU tar reports the
         // mode conflict, and so does this.
-        val error = tarTree().err(listOf("run", "-c", "-x"))
+        val error = tarTree().parse(listOf("run", "-c", "-x")).assertError<CliError.MutuallyExclusive>()
         assertEquals(CliError.MutuallyExclusive(listOf("--create", "--extract")), error)
     }
 
     @Test
     fun `a missing mode outranks a missing required option`() {
-        val error = tarTree().err(listOf("run"))
-        assertIs<CliError.ExactlyOneRequired>(error)
+        tarTree().parse(listOf("run")).assertError<CliError.ExactlyOneRequired>()
     }
 
     @Test
     fun `a malformed token still outranks a constraint`() {
         // sifted.error keeps its place at the head of the queue: an unknown option is a syntax mistake,
         // and reporting a constraint against a segment we failed to read would be guesswork.
-        val error = tarTree().err(listOf("run", "--nope"))
-        assertIs<CliError.UnknownOption>(error)
+        tarTree().parse(listOf("run", "--nope")).assertError<CliError.UnknownOption>()
     }
 
     @Test
@@ -144,7 +144,10 @@ class ConstraintOrderingTest {
                 action { Ok("") }
             }
         }
-        assertEquals(CliError.ExactlyOneRequired(listOf("--alpha", "--beta")), tree.err(listOf("go")))
+        assertEquals(
+            CliError.ExactlyOneRequired(listOf("--alpha", "--beta")),
+            tree.parse(listOf("go")).assertError<CliError.ExactlyOneRequired>(),
+        )
     }
 }
 
@@ -163,7 +166,7 @@ class ConstraintReadsSuppliedNessTest {
     @Test
     fun `a defaulted option does not count as supplied when it is merely defaulted`() {
         // Reading the BOUND values would see format = "json" here and call the set satisfied.
-        val error = defaultedTree().err(listOf("go"))
+        val error = defaultedTree().parse(listOf("go")).assertError<CliError.ExactlyOneRequired>()
         assertEquals(CliError.ExactlyOneRequired(listOf("--format", "--raw")), error)
     }
 
@@ -181,7 +184,9 @@ class ConstraintReadsSuppliedNessTest {
 
     @Test
     fun `a defaulted option given alongside another member conflicts`() {
-        val error = defaultedTree().err(listOf("go", "--format", "yaml", "-r"))
+        val error = defaultedTree()
+            .parse(listOf("go", "--format", "yaml", "-r"))
+            .assertError<CliError.MutuallyExclusive>()
         assertEquals(CliError.MutuallyExclusive(listOf("--format", "--raw")), error)
     }
 
@@ -198,7 +203,7 @@ class ConstraintReadsSuppliedNessTest {
             }
         }
         assertEquals("fancy=false plain=true\n", tree.out(listOf("go", "--no-fancy", "-p")))
-        assertIs<CliError.ExactlyOneRequired>(tree.err(listOf("go", "--no-fancy")))
+        tree.parse(listOf("go", "--no-fancy")).assertError<CliError.ExactlyOneRequired>()
         assertEquals("fancy=true plain=false\n", tree.out(listOf("go", "--fancy")))
     }
 
@@ -216,7 +221,7 @@ class ConstraintReadsSuppliedNessTest {
         assertEquals("dest= target=\n", tree.out(listOf("go")))
         assertEquals("dest=out target=\n", tree.out(listOf("go", "out")))
         assertEquals("dest= target=out\n", tree.out(listOf("go", "-T", "out")))
-        val error = tree.err(listOf("go", "out", "-T", "other"))
+        val error = tree.parse(listOf("go", "out", "-T", "other")).assertError<CliError.MutuallyExclusive>()
         assertEquals(CliError.MutuallyExclusive(listOf("<dest>", "--target")), error)
         assertEquals("<dest> and --target are mutually exclusive", error.message())
     }
@@ -339,7 +344,7 @@ class ConstraintConstructionTest {
             }
         }
         assertEquals("ok\n", tree.out(listOf("go", "-a")))
-        assertIs<CliError.ExactlyOneRequired>(tree.err(listOf("go")))
+        tree.parse(listOf("go")).assertError<CliError.ExactlyOneRequired>()
     }
 
     @Test
@@ -351,7 +356,7 @@ class ConstraintConstructionTest {
             action { Ok("a=${a()} b=${b()}") }
         }
         assertEquals("a=false b=true\n", tree.out(listOf("-b")))
-        assertIs<CliError.ExactlyOneRequired>(tree.err(emptyList()))
+        tree.parse(emptyList()).assertError<CliError.ExactlyOneRequired>()
     }
 }
 
@@ -692,8 +697,8 @@ class LastWinsTest {
             files = argument("file").multiple(min = 0)
             action { Ok("") }
         }
-        val parsed = assertIs<Result.Success<Invocation>>(tree.parse(listOf("-f", "a", "-i", "b")))
-        with(assertIs<Invocation.Execute>(parsed.value).inputs) {
+        val parsed = tree.parse(listOf("-f", "a", "-i", "b")).assertSuccess()
+        with(assertIs<Invocation.Execute>(parsed).inputs) {
             assertEquals(listOf("a", "b"), files())
             assertTrue(interactive())
             assertFalse(force())
@@ -894,7 +899,7 @@ class RequiredIfTest {
 
     @Test
     fun `the condition without the option is a usage error`() {
-        val error = tree().err(listOf("--remote"))
+        val error = tree().parse(listOf("--remote")).assertError<CliError.MissingRequiredOption>()
         assertEquals(CliError.MissingRequiredOption("--token"), error)
         assertEquals("missing required option --token", error.message())
     }
@@ -915,7 +920,10 @@ class RequiredIfTest {
             action { Ok(token()) }
         }
         assertEquals("anon\n", tree.out(listOf()))
-        assertEquals(CliError.MissingRequiredOption("--token"), tree.err(listOf("--remote")))
+        assertEquals(
+            CliError.MissingRequiredOption("--token"),
+            tree.parse(listOf("--remote")).assertError<CliError.MissingRequiredOption>(),
+        )
         assertEquals("abc\n", tree.out(listOf("--remote", "--token", "abc")))
     }
 
@@ -942,10 +950,10 @@ class RequiredIfTest {
                 action { Ok(token() ?: "local") }
             }
         }
-        assertIs<Result.Success<Invocation>>(tree.parse(listOf("c", "--no-remote")))
+        tree.parse(listOf("c", "--no-remote")).assertSuccess()
         assertEquals(
             CliError.MissingRequiredOption("--token"),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("c", "--remote"))).error,
+            tree.parse(listOf("c", "--remote")).assertError<CliError.MissingRequiredOption>(),
         )
     }
 
@@ -985,6 +993,9 @@ class RequiredIfTest {
             }
         }
         assertEquals("local\n", tree.out(listOf("push")))
-        assertEquals(CliError.MissingRequiredOption("--token"), tree.err(listOf("push", "--remote")))
+        assertEquals(
+            CliError.MissingRequiredOption("--token"),
+            tree.parse(listOf("push", "--remote")).assertError<CliError.MissingRequiredOption>(),
+        )
     }
 }

@@ -1,7 +1,8 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -27,7 +28,7 @@ class HelpScopeTest {
 
     private fun helpFor(vararg argv: String): String =
         assertIs<Invocation.ShowHelp>(
-            assertIs<Result.Success<Invocation>>(tree().parse(argv.toList())).value,
+            tree().parse(argv.toList()).assertSuccess(),
         ).qualifiedName
 
     @Test
@@ -85,15 +86,15 @@ class HelpScopeTest {
         // `bogus` is a command.
         assertEquals(
             CliError.UnknownSubcommand("app", "bogus", null),
-            assertIs<Result.Error<CliError>>(tree().parse(listOf("--help", "bogus"))).error,
+            tree().parse(listOf("--help", "bogus")).assertError<CliError.UnknownSubcommand>(),
         )
         assertEquals(
             CliError.UnknownSubcommand("app", "remot", "remote"),
-            assertIs<Result.Error<CliError>>(tree().parse(listOf("-vh", "remot"))).error,
+            tree().parse(listOf("-vh", "remot")).assertError<CliError.UnknownSubcommand>(),
         )
         assertEquals(
             CliError.UnknownSubcommand("app remote", "bogus", null),
-            assertIs<Result.Error<CliError>>(tree().parse(listOf("remote", "--help", "bogus"))).error,
+            tree().parse(listOf("remote", "--help", "bogus")).assertError<CliError.UnknownSubcommand>(),
         )
     }
 
@@ -101,7 +102,7 @@ class HelpScopeTest {
     fun `a short of a command not yet reached stops the walk`() {
         // The boundary the step-over rule keeps: `-f` belongs to `add`, so written before the path it is
         // an option of a command this line has not reached, and the cluster is refused rather than skipped.
-        val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("-vf", "remote", "add"))).error
+        val err = tree().parse(listOf("-vf", "remote", "add")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-f", cluster = "-vf"), err)
     }
 }

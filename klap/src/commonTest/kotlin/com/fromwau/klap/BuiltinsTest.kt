@@ -1,7 +1,8 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import com.fromwau.kern.result.map
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
@@ -88,17 +89,17 @@ class BuiltinsTest {
 
         // The injected builtins route straight to their render invocations, never hitting the missing-global guard.
         assertIs<Invocation.ShowCompletion>(
-            assertIs<Result.Success<Invocation>>(tree.parse(listOf("completion", "bash"))).value,
+            tree.parse(listOf("completion", "bash")).assertSuccess(),
         )
         assertIs<Invocation.ShowDocs>(
-            assertIs<Result.Success<Invocation>>(tree.parse(listOf("docs", "man"))).value,
+            tree.parse(listOf("docs", "man")).assertSuccess(),
         )
         assertIs<Invocation.ShowCompleteCandidates>(
-            assertIs<Result.Success<Invocation>>(tree.parse(listOf("__complete", "--", "x"))).value,
+            tree.parse(listOf("__complete", "--", "x")).assertSuccess(),
         )
 
         // A normal leaf in the same tree still enforces the required global when it is absent.
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("run"))).error
+        val err = tree.parse(listOf("run")).assertError<CliError.MissingRequiredOption>()
         assertEquals(CliError.MissingRequiredOption("--dsn"), err)
     }
 
@@ -121,14 +122,14 @@ class BuiltinsTest {
     @Test
     fun `completion meta option rejects unknown shell with suggestion`() {
         val tree = greet()
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--completion", "bsh"))).error
+        val err = tree.parse(listOf("--completion", "bsh")).assertError<CliError.InvalidChoice>()
         assertEquals(CliError.InvalidChoice("--completion", "bsh", COMPLETION_SHELL_NAMES, "bash"), err)
     }
 
     @Test
     fun `completion meta option missing value reports missing option value`() {
         val tree = greet()
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--completion"))).error
+        val err = tree.parse(listOf("--completion")).assertError<CliError.MissingOptionValue>()
         assertEquals(CliError.MissingOptionValue("--completion"), err)
     }
 
@@ -146,14 +147,14 @@ class BuiltinsTest {
             argument("name").multiple(min = 1)
             action { Ok("") }
         }
-        val inv = assertIs<Result.Success<Invocation>>(tree.parse(listOf("--", "--completion", "bash"))).value
+        val inv = tree.parse(listOf("--", "--completion", "bash")).assertSuccess()
         assertIs<Invocation.Execute>(inv)
     }
 
     @Test
     fun `completion meta option treats a flag like next token as missing value`() {
         val tree = greet()
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--completion", "--foo"))).error
+        val err = tree.parse(listOf("--completion", "--foo")).assertError<CliError.MissingOptionValue>()
         assertEquals(CliError.MissingOptionValue("--completion"), err)
     }
 
@@ -164,9 +165,9 @@ class BuiltinsTest {
         // identically to --json appearing before --completion.
         val tree = greet()
         val interleaved =
-            assertIs<Result.Success<Invocation>>(tree.parse(listOf("--completion", "--json", "bash"))).value
+            tree.parse(listOf("--completion", "--json", "bash")).assertSuccess()
         val leading =
-            assertIs<Result.Success<Invocation>>(tree.parse(listOf("--json", "--completion", "bash"))).value
+            tree.parse(listOf("--json", "--completion", "bash")).assertSuccess()
         assertIs<Invocation.ShowCompletion>(interleaved)
         assertEquals(CompletionShell.BASH, interleaved.shell)
         assertEquals(interleaved, leading)
@@ -235,14 +236,14 @@ class BuiltinsTest {
     fun `completion subcommand rejects extra arguments`() {
         // The injected `completion <shell>` declares exactly one argument; a surplus operand must be
         // rejected like any user command's, not silently dropped (a builtin routes before positional binding).
-        val err = assertIs<Result.Error<CliError>>(app().parse(listOf("completion", "bash", "extra"))).error
+        val err = app().parse(listOf("completion", "bash", "extra")).assertError<CliError.TooManyArguments>()
         assertEquals(CliError.TooManyArguments("todo completion", listOf("extra")), err)
     }
 
     @Test
     fun `docs subcommand rejects extra arguments`() {
         val tree = cli("app") { command("build") { action { Ok("") } } }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("docs", "man", "extra"))).error
+        val err = tree.parse(listOf("docs", "man", "extra")).assertError<CliError.TooManyArguments>()
         assertEquals(CliError.TooManyArguments("app docs", listOf("extra")), err)
     }
 
@@ -253,18 +254,18 @@ class BuiltinsTest {
         // Attached bad value.
         assertEquals(
             CliError.InvalidChoice("--color", "bogus", listOf("auto", "always", "never"), null),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("--color=bogus", "go"))).error,
+            tree.parse(listOf("--color=bogus", "go")).assertError<CliError.InvalidChoice>(),
         )
         // The space form consumes the next token as the value (like --completion), so a bad space value
         // is InvalidChoice too, not MissingOptionValue.
         assertEquals(
             CliError.InvalidChoice("--color", "nope", listOf("auto", "always", "never"), null),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("--color", "nope", "go"))).error,
+            tree.parse(listOf("--color", "nope", "go")).assertError<CliError.InvalidChoice>(),
         )
         // MissingOptionValue only when no value follows (--color at the end).
         assertEquals(
             CliError.MissingOptionValue("--color"),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("go", "--color"))).error,
+            tree.parse(listOf("go", "--color")).assertError<CliError.MissingOptionValue>(),
         )
     }
 
@@ -279,14 +280,14 @@ class BuiltinsTest {
 
         assertEquals(
             CliError.InvalidChoice("--color", "bogus", listOf("auto", "always", "never"), null),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("--color=bogus", "--version"))).error,
+            tree.parse(listOf("--color=bogus", "--version")).assertError<CliError.InvalidChoice>(),
         )
         assertEquals(
             CliError.MissingOptionValue("--color"),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("--color", "--version"))).error,
+            tree.parse(listOf("--color", "--version")).assertError<CliError.MissingOptionValue>(),
         )
         assertIs<Invocation.ShowVersion>(
-            assertIs<Result.Success<Invocation>>(tree.parse(listOf("--color=always", "--version"))).value,
+            tree.parse(listOf("--color=always", "--version")).assertSuccess(),
         )
     }
 
@@ -332,7 +333,7 @@ class BuiltinsTest {
         }
         val argv = listOf("--color", "--json", "always", "go")
 
-        assertIs<Invocation.Execute>(assertIs<Result.Success<Invocation>>(tree.parse(argv)).value)
+        assertIs<Invocation.Execute>(tree.parse(argv).assertSuccess())
         // Pins the fix: without stripping --json first, this would be ColorMode.AUTO, not ALWAYS.
         assertEquals(ColorMode.ALWAYS, argv.colorMode())
     }
@@ -347,7 +348,7 @@ class BuiltinsTest {
         val tree = cli("app") { command("go") { action { Ok("") } } }
         val argv = listOf("--color=always", "--color=never", "go")
 
-        assertIs<Invocation.Execute>(assertIs<Result.Success<Invocation>>(tree.parse(argv)).value)
+        assertIs<Invocation.Execute>(tree.parse(argv).assertSuccess())
         assertEquals(ColorMode.NEVER, argv.colorMode())
     }
 
@@ -395,9 +396,9 @@ class BuiltinsTest {
         // The cluster walk reports the leftmost character it cannot place, and the help short changes
         // nothing about that: `-xv` with `-v` declared blames `-x` too. Behind it, help never answers a
         // line carrying a spelling the tree declares nowhere.
-        val before = assertIs<Result.Error<CliError>>(grepWithFlag().parse(listOf("-xh", "f.txt"))).error
+        val before = grepWithFlag().parse(listOf("-xh", "f.txt")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-x", cluster = "-xh"), before)
-        val after = assertIs<Result.Error<CliError>>(grepWithFlag().parse(listOf("-hx", "f.txt"))).error
+        val after = grepWithFlag().parse(listOf("-hx", "f.txt")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-x", cluster = "-hx"), after)
     }
 
@@ -405,7 +406,7 @@ class BuiltinsTest {
     fun `an inline value on the help short is refused inside a cluster too`() {
         assertEquals(
             CliError.FlagTakesNoValue("--help", null),
-            assertIs<Result.Error<CliError>>(grepWithFlag().parse(listOf("-vh=x"))).error,
+            grepWithFlag().parse(listOf("-vh=x")).assertError<CliError.FlagTakesNoValue>(),
         )
     }
 
@@ -519,8 +520,8 @@ class BuiltinsTest {
     @Test
     fun `unknown subcommand with help errors identically to without help`() {
         val tree = app()
-        val bare = assertIs<Result.Error<CliError>>(tree.parse(listOf("zzz"))).error
-        val withHelp = assertIs<Result.Error<CliError>>(tree.parse(listOf("zzz", "--help"))).error
+        val bare = tree.parse(listOf("zzz")).assertError<CliError.UnknownSubcommand>()
+        val withHelp = tree.parse(listOf("zzz", "--help")).assertError<CliError.UnknownSubcommand>()
         assertEquals(bare, withHelp)
         assertEquals(CliError.UnknownSubcommand("todo", "zzz", null), bare)
     }
@@ -528,8 +529,8 @@ class BuiltinsTest {
     @Test
     fun `unknown option with help errors identically to without help`() {
         val tree = grep()
-        val bare = assertIs<Result.Error<CliError>>(tree.parse(listOf("--zzz"))).error
-        val withHelp = assertIs<Result.Error<CliError>>(tree.parse(listOf("--zzz", "--help"))).error
+        val bare = tree.parse(listOf("--zzz")).assertError<CliError.UnknownOption>()
+        val withHelp = tree.parse(listOf("--zzz", "--help")).assertError<CliError.UnknownOption>()
         assertEquals(bare, withHelp)
         assertEquals(CliError.UnknownOption("--zzz"), bare)
     }
@@ -537,16 +538,16 @@ class BuiltinsTest {
     @Test
     fun `unknown subcommand with help all errors the same way as help`() {
         val tree = app()
-        val withHelp = assertIs<Result.Error<CliError>>(tree.parse(listOf("zzz", "--help"))).error
-        val withHelpAll = assertIs<Result.Error<CliError>>(tree.parse(listOf("zzz", "--help-all"))).error
+        val withHelp = tree.parse(listOf("zzz", "--help")).assertError<CliError.UnknownSubcommand>()
+        val withHelpAll = tree.parse(listOf("zzz", "--help-all")).assertError<CliError.UnknownSubcommand>()
         assertEquals(withHelp, withHelpAll)
     }
 
     @Test
     fun `unknown subcommand at a nested group with help errors the same way`() {
         val tree = taggedDispatcher()
-        val bare = assertIs<Result.Error<CliError>>(tree.parse(listOf("tag", "zzz"))).error
-        val withHelp = assertIs<Result.Error<CliError>>(tree.parse(listOf("tag", "zzz", "--help"))).error
+        val bare = tree.parse(listOf("tag", "zzz")).assertError<CliError.UnknownSubcommand>()
+        val withHelp = tree.parse(listOf("tag", "zzz", "--help")).assertError<CliError.UnknownSubcommand>()
         assertEquals(bare, withHelp)
         assertEquals(CliError.UnknownSubcommand("app tag", "zzz", null), bare)
     }
@@ -555,7 +556,7 @@ class BuiltinsTest {
     fun `group reached with no leftover still shows its own help`() {
         // Must-keep-working: a group with nothing left over is a genuine help request, not a typo.
         val tree = taggedDispatcher()
-        val inv = assertIs<Result.Success<Invocation>>(tree.parse(listOf("tag", "--help"))).value
+        val inv = tree.parse(listOf("tag", "--help")).assertSuccess()
         assertEquals("tag", assertIs<Invocation.ShowHelp>(inv).command.name)
     }
 
@@ -563,7 +564,7 @@ class BuiltinsTest {
     fun `leaf reached with no leftover still shows its own help`() {
         // Must-keep-working: the walk consumed every token reaching a leaf, so --help is that leaf's own.
         val tree = taggedDispatcher()
-        val inv = assertIs<Result.Success<Invocation>>(tree.parse(listOf("list", "--help"))).value
+        val inv = tree.parse(listOf("list", "--help")).assertSuccess()
         assertEquals("list", assertIs<Invocation.ShowHelp>(inv).command.name)
     }
 
@@ -572,7 +573,7 @@ class BuiltinsTest {
         // Must-keep-working: an inferred prefix resolves to a real child during the walk itself, so it never
         // reaches the new unknown-subcommand check at all.
         val tree = taggedDispatcher(Abbreviation.All)
-        val inv = assertIs<Result.Success<Invocation>>(tree.parse(listOf("li", "--help"))).value
+        val inv = tree.parse(listOf("li", "--help")).assertSuccess()
         assertEquals("list", assertIs<Invocation.ShowHelp>(inv).command.name)
     }
 
@@ -582,7 +583,7 @@ class BuiltinsTest {
         // not an unknown subcommand, so --help must still win here. "show" has no children, so it is never a
         // Command.isGroup and the new check never even looks at its leftover tokens.
         val tree = taggedDispatcher()
-        val inv = assertIs<Result.Success<Invocation>>(tree.parse(listOf("show", "abc", "--help"))).value
+        val inv = tree.parse(listOf("show", "abc", "--help")).assertSuccess()
         assertEquals("show", assertIs<Invocation.ShowHelp>(inv).command.name)
     }
 
@@ -597,7 +598,7 @@ class BuiltinsTest {
             }
             command("status") { action { Ok("") } }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("secrt", "--help"))).error
+        val err = tree.parse(listOf("secrt", "--help")).assertError<CliError.UnknownSubcommand>()
         assertEquals(CliError.UnknownSubcommand("app", "secrt", null), err)
     }
 }
@@ -616,7 +617,7 @@ private fun grepWithFlag(): Cli = cli("mygrep") {
 }
 
 private fun parseOf(cli: Cli, vararg argv: String): Invocation =
-    assertIs<Result.Success<Invocation>>(cli.parse(argv.toList())).value
+    cli.parse(argv.toList()).assertSuccess()
 
 private fun executeOf(cli: Cli, vararg argv: String): Invocation.Execute =
     assertIs<Invocation.Execute>(parseOf(cli, argv = argv))

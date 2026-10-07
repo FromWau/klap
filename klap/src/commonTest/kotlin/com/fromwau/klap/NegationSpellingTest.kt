@@ -1,11 +1,10 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class NegationSpellingTest {
@@ -53,8 +52,7 @@ class NegationSpellingTest {
             action<String>(human = { it }) { Ok("paginate=${paginate()}") }
         }
         assertEquals("paginate=false", tree.bindText("--no-pager"))
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--no-paginate"))).error
-        assertIs<CliError.UnknownOption>(err)
+        tree.parse(listOf("--no-paginate")).assertError<CliError.UnknownOption>()
     }
 
     @Test

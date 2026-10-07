@@ -1,10 +1,9 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
 
 class OperandTerminatedOptionsTest {
 
@@ -73,7 +72,7 @@ class OperandTerminatedOptionsTest {
 
     @Test
     fun `an unknown option before the first operand still errors`() {
-        val err = assertIs<Result.Error<CliError>>(sshLike().parse(listOf("-x", "web1"))).error
+        val err = sshLike().parse(listOf("-x", "web1")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-x"), err)
     }
 
@@ -88,7 +87,7 @@ class OperandTerminatedOptionsTest {
             val files = argument("file").multiple()
             action<String>(human = { it }) { Ok("sort=${sort()} force=${force()} files=${files()}") }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("f1", "-fs", "x", "f2"))).error
+        val err = tree.parse(listOf("f1", "-fs", "x", "f2")).assertError<CliError.MixedClusterAfterOperands>()
         assertEquals(CliError.MixedClusterAfterOperands("-fs", "-s"), err)
     }
 

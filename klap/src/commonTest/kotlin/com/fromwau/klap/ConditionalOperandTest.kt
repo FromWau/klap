@@ -1,12 +1,11 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.map
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class ConditionalOperandTest {
@@ -38,7 +37,7 @@ class ConditionalOperandTest {
     fun `a missing required slot still errors when the trigger is absent`() {
         // "a" fills mode, so the file operand is left an EMPTY slice rather than a short one, which klap
         // reports as MissingArgument (see bindPositionals' own "keyed on min alone" note).
-        val err = assertIs<Result.Error<CliError>>(chmodLike().parse(listOf("a"))).error
+        val err = chmodLike().parse(listOf("a")).assertError<CliError.MissingArgument>()
         assertEquals(CliError.MissingArgument("chmod", "file"), err)
     }
 
@@ -50,7 +49,7 @@ class ConditionalOperandTest {
 
     @Test
     fun `a minimum holds when the trigger is absent`() {
-        val err = assertIs<Result.Error<CliError>>(rmLike().parse(emptyList())).error
+        val err = rmLike().parse(emptyList()).assertError<CliError.MissingArgument>()
         assertEquals(CliError.MissingArgument("rm", "file"), err)
         assertEquals(USAGE_ERROR_EXIT, err.exitCode)
     }
@@ -144,7 +143,7 @@ class ConditionalOperandTest {
     fun `a trigger that lost its override set leaves the minimum standing`() {
         // The same shape as the removed slot above: relaxing the minimum here would accept `rm -f -i`
         // with no operand while force() reads false, a line neither reading of it allows.
-        val err = assertIs<Result.Error<CliError>>(rmLikeWithOverride().parse(listOf("-f", "-i"))).error
+        val err = rmLikeWithOverride().parse(listOf("-f", "-i")).assertError<CliError.MissingArgument>()
         assertEquals(CliError.MissingArgument("rm", "file"), err)
     }
 

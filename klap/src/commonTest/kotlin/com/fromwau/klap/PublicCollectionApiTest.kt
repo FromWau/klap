@@ -1,7 +1,7 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertSuccess
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -35,7 +35,7 @@ class PublicCollectionApiTest {
         // An ArrayDeque, to show it is the interface that is accepted and not two blessed implementations.
         assertEquals(expected, greet().parse(ArrayDeque(listOf("-n", "20", "f"))))
         // An Array is not a Collection, so it stays a separate overload.
-        assertIs<Result.Success<Invocation>>(greet().cli.parse(arrayOf("-n", "20", "f")))
+        greet().cli.parse(arrayOf("-n", "20", "f")).assertSuccess()
     }
 
     @Test
@@ -82,7 +82,7 @@ class PublicCollectionApiTest {
     @Test
     fun `a variadic binds back as a list`() {
         val parsed = greet().parse(listOf("a", "b", "c"))
-        val files = (parsed as Result.Success).value?.files
+        val files = parsed.assertSuccess()?.files
         assertIs<List<String>>(files)
         assertEquals(listOf("a", "b", "c"), files)
     }

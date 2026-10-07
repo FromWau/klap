@@ -3,7 +3,7 @@ package com.fromwau.klap.snippets
 import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
@@ -59,7 +59,7 @@ class GuideSnippetsTest {
         }
         assertEquals(
             CliError.UnknownOption("--h", "--help"),
-            assertIs<Result.Error<CliError>>(strict.parse(listOf("--h"))).error,
+            strict.parse(listOf("--h")).assertError<CliError.UnknownOption>(),
         )
     }
 
@@ -185,15 +185,14 @@ class GuideConversionErrorSnippetTest {
 
     @Test
     fun `the guides typed converter snippet keeps the callers case and its words`() {
-        val err = assertIs<Result.Error<CliError>>(guidePortCli().parse(listOf("--port", "70000"))).error
-        val bad = assertIs<CliError.BadValue>(err)
+        val bad = guidePortCli().parse(listOf("--port", "70000")).assertError<CliError.BadValue>()
         assertEquals(PortError.OutOfRange(70000), assertIs<ConversionError.Domain>(bad.cause).error)
         assertEquals("70000 is outside 1..65535", bad.reason)
 
-        val nan = assertIs<Result.Error<CliError>>(guidePortCli().parse(listOf("--port", "http"))).error
+        val nan = guidePortCli().parse(listOf("--port", "http")).assertError<CliError.BadValue>()
         assertEquals(
             PortError.NotANumber("http"),
-            assertIs<ConversionError.Domain>(assertIs<CliError.BadValue>(nan).cause).error,
+            assertIs<ConversionError.Domain>(nan.cause).error,
         )
     }
 
@@ -203,8 +202,7 @@ class GuideConversionErrorSnippetTest {
             option("--level").int()
             action { Ok("ok") }
         }
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("--level", "x"))).error
-        val bad = assertIs<CliError.BadValue>(err)
+        val bad = tree.parse(listOf("--level", "x")).assertError<CliError.BadValue>()
         assertEquals(ConversionError.NotAnInteger, bad.cause)
         assertEquals("not an integer", bad.reason)
     }

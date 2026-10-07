@@ -1,7 +1,8 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -18,7 +19,7 @@ class AbbreviationModeTest {
 
     @Test
     fun `none refuses a long option prefix`() {
-        val err = assertIs<Result.Error<CliError>>(tree(Abbreviation.None).parse(listOf("--recu", "f"))).error
+        val err = tree(Abbreviation.None).parse(listOf("--recu", "f")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("--recu", "--recursive"), err)
     }
 
@@ -31,8 +32,7 @@ class AbbreviationModeTest {
     @Test
     fun `none never reports an ambiguity`() {
         // Nothing infers, so a prefix reaching two spellings is simply not a spelling.
-        val err = assertIs<Result.Error<CliError>>(tree(Abbreviation.None).parse(listOf("--re", "f"))).error
-        assertIs<CliError.UnknownOption>(err)
+        tree(Abbreviation.None).parse(listOf("--re", "f")).assertError<CliError.UnknownOption>()
     }
 
     @Test
@@ -40,7 +40,7 @@ class AbbreviationModeTest {
         assertEquals("r=true ref=null", tree(Abbreviation.Options).bindText("--recu", "f"))
         assertEquals(
             CliError.AmbiguousOption("--re", listOf("--recursive", "--reference")),
-            assertIs<Result.Error<CliError>>(tree(Abbreviation.Options).parse(listOf("--re", "f"))).error,
+            tree(Abbreviation.Options).parse(listOf("--re", "f")).assertError<CliError.AmbiguousOption>(),
         )
     }
 
@@ -51,14 +51,12 @@ class AbbreviationModeTest {
             version = "1.0"
             action<String>(human = { it }) { Ok("ran") }
         }
-        assertIs<Invocation.ShowHelp>(assertIs<Result.Success<Invocation>>(strict.parse(listOf("-h"))).value)
-        assertIs<Invocation.ShowHelp>(assertIs<Result.Success<Invocation>>(strict.parse(listOf("--help"))).value)
+        assertIs<Invocation.ShowHelp>(strict.parse(listOf("-h")).assertSuccess())
+        assertIs<Invocation.ShowHelp>(strict.parse(listOf("--help")).assertSuccess())
         assertIs<Invocation.ShowVersion>(
-            assertIs<Result.Success<Invocation>>(strict.parse(listOf("--version"))).value,
+            strict.parse(listOf("--version")).assertSuccess(),
         )
-        assertIs<CliError.UnknownOption>(
-            assertIs<Result.Error<CliError>>(strict.parse(listOf("--vers"))).error,
-        )
+        strict.parse(listOf("--vers")).assertError<CliError.UnknownOption>()
     }
 
     @Test
@@ -72,11 +70,11 @@ class AbbreviationModeTest {
         // local option does not.
         assertEquals(
             CliError.UnknownOption("--hea", "--header"),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("build", "--hea", "x"))).error,
+            tree.parse(listOf("build", "--hea", "x")).assertError<CliError.UnknownOption>(),
         )
         assertEquals(
             CliError.UnknownOption("--hea", "--header"),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("--hea", "x", "build"))).error,
+            tree.parse(listOf("--hea", "x", "build")).assertError<CliError.UnknownOption>(),
         )
         assertEquals("header=x", tree.bindText("build", "--header", "x"))
     }
@@ -85,7 +83,7 @@ class AbbreviationModeTest {
     fun `the default is whatever the root declares`() {
         // Two roots differing only in the switch must disagree on the same line.
         assertEquals("r=true ref=null", tree(Abbreviation.Options).bindText("--recu", "f"))
-        assertIs<Result.Error<CliError>>(tree(Abbreviation.None).parse(listOf("--recu", "f")))
+        tree(Abbreviation.None).parse(listOf("--recu", "f")).assertError<CliError.UnknownOption>()
     }
 
     private fun head(mode: Abbreviation) = cli("head") {
@@ -122,7 +120,7 @@ class AbbreviationModeTest {
         for (mode in listOf(Abbreviation.None, Abbreviation.Options)) {
             assertEquals(
                 CliError.UnknownSubcommand("app", "liste", "listen"),
-                assertIs<Result.Error<CliError>>(dispatcher(mode).parse(listOf("liste"))).error,
+                dispatcher(mode).parse(listOf("liste")).assertError<CliError.UnknownSubcommand>(),
                 mode.name,
             )
         }
@@ -132,7 +130,7 @@ class AbbreviationModeTest {
     fun `an ambiguous subcommand prefix names every possibility`() {
         assertEquals(
             CliError.AmbiguousSubcommand("app", "st", listOf("status", "stash")),
-            assertIs<Result.Error<CliError>>(dispatcher(Abbreviation.All).parse(listOf("st"))).error,
+            dispatcher(Abbreviation.All).parse(listOf("st")).assertError<CliError.AmbiguousSubcommand>(),
         )
     }
 
@@ -149,7 +147,7 @@ class AbbreviationModeTest {
         assertEquals("list", dispatcher(Abbreviation.All).bindText("ls"))
         assertEquals(
             CliError.AmbiguousSubcommand("app", "l", listOf("list", "ls", "listen")),
-            assertIs<Result.Error<CliError>>(dispatcher(Abbreviation.All).parse(listOf("l"))).error,
+            dispatcher(Abbreviation.All).parse(listOf("l")).assertError<CliError.AmbiguousSubcommand>(),
         )
         // A prefix reaching a name AND its own alias is not ambiguous: both name the same command.
         val aliased = cli("app") {
@@ -165,7 +163,7 @@ class AbbreviationModeTest {
     @Test
     fun `a miss that is no prefix still suggests`() {
         // Abbreviation rescues prefixes; suggestion rescues transpositions. They are complementary.
-        val err = assertIs<Result.Error<CliError>>(dispatcher(Abbreviation.All).parse(listOf("lsit"))).error
+        val err = dispatcher(Abbreviation.All).parse(listOf("lsit")).assertError<CliError.UnknownSubcommand>()
         assertEquals(CliError.UnknownSubcommand("app", "lsit", "list"), err)
     }
 
@@ -196,16 +194,14 @@ class AbbreviationModeTest {
         for (mode in listOf(Abbreviation.Options, Abbreviation.All)) {
             assertEquals("p=low", priority(mode).bindText("--priority", "lo"), mode.name)
         }
-        assertIs<CliError.InvalidChoice>(
-            assertIs<Result.Error<CliError>>(priority(Abbreviation.None).parse(listOf("--priority", "lo"))).error,
-        )
+        priority(Abbreviation.None).parse(listOf("--priority", "lo")).assertError<CliError.InvalidChoice>()
     }
 
     @Test
     fun `an ambiguous choice value names every possibility`() {
         assertEquals(
             CliError.AmbiguousValue("--priority", "hi", listOf("high", "highest")),
-            assertIs<Result.Error<CliError>>(priority(Abbreviation.Options).parse(listOf("--priority", "hi"))).error,
+            priority(Abbreviation.Options).parse(listOf("--priority", "hi")).assertError<CliError.AmbiguousValue>(),
         )
     }
 
@@ -221,7 +217,7 @@ class AbbreviationModeTest {
         assertEquals("p=high", priority(Abbreviation.Options).bindText("--priority", "HIGH"))
         assertEquals(
             CliError.AmbiguousValue("--priority", "HI", listOf("high", "highest")),
-            assertIs<Result.Error<CliError>>(priority(Abbreviation.Options).parse(listOf("--priority", "HI"))).error,
+            priority(Abbreviation.Options).parse(listOf("--priority", "HI")).assertError<CliError.AmbiguousValue>(),
         )
     }
 
@@ -245,17 +241,15 @@ class AbbreviationModeTest {
             abbreviation = Abbreviation.Options
             action<String>(human = { it }) { Ok("ran") }
         }
-        assertIs<Result.Success<Invocation>>(tree.parse(listOf("--color", "al")))
-        assertIs<CliError.AmbiguousValue>(
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("--color", "a"))).error,
-        )
+        tree.parse(listOf("--color", "al")).assertSuccess()
+        tree.parse(listOf("--color", "a")).assertError<CliError.AmbiguousValue>()
     }
 
     @Test
     fun `an unmatched value still reports the choices and suggests`() {
         // Abbreviation rescues prefixes; the existing InvalidChoice suggestion rescues near-misses.
-        val err = assertIs<Result.Error<CliError>>(priority(Abbreviation.Options).parse(listOf("--priority", "hgih")))
-            .error
+        val err = priority(Abbreviation.Options).parse(listOf("--priority", "hgih"))
+            .assertError<CliError.InvalidChoice>()
         assertEquals(CliError.InvalidChoice("--priority", "hgih", listOf("low", "high", "highest"), "high"), err)
     }
 
@@ -280,7 +274,7 @@ class AbbreviationModeTest {
         for (typed in listOf("--h", "--he", "--hel")) {
             assertEquals(
                 CliError.UnknownOption(typed, "--help"),
-                assertIs<Result.Error<CliError>>(strict.parse(listOf(typed))).error,
+                strict.parse(listOf(typed)).assertError<CliError.UnknownOption>(),
                 typed,
             )
         }
@@ -297,7 +291,7 @@ class AbbreviationModeTest {
         // tied candidates from the scan would hand the answer to something unrelated instead.
         assertEquals(
             CliError.UnknownOption("--he", "--help"),
-            assertIs<Result.Error<CliError>>(strict.parse(listOf("--he"))).error,
+            strict.parse(listOf("--he")).assertError<CliError.UnknownOption>(),
         )
     }
 
@@ -313,7 +307,7 @@ class AbbreviationModeTest {
         // unrelated built-in --json (distance 2) win over --sort (distance 1).
         assertEquals(
             CliError.UnknownOption("--sor", "--sort"),
-            assertIs<Result.Error<CliError>>(strict.parse(listOf("--sor"))).error,
+            strict.parse(listOf("--sor")).assertError<CliError.UnknownOption>(),
         )
     }
 
@@ -325,7 +319,7 @@ class AbbreviationModeTest {
         }
         assertEquals(
             CliError.UnknownSubcommand("app", "st", "status"),
-            assertIs<Result.Error<CliError>>(strict.parse(listOf("st"))).error,
+            strict.parse(listOf("st")).assertError<CliError.UnknownSubcommand>(),
         )
     }
 }

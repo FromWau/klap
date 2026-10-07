@@ -1,7 +1,8 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -29,9 +30,6 @@ private fun headTree(): Cli = cli("head") {
         Ok("lines=${lines()} bytes=${bytes()} quiet=${quiet()} verbose=${verbose()} files=${files()}")
     }
 }
-
-private fun Cli.errorFrom(vararg argv: String): CliError =
-    assertIs<Result.Error<CliError>>(parse(argv.toList())).error
 
 /**
  * `-<NUM>` is an input of its own, and a maximal run of digits that nothing else has claimed binds to it
@@ -204,7 +202,10 @@ class NumberOptionTest {
             action { Ok("n=${n()}") }
         }
         assertEquals("n=5", tree.bindText("-5"))
-        assertEquals(CliError.BadValue("-<NUM>", "50", "must be in 1..10"), tree.errorFrom("-50"))
+        assertEquals(
+            CliError.BadValue("-<NUM>", "50", "must be in 1..10"),
+            tree.parse(listOf("-50")).assertError<CliError.BadValue>(),
+        )
     }
 
     @Test
@@ -231,7 +232,7 @@ class NumberOptionTest {
         }
         assertEquals(
             CliError.BadValue("-<NUM>", "99999999999999999999", "not an integer", ConversionError.NotAnInteger),
-            tree.errorFrom("-99999999999999999999"),
+            tree.parse(listOf("-99999999999999999999")).assertError<CliError.BadValue>(),
         )
     }
 
@@ -253,7 +254,7 @@ class NumberOptionTest {
         // The run binds, so the cluster is blamed at the character that actually names nothing.
         assertEquals(
             CliError.UnknownOption("-x", cluster = "-12x"),
-            headTree().errorFrom("-12x", "f"),
+            headTree().parse(listOf("-12x", "f")).assertError<CliError.UnknownOption>(),
         )
     }
 
@@ -334,7 +335,7 @@ class NumberOptionTest {
             val n = numberOption().int()
             action { Ok("n=${n()}") }
         }
-        val shown = assertIs<Result.Success<Invocation>>(tree.parse(listOf("-5h"))).value
+        val shown = tree.parse(listOf("-5h")).assertSuccess()
         assertEquals("app", assertIs<Invocation.ShowHelp>(shown).qualifiedName)
     }
 }

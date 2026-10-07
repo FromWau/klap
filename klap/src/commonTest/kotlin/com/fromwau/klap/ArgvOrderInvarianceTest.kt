@@ -2,9 +2,9 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
 import kotlin.test.fail
 
 /**
@@ -359,7 +359,7 @@ class ArgvOrderInvarianceTest {
         }
         assertEquals(
             CliError.UnknownOption("--target"),
-            assertIs<Result.Error<CliError>>(app.parse(listOf("--target", "wasm", "-v", "build", "out.txt"))).error,
+            app.parse(listOf("--target", "wasm", "-v", "build", "out.txt")).assertError<CliError.UnknownOption>(),
         )
         val nameUnit = listOf("build")
         val localUnit = listOf("--target", "wasm")

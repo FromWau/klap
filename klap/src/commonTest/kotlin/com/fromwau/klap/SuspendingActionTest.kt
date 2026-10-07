@@ -3,6 +3,7 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertSuccess
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
@@ -47,7 +48,7 @@ class SuspendingActionTest {
             }
         }
         val execute = assertIs<Invocation.Execute>(
-            assertIs<Result.Success<Invocation>>(tree.parse(emptyList())).value,
+            tree.parse(emptyList()).assertSuccess(),
         )
         assertEquals(Result.Success("value"), execute.runActionSuspending())
     }
@@ -112,7 +113,7 @@ class SuspendingActionTest {
     fun `runActionSuspending drives a plain action just as well as a suspending one`() = runTest {
         val tree = cli("app") { action { Ok("sync") } }
         val execute = assertIs<Invocation.Execute>(
-            assertIs<Result.Success<Invocation>>(tree.parse(emptyList())).value,
+            tree.parse(emptyList()).assertSuccess(),
         )
         assertEquals(Result.Success("sync"), execute.runActionSuspending())
     }
@@ -139,7 +140,7 @@ class SuspendingActionTest {
             command("fetch") { actionSuspending { Ok("b") } }
         }
         val execute = assertIs<Invocation.Execute>(
-            assertIs<Result.Success<Invocation>>(tree.parse(listOf("plain"))).value,
+            tree.parse(listOf("plain")).assertSuccess(),
         )
         assertEquals(Result.Success("a"), execute.runAction())
     }
@@ -151,7 +152,7 @@ class SuspendingActionTest {
             command("fetch") { actionSuspending { Ok("b") } }
         }
         val execute = assertIs<Invocation.Execute>(
-            assertIs<Result.Success<Invocation>>(tree.parse(listOf("fetch"))).value,
+            tree.parse(listOf("fetch")).assertSuccess(),
         )
         val error = assertFailsWith<IllegalArgumentException> { execute.runAction() }
         assertTrue("fetch" in error.message.orEmpty(), error.message)

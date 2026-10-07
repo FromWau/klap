@@ -1,7 +1,8 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import com.fromwau.klap.internal.parse.NameMatch
 import com.fromwau.klap.internal.parse.resolveLong
 import com.fromwau.klap.internal.render.message
@@ -71,7 +72,7 @@ class AbbreviationTest {
 
     @Test
     fun `an ambiguous prefix is a usage error`() {
-        val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("--re", "f"))).error
+        val err = tree().parse(listOf("--re", "f")).assertError<CliError.AmbiguousOption>()
         assertEquals(CliError.AmbiguousOption("--re", listOf("--recursive", "--reference")), err)
     }
 
@@ -92,7 +93,7 @@ class AbbreviationTest {
             version = "1.0"
             action<String>(human = { it }) { Ok("ran") }
         }
-        assertIs<Invocation.ShowVersion>(assertIs<Result.Success<Invocation>>(versioned.parse(listOf("--vers"))).value)
+        assertIs<Invocation.ShowVersion>(versioned.parse(listOf("--vers")).assertSuccess())
     }
 
     @Test
@@ -102,7 +103,7 @@ class AbbreviationTest {
             option("--header")
             action<String>(human = { it }) { Ok("ran") }
         }
-        val err = assertIs<Result.Error<CliError>>(withHeader.parse(listOf("--he", "x"))).error
+        val err = withHeader.parse(listOf("--he", "x")).assertError<CliError.AmbiguousOption>()
         assertEquals(CliError.AmbiguousOption("--he", listOf("--header", "--help")), err)
     }
 
@@ -115,11 +116,11 @@ class AbbreviationTest {
         // --help-all is klap's, not the author's, so it takes no part in prefix resolution: letting it claim
         // the space it shares with --help would cost every CLI in the world its `--h`.
         for (typed in listOf("--h", "--he", "--hel")) {
-            val shown = assertIs<Result.Success<Invocation>>(tree.parse(listOf(typed))).value
+            val shown = tree.parse(listOf(typed)).assertSuccess()
             assertFalse(assertIs<Invocation.ShowHelp>(shown).recursive, typed)
         }
         // Spelled out, it still reaches the recursive form.
-        val all = assertIs<Result.Success<Invocation>>(tree.parse(listOf("--help-all"))).value
+        val all = tree.parse(listOf("--help-all")).assertSuccess()
         assertTrue(assertIs<Invocation.ShowHelp>(all).recursive)
     }
 
@@ -136,13 +137,13 @@ class AbbreviationTest {
         // that hides nothing.
         assertEquals(
             CliError.AmbiguousOption("--se", listOf("--secret", "--send")),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("--se"))).error,
+            tree.parse(listOf("--se")).assertError<CliError.AmbiguousOption>(),
         )
         assertEquals("secret=true send=false", tree.bindText("--sec"))
         // Did-you-mean stays blind to it, which is the whole point of hiding.
         assertEquals(
             CliError.UnknownOption("--secrte", null),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("--secrte"))).error,
+            tree.parse(listOf("--secrte")).assertError<CliError.UnknownOption>(),
         )
     }
 
@@ -160,7 +161,7 @@ class AbbreviationTest {
         // built-in could be shadowed by a global that abbreviates the same way.
         assertEquals(
             CliError.AmbiguousOption("--he", listOf("--header", "--help")),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("build", "--he", "x"))).error,
+            tree.parse(listOf("build", "--he", "x")).assertError<CliError.AmbiguousOption>(),
         )
     }
 
@@ -175,7 +176,7 @@ class AbbreviationTest {
         // one of the spellings as if the other did not exist.
         assertEquals(
             CliError.AmbiguousOption("--he", listOf("--header", "--help")),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("--he"))).error,
+            tree.parse(listOf("--he")).assertError<CliError.AmbiguousOption>(),
         )
     }
 
@@ -195,18 +196,18 @@ class AbbreviationTest {
         val head = head()
         assertEquals(
             CliError.AmbiguousOption("--ver", listOf("--verbose", "--version")),
-            assertIs<Result.Error<CliError>>(head.parse(listOf("--ver", "f"))).error,
+            head.parse(listOf("--ver", "f")).assertError<CliError.AmbiguousOption>(),
         )
         // Neither half is lost: both spellings still resolve on their own.
         assertEquals("v=true", head.bindText("--verb", "f"))
-        assertIs<Invocation.ShowVersion>(assertIs<Result.Success<Invocation>>(head.parse(listOf("--vers"))).value)
+        assertIs<Invocation.ShowVersion>(head.parse(listOf("--vers")).assertSuccess())
     }
 
     @Test
     fun `an ambiguous abbreviation renders every possibility`() {
         // The head fixture pins this line as real-tool behaviour and quotes the wording in its `because`,
         // but a parity rejection only claims the line failed; the wording itself is pinned here.
-        val err = assertIs<Result.Error<CliError>>(head().parse(listOf("--ver", "f"))).error
+        val err = head().parse(listOf("--ver", "f")).assertError<CliError.AmbiguousOption>()
         assertEquals(CliError.AmbiguousOption("--ver", listOf("--verbose", "--version")), err)
         assertEquals("option '--ver' is ambiguous; possibilities: '--verbose' '--version'", err.message())
     }
@@ -228,14 +229,14 @@ class AbbreviationTest {
     fun `help abbreviates against the command the walk reached`() {
         // --help is resolved AFTER the walk, so it answers to the pool of the command actually reached: one
         // child's --header cannot take --h away from the root or from its siblings.
-        assertIs<Invocation.ShowHelp>(assertIs<Result.Success<Invocation>>(dispatcher().parse(listOf("--h"))).value)
-        assertIs<Invocation.ShowHelp>(assertIs<Result.Success<Invocation>>(dispatcher().parse(listOf("--he"))).value)
-        val onBuild = assertIs<Result.Success<Invocation>>(dispatcher().parse(listOf("build", "--h"))).value
+        assertIs<Invocation.ShowHelp>(dispatcher().parse(listOf("--h")).assertSuccess())
+        assertIs<Invocation.ShowHelp>(dispatcher().parse(listOf("--he")).assertSuccess())
+        val onBuild = dispatcher().parse(listOf("build", "--h")).assertSuccess()
         assertEquals("app build", assertIs<Invocation.ShowHelp>(onBuild).qualifiedName)
         // At `fetch` the token really does reach two spellings, which is what GNU reports there.
         assertEquals(
             CliError.AmbiguousOption("--h", listOf("--header", "--help")),
-            assertIs<Result.Error<CliError>>(dispatcher().parse(listOf("fetch", "--h"))).error,
+            dispatcher().parse(listOf("fetch", "--h")).assertError<CliError.AmbiguousOption>(),
         )
     }
 
@@ -253,8 +254,8 @@ class AbbreviationTest {
         // `build` declares no --collate itself, and must still report what the pre-strip saw rather than
         // claiming a token klap has just refused to resolve does not exist.
         val expected = CliError.AmbiguousOption("--col", listOf("--collate", "--color"))
-        assertEquals(expected, assertIs<Result.Error<CliError>>(tree.parse(listOf("build", "--col"))).error)
-        assertEquals(expected, assertIs<Result.Error<CliError>>(tree.parse(listOf("fetch", "--col"))).error)
+        assertEquals(expected, tree.parse(listOf("build", "--col")).assertError<CliError.AmbiguousOption>())
+        assertEquals(expected, tree.parse(listOf("fetch", "--col")).assertError<CliError.AmbiguousOption>())
         assertEquals("collate=x", tree.bindText("fetch", "--colla", "x"))
     }
 
@@ -281,7 +282,7 @@ class AbbreviationTest {
         // --limit/--long belong to `list` alone; unlike the pinned pre-strip case above, `add` reaches
         // NEITHER spelling, so there is no remaining possibility left to report and the honest answer is
         // that `--l` names nothing this command could ever bind.
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("add", "x", "--l"))).error
+        val err = tree.parse(listOf("add", "x", "--l")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("--l", null), err)
     }
 
@@ -289,7 +290,7 @@ class AbbreviationTest {
     fun `the same prefix stays ambiguous where both are declared`() {
         val tree = addListDispatcher()
         // At `list`, which declares both, the ambiguity is real and both spellings are reachable.
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("list", "--l"))).error
+        val err = tree.parse(listOf("list", "--l")).assertError<CliError.AmbiguousOption>()
         assertEquals(CliError.AmbiguousOption("--l", listOf("--limit", "--long")), err)
     }
 
@@ -298,7 +299,7 @@ class AbbreviationTest {
         val tree = addListDispatcher()
         // `show` declares only --limit, so --long is unreachable there; the pinned decision above still
         // reports the full, unfiltered list rather than silently collapsing to the one survivor.
-        val err = assertIs<Result.Error<CliError>>(tree.parse(listOf("show", "--l"))).error
+        val err = tree.parse(listOf("show", "--l")).assertError<CliError.AmbiguousOption>()
         assertEquals(CliError.AmbiguousOption("--l", listOf("--limit", "--long")), err)
     }
 
@@ -317,7 +318,7 @@ class AbbreviationTest {
         // the global outright and leave the leaf's own --sort-by silently unset.
         assertEquals(
             CliError.AmbiguousOption("--sor", listOf("--sort-by", "--sort")),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("sub", "--sor", "x", "f"))).error,
+            tree.parse(listOf("sub", "--sor", "x", "f")).assertError<CliError.AmbiguousOption>(),
         )
         // Neither half is lost: the exact global spelling and a prefix reaching only the leaf both resolve.
         assertEquals("sort=x by=null files=[f]", tree.bindText("sub", "--sort", "x", "f"))
@@ -338,14 +339,14 @@ class AbbreviationTest {
         // eat both the token AND the operand behind it while leaving the leaf's own option unset.
         assertEquals(
             CliError.AmbiguousOption("--col", listOf("--collate", "--color")),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("sub", "--col", "never"))).error,
+            tree.parse(listOf("sub", "--col", "never")).assertError<CliError.AmbiguousOption>(),
         )
         // Ahead of the subcommand the walk stops at the group, which binds nothing either way. It still
         // reports the ambiguity rather than an unknown option: the tree declares `--collate` somewhere, so
         // saying no such option exists would contradict the pre-strip that just declined to resolve it.
         assertEquals(
             CliError.AmbiguousOption("--col", listOf("--collate", "--color")),
-            assertIs<Result.Error<CliError>>(tree.parse(listOf("--col", "never", "sub"))).error,
+            tree.parse(listOf("--col", "never", "sub")).assertError<CliError.AmbiguousOption>(),
         )
         assertEquals("collate=never files=[f]", tree.bindText("sub", "--colla", "never", "f"))
     }
@@ -363,8 +364,8 @@ class AbbreviationTest {
         // The command's own sift must reach the same verdict: resolving it to the global alone would name an
         // option that pass cannot bind, and the user would be told `--col` is simply unknown.
         val expected = CliError.AmbiguousOption("--col", listOf("--collate", "--color"))
-        assertEquals(expected, assertIs<Result.Error<CliError>>(tree.parse(listOf("sub", "--col", "x"))).error)
-        assertEquals(expected, assertIs<Result.Error<CliError>>(tree.parse(listOf("--col", "x", "sub"))).error)
+        assertEquals(expected, tree.parse(listOf("sub", "--col", "x")).assertError<CliError.AmbiguousOption>())
+        assertEquals(expected, tree.parse(listOf("--col", "x", "sub")).assertError<CliError.AmbiguousOption>())
         assertEquals("collate=x", tree.bindText("sub", "--colla", "x"))
     }
 
@@ -372,7 +373,7 @@ class AbbreviationTest {
     fun `shorts never abbreviate`() {
         // A single-dash token is a cluster of one-character shorts, so there is nothing to abbreviate and
         // `-re` must stay two chars rather than resolving to `--recursive`.
-        val err = assertIs<Result.Error<CliError>>(tree().parse(listOf("-re", "f"))).error
+        val err = tree().parse(listOf("-re", "f")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-e", cluster = "-re"), err)
     }
 
@@ -383,7 +384,6 @@ class AbbreviationTest {
             abbreviation = Abbreviation.Options
             command("status") { action<String>(human = { it }) { Ok("status") } }
         }
-        val err = assertIs<Result.Error<CliError>>(dispatcher.parse(listOf("stat"))).error
-        assertIs<CliError.UnknownSubcommand>(err)
+        dispatcher.parse(listOf("stat")).assertError<CliError.UnknownSubcommand>()
     }
 }

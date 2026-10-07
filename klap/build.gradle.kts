@@ -68,6 +68,7 @@ kotlin {
 
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            implementation(libs.kern.result.test)
             // Test-only. commonMain must stay free of kotlinx-coroutines; `suspend` itself is stdlib.
             implementation(libs.kotlinx.coroutines.test)
         }

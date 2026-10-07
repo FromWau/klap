@@ -4,7 +4,7 @@ import com.fromwau.klap.Invocation
 import com.fromwau.klap.parse
 import com.fromwau.klap.run
 import com.fromwau.klap.runAction
-import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertSuccess
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -34,11 +34,8 @@ class MixedTreeGuardTest {
 
     @Test
     fun `parse + runAction drives the sync command directly, unaffected by suspending siblings`() {
-        val execute = assertIs<Invocation.Execute>(
-            assertIs<Result.Success<Invocation>>(pulseCli().parse(listOf("info"))).value,
-        )
-        val outcome = assertIs<Result.Success<*>>(execute.runAction())
-        val info = assertIs<BuildInfo>(outcome.value)
+        val execute = assertIs<Invocation.Execute>(pulseCli().parse(listOf("info")).assertSuccess())
+        val info = assertIs<BuildInfo>(execute.runAction().assertSuccess())
         assertEquals(6, info.serviceCount)
     }
 
