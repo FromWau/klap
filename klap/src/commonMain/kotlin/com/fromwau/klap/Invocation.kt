@@ -52,6 +52,13 @@ public sealed interface Invocation {
     public data class ShowCompletion(val cli: Cli, val shell: CompletionShell) : Invocation
     public data class ShowDocs(val cli: Cli, val format: DocFormat) : Invocation
 
-    /** The hidden `__complete` builtin: print one tab-completion candidate per line for the given words. */
-    public data class ShowCompleteCandidates(val cli: Cli, val words: List<String>) : Invocation
+    /**
+     * The hidden `__complete` builtin: print one tab-completion candidate per line for the word at [cursor] in
+     * [words], the whole line after the program name.
+     */
+    public data class ShowCompleteCandidates(
+        val cli: Cli,
+        val words: List<String>,
+        val cursor: Int,
+    ) : Invocation
 }

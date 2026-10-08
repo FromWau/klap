@@ -31,11 +31,12 @@ internal val COMPLETION_SHELL_NAMES: List<String> =
  * nothing, only the calls made against this receiver matter.
  *
  * Being a [ValueScope], it also reads the CLI's own declared inputs through their accessors — every global,
- * plus whatever the command under the cursor has been given so far — so a provider resolves `--file` the
- * same way the action will, instead of re-scanning [words] by hand. A scalar input the line has not supplied
+ * plus whatever the command under the cursor has been given anywhere on the line, after the cursor too, with
+ * the word under the cursor read as far as it is typed — so a provider resolves `--file` the same way the
+ * action will, instead of re-scanning [words] by hand. A scalar input the line has not supplied
  * yet, or whose value failed to convert, is unbound, and reading it aborts the provider, which the caller
  * reads as "no candidates" — usually the right answer, since a provider that needs an input it cannot see
- * has nothing to offer. A `multiple()` input instead reads back what has been typed so far, which may be
+ * has nothing to offer. A `multiple()` input instead reads back what is on the line, which may be
  * shorter than its declared minimum or empty, so a provider must not assume the arity an action can.
  *
  * Two costs to know. Reading ANY accessor resolves ALL of them: the command's inputs and every global are
@@ -118,7 +119,7 @@ public class CompletionScope internal constructor(
  */
 internal const val COMPLETE_FILES = " klap:files:"
 
-// Every shell delegates the whole decision to `program __complete -- <words + current>` and prints the
+// Every shell delegates the whole decision to `program __complete --cursor <k> -- <words>` and prints the
 // returned lines LITERALLY (never re-eval'd, so a candidate like `$(...)` or a backtick can't execute on
 // Tab). A lone COMPLETE_FILES line maps to that shell's native file completion; the rest go out verbatim.
 public fun Cli.renderCompletion(shell: CompletionShell): String = when (shell) {
@@ -145,8 +146,15 @@ private fun Cli.renderBash(): String = $$"""
         relWords=("${relWords[@]:0:$((n - 1))}")
       fi
       relWords=("${relWords[@]:1}")
+      # The words after the cursor, so a provider can read an input typed further along. A cursor inside a
+      # word leaves that word's tail first; it belongs to the word being completed, so it is dropped.
+      local -a afterWords
+      read -ra afterWords <<< "${COMP_LINE:COMP_POINT}"
+      if [[ -n "${COMP_LINE:COMP_POINT:1}" && "${COMP_LINE:COMP_POINT:1}" != [[:space:]] ]]; then
+        afterWords=("${afterWords[@]:1}")
+      fi
       local -a lines
-      mapfile -t lines < <("${COMP_WORDS[0]}" __complete -- "${relWords[@]}" "$fullCur")
+      mapfile -t lines < <("${COMP_WORDS[0]}" __complete --cursor "${#relWords[@]}" -- "${relWords[@]}" "$fullCur" "${afterWords[@]}")
       # Each line is `value` or `value\tdescription`. bash's menu cannot show a per-candidate description,
       # so drop everything from the FIRST tab on, keeping the value only (a COMPLETE_FILES line has no tab).
       local i
@@ -194,7 +202,8 @@ private fun Cli.renderZsh(): String = $$"""
     #compdef $$name
     _$$name() {
       local -a lines
-      lines=("${(@f)$("${words[1]}" __complete -- "${(@)words[2,-1]}")}")
+      # $words is the whole line, the program first and the word under the cursor at $CURRENT.
+      lines=("${(@f)$("${words[1]}" __complete --cursor $(( CURRENT - 2 )) -- "${(@)words[2,-1]}")}")
       if [[ ${#lines[@]} -eq 1 && "${lines[1]}" == "$$COMPLETE_FILES"* ]]; then
         # _files matches $PREFIX as a whole path, so move the directive's non-path head (dd's `if=`) into
         # $IPREFIX, which is kept on the line but never matched against.
@@ -247,7 +256,13 @@ private fun Cli.renderFish(): String = $$"""
     function __$${name}_klap_complete
         set -l tokens (commandline -opc)
         set -l current (commandline -ct)
-        set -l response ($tokens[1] __complete -- $tokens[2..-1] "$current")
+        # The words after the cursor, for a provider to read an input from. The token under the cursor, even
+        # one the cursor sits at the start of, is the one being completed, so it is skipped.
+        set -l token (commandline -t)
+        set -l skip (math (count $tokens) + 1)
+        test -n "$token"; and set skip (math $skip + 1)
+        set -l after (commandline -op)[$skip..-1]
+        set -l response ($tokens[1] __complete --cursor (math (count $tokens) - 1) -- $tokens[2..-1] "$current" $after)
         set -l marker (string length -- "$$COMPLETE_FILES")
         if test (count $response) -eq 1; and test (string sub -l $marker -- "$response[1]") = "$$COMPLETE_FILES"
             # The directive's tail is the non-path head of the token (dd's `if=`): complete only what follows
@@ -290,10 +305,18 @@ private fun Cli.renderPowershell(): String = $$"""
     # $$name powershell completion (generated)
     Register-ArgumentCompleter -Native -CommandName $$name -ScriptBlock {
         param($wordToComplete, $commandAst, $cursorPosition)
-        $words = @($commandAst.CommandElements | ForEach-Object { $_.ToString() })
-        if ($commandAst.CommandElements[-1].Extent.EndOffset -lt $cursorPosition) { $words += '' }
+        # Every word on the line, with an empty one where the cursor sits between words, and the index of
+        # the word under the cursor, so a provider can read an input typed after it.
+        $words = @()
+        $cursor = -1
+        foreach ($element in $commandAst.CommandElements) {
+            if ($cursor -lt 0 -and $element.Extent.StartOffset -gt $cursorPosition) { $cursor = $words.Count; $words += '' }
+            if ($cursor -lt 0 -and $element.Extent.EndOffset -ge $cursorPosition) { $cursor = $words.Count }
+            $words += $element.ToString()
+        }
+        if ($cursor -lt 0) { $cursor = $words.Count; $words += '' }
         $relative = if ($words.Count -gt 1) { $words[1..($words.Count - 1)] } else { @() }
-        $lines = @(& $words[0] __complete -- $relative)
+        $lines = @(& $words[0] __complete --cursor ($cursor - 1) -- $relative)
         if ($lines.Count -eq 1 -and $lines[0].StartsWith("$$COMPLETE_FILES")) {
             # The directive's tail is the non-path head of the word (dd's `if=`), which Get-ChildItem would
             # otherwise resolve as part of the path; it is put back below, since the whole word is replaced.

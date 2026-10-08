@@ -143,7 +143,7 @@ private inline fun Invocation.render(
         // No candidates prints nothing (not a blank line), matching a leaf action that returns "".
         // Each candidate renders as one line, `value` or `value\tdescription`, and the per-shell scripts
         // decode the tab; a value that would break that format is dropped (Candidate.toCompletionLine()).
-        val text = cli.completeCandidates(words).mapNotNull { it.toCompletionLine() }.joinToString("\n")
+        val text = cli.completeCandidates(words, cursor).mapNotNull { it.toCompletionLine() }.joinToString("\n")
         if (text.isNotEmpty()) terminal.out(text + "\n")
         0
     }
