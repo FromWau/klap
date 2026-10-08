@@ -1610,7 +1610,8 @@ puts it back on whatever that inserts. The call is **exclusive**: it discards an
 script maps a lone file directive to native completion and treats any other line as a literal candidate.
 
 The scope also reads your CLI's own inputs through their accessors, exactly as `action { }` does — every
-global, plus whatever the command under the cursor has already been given:
+global, plus whatever the command under the cursor has been given anywhere on the line, after the cursor
+too, with the word under the cursor read as far as it is typed:
 
 ```kotlin
 cli("tasks") {
@@ -1644,8 +1645,22 @@ so `myapp --file other.json tag 3 <TAB>` offers the tags of task 3 in *that* sto
 runtime. A scalar input the half-typed line has not supplied — a required argument not yet reached, or a
 value that failed to convert — stays unbound, and reading it aborts the provider so Tab simply offers
 nothing. That is normally what you want: a provider that cannot see the input it depends on has nothing to
-offer. A `multiple()` input is the exception: it reads back whatever has been typed so far, which may be
+offer. A `multiple()` input is the exception: it reads back whatever is on the line, which may be
 empty or shorter than its declared minimum, so don't assume the arity an `action { }` can rely on.
+
+An input typed after the cursor reads the same way. A provider can only name a handle declared before it, so
+when the input it needs comes later on the line, attach `.completeWith` once that handle exists:
+
+```kotlin
+command("get") {
+    val filter = argument("filter")
+    val file = argument("file").file()
+    filter.completeWith { candidates(keysAt(file(), current)) }
+    action { Ok(get(filter(), file())) }
+}
+```
+
+so `mytool get .own<TAB> conf.toml` offers the keys of `conf.toml`, although the file comes after the cursor.
 
 `ValueScope` is the shared base of `ActionScope` and `CompletionScope`, and the four accessors live on it —
 which is what lets `taskStore()` above be written once and used from both. Like `ColorScope`, it is sealed:
@@ -1663,8 +1678,10 @@ prefix-filters the offered candidates by the partial word by default, matching o
 `description`. Pass `filterByPrefix = false` to `.completeWith` to skip that filter and match `current`
 yourself, for fuzzy, substring, or alias matching. `__complete` is internal on both shapes; the
 generated scripts always call it as
-`myapp __complete -- <words>`, so if you invoke it by hand to debug a provider, keep the `--` separator
-(otherwise a completion word like `--flag` is parsed as an option of `__complete`). One quirk when
+`myapp __complete --cursor <k> -- <words>`, every word on the line and `<k>` the index of the one under the
+cursor. To invoke it by hand to debug a provider, keep the `--` separator (otherwise a completion word like
+`--flag` is parsed as an option of `__complete`); without `--cursor`, the last word is the one under the
+cursor. One quirk when
 debugging by hand: where the slot takes a path (a `.file()` input, or a provider that called
 `completeFiles()`), `__complete` prints an internal one-line directive rather than real paths, which the
 generated shell script turns into that shell's native file completion. Its exact spelling is klap's to

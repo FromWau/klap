@@ -108,7 +108,8 @@ class GeneratedShellScriptTest {
         assertTrue($$"local line=\"${COMP_LINE:0:COMP_POINT}\"" in script, script)
         assertTrue($$"read -ra relWords <<< \"$line\"" in script, script)
         assertTrue(
-            $$"mapfile -t lines < <(\"${COMP_WORDS[0]}\" __complete -- \"${relWords[@]}\" \"$fullCur\")" in script,
+            $$"__complete --cursor \"${#relWords[@]}\" -- \"${relWords[@]}\" \"$fullCur\" \"${afterWords[@]}\")"
+                in script,
             script,
         )
         assertTrue("complete -F _todo todo" in script, script)
@@ -181,10 +182,13 @@ class GeneratedShellScriptTest {
     }
 
     @Test
-    fun `powershell compensates cursor past last element`() {
+    fun `powershell puts an empty word where the cursor sits between words or past the last`() {
         val script = sampleTree().renderCompletion(CompletionShell.POWERSHELL)
-        assertTrue($$"$commandAst.CommandElements[-1].Extent.EndOffset -lt $cursorPosition" in script, script)
-        assertTrue($$"$words += ''" in script, script)
+        assertTrue(
+            $$"$element.Extent.StartOffset -gt $cursorPosition) { $cursor = $words.Count; $words += '' }" in script,
+            script,
+        )
+        assertTrue($$"if ($cursor -lt 0) { $cursor = $words.Count; $words += '' }" in script, script)
     }
 
     @Test
