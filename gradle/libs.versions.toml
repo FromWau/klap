@@ -1,5 +1,5 @@
 [versions]
-klapVersion = "0.5.2"
+klapVersion = "0.5.3"
 
 agp = "9.3.1"
 android-compileSdk = "37"
