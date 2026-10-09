@@ -22,13 +22,6 @@ test that states it, and closing it means that test passes.
   `pacman -Q -- --dbpath ‸` offers the file directive and `-- --color=al‸` offers `--color=always`, while real
   `pacman -Q -- --dbpath pacman` gives "package '--dbpath' was not found". The value branches of
   `render/Completion.kt` never check for `--` (item 28, rows L4b, L4c). klap core.
-- [ ] **33. A `--` that an option takes as its value ends options.** `PacmanCompletionTargetsTest`
-  `names go on after a -- that was an option's value`, `PacmanLineContextTargetsTest` `an end of options
-  taken as a value leaves the options open`, `PacmanProjectionTargetsTest` `a value word that is exactly the
-  end of options is the value`. Real `pacman -Qv --dbpath --` prints `DB Path: <cwd>/--/`, and `pacman -Q --arch
-  -- --check pacman` runs the check; klap refuses with MissingOptionValue and completes nothing after it.
-  `docs/guide.md:209` states the refusal as a deliberate trade-off, so whether klap follows getopt here is an
-  owner call before the fix (item 28, rows K41, S33, P40). klap core.
 - [ ] **34. The help short ends a short cluster.** `PacmanCompletionTargetsTest` `the help short alone or in
   a cluster continues with the letters pacman reads after it`. `suggestionsFor("pacman -Qh")` gives `[]`; real
   `pacman -Qhi` prints the `-Q` page and `pacman -Qhz` is "invalid option -- 'z'", so every letter after `-h` is
@@ -94,6 +87,20 @@ the annotation, runs the test to see it fail for the stated reason, and changes 
 passes. If the test itself turns out wrong (it does not state what the real binary does), the agent does not bend
 the code to it: it reports the test as needing a fix, with the evidence, and leaves the item open.
 
+Audit of the pacman gaps, 2026-10-10, agreed with the owner. A gap is closed where a normal CLI behaves the same
+way, and left where only pacman does (moved to **Will not do**: 6, 33, 36, 40, their tests ignored as will not do
+rather than as targets). Order to take them in:
+
+1. klap bugs, small and safe: 32, 1, 34, 35, and 15 (a counted short is offered again, as `-vv` needs).
+2. Choices and built-ins: 7 (exact case by default or a switch) and 37 (abbreviation per choice, since GNU `ls
+   --color=al` abbreviates and pacman does not); 41 and 8 (a tool can have none of klap's built-ins, and a declined
+   or absent one stays out of abbreviations), 45 (a tool rewords a built-in's help), 9 (a short alias for version).
+3. Mode-as-flag scoping, the one large design task: an option belongs to some members of a `requireExactlyOne`
+   set, as tar's `-c`/`-x`/`-t` need too. Items 4, 10, 11, 12, 44 and the `-Q` half of 42 follow from it. Item 5
+   (a letter means something else per operation) is a pacman quirk inside it, worth doing only if scoping makes
+   it nearly free.
+4. Fixture work, klap has what it needs: 38, 39, 42, 43.
+
 ### pacman (QA pass 2026-10-09, pacman 7.1.0, checked at `6f3bdce` plus working tree)
 
 All 38 targets (22 projection, 16 completion) were confirmed to fail with their `@Ignore` removed, rechecked after
@@ -109,9 +116,6 @@ the rework that dropped the tests' model of klap (item 14). Evidence is in each 
   `a contested letter means what -Q gives it`, `... -R gives it`. Under `-Q`, `-c -d -n -p -u` are changelog,
   deps, native, file, upgrades; under `-R`, `-c -s -u` are cascade, recursive (`-ss`), unneeded. klap core: one
   letter, one spec today.
-- [ ] **6. The operation given twice is refused.** `PacmanProjectionTargetsTest`
-  `the operation given twice is refused`. `pacman -QQ`, `-Q -Q`, `-Q --query`: "only one operation may be used
-  at a time". klap core: a repeat of the member already given is not counted as a second member.
 - [ ] **7. A choice value is matched in its own case.** `PacmanConverterTargetsTest`
   `a color value in capitals is refused`; completion counterpart in `PacmanValueCandidatesTargetsTest`. `pacman -Q
   --color=ALWAYS` gives "invalid argument 'ALWAYS' for --color". klap: `.choice()` matches any case.
@@ -125,35 +129,29 @@ the rework that dropped the tests' model of klap (item 14). Evidence is in each 
 - [ ] **11. An operation whose usage needs targets refuses a line without them.** `PacmanProjectionTargetsTest`
   `an operation whose usage requires targets refuses a line without them` (`-R`, `-U`). Evidence from the usage
   lines only; never run. klap core: operand arity per operation.
-- [ ] **12. Completion offers only what the operation on the line accepts.** `PacmanCompletionTargetsTest`
-  14 tests: `a cluster holding an operation offers no other operation` (item 1), `an option of another operation
-  is not offered`, `a dash offers the operation's page and nothing pacman refuses`, `a long of another operation
-  completes to nothing`, `a long on the page is described in that page's words`, `the operation already given is
-  not offered again`, `another operation's name as typed completes to this operation's options`, `a long name
-  completes to what an operation after the cursor accepts`, `a letter of another operation offers nothing after
-  it`, `a contested letter continues by its meaning on the operation's page`, `a letter on the page continues with
-  that page's letters`, `a letter of an operation continues with that operation's letters or with nothing`, `an
-  operation's own cluster continues with that operation's letters`, `a cluster continues with the letters of an
-  operation after the cursor`, and `PacmanValueCandidatesTargetsTest` `a color value in capitals is not offered`. `pacman -Q --ne<TAB>` offers
-  `--needed` today. klap core, plus the fixture for the built-ins of item 8.
-- [ ] **15. A counted letter is offered again in a cluster.** `PacmanCompletionTargetsTest`
-  `a counted letter is offered again in its cluster` (14 cells). Where the operation's `--help` page shows the
-  doubled form (`-Qii`, `-Qkk`, `-Qtt`; `-Scc -Sdd -Sgg -Sii -Suu -Syy`; `-Rdd -Rss`; `-Udd`; `-Dkk`; `-Fyy`), the
-  letter is offered once more; a third time never. Item 13. klap core (a `.count()` short stays a continuation of
-  a cluster that holds it).
+- [ ] **12. Completion offers only what the operation on the line accepts.** `PacmanCompletionTargetsTest` 14 tests: `a
+  cluster holding an operation offers no other operation` (item 1), `an option of another operation is not offered`, `a
+  dash offers the operation's page and nothing pacman refuses`, `a long of another operation completes to nothing`, `a
+  long on the page is described in that page's words`, `the operation already given is not offered again`, `another
+  operation's name as typed completes to this operation's options`, `a long name completes to what an operation after
+  the cursor accepts`, `a letter of another operation offers nothing after it`, `a contested letter continues by its
+  meaning on the operation's page`, `a letter on the page continues with that page's letters`, `a letter of an operation
+  continues with that operation's letters or with nothing`, `an operation's own cluster continues with that operation's
+  letters`, `a cluster continues with the letters of an operation after the cursor`, and
+  `PacmanValueCandidatesTargetsTest` `a color value in capitals is not offered`. `pacman -Q --ne<TAB>` offers `--needed`
+  today. klap core, plus the fixture for the built-ins of item 8.
+- [ ] **15. A counted letter is offered again in a cluster.** `PacmanCompletionTargetsTest` `a counted letter is offered
+  again in its cluster` (14 cells). Where the operation's `--help` page shows the doubled form (`-Qii`, `-Qkk`, `-Qtt`;
+  `-Scc -Sdd -Sgg -Sii -Suu -Syy`; `-Rdd -Rss`; `-Udd`; `-Dkk`; `-Fyy`), the letter is offered once more; a third time
+  never. Item 13. klap core (a `.count()` short stays a continuation of a cluster that holds it).
 
 ### pacman, the matrix slices (QA pass 2026-10-10, pacman 7.1.0, checked at `2c89351` plus working tree)
 
 Three agents wrote the cells of the testing matrix the first pass lacked, one slice each (P and X; K and K7; V, L,
 S, G and E). Since 2026-10-10 the pacman tests sit in one file per matrix file, so each item names the class its
-tests are in now. All 29 targets (16, 7 and 6) were confirmed to fail with their `@Ignore` removed. The klap core ones reproduced from item 28 and 30 are items
-1 and 32 to 35; the rest are below.
+tests are in now. All 29 targets (16, 7 and 6) were confirmed to fail with their `@Ignore` removed. The klap core
+ones reproduced from item 28 and 30 are items 1 and 32 to 35; the rest are below.
 
-- [ ] **36. Help, version and a refusal rank as pacman ranks them.** `PacmanProjectionTargetsTest` `help
-  outranks version in either order`, `an unknown option refuses the line beside version`, `two operations are
-  refused beside help`. Real `pacman --help --version` prints usage, `pacman -Q --version --bogus` gives
-  "unrecognized option '--bogus'", `pacman -Q -T --help` gives "only one operation may be used at a time"; klap
-  prints the version, the version and help. klap core.
 - [ ] **37. A choice value is never abbreviated.** `PacmanConverterTargetsTest` `a color value is never
   abbreviated`. `pacman -Q --color=al pacman` gives "invalid argument 'al' for --color"; klap binds `always`, and
   choice prefix resolution has no off switch. klap core.
@@ -164,10 +162,6 @@ tests are in now. All 29 targets (16, 7 and 6) were confirmed to fail with their
 - [ ] **39. An empty path is refused.** `PacmanConverterTargetsTest` `an empty path is refused`.
   `--dbpath=`, `--root=`, `--cachedir=`, `--hookdir=`, `--gpgdir=`, `--sysroot=` give "failed to resolve path
   ''", `--config=` "config file  could not be read"; `--logfile=` and `--arch=` are accepted. Fixture.
-- [ ] **40. A first word `__complete` is an ordinary target.** `PacmanProjectionTargetsTest` `__complete as
-  the first word is a target`, `PacmanCompletionTargetsTest` `a first target named __complete is an ordinary
-  target`. `pacman __complete -Q` gives "package '__complete' was not found"; klap answers with completions.
-  `docs/guide.md:833` reserves the word by design, so this needs an owner call. klap core.
 - [ ] **41. klap's built-ins pacman lacks stay out of abbreviations and suggestions.** `PacmanProjectionTargetsTest`
   `a prefix of a klap built-in pacman lacks is refused`, `a prefix shared only with a klap built-in names pacman's
   own option`; `PacmanCompletionTargetsTest` `a built-in pacman does not have is not offered` and
@@ -180,9 +174,9 @@ tests are in now. All 29 targets (16, 7 and 6) were confirmed to fail with their
   "invalid option: '--search' and '--info' may not be used together". The same pairs under `-S`, `-R` were not run.
   Fixture.
 - [ ] **43. Comma lists and implied flags project as the man page says.** `PacmanConverterTargetsTest` `a comma
-  separates the packages groups and globs of an upgrade option`; `PacmanProjectionTargetsTest` `--print-format
-  implies --print`, `--disable-sandbox disables both parts of the sandbox`. Man page only, never run (`-S`/`-U` options). Whether the
-  record models these is a fixture design call. Fixture.
+  separates the packages groups and globs of an upgrade option`; `PacmanProjectionTargetsTest` `--print-format implies
+  --print`, `--disable-sandbox disables both parts of the sandbox`. Man page only, never run (`-S`/`-U` options).
+  Whether the record models these is a fixture design call. Fixture.
 - [ ] **44. Completion keeps to the operation's page at every cursor position.** `PacmanCompletionTargetsTest`
   `a dash inside a word or before an operation offers what a bare dash under it offers`, `a long name typed in part
   completes to the longs of the operation's page`, `a cluster continues from the cursor with its operation's page
@@ -293,6 +287,27 @@ were confirmed to fail with their `@Ignore` removed; evidence is in each test's 
 ## Will not do
 
 Decided against, with the reason, so they are not proposed again.
+
+- **6. The operation given twice is refused.** pacman refuses `-Q -Q` and `-QQ` as two operations, an artefact of how it
+  records the operation; a repeated flag is harmless in a normal CLI. Owner's decision 2026-10-10. The test stays as a
+  record of pacman's behaviour: `PacmanProjectionTargetsTest` `the operation given twice is refused`, ignored as will
+  not do.
+- **33. A `--` that an option takes as its value ends options.** getopt gives a `--` to an option that wants a value
+  (`pacman -Qv --dbpath --`), but nobody types it, and `docs/guide.md:209` keeps `--` the end of options as a deliberate
+  trade-off. Owner's decision 2026-10-10. The tests stay as a record, ignored as will not do:
+  `PacmanCompletionTargetsTest` `names go on after a -- that was an option's value`, `PacmanLineContextTargetsTest` `an
+  end of options taken as a value leaves the options open`, `PacmanProjectionTargetsTest` `a value word that is exactly
+  the end of options is the value`.
+- **36. Help, version and a refusal rank as pacman ranks them.** pacman reads the whole line before it acts, so help
+  beats version and an error beats both; GNU tools answer `--version` as soon as they read it, as klap does. Owner's
+  decision 2026-10-10. The tests stay as a record, ignored as will not do: `PacmanProjectionTargetsTest` `help outranks
+  version in either order`, `an unknown option refuses the line beside version`, `two operations are refused beside
+  help`.
+- **40. A first word `__complete` is an ordinary target.** klap reserves the first word `__complete` for its completion
+  protocol (`docs/guide.md:833`), as other CLI frameworks reserve theirs; a target with that name is not worth a second
+  protocol. Owner's decision 2026-10-10. The tests stay as a record, ignored as will not do:
+  `PacmanProjectionTargetsTest` `__complete as the first word is a target`, `PacmanCompletionTargetsTest` `a first
+  target named __complete is an ordinary target`.
 
 - **klap sorts or ranks suggestions.** Tried on 2026-10-09 with kern's `fuzzyRank` (natural order, fuzzy ranking
   for providers that match on their own) and reverted the same day, owner's decision. The shells sort a

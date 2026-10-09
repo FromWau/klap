@@ -160,7 +160,7 @@ class PacmanLineContextTargetsTest {
         ) { (rows, typed) -> pacman.assertOffersNone(rows, typed, again) }
     }
 
-    @Ignore("TDD target: klap must let a value-taking option take -- as its value, as getopt does")
+    @Ignore("Will not do (todo 33): states a pacman quirk klap does not follow")
     @Test
     fun `an end of options taken as a value leaves the options open`() = pacman.checkContext(
         // `pacman -Q --arch -- --check pacman` prints "pacman: 426 total files, 0 missing files": getopt took
