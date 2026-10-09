@@ -55,7 +55,7 @@ klap's behaviour and are tested once in klap's tests; a fixture's cells cover wh
 
 Where a converter does not exist yet (`todo.md` item 24), its cells are targets.
 
-- X1a, X1b: X1a, klap's `.int()`/`.long()` grammar (limits, signs, bases, whitespace, Unicode), is pinned once in
+- X1a, X1b: X1a, klap's `.int()`/`.long()` grammar (limits, signs, bases, whitespace, Unicode), is pinned once in pacman `--debug` reads a decimal level: `01`, `002`, `+2`, `' 2'` accepted, `2 `, `2x`, `0x2`, `-1`, `1.0` and an overflow refused (observed), a pacman target for the accepted ones.
   klap's tests. X1b, "the tool's number", is for fixtures: most tools read numbers with strtol (base 0 or 10,
   leading space, saturation, suffixes) and a fixture often cannot use `.int()` at all (head keeps a string).
   Today X1 mixes both, and the rule "klap's bounds are tested once" is unclear for it.
@@ -182,7 +182,7 @@ marked *needs checking* is one where it is not yet confirmed what klap or the pl
 | X36 | choice values that look like options | `--chmod=+x`, `--chmod=-x`, `--chmod -x` spaced, `--chmod=x` |
 | X37 | the error kind of a refused choice | `InvalidChoice` (with its did-you-mean) for a value outside the set, `AmbiguousValue` for an ambiguous prefix, `BadValue` for a `.validate` failure on a choice input |
 
-- X29: `ValueSpec.convertOne` resolves the prefix before the converter (`Bind.kt:332-336`) via `resolveChoice`
+- X29: `ValueSpec.convertOne` resolves the prefix before the converter (`Bind.kt:332-336`) via `resolveChoice` pacman 7.1.0: `--color=al`, `nev`, `au` refused (exact words only), a pacman target.
   (`internal/parse/Parser.kt:353`) and `resolveName` (`NameMatch.kt:46`: an empty typed value is `None`, so `""`
   reaches the converter and is refused as not one of the set). Observed: `cp --backup=nu` and `ex` accepted,
   `--backup=n` refused (ambiguous), `ls --color=al` accepted, `ls --color=a` refused, `cp --sparse=al` accepted.
@@ -207,7 +207,7 @@ marked *needs checking* is one where it is not yet confirmed what klap or the pl
   `.choice().int()` and `.choice().map { }` but not what the next stage sees after abbreviation, nor a
   `.validate` seeing the declared spelling (`.choice("Always").validate { it == "Always" }` with `always`).
   klap; fixture pacman `--debug` (`.choice("1", "2")`).
-- X35: no klap converter for lists; fixtures use `.validate` (`find/Find.kt` `isFindTypeList`) or `.convert`
+- X35: no klap converter for lists; fixtures use `.validate` (`find/Find.kt` `isFindTypeList`) or `.convert` pacman: `--ignore`, `--ignoregroup`, `--overwrite` take comma lists (man page only), a pacman target.
   (`dd/Dd.kt` `ddBadSymbol`). Observed: `cp --preserve=mode,links`, `mode,mode`, `mo,li` (per-element
   abbreviation) accepted; `mode,`, `,mode`, `mode, links`, `MODE`, empty refused; `dd conv=notrunc,sync` accepted,
   `notrunc,`, `notr`, `NOTRUNC` refused; bfs `-type f,l` accepted, `f,`, `,f`, `fl` refused. fixture cp
@@ -231,7 +231,7 @@ marked *needs checking* is one where it is not yet confirmed what klap or the pl
 | X43 | `.optionalValue()` repeated | `--color --color=never`, `--color=never --color`: the last occurrence wins, bare or not |
 | X44 | `whenBare` through `.validate()` | `.optionalValue("0").int().range(1..9)`: a bare occurrence and what construction says |
 
-- X38: `valueFrom` takes `attached ?: bareValue` (`Parser.kt:521-526`), and `longToken` keeps `""` after `=`
+- X38: `valueFrom` takes `attached ?: bareValue` (`Parser.kt:521-526`), and `longToken` keeps `""` after `=` pacman: `--debug=` refused (klap agrees); an empty path value is refused by every path option but `--logfile` ("failed to resolve path ''"), a pacman target.
   (`Parser.kt:500-505`). Observed refused: `ls --color=`, `cp --update=`. klap; fixture ls, cp, mv, rm, git,
   pacman, mkdir.
 - X39: the short-cluster branch passes `chars.substring(j + 1).ifEmpty { null }` (`Parser.kt:767`), and
@@ -241,7 +241,7 @@ marked *needs checking* is one where it is not yet confirmed what klap or the pl
   `Abbreviation.Options`, verify per fixture).
 - X41: `bindOptions` (`Bind.kt:130-153`). klap only.
 - X42: `valueFrom` returns the bare value before looking at the next word. klap; fixture ls (`ls --color -`).
-- X43: `bindOptions` keeps `raws.lastOrNull()` (`Bind.kt:131`). fixture ls, cp.
+- X43: `bindOptions` keeps `raws.lastOrNull()` (`Bind.kt:131`). fixture ls, cp. pacman `--debug` is not last-wins: the levels accumulate, `--debug=2 --debug` stays at level 2 (observed function: lines), a pacman target.
 - X44: `optionalValue` checks `whenBare` against a choice set at construction (`Converters.kt:534`) but not against
   `.int()` or `.validate`, so a bare occurrence may be refused on every line. needs checking. klap only.
 
@@ -297,7 +297,7 @@ marked *needs checking* is one where it is not yet confirmed what klap or the pl
 | X55 | a single-valued option given twice, the first invalid | `--width abc --width 80`: the tool refuses, klap converts only the last |
 | X56 | a single-valued option given twice, both valid | `--width 40 --width 80` binds `80`; the same with `=` and a short glued form |
 
-- X55: `bindOptions` converts only `raws.lastOrNull()` (`Bind.kt:131-133`), so an invalid earlier occurrence is
+- X55: `bindOptions` converts only `raws.lastOrNull()` (`Bind.kt:131-133`), so an invalid earlier occurrence is pacman: `--color=bogus --color=never` and `--debug=3 --debug=2` refused, a pacman target.
   never seen. Observed refused: `head -n abc -n 5 f`, `ls -w abc -w 80 .`, `ls --color=bogus --color=never .`,
   `dd bs=abc bs=1`. klap (refusal target; a likely defect), fixture head, ls, dd, cp.
 - X56: same path. Observed `dd count=1 count=2` accepted. fixture ls, head, dd, curl, ssh (`-p`).

@@ -65,7 +65,7 @@ Disputed:
 - G5. Disputed: a value in its own word gets a `null` description from klap, not its option's help, so the row hides a difference between the spaced and attached forms that the owner should decide (G41).
 - G7. Disputed: "a spaced choice value" reads either as a value containing a space or a value in the spaced form, and klap gives the spaced form `null` even where its option has help (G41, G52).
 - G10. Disputed: `Flag.negatable` takes no help, so klap gives a negation its positive's description, not one of its own (G44).
-- G13. Disputed: klap matches a user `.choice()` ignoring case, so `--color=AL‸` offering nothing holds only for the built-in `--color` (G76, G78).
+- G13. Disputed: klap matches a user `.choice()` ignoring case, so `--color=AL‸` offering nothing holds only for the built-in `--color` (G76, G78). pacman backs G13 for a user `.choice()`: `pacman -Q --color=ALWAYS` is "invalid argument" (pacman target `a color value in capitals is not offered`).
 
 Splits:
 
@@ -176,7 +176,7 @@ Notes:
 | G42 | a glued short value's description | the option's help, as an attached long value | `cp -Snu‸`-style glued values carry `-S`'s help |
 | G43 | a provider candidate's own description over the option's | `candidate(v, d)` keeps `d` attached and spaced; `candidate(v)` attached takes the option's help, spaced stays `null` | dd `if=` carries its key help |
 | G44 | a negation's description | the positive input's help (klap has no separate help for the negative half), unless the real tool words the negation differently, then a target | `git --no-pa‸` carries `--paginate`'s text |
-| G45 | a built-in's description | klap's own words (`Show this help`, `Output as JSON`, `Show the version`, `Show help for every subcommand`, `Colorize output: auto, always, or never`, `Print a shell completion script`, `Print generated documentation`); where the real tool has the same built-in (`--help`, `--version`), its words, then a target (needs checking: no API overrides a built-in's wording) | `cp --he‸` against cp's `display this help and exit` |
+| G45 | a built-in's description | klap's own words (`Show this help`, `Output as JSON`, `Show the version`, `Show help for every subcommand`, `Colorize output: auto, always, or never`, `Print a shell completion script`, `Print generated documentation`); where the real tool has the same built-in (`--help`, `--version`), its words, then a target (checked on pacman: no API overrides a built-in's wording, so `pacman --vers‸` shows `Show the version` against man pacman's "Display version and exit"; a target) | `cp --he‸` against cp's `display this help and exit` |
 | G46 | a built-in's value candidates | `--color`'s values carry no description in the spaced form and `Colorize output: ...` attached | `ls --color ‸` vs `ls --color=‸` on a tool that keeps the built-in |
 | G47 | completion descriptions carry none of `--help`'s annotations | no `(default: on)`, `(one of: ...)`, `(required)`, `(repeatable)`, `(bare: ...)`, `(absent with ...)`: the bare help text only | `cp --no-deref‸` has no `(default: off)` |
 | G48 | a group heading is not a description | inputs in a `group(title) { }` carry their own help, never the section title, and are not reordered by group | chmod's "Symlink traversal" flags, curl's "Request"/"Output" |
@@ -254,7 +254,7 @@ Notes:
 | G65 | `--help-all` | offered only on a command with visible subcommands, and only if the real tool has it (no tool in the fixtures does, so it is a target wherever offered) | `git --help-a‸` |
 | G66 | `--version` | offered only when the fixture sets a version, and then where the real tool has `--version` | `cp --vers‸` |
 | G67 | `--completion` and `--docs` | offered on a single-command or hybrid root unless switched off; never on a dispatcher, which hides its `completion`/`docs` commands | `cp --comp‸` |
-| G68 | a built-in's values where the tool lacks the built-in | the slot answers as the real tool would read the word (an operand, a refusal), not with klap's values (needs checking: `--completion ‸` and `--docs ‸` have no value branch in the planner, so they may fall through to the operand) | `cp --color ‸`, `cp --completion ‸` |
+| G68 | a built-in's values where the tool lacks the built-in | the slot answers as the real tool would read the word (an operand, a refusal), not with klap's values (checked on pacman: `pacman -Q --completion ‸` and `pacman -Q --docs ‸` offer nothing) | `cp --color ‸`, `cp --completion ‸` |
 | G69 | `--help` cannot be removed | where the real tool has no `--help`, a target naming klap | a tool without `--help` |
 | G70 | built-ins inside a subcommand | the same built-ins at every depth, and `--help-all` only where that command has subcommands | `git remote --‸` |
 
@@ -446,7 +446,7 @@ Notes:
 - E16: `testing/Completion.kt` `acceptSuggestion` then `suggestionsFor` on its result. cp, tar, pacman, dd (`if=` then `filesAfter("if=")`).
 - E17: `render/Completion.kt` name branch `startsWith(current)` keeps the exact name; inCluster branch never returns `current`. cp, pacman, ls.
 - E18: `testing/Completion.kt` `tab`. Rare; pacman `-Q` options. E4's counterpart for `tab`.
-- E19: `Runner.kt` `toCompletionLine`; `CompletionTest.kt` `complete through run emits value tab description line on stdout`; `example/parity` `ParitySuite` already owns a recording terminal. Needs checking: no public helper yet, so a small one in `:example:parity`.
+- E19: `Runner.kt` `toCompletionLine`; `CompletionTest.kt` `complete through run emits value tab description line on stdout`; `example/parity` `wireSuggestions` (`CompletionContext.kt`) runs a line through `__complete` and decodes it; pacman's cells agree with `suggestionsFor`.
 - E20: `ParitySuite.helpPage`; `render/Help.kt` row rendering vs `render/Completion.kt` `spec.help`. Every fixture.
 - E21: `Completion.kt` script comments; `RealShellCompletionTest.kt`. Every L3 and inside-word cell.
 - E22: splits E4 into checkable kinds; each maps to G1, G13, G21, G8, G11. Every fixture.

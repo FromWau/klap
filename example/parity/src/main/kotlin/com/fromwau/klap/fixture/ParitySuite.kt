@@ -65,11 +65,18 @@ public class ParitySuite<T>(private val typed: TypedCli<T>) {
      * [argv] does not parse. [because] names the real tool's own answer to this line, or — when klap
      * diverges — the gap that makes klap stricter, so a reader can tell a pinned real-tool behaviour from
      * a pinned klap limitation without leaving the file.
+     *
+     * [differs] names how klap's refusal differs from the real tool's, where both refuse for different reasons.
+     * The test still passes, and the run prints the note, so the gap shows in every build instead of hiding
+     * behind a green refusal.
      */
-    public fun rejects(vararg argv: String, because: String) {
+    public fun rejects(vararg argv: String, because: String, differs: String? = null) {
         val line = argv.toList()
         if (typed.parse(line) is Result.Success) {
             fail("${expected(line)} to be rejected ($because), but ${outcome(line)}")
+        }
+        if (differs != null) {
+            println("klap differs on `${command(line)}`: $differs\n  klap: ${outcome(line)}\n  real: $because")
         }
     }
 
@@ -154,9 +161,11 @@ public class ParitySuite<T>(private val typed: TypedCli<T>) {
         }
     }
 
-    private fun expected(argv: List<String>): String {
+    private fun expected(argv: List<String>): String = "expected `${command(argv)}`"
+
+    private fun command(argv: List<String>): String {
         val quoted = argv.map { if (it.isEmpty() || it.any(Char::isWhitespace)) "\"$it\"" else it }
-        return "expected `${(listOf(typed.cli.name) + quoted).joinToString(" ")}`"
+        return (listOf(typed.cli.name) + quoted).joinToString(" ")
     }
 
     /** Names what actually happened, for a failure message; re-parses because only the outcome is wanted. */

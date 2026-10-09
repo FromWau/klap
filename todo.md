@@ -13,8 +13,30 @@ test that states it, and closing it means that test passes.
   leaves `-S` out: `membersRuledOutBy(sifted)` reads the words before the cursor, never the cluster under it. The
   real `pacman -QS` is refused with "only one operation may be used at a time". Found by the pacman fixture QA
   pass and reproduced 2026-10-09 at `6f3bdce` (`suggestionsFor("tool -Q")` gives `[-QS, -Qi, -Qh]`).
-  The matrix extension found the same read in more places, not reproduced yet: a member typed after the cursor
-  (`tool ‸ -S`) is not seen either (`Completion.kt:95`, `:177`; matrix L5, S8 to S10).
+  The same read misses a member typed after the cursor (`Completion.kt:95`, `:177`): `pacman -‸ -S` offers `-Q`
+  and every other operation, and `pacman -Q -‸` offers `-Q` again. Reproduced 2026-10-10 by
+  `PacmanLineContextTargetsTest` `an operation after the cursor keeps every other operation out` and
+  `an operation given before or after the cursor is not offered again` (matrix L5, L6, L22, S10).
+- [ ] **32. A word after `--` is still completed as an option or its value.**
+  `PacmanLineContextTargetsTest` `an option spelled after the end of options is a target and takes no value`.
+  `pacman -Q -- --dbpath ‸` offers the file directive and `-- --color=al‸` offers `--color=always`, while real
+  `pacman -Q -- --dbpath pacman` gives "package '--dbpath' was not found". The value branches of
+  `render/Completion.kt` never check for `--` (item 28, rows L4b, L4c). klap core.
+- [ ] **33. A `--` that an option takes as its value ends options.** `PacmanCompletionTargetsTest`
+  `names go on after a -- that was an option's value`, `PacmanLineContextTargetsTest` `an end of options
+  taken as a value leaves the options open`, `PacmanProjectionTargetsTest` `a value word that is exactly the
+  end of options is the value`. Real `pacman -Qv --dbpath --` prints `DB Path: <cwd>/--/`, and `pacman -Q --arch
+  -- --check pacman` runs the check; klap refuses with MissingOptionValue and completes nothing after it.
+  `docs/guide.md:209` states the refusal as a deliberate trade-off, so whether klap follows getopt here is an
+  owner call before the fix (item 28, rows K41, S33, P40). klap core.
+- [ ] **34. The help short ends a short cluster.** `PacmanCompletionTargetsTest` `the help short alone or in
+  a cluster continues with the letters pacman reads after it`. `suggestionsFor("pacman -Qh")` gives `[]`; real
+  `pacman -Qhi` prints the `-Q` page and `pacman -Qhz` is "invalid option -- 'z'", so every letter after `-h` is
+  read. `firstNonFlagShort` in `render/Completion.kt` stops at `h` (item 28, rows K13b, K7i). klap core.
+- [ ] **35. A single-valued option given twice converts only its last value.** `PacmanConverterTargetsTest`
+  `an invalid earlier occurrence of a single-valued option is refused`. Real `pacman -Q --color=bogus
+  --color=never` and `--debug=3 --debug=2` are refused; klap binds the last (`Bind.kt:131`; item 30, rows P72,
+  X55). klap core.
 
 ## Found by reading, not reproduced
 
@@ -25,12 +47,14 @@ or a fixture section with its failing test, a refuted one is ticked here with th
 - [ ] **28. Completion and parsing disagree, or klap differs from getopt, at these points.**
   - `optionsEndAtFirstOperand` is never checked while completing: `ssh web1 ls -‸` likely offers ssh's own names
     (`Completion.kt:175` checks only a literal `--`). Rows K30, L16, S34.
-  - The two value branches do not check for `--`: `cp -- --backup=n‸` likely offers backup values
-    (`Completion.kt:157`, `:165`). Rows L4b, L4c.
-  - A lone `--` as an option's value: the parser refuses it and ends options, the completer takes it as the value,
-    and getopt gives it to the option (real `cp -b -S -- -v x1 x3` ran verbose). Rows K41, S33, P40.
+  - Reproduced as item 32. The two value branches do not check for `--`: `cp -- --backup=n‸` likely offers
+    backup values (`Completion.kt:157`, `:165`). Rows L4b, L4c.
+  - Reproduced as item 33. A lone `--` as an option's value: the parser refuses it and ends options, the
+    completer takes it as the value, and getopt gives it to the option (real `cp -b -S -- -v x1 x3` ran verbose).
+    Rows K41, S33, P40.
   - `-h` and negative shorts are offered as cluster continuations but end the cluster once typed, so `cp -P‸`
-    likely offers no continuations (`Completion.kt:502`). Rows K7i, K7j, S47, G59.
+    likely offers no continuations (`Completion.kt:502`). Rows K7i, K7j, S47, G59. The `-h` half is reproduced as
+    item 34; the negative shorts are not yet.
   - Subcommand names are offered where the parse never routes: after `--` (`git -- ‸`) and after an unrouted
     option (`git -s ‸`), the walk ignoring the sift error (`Completion.kt:96`, `:367`). Rows K12a, K14, K23.
   - A long abbreviation is matched against every long in the tree, so `git remote add --ma` (unique there:
@@ -47,8 +71,8 @@ or a fixture section with its failing test, a refuted one is ticked here with th
   - An `Error` thrown by an unrelated converter escapes the bind and stops every provider on the line. Row V92.
   - A provider reading `words` never sees the words after the cursor, though the accessors do. Row V60.
 - [ ] **30. Converting and binding accept what the real tools refuse.**
-  - A single-valued option given twice converts only its last value (`Bind.kt:131`), so `--width abc --width 80`
-    binds 80; real `head`, `ls` and `dd` refuse the line. Rows P72, X55.
+  - Reproduced as item 35. A single-valued option given twice converts only its last value (`Bind.kt:131`), so
+    `--width abc --width 80` binds 80; real `head`, `ls` and `dd` refuse the line. Rows P72, X55.
   - `.int()` accepts non-ASCII digits (`"١٢"`, `"１２"` give 12) and `.double()` accepts `" 1"`, `"1.5f"`,
     `"0x1p3"` and reads `1e400` as Infinity: `toIntOrNull` and `toDoubleOrNull` on the JVM, run on Kotlin 2.4.21,
     not yet through klap. Rows X14, X24, X25.
@@ -88,8 +112,8 @@ the rework that dropped the tests' model of klap (item 14). Evidence is in each 
 - [ ] **6. The operation given twice is refused.** `PacmanProjectionTargetsTest`
   `the operation given twice is refused`. `pacman -QQ`, `-Q -Q`, `-Q --query`: "only one operation may be used
   at a time". klap core: a repeat of the member already given is not counted as a second member.
-- [ ] **7. A choice value is matched in its own case.** `PacmanProjectionTargetsTest`
-  `a color value in capitals is refused`; completion counterpart in `PacmanCompletionTargetsTest`. `pacman -Q
+- [ ] **7. A choice value is matched in its own case.** `PacmanConverterTargetsTest`
+  `a color value in capitals is refused`; completion counterpart in `PacmanValueCandidatesTargetsTest`. `pacman -Q
   --color=ALWAYS` gives "invalid argument 'ALWAYS' for --color". klap: `.choice()` matches any case.
 - [ ] **8. Options pacman does not have are refused and not offered.** `PacmanProjectionTargetsTest`
   `an option pacman does not have is refused`. `pacman --json`, `--docs`, `--completion bash`, `--help-all`:
@@ -102,7 +126,7 @@ the rework that dropped the tests' model of klap (item 14). Evidence is in each 
   `an operation whose usage requires targets refuses a line without them` (`-R`, `-U`). Evidence from the usage
   lines only; never run. klap core: operand arity per operation.
 - [ ] **12. Completion offers only what the operation on the line accepts.** `PacmanCompletionTargetsTest`
-  15 tests: `a cluster holding an operation offers no other operation` (item 1), `an option of another operation
+  14 tests: `a cluster holding an operation offers no other operation` (item 1), `an option of another operation
   is not offered`, `a dash offers the operation's page and nothing pacman refuses`, `a long of another operation
   completes to nothing`, `a long on the page is described in that page's words`, `the operation already given is
   not offered again`, `another operation's name as typed completes to this operation's options`, `a long name
@@ -110,13 +134,66 @@ the rework that dropped the tests' model of klap (item 14). Evidence is in each 
   it`, `a contested letter continues by its meaning on the operation's page`, `a letter on the page continues with
   that page's letters`, `a letter of an operation continues with that operation's letters or with nothing`, `an
   operation's own cluster continues with that operation's letters`, `a cluster continues with the letters of an
-  operation after the cursor`, `a color value in capitals is not offered`. `pacman -Q --ne<TAB>` offers
+  operation after the cursor`, and `PacmanValueCandidatesTargetsTest` `a color value in capitals is not offered`. `pacman -Q --ne<TAB>` offers
   `--needed` today. klap core, plus the fixture for the built-ins of item 8.
 - [ ] **15. A counted letter is offered again in a cluster.** `PacmanCompletionTargetsTest`
   `a counted letter is offered again in its cluster` (14 cells). Where the operation's `--help` page shows the
   doubled form (`-Qii`, `-Qkk`, `-Qtt`; `-Scc -Sdd -Sgg -Sii -Suu -Syy`; `-Rdd -Rss`; `-Udd`; `-Dkk`; `-Fyy`), the
   letter is offered once more; a third time never. Item 13. klap core (a `.count()` short stays a continuation of
   a cluster that holds it).
+
+### pacman, the matrix slices (QA pass 2026-10-10, pacman 7.1.0, checked at `2c89351` plus working tree)
+
+Three agents wrote the cells of the testing matrix the first pass lacked, one slice each (P and X; K and K7; V, L,
+S, G and E). Since 2026-10-10 the pacman tests sit in one file per matrix file, so each item names the class its
+tests are in now. All 29 targets (16, 7 and 6) were confirmed to fail with their `@Ignore` removed. The klap core ones reproduced from item 28 and 30 are items
+1 and 32 to 35; the rest are below.
+
+- [ ] **36. Help, version and a refusal rank as pacman ranks them.** `PacmanProjectionTargetsTest` `help
+  outranks version in either order`, `an unknown option refuses the line beside version`, `two operations are
+  refused beside help`. Real `pacman --help --version` prints usage, `pacman -Q --version --bogus` gives
+  "unrecognized option '--bogus'", `pacman -Q -T --help` gives "only one operation may be used at a time"; klap
+  prints the version, the version and help. klap core.
+- [ ] **37. A choice value is never abbreviated.** `PacmanConverterTargetsTest` `a color value is never
+  abbreviated`. `pacman -Q --color=al pacman` gives "invalid argument 'al' for --color"; klap binds `always`, and
+  choice prefix resolution has no off switch. klap core.
+- [ ] **38. `--debug` takes a decimal level, the highest given wins.** `PacmanConverterTargetsTest` `a debug
+  level binds every spelling pacman reads as a number`, `a lower debug level after level 2 keeps level 2`.
+  `--debug=01`, `002`, `+2` and `' 2'` are accepted, and `--debug=2 --debug=1` still prints level-2 lines; the
+  fixture's `.choice("1", "2")` refuses them and its comment "takes only 1 and 2" is wrong. Fixture.
+- [ ] **39. An empty path is refused.** `PacmanConverterTargetsTest` `an empty path is refused`.
+  `--dbpath=`, `--root=`, `--cachedir=`, `--hookdir=`, `--gpgdir=`, `--sysroot=` give "failed to resolve path
+  ''", `--config=` "config file  could not be read"; `--logfile=` and `--arch=` are accepted. Fixture.
+- [ ] **40. A first word `__complete` is an ordinary target.** `PacmanProjectionTargetsTest` `__complete as
+  the first word is a target`, `PacmanCompletionTargetsTest` `a first target named __complete is an ordinary
+  target`. `pacman __complete -Q` gives "package '__complete' was not found"; klap answers with completions.
+  `docs/guide.md:833` reserves the word by design, so this needs an owner call. klap core.
+- [ ] **41. klap's built-ins pacman lacks stay out of abbreviations and suggestions.** `PacmanProjectionTargetsTest`
+  `a prefix of a klap built-in pacman lacks is refused`, `a prefix shared only with a klap built-in names pacman's
+  own option`; `PacmanCompletionTargetsTest` `a built-in pacman does not have is not offered` and
+  `PacmanSuggestionListTargetsTest` `a built in pacman does not have is not offered` (different cells).
+  `pacman -Q --do` is `--downloadonly`, `--comp` and `--js` are unrecognized; klap finds `--do` ambiguous with
+  `--docs` and resolves the other two. Extends item 8; fixture for the `builtins { }` it can decline, klap for
+  `--completion` and the abbreviation pool.
+- [ ] **42. Two `-Q` modifiers pacman forbids together are refused.** `PacmanProjectionTargetsTest` `two -Q
+  modifiers pacman forbids together are refused` (32 pairs, both orders). `pacman -Q --search --info pacman` gives
+  "invalid option: '--search' and '--info' may not be used together". The same pairs under `-S`, `-R` were not run.
+  Fixture.
+- [ ] **43. Comma lists and implied flags project as the man page says.** `PacmanConverterTargetsTest` `a comma
+  separates the packages groups and globs of an upgrade option`; `PacmanProjectionTargetsTest` `--print-format
+  implies --print`, `--disable-sandbox disables both parts of the sandbox`. Man page only, never run (`-S`/`-U` options). Whether the
+  record models these is a fixture design call. Fixture.
+- [ ] **44. Completion keeps to the operation's page at every cursor position.** `PacmanCompletionTargetsTest`
+  `a dash inside a word or before an operation offers what a bare dash under it offers`, `a long name typed in part
+  completes to the longs of the operation's page`, `a cluster continues from the cursor with its operation's page
+  letters`. Item 12 at the inside, start and words-after positions: `pacman -Q --db‸path`, `pacman -Q --r‸e`
+  and `pacman --sy‸ -Q` offer longs pacman refuses there.
+  klap core.
+- [ ] **45. `--help` and `--version` are described in pacman's words.** `PacmanSuggestionListTargetsTest` `help
+  and version are described in pacman's own words`. `man pacman`: "Display syntax for the given operation",
+  "Display version and exit"; klap says "Show this help", "Show the version", and no API lets a fixture reword a
+  built-in. The fix breaks `PacmanCompletionTest` `help and version complete under any operation`, which pins
+  klap's words (`HELP_TEXT`, `VERSION_TEXT` in `PacmanModel.kt`); update it with the fix. klap core.
 
 ### cp (QA pass 2026-10-09, GNU coreutils 9.12)
 

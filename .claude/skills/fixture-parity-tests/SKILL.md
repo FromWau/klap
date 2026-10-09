@@ -63,7 +63,7 @@ Tell the user it is running, which safe oracles it may use, and that it will not
 Do not relay the report on faith. Before telling the user:
 
 - Run `./gradlew :example:<tool>:test` and confirm it passes with the targets skipped. Then comment out every
-  `@Ignore` in the targets files, rerun, and confirm each target fails for the reason it states; put the
+  `@Ignore` in the `*TargetsTest` classes, rerun, and confirm each target fails for the reason it states; put the
   annotations back.
 - Check the coverage table against `references/testing-matrix.md`: every input has a row, and every applicable
   cell is pass, target or n/a with a reason. A silent cell is not covered; send the agent back for it.

@@ -156,8 +156,8 @@ Disputed (P3): "binds a different record" still passes when two same-typed const
 - P30: `hasHelpRequest`, `namesHelpShort`, `routesTransparently` in `Parser.kt`. pacman, cp, find, ssh; `ProjectionTest.a built in answers with null because no command ran`.
 - P31: `builtinLongs` (`Parser.kt`) and `builtins { }` (`Builtins.kt`); the projection's `ValueScope` cannot see `Globals.json`, so `--json` changes nothing on the record. cp and pacman targets `an option cp does not have is refused`, `an option pacman does not have is refused`; ls and rsync decline some.
 - P32: value slots skipped by every built-in scan (`optionValueSlots`), `ArgvScan.headSize` for `--`, `routeBuiltin` and the always-injected `__complete` (`CliBuilder.kt`). cp target `__complete is a source file name`; guide "Global / persistent options".
-- P33: the ladder in `parseTokens` (`Parser.kt`): version before help regardless of order, and an `UnknownOption` from `cmd.sift` raised before help. cp, ls, head, mkdir, rm, chmod (GNU getopt tools).
-- P34: `parseTokens`: "an unresolvable NAME outranks help, a bad ARGUMENT does not". cp `--backup`, ls `--sort`.
+- P33: the ladder in `parseTokens` (`Parser.kt`): version before help regardless of order, and an `UnknownOption` from `cmd.sift` raised before help. cp, ls, head, mkdir, rm, chmod (GNU getopt tools). Evidence (pacman 7.1.0): `pacman --help --version` and `--version --help` both print the usage, `-Q --help --bogus` and `-Q --version --bogus` are refused; pacman targets.
+- P34: `parseTokens`: "an unresolvable NAME outranks help, a bad ARGUMENT does not". cp `--backup`, ls `--sort`. Evidence (pacman 7.1.0): `pacman -Q --color=bogus --help` and `-Q --debug=3 --help` print the -Q page (klap agrees), while `pacman -Q -T --help` is refused as two operations (a pacman target).
 - P35: `Invocation.ShowHelp.qualifiedName` from the walk; `ParitySuite.helpPage`. git, pacman target `an operation's help lists that operation's options only`.
 - P36: `ArityWalk.slots` deliberately does not stop at `optionsEndAtFirstOperand` for the built-in scans (`parse/ArgvScan.kt`). ssh (`SshParityTest` pins the `--json` strip today).
 - P37: `bind`'s group branch returns `ShowHelp` (`parse/Parser.kt`); `bindPositionals` for a leaf. Every fixture; git for the group case.
@@ -176,7 +176,7 @@ Disputed (P3): "binds a different record" still passes when two same-typed const
 | P45 | an option's value equal to a subcommand name or a global's spelling stays the value | `binds` | `git commit -m status`, `git commit -m -C` |
 
 - P39: `valueFrom`'s `next()` branch (`parse/Parser.kt`); `optionValueSlots` keeps built-ins out of the slot. git `add --chmod` (comment in `Git.kt`), git `commit -m`.
-- P40: `segment.getOrNull(i + 1)?.takeUnless { it == END_OF_OPTIONS }` in both `sift` value branches (`parse/Parser.kt`). cp `-S`, tar `-f`, head `-n`.
+- P40: `segment.getOrNull(i + 1)?.takeUnless { it == END_OF_OPTIONS }` in both `sift` value branches (`parse/Parser.kt`). cp `-S`, tar `-f`, head `-n`. Settled for pacman: getopt hands `--` to a required value, `pacman -Qv --dbpath --` prints `DB Path: <cwd>/--/` (a pacman target).
 - P41: `longToken` keeps an empty `inlineValue`; `isFlagLike` is false for `""`. cp; converter outcomes belong to X.
 - P42: `longToken` splits at the first `=`; the cluster's `attached = chars.substring(j + 1)`. cp `--context`, `-S`; matrix note under K7g.
 - P43: the cluster walk ends at the first option (`j = chars.length`). cp, tar (`-cvf`), ssh.
@@ -292,7 +292,7 @@ Disputed (P3): "binds a different record" still passes when two same-typed const
 
 - P78: `checkConstraints` uses `supplied`, which reads the sift, not the bound value (`parse/Bind.kt`). tar, pacman (`two different operations and none at all are refused`); `ConstraintTest`.
 - P79: `checkConstraints` counts members, not occurrences. pacman.
-- P80: `checkConstraints` `AtMostOne`. tar.
+- P80: `checkConstraints` `AtMostOne`. tar. pacman (no fixture constraint yet): `pacman -Q` refuses 32 modifier pairs, such as `--search --info` ("may not be used together"), a pacman target.
 - P81: `checkConditionalRequirements` with `globalAcc.supplied` (`parse/Parser.kt`); `OpenFindingsTest.a global flag triggers the requirement it advertises`.
 - P82: `runValidations` (`Parser.kt`) runs only on `Execute`, catches exceptions into `CliError.Failure`, and reads only the resolved command's `validations`.
 - P83: cp and mv return `Err(CliError.Failure(...))` from their actions (`Cp.kt`, `Mv.kt`), which `parse` never runs. cp targets `-t and -T are refused together`, `-T takes exactly a source and a destination`.

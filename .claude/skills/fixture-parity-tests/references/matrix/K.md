@@ -223,7 +223,8 @@ Notes:
 - K34: `NameMatch.Ambiguous` returns null (planner L468), the planner then takes the positional branch (L220) and
   offers chmod's mode or files on a line the parse refuses. chmod (`--recursive`/`--reference`), ls (`--so`).
   Expect nothing after an ambiguous name. Evidence: "chmod: option '--re' is ambiguous; possibilities:
-  '--recursive' '--reference'".
+  '--recursive' '--reference'". Settled for pacman as a pass: `pacman -Q --conf ‸` offers nothing, as real
+  `pacman -Q --conf x` is "option '--conf' is ambiguous".
 - K35: `longMatchPool` holds every long in the tree (`internal/parse/Parser.kt` `longMatchPool`, `treeLongs`), so a
   sibling's long makes the prefix ambiguous. git. Evidence: `git remote add --ma main origin URL` and
   `git remote add --f o2 URL` accepted by real git. Same fix as P46 to P51 (a shared target).
@@ -250,7 +251,9 @@ Notes:
   (`-m`), tar (`--exclude`), curl (`-H`, `-d`), ssh (`-o`).
 - K41: the planner's value branch takes `--` as the cursor word for `-S` (L157-160), while `sift`'s `valueFrom`
   refuses `--` as a value (`Parser.kt` sift, `takeUnless { it == END_OF_OPTIONS }`); real getopt hands `--` to the
-  option. cp, tar, every fixture with a value-taking short.
+  option. cp, tar, every fixture with a value-taking short. Settled for pacman: `pacman -Q -b --‸` offers files
+  (pass), but `pacman -Q -b -- --verb‸` offers nothing where real pacman takes `--` as the path ("failed to resolve
+  path '--' passed to '--dbpath'") and options go on (target).
 - K42: `trailingIsConsumedValue` and `prev` taking `takeUnless { ... in scan.valueSlots }` (planner L76, L89);
   CompletionValueSlotTest pins the built-in and global cases. git, tar, curl.
 - K43: the long attached form splits at the FIRST `=` (planner L541); the space form never splits. git (`-c`), ssh
@@ -303,9 +306,14 @@ Notes:
   that keeps `color` (all but ls and pacman).
 - K54: `scan.matched` resolves `--col` by abbreviation mode (planner L391); CompletionTest "an abbreviated color
   option ..." tests. git (Options), curl and rsync (None: `--col ‸` is an operand), ls and pacman (`color = false`).
+- Disputed: K54's `pacman --color ‸` (declined: an operand) misreads pacman, whose own `--color <when>` takes a
+  required value (`pacman -Q --color` is "option '--color' requires an argument"), so the slot is its value: the
+  choices, a pass.
 - K55: the planner has a value branch for `--color` only; `--completion`/`--docs` are built-ins, not specs, so no
   branch resolves them (planner L155-170) and the cursor falls to the positional. cp, head, ls, every fixture with
-  a root `action` (`metaOptions`).
+  a root `action` (`metaOptions`). Settled for pacman as a pass: after `--completion` and `--docs` nothing is
+  offered (pacman's targets have no candidates); the names themselves are a target, as pacman has neither
+  (`pacman -Q --completion bash`: "unrecognized option '--completion'").
 - K56: `completion` and `docs` are injected on a root without `action` (`CliBuilder.kt` `build`, `injected`), then
   listed as subcommands (planner L239). git, task-manager; E4 asks whether the real tool has them (real git does
   not).
@@ -313,6 +321,8 @@ Notes:
   git, task-manager.
 - K58: `__complete` is hidden (`CliBuilder.kt` `completeCommand`) so its name is filtered (planner L241), but
   `walkTo` still routes into it (`Cli.kt` `resolveSubcommand`: hidden children take part). rm, every fixture.
+  Settled for pacman: `pacman -Q __complete --verb‸` passes, a first word `pacman __complete --verb‸` offers nothing
+  where real pacman reads a target (`pacman -Q __complete`: "package '__complete' was not found"): a target.
 - K59: the planner completes as if the built-in were absent: `--help` is not stripped and stays in the segment. cp,
   git; the real tool's own completion decides each cell.
 - K60: `walkLine` strips `--json`, then `--color` with its value, before the walk (planner L303-304). git, dd,
@@ -446,6 +456,8 @@ Notes:
 
 - K7i: `firstNonFlagShort` does not step over the help short (planner L497-500), so `-rh` stops the cluster, while
   `-h` is among the two-char names that become continuations (L191, L212). Every fixture keeping `helpShort`.
+  pacman: `pacman -Qhi` prints the -Q page and `pacman -Qhz` is "invalid option -- 'z'", so letters go on after
+  `-h`; klap offers only `-h` for `-h‸` and nothing for `-Qh‸` (a target).
 - K7j: continuations include negative shorts (planner L184, L212), but `firstNonFlagShort` looks up `flagLookup`
   only (L511), so a typed negative short ends the cluster. cp (`-P`), ssh (`-a`), git (global `-P`).
 - K7k: `flagLookup` adds `globalAcc.flagSpecs` (planner L521). task-manager (`-v`), git (`-P`).
