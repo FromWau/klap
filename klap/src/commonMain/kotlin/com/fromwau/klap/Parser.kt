@@ -528,14 +528,7 @@ private fun Cli.routeBuiltin(
             if (args.size > 1) return Result.Error(CliError.TooManyArguments(qualifiedName, args.drop(1)))
             Result.Success(Invocation.ShowDocs(this, format))
         }
-        // The completion driver invokes `__complete -- <words>`; drop the leading end-of-options marker so
-        // `words` is exactly what the user typed.
-        Builtin.Complete -> Result.Success(
-            Invocation.ShowCompleteCandidates(
-                this,
-                if (args.firstOrNull() == END_OF_OPTIONS) args.drop(1) else args
-            ),
-        )
+        Builtin.Complete -> Result.Success(completeInvocation(args))
     }
 
 /**
@@ -556,3 +549,16 @@ private fun runValidations(exec: Invocation.Execute): CliError? =
             CliError.Failure("validateInputs failed: ${e.message?.takeIf { it.isNotBlank() } ?: "no message"}")
         }
     }
+
+/**
+ * `__complete [--cursor <k>] -- <words>`, the end-of-options marker dropped so `words` is exactly what was typed.
+ * Without a usable cursor the last word is the one under it, which is what an installed older script sends.
+ */
+private fun Cli.completeInvocation(args: List<String>): Invocation.ShowCompleteCandidates {
+    // `--cursor` always takes the word after it, so a malformed value is not mistaken for a word of the line.
+    val hasCursor = args.firstOrNull() == "--cursor"
+    val cursor = if (hasCursor) args.getOrNull(1)?.toIntOrNull() else null
+    val rest = if (hasCursor) args.drop(2) else args
+    val words = if (rest.firstOrNull() == END_OF_OPTIONS) rest.drop(1) else rest
+    return Invocation.ShowCompleteCandidates(this, words, cursor?.takeIf { it in words.indices } ?: words.lastIndex)
+}

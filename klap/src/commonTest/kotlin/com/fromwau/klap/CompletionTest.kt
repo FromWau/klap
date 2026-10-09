@@ -103,12 +103,13 @@ class GeneratedShellScriptTest {
     fun `bash delegates every completion to complete`() {
         val script = sampleTree().renderCompletion(CompletionShell.BASH)
         // COMP_WORDBREAKS (default includes `=`) would split an attached `--opt=value` word before we
-        // ever see it, so the words reaching __complete are reconstructed from COMP_LINE/COMP_POINT
-        // (whitespace-split only) instead of trusted straight off COMP_WORDS.
-        assertTrue($$"local line=\"${COMP_LINE:0:COMP_POINT}\"" in script, script)
-        assertTrue($$"read -ra relWords <<< \"$line\"" in script, script)
+        // ever see it, so the words reaching __complete are split from COMP_LINE/COMP_POINT by the
+        // script's own quote-aware splitter instead of trusted straight off COMP_WORDS.
+        assertTrue($$"_todo_words \"${COMP_LINE:0:COMP_POINT}\"" in script, script)
+        assertTrue("read -ra" !in script, script)
         assertTrue(
-            $$"mapfile -t lines < <(\"${COMP_WORDS[0]}\" __complete -- \"${relWords[@]}\" \"$fullCur\")" in script,
+            $$"__complete --cursor \"${#relWords[@]}\" -- \"${relWords[@]}\" \"$fullCur\" \"${afterWords[@]}\")"
+                in script,
             script,
         )
         assertTrue("complete -F _todo todo" in script, script)
@@ -181,10 +182,13 @@ class GeneratedShellScriptTest {
     }
 
     @Test
-    fun `powershell compensates cursor past last element`() {
+    fun `powershell puts an empty word where the cursor sits between words or past the last`() {
         val script = sampleTree().renderCompletion(CompletionShell.POWERSHELL)
-        assertTrue($$"$commandAst.CommandElements[-1].Extent.EndOffset -lt $cursorPosition" in script, script)
-        assertTrue($$"$words += ''" in script, script)
+        assertTrue(
+            $$"$start -gt $cursorPosition) { $cursor = $words.Count; $words += '' }" in script,
+            script,
+        )
+        assertTrue($$"if ($cursor -lt 0) { $cursor = $words.Count; $words += '' }" in script, script)
     }
 
     @Test
@@ -230,12 +234,13 @@ class GeneratedShellScriptTest {
 
     @Test
     fun `powershell decodes value tab description into tool tip`() {
-        // PowerShell splits each line on the FIRST tab: the value is the completion + list item, the
-        // description becomes the tooltip; a description-less line tooltips the value.
+        // PowerShell splits each line on the FIRST tab: the value is the list item (the completion, quoted
+        // again when the word under the cursor was), the description becomes the tooltip; a description-less
+        // line tooltips the value.
         val script = sampleTree().renderCompletion(CompletionShell.POWERSHELL)
         assertTrue($$"$value, $tip = $_ -split \"`t\", 2" in script, script)
         assertTrue(
-            $$"[System.Management.Automation.CompletionResult]::new($value, $value, 'ParameterValue', $tip)" in script,
+            $$"[System.Management.Automation.CompletionResult]::new($text, $value, 'ParameterValue', $tip)" in script,
             script,
         )
     }

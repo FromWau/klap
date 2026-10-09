@@ -74,6 +74,17 @@ class ConditionalOperandTest {
     }
 
     @Test
+    fun `a slot already shown as optional keeps a single pair of brackets when it can disappear`() {
+        fun usage(slot: CommandBuilder.(Opt<String?>) -> Unit) = cli("tool") {
+            val file = option("--file")
+            slot(file)
+            action { Ok("") }
+        }.helpLines().first()
+        assertEquals("usage: tool [file] [options]", usage { argument("file").optional().absentWhen(it) })
+        assertEquals("usage: tool [file=a.toml] [options]", usage { argument("file").default("a.toml").absentWhen(it) })
+    }
+
+    @Test
     fun `the usage line and the argument row both say when the minimum relaxes`() {
         val lines = rmLike().helpLines()
         // `[file...]` is real rm's own synopsis (`rm [OPTION]... [FILE]...`), so the relaxed minimum has to

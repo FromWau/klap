@@ -30,13 +30,19 @@ internal val COMPLETION_SHELL_NAMES: List<String> =
  * [candidates] for a plain list of values) to contribute completion candidates; the block itself returns
  * nothing, only the calls made against this receiver matter.
  *
- * Being a [ValueScope], it also reads the CLI's own declared inputs through their accessors — every global,
- * plus whatever the command under the cursor has been given so far — so a provider resolves `--file` the
- * same way the action will, instead of re-scanning [words] by hand. A scalar input the line has not supplied
- * yet, or whose value failed to convert, is unbound, and reading it aborts the provider, which the caller
- * reads as "no candidates" — usually the right answer, since a provider that needs an input it cannot see
- * has nothing to offer. A `multiple()` input instead reads back what has been typed so far, which may be
- * shorter than its declared minimum or empty, so a provider must not assume the arity an action can.
+ * Being a [ValueScope], it also reads the CLI's own declared inputs through their accessors, so a provider
+ * resolves `--file` the same way the action will instead of re-scanning [words] by hand. That is every global,
+ * plus whatever the command under the cursor has been given anywhere on the line, after the cursor too, with the
+ * word under the cursor read as far as it is typed. fish is the exception: it shows a completion the line only
+ * up to the end of the word being completed, so there an input after the cursor reads as absent and the word
+ * under the cursor reads whole.
+ *
+ * A scalar input the line has not supplied yet, or whose value failed to convert, is unbound, and reading it
+ * aborts the provider, which the caller reads as "no candidates", usually the right answer, since a provider
+ * that needs an input it cannot see has nothing to offer. A `multiple()` input instead reads back what is on the
+ * line, which may be shorter than its declared minimum or empty, so a provider must not assume the arity an
+ * action can. A provider on that input does not see the word it is completing among those values: they are the
+ * ones already finished, so leaving them out of the candidates still offers the one being typed.
  *
  * Two costs to know. Reading ANY accessor resolves ALL of them: the command's inputs and every global are
  * converted and validated on that keypress, so a converter or `.validate { }` must be cheap and free of
@@ -118,7 +124,7 @@ public class CompletionScope internal constructor(
  */
 internal const val COMPLETE_FILES = " klap:files:"
 
-// Every shell delegates the whole decision to `program __complete -- <words + current>` and prints the
+// Every shell delegates the whole decision to `program __complete --cursor <k> -- <words>` and prints the
 // returned lines LITERALLY (never re-eval'd, so a candidate like `$(...)` or a backtick can't execute on
 // Tab). A lone COMPLETE_FILES line maps to that shell's native file completion; the rest go out verbatim.
 public fun Cli.renderCompletion(shell: CompletionShell): String = when (shell) {
@@ -130,23 +136,72 @@ public fun Cli.renderCompletion(shell: CompletionShell): String = when (shell) {
 
 private fun Cli.renderBash(): String = $$"""
     # $$name bash completion (generated)
+    # Splits $1 into words the way a run receives them, quotes and backslashes removed and a quoted space kept
+    # inside its word, without eval: __klap_words holds them, __klap_starts where each starts in $1,
+    # __klap_quote the quote still open at the end and __klap_inWord whether $1 ends inside a word.
+    _$${name}_words() {
+      local text="$1" char word="" quote="" i start=0 inWord=0
+      __klap_words=()
+      __klap_starts=()
+      for (( i = 0; i < ${#text}; i++ )); do
+        char="${text:i:1}"
+        if [[ -n "$quote" ]]; then
+          if [[ "$char" == "$quote" ]]; then
+            quote=""
+          elif [[ "$quote" == '"' && "$char" == '\' ]]; then
+            i=$(( i + 1 ))
+            word+="${text:i:1}"
+          else
+            word+="$char"
+          fi
+        elif [[ "$char" == [[:space:]] ]]; then
+          if (( inWord )); then
+            __klap_words+=("$word")
+            __klap_starts+=("$start")
+            word=""
+            inWord=0
+          fi
+        else
+          (( inWord )) || { inWord=1; start=$i; }
+          if [[ "$char" == "'" || "$char" == '"' ]]; then
+            quote="$char"
+          elif [[ "$char" == '\' ]]; then
+            i=$(( i + 1 ))
+            word+="${text:i:1}"
+          else
+            word+="$char"
+          fi
+        fi
+      done
+      if (( inWord )); then
+        __klap_words+=("$word")
+        __klap_starts+=("$start")
+      fi
+      __klap_quote="$quote"
+      __klap_inWord=$inWord
+    }
     _$$name() {
       local cur="${COMP_WORDS[COMP_CWORD]}"
-      # bash's COMP_WORDBREAKS splits `--tag=r` into `--tag` `=` `r`, so rebuild the intact word and word
-      # list from COMP_LINE and pass THOSE to __complete. (A quoted word with a space isn't rebuilt; a real
-      # fix would need eval, which would reintroduce the injection this delegation avoids.)
-      local line="${COMP_LINE:0:COMP_POINT}"
-      local -a relWords
-      read -ra relWords <<< "$line"
-      local fullCur=""
-      if [[ "$line" != *[[:space:]] ]]; then
-        local n=${#relWords[@]}
-        fullCur="${relWords[$((n - 1))]}"
-        relWords=("${relWords[@]:0:$((n - 1))}")
+      # bash's COMP_WORDBREAKS splits `--tag=r` into `--tag` `=` `r`, so the words go to __complete from
+      # COMP_LINE, split here.
+      _$${name}_words "${COMP_LINE:0:COMP_POINT}"
+      local -a relWords=("${__klap_words[@]}")
+      local fullCur="" quote="$__klap_quote"
+      if (( __klap_inWord )); then
+        fullCur="${relWords[${#relWords[@]} - 1]}"
+        unset 'relWords[${#relWords[@]}-1]'
       fi
       relWords=("${relWords[@]:1}")
+      # The words after the cursor, so a provider can read an input typed further along. A word starting at
+      # the cursor is the one being completed, its rest not typed yet, so it is not one of them.
+      _$${name}_words "$COMP_LINE"
+      local -a afterWords=()
+      local i
+      for i in "${!__klap_starts[@]}"; do
+        (( __klap_starts[i] > COMP_POINT )) && afterWords+=("${__klap_words[i]}")
+      done
       local -a lines
-      mapfile -t lines < <("${COMP_WORDS[0]}" __complete -- "${relWords[@]}" "$fullCur")
+      mapfile -t lines < <("${COMP_WORDS[0]}" __complete --cursor "${#relWords[@]}" -- "${relWords[@]}" "$fullCur" "${afterWords[@]}")
       # Each line is `value` or `value\tdescription`. bash's menu cannot show a per-candidate description,
       # so drop everything from the FIRST tab on, keeping the value only (a COMPLETE_FILES line has no tab).
       local i
@@ -168,7 +223,19 @@ private fun Cli.renderBash(): String = $$"""
         return
       fi
       COMPREPLY=()
-      if [ "$fullCur" = "$cur" ]; then
+      if [[ -n "$quote" ]]; then
+        # The word under the cursor opened a quote, which bash puts back only if the reply carries it: each
+        # reply opens and closes the same quote, escaped for it.
+        local candidate
+        for candidate in "${lines[@]}"; do
+          if [[ "$quote" == "'" ]]; then
+            COMPREPLY+=("'${candidate//\'/\'\\\'\'}'")
+          else
+            candidate="${candidate//\\/\\\\}"
+            COMPREPLY+=("\"${candidate//\"/\\\"}\"")
+          fi
+        done
+      elif [ "$fullCur" = "$cur" ]; then
         # bash overwrites the whole current word on insertion, so re-prepend the part a bare value candidate
         # doesn't already cover (else "red" would blank the `-t` / `--tag=` prefix it was completing).
         local candidate flagPrefix k suffix
@@ -194,7 +261,12 @@ private fun Cli.renderZsh(): String = $$"""
     #compdef $$name
     _$$name() {
       local -a lines
-      lines=("${(@f)$("${words[1]}" __complete -- "${(@)words[2,-1]}")}")
+      # $words is the whole line, the program first and the word under the cursor at $CURRENT, whose typed
+      # part is $PREFIX: the rest of that word is not typed yet. (Q) takes the quoting off each, as a run would.
+      local -a typedWords
+      typedWords=("${(@Q)words}")
+      typedWords[CURRENT]=$PREFIX
+      lines=("${(@f)$("${words[1]}" __complete --cursor $(( CURRENT - 2 )) -- "${(@)typedWords[2,-1]}")}")
       if [[ ${#lines[@]} -eq 1 && "${lines[1]}" == "$$COMPLETE_FILES"* ]]; then
         # _files matches $PREFIX as a whole path, so move the directive's non-path head (dd's `if=`) into
         # $IPREFIX, which is kept on the line but never matched against.
@@ -246,8 +318,11 @@ private fun Cli.renderFish(): String = $$"""
     # $$name fish completion (generated)
     function __$${name}_klap_complete
         set -l tokens (commandline -opc)
-        set -l current (commandline -ct)
-        set -l response ($tokens[1] __complete -- $tokens[2..-1] "$current")
+        # Unquoted as a run receives it; -o already does that for the tokens before it.
+        set -l current (string unescape -- (commandline -ct))
+        # fish does not give a completion the full command line, only up to the token under the cursor, so no
+        # word after the cursor can be sent.
+        set -l response ($tokens[1] __complete --cursor (math (count $tokens) - 1) -- $tokens[2..-1] "$current")
         set -l marker (string length -- "$$COMPLETE_FILES")
         if test (count $response) -eq 1; and test (string sub -l $marker -- "$response[1]") = "$$COMPLETE_FILES"
             # The directive's tail is the non-path head of the token (dd's `if=`): complete only what follows
@@ -290,10 +365,43 @@ private fun Cli.renderPowershell(): String = $$"""
     # $$name powershell completion (generated)
     Register-ArgumentCompleter -Native -CommandName $$name -ScriptBlock {
         param($wordToComplete, $commandAst, $cursorPosition)
-        $words = @($commandAst.CommandElements | ForEach-Object { $_.ToString() })
-        if ($commandAst.CommandElements[-1].Extent.EndOffset -lt $cursorPosition) { $words += '' }
+        # Every word on the line as a run receives it, a quoted one by its value, with an empty one where the
+        # cursor sits between words, and the index of the word under the cursor, so a provider can read an
+        # input typed after it. The word under the cursor is sent as far as it is typed, its opening quote
+        # kept aside to put back on each completion.
+        $words = @()
+        $cursor = -1
+        $quote = ''
+        foreach ($element in $commandAst.CommandElements) {
+            $start = $element.Extent.StartOffset
+            if ($cursor -lt 0 -and $start -gt $cursorPosition) { $cursor = $words.Count; $words += '' }
+            if ($cursor -lt 0 -and $element.Extent.EndOffset -ge $cursorPosition) {
+                $cursor = $words.Count
+                $typed = $element.Extent.Text.Substring(0, $cursorPosition - $start)
+                if ($typed.Length -gt 0 -and $typed[0] -in "'", '"') {
+                    $quote = [string]$typed[0]
+                    $typed = $typed.Substring(1)
+                }
+                $words += $typed
+                continue
+            }
+            $words += if ($element -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+                $element.Value
+            } else {
+                $element.ToString()
+            }
+        }
+        if ($cursor -lt 0) { $cursor = $words.Count; $words += '' }
         $relative = if ($words.Count -gt 1) { $words[1..($words.Count - 1)] } else { @() }
-        $lines = @(& $words[0] __complete -- $relative)
+        # Legacy argument passing drops an empty argument, which would shift the cursor. Windows PowerShell
+        # always passes that way, and Windows mode does for a batch or script launcher such as `tool.bat`.
+        $passing = $PSNativeCommandArgumentPassing
+        $program = Get-Command -Name $words[0] -CommandType Application -ErrorAction Ignore | Select-Object -First 1
+        $launcher = $program -and $program.Extension -in '.bat', '.cmd', '.js', '.vbs', '.wsf'
+        if ($null -eq $passing -or $passing -eq 'Legacy' -or ($passing -eq 'Windows' -and $launcher)) {
+            $relative = @($relative | ForEach-Object { if ($_ -eq '') { '""' } else { $_ } })
+        }
+        $lines = @(& $words[0] __complete --cursor ($cursor - 1) -- $relative)
         if ($lines.Count -eq 1 -and $lines[0].StartsWith("$$COMPLETE_FILES")) {
             # The directive's tail is the non-path head of the word (dd's `if=`), which Get-ChildItem would
             # otherwise resolve as part of the path; it is put back below, since the whole word is replaced.
@@ -314,7 +422,10 @@ private fun Cli.renderPowershell(): String = $$"""
             # becomes the tooltip (a description-less line tooltips the value, unchanged from before).
             $value, $tip = $_ -split "`t", 2
             if (-not $tip) { $tip = $value }
-            [System.Management.Automation.CompletionResult]::new($value, $value, 'ParameterValue', $tip)
+            $text = if ($quote -eq "'") { "'" + $value.Replace("'", "''") + "'" }
+                elseif ($quote) { '"' + $value.Replace('`', '``').Replace('"', '`"').Replace('$', '`$') + '"' }
+                else { $value }
+            [System.Management.Automation.CompletionResult]::new($text, $value, 'ParameterValue', $tip)
         }
     }
     """.trimIndent()
