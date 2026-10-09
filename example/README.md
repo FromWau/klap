@@ -57,8 +57,8 @@ Each tool directory is one Gradle module with two files:
 
 ```
 example/pacman/
-  src/main/kotlin/.../Pacman.kt            the klap CLI
-  src/test/kotlin/.../PacmanParityTest.kt  what it accepts, rejects and binds
+  src/main/kotlin/.../Pacman.kt                the klap CLI
+  src/test/kotlin/.../PacmanProjectionTest.kt  what it accepts, rejects and binds
 ```
 
 The `.kt` file shows you how a surface is declared. The parity test shows you what that declaration
