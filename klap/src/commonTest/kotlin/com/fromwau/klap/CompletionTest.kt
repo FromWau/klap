@@ -153,14 +153,6 @@ class GeneratedShellScriptTest {
     }
 
     @Test
-    fun `fish slices the words after the cursor from a variable`() {
-        // `(commandline -op)[$skip..-1]` fails in fish with "Invalid index value" on every Tab press.
-        val script = sampleTree().renderCompletion(CompletionShell.FISH)
-        assertTrue($$"set -l after $line[$skip..-1]" in script, script)
-        assertTrue($$")[$" !in script, script)
-    }
-
-    @Test
     fun `fish emits candidates with printf not echo`() {
         // fish's `echo` treats a leading -e/-n/-s/-E as ITS OWN flag when it's the whole argument,
         // silently swallowing a candidate that happens to look like one; printf's first argument is

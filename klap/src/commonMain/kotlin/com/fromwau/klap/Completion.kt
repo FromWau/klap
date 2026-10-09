@@ -31,8 +31,9 @@ internal val COMPLETION_SHELL_NAMES: List<String> =
  * nothing, only the calls made against this receiver matter.
  *
  * Being a [ValueScope], it also reads the CLI's own declared inputs through their accessors — every global,
- * plus whatever the command under the cursor has been given anywhere on the line, after the cursor too, with
- * the word under the cursor read as far as it is typed — so a provider resolves `--file` the same way the
+ * plus whatever the command under the cursor has been given anywhere on the line, after the cursor too (but
+ * not in fish, which shows a completion only the line up to it), with the word under the cursor read as far as
+ * it is typed — so a provider resolves `--file` the same way the
  * action will, instead of re-scanning [words] by hand. A scalar input the line has not supplied
  * yet, or whose value failed to convert, is unbound, and reading it aborts the provider, which the caller
  * reads as "no candidates" — usually the right answer, since a provider that needs an input it cannot see
@@ -256,15 +257,9 @@ private fun Cli.renderFish(): String = $$"""
     function __$${name}_klap_complete
         set -l tokens (commandline -opc)
         set -l current (commandline -ct)
-        # The words after the cursor, for a provider to read an input from. The token under the cursor, even
-        # one the cursor sits at the start of, is the one being completed, so it is skipped.
-        set -l token (commandline -t)
-        set -l skip (math (count $tokens) + 1)
-        test -n "$token"; and set skip (math $skip + 1)
-        # Sliced from a variable: fish rejects a variable index on a command substitution.
-        set -l line (commandline -op)
-        set -l after $line[$skip..-1]
-        set -l response ($tokens[1] __complete --cursor (math (count $tokens) - 1) -- $tokens[2..-1] "$current" $after)
+        # fish does not give a completion the full command line, only up to the token under the cursor, so no
+        # word after the cursor can be sent.
+        set -l response ($tokens[1] __complete --cursor (math (count $tokens) - 1) -- $tokens[2..-1] "$current")
         set -l marker (string length -- "$$COMPLETE_FILES")
         if test (count $response) -eq 1; and test (string sub -l $marker -- "$response[1]") = "$$COMPLETE_FILES"
             # The directive's tail is the non-path head of the token (dd's `if=`): complete only what follows

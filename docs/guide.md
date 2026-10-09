@@ -1661,6 +1661,9 @@ command("get") {
 ```
 
 so `mytool get .own<TAB> conf.toml` offers the keys of `conf.toml`, although the file comes after the cursor.
+That works in bash, zsh and PowerShell. fish shows a completion the line only up to the word being completed,
+so there an input reads as absent while it stands after the cursor; to complete from it in every shell, take it
+as an option the user types first, such as `mytool get -f conf.toml .own<TAB>`.
 
 `ValueScope` is the shared base of `ActionScope` and `CompletionScope`, and the four accessors live on it —
 which is what lets `taskStore()` above be written once and used from both. Like `ColorScope`, it is sealed:
