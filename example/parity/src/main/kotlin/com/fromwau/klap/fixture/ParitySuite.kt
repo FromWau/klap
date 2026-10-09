@@ -2,9 +2,11 @@ package com.fromwau.klap.fixture
 
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.map
+import com.fromwau.kern.terminal.Terminal
 import com.fromwau.klap.Invocation
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.parse
+import com.fromwau.klap.run
 import kotlin.test.fail
 
 /**
@@ -63,11 +65,18 @@ public class ParitySuite<T>(private val typed: TypedCli<T>) {
      * [argv] does not parse. [because] names the real tool's own answer to this line, or — when klap
      * diverges — the gap that makes klap stricter, so a reader can tell a pinned real-tool behaviour from
      * a pinned klap limitation without leaving the file.
+     *
+     * [differs] names how klap's refusal differs from the real tool's, where both refuse for different reasons.
+     * The test still passes, and the run prints the note, so the gap shows in every build instead of hiding
+     * behind a green refusal.
      */
-    public fun rejects(vararg argv: String, because: String) {
+    public fun rejects(vararg argv: String, because: String, differs: String? = null) {
         val line = argv.toList()
         if (typed.parse(line) is Result.Success) {
             fail("${expected(line)} to be rejected ($because), but ${outcome(line)}")
+        }
+        if (differs != null) {
+            println("klap differs on `${command(line)}`: $differs\n  klap: ${outcome(line)}\n  real: $because")
         }
     }
 
@@ -106,6 +115,37 @@ public class ParitySuite<T>(private val typed: TypedCli<T>) {
     }
 
     /**
+     * [argv] resolves to help, and the page printed is returned, for a case whose claim is about WHICH page
+     * the real tool shows (`pacman -Qh` prints the -Q page only).
+     */
+    public fun helpPage(vararg argv: String, because: String): String {
+        showsHelp(argv = argv, because = because)
+        val terminal = CapturingTerminal()
+        typed.cli.run(argv.toList(), terminal)
+        return terminal.out.toString()
+    }
+
+    /** [argv] resolves to the version, rather than to a command, an error, or any other built-in. */
+    public fun showsVersion(vararg argv: String, because: String) {
+        val line = argv.toList()
+        when (val parsed = typed.cli.parse(line)) {
+            is Result.Error ->
+                fail("${expected(line)} to print the version ($because), but it was rejected: ${parsed.error}")
+            is Result.Success -> if (parsed.value !is Invocation.ShowVersion) {
+                fail("${expected(line)} to print the version ($because), but ${outcome(line)}")
+            }
+        }
+    }
+
+    /** [argv] resolves to the version, and the text printed is returned, for a claim about what it says. */
+    public fun versionText(vararg argv: String, because: String): String {
+        showsVersion(argv = argv, because = because)
+        val terminal = CapturingTerminal()
+        typed.cli.run(argv.toList(), terminal)
+        return terminal.out.toString()
+    }
+
+    /**
      * A built-in swallows [argv] before the command sees it, so the line is neither bound nor rejected —
      * `rm __complete` resolves to completion candidates, `chmod -h ...` to help. Pinning these keeps a
      * built-in's reach visible: it is the mechanism behind every name-collision note in the fixtures.
@@ -121,9 +161,11 @@ public class ParitySuite<T>(private val typed: TypedCli<T>) {
         }
     }
 
-    private fun expected(argv: List<String>): String {
+    private fun expected(argv: List<String>): String = "expected `${command(argv)}`"
+
+    private fun command(argv: List<String>): String {
         val quoted = argv.map { if (it.isEmpty() || it.any(Char::isWhitespace)) "\"$it\"" else it }
-        return "expected `${(listOf(typed.cli.name) + quoted).joinToString(" ")}`"
+        return (listOf(typed.cli.name) + quoted).joinToString(" ")
     }
 
     /** Names what actually happened, for a failure message; re-parses because only the outcome is wanted. */
@@ -137,5 +179,17 @@ public class ParitySuite<T>(private val typed: TypedCli<T>) {
             is Invocation.ShowDocs -> "it printed ${invocation.format} docs"
             is Invocation.ShowCompleteCandidates -> "it printed completion candidates for ${invocation.words}"
         }
+    }
+}
+
+private class CapturingTerminal : Terminal {
+    val out = StringBuilder()
+
+    override fun out(text: String) {
+        out.append(text)
+    }
+
+    override fun err(text: String) {
+        out.append(text)
     }
 }

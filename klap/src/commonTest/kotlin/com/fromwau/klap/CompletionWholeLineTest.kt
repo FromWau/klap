@@ -92,7 +92,51 @@ class CompletionWholeLineTest {
         assertEquals(listOf("red"), tags.completionsAt(2, "add", "blue", "red"))
         assertEquals(listOf("red"), tags.completionsAt(1, "add", "red", "blue"))
         assertEquals(listOf("red"), tags.completionsAt(2, "add", "--tag", "red"))
-        assertEquals(listOf("red"), tags.completionsAt(1, "add", "--tag=red"))
+        assertEquals(listOf("--tag=red"), tags.completionsAt(1, "add", "--tag=red"))
+    }
+
+    @Test
+    fun `an attached value completes as the whole word`() {
+        val tool = cli("tool") {
+            command("add") {
+                flag("--verbose", "-v")
+                option("--tag", "-t").completeWith(filterByPrefix = false) { candidates(listOf("red", "blue")) }
+                action { Ok("") }
+            }
+        }
+        // The shell replaces the word under the cursor, so a candidate is that whole word, not only its value.
+        assertEquals(listOf("--tag=red", "--tag=blue"), tool.completionsAt(1, "add", "--tag=rd"))
+        assertEquals(listOf("-vtred", "-vtblue"), tool.completionsAt(1, "add", "-vtre"))
+        assertEquals(listOf("red", "blue"), tool.completionsAt(2, "add", "--tag", "re"))
+        assertEquals(listOf("--color=always"), tool.completionsAt(1, "add", "--color=al"))
+    }
+
+    @Test
+    fun `a global variadic option leaves out the value under the cursor too`() {
+        val tags = cli("tasks") {
+            val tag = globalOption("--tag", "-t").multiple()
+            tag.completeWith { candidates(listOf("red", "blue") - tag().toSet()) }
+            command("add") { action { Ok("") } }
+        }
+        assertEquals(listOf("red"), tags.completionsAt(2, "add", "--tag", "red"))
+        assertEquals(listOf("--tag=red"), tags.completionsAt(1, "add", "--tag=red"))
+        assertEquals(listOf("red"), tags.completionsAt(4, "add", "--tag", "blue", "--tag", "red"))
+        assertEquals(listOf("red"), tags.completionsAt(2, "add", "--tag", "red", "--tag", "blue"))
+    }
+
+    @Test
+    fun `a global variadic option reads its values in the order of the line`() {
+        val git = cli("git") {
+            val tag = globalOption("--tag", "-t").multiple()
+            tag.completeWith(filterByPrefix = false) { candidate("${tag()}") }
+            command("remote") {
+                flag("--verbose", "-v")
+                action { Ok("") }
+            }
+        }
+        // `-vta` hides the global in a cluster, which only the command's own sift finds.
+        assertEquals(listOf("[a, b]"), git.completionsAt(5, "remote", "-vta", "--tag", "b", "--tag", "a"))
+        assertEquals(listOf("[a, b]"), git.completionsAt(3, "remote", "-vta", "--tag", "", "--tag", "b"))
     }
 
     @Test
@@ -132,7 +176,7 @@ class CompletionWholeLineTest {
                 action { Ok("") }
             }
         }
-        assertEquals(listOf("verbose=true tag=[]"), tool.completionsAt(1, "add", "-vtre"))
+        assertEquals(listOf("-vtverbose=true tag=[]"), tool.completionsAt(1, "add", "-vtre"))
         assertEquals(listOf("verbose=true tag=[]"), tool.completionsAt(2, "add", "-vt", "re"))
     }
 
