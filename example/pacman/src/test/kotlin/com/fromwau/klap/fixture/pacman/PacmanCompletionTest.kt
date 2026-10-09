@@ -391,14 +391,14 @@ class PacmanCompletionTargetsTest {
         slot("K7i words after", "pacman -Qh| pkg", expected = continuations("-Qh", Op.QUERY)),
     )
 
-    @Ignore("TDD target: klap must complete a first word __complete as the target it is on a line, not route into it")
+    @Ignore("Will not do (todo 40): states a pacman quirk klap does not follow")
     @Test
     fun `a first target named __complete is an ordinary target`() = pacman.checkPacman(
         // K58: `pacman -Q __complete`: "package '__complete' was not found"; with no operation yet, every name.
         slot("K58", "pacman __complete --verb|", expected = setOf(name("--verbose"))),
     )
 
-    @Ignore("TDD target: klap must not end options at a -- that a value-taking option took as its value")
+    @Ignore("Will not do (todo 33): states a pacman quirk klap does not follow")
     @Test
     fun `names go on after a -- that was an option's value`() = pacman.checkPacman(
         // K41: `pacman -Q -b -- --verbose`: "failed to resolve path '--' passed to '--dbpath'", so getopt gave

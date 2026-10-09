@@ -658,7 +658,7 @@ class PacmanProjectionTargetsTest {
         checkCells(cells) { parity.check(it) }
     }
 
-    @Ignore("TDD target: klap must let help outrank --version on the same line, in either order")
+    @Ignore("Will not do (todo 36): states a pacman quirk klap does not follow")
     @Test
     fun `help outranks version in either order`() {
         // `pacman --help --version` and `pacman --version --help` print the usage; with -Q, the -Q page.
@@ -671,13 +671,13 @@ class PacmanProjectionTargetsTest {
         checkCells(lines) { parity.showsHelp(argv = it.toTypedArray(), because = "pacman prints its usage") }
     }
 
-    @Ignore("TDD target: klap must refuse an unknown option on the line before answering --version")
+    @Ignore("Will not do (todo 36): states a pacman quirk klap does not follow")
     @Test
     fun `an unknown option refuses the line beside version`() = parity.checkAll(
         listOf(ParseCell(q("--version", "--bogus"), null, "pacman: unrecognized option '--bogus'")),
     )
 
-    @Ignore("TDD target: klap must check a requireExactlyOne set before answering help")
+    @Ignore("Will not do (todo 36): states a pacman quirk klap does not follow")
     @Test
     fun `two operations are refused beside help`() = parity.checkAll(
         listOf(
@@ -686,13 +686,13 @@ class PacmanProjectionTargetsTest {
         ),
     )
 
-    @Ignore("TDD target: klap must hand a spaced -- to an option that requires a value, as getopt does")
+    @Ignore("Will not do (todo 33): states a pacman quirk klap does not follow")
     @Test
     fun `a value word that is exactly the end of options is the value`() = parity.checkAll(
         listOf(ParseCell(q("--dbpath", "--"), QUERY.copy(dbPath = "--"), "-Qv --dbpath --: DB Path: .../--/")),
     )
 
-    @Ignore("TDD target: klap must let a CLI give up the __complete first word, or route completion another way")
+    @Ignore("Will not do (todo 40): states a pacman quirk klap does not follow")
     @Test
     fun `__complete as the first word is a target`() = parity.checkAll(
         listOf(
@@ -847,7 +847,7 @@ class PacmanProjectionTargetsTest {
     @Test
     fun `a contested letter means what -R gives it`() = contestedLetters(Op.REMOVE)
 
-    @Ignore("TDD target: klap must refuse a second occurrence of a requireExactlyOne member, not only another member")
+    @Ignore("Will not do (todo 6): states a pacman quirk klap does not follow")
     @Test
     fun `the operation given twice is refused`() {
         // `pacman -QQ pacman`, `pacman -Q -Q pacman`, `pacman -Q --query pacman`: all "error: only one operation
