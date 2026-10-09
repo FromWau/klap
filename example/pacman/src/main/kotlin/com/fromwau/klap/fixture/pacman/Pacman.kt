@@ -91,34 +91,106 @@ public fun pacmanCli(): TypedCli<PacmanInputs> = cliOf("pacman") {
     val dbPath: Opt<String?>
     val root: Opt<String?>
     val verbose: Flag
+    val arch: Opt<String?>
+    val cacheDirs: Opt<List<String>>
     val color: Opt<String?>
+    val config: Opt<String?>
+    val confirm: Flag
+    val debug: Opt<String?>
+    val disableDownloadTimeout: Flag
+    val disableSandbox: Flag
+    val disableSandboxFilesystem: Flag
+    val disableSandboxSyscalls: Flag
+    val gpgDir: Opt<String?>
+    val hookDirs: Opt<List<String>>
+    val logFile: Opt<String?>
     val noConfirm: Flag
+    val sysroot: Opt<String?>
 
     group("General options") {
-        dbPath = option("--dbpath", "-b", help = "an alternative database location").file().placeholder("path")
-        root = option("--root", "-r", help = "an alternative installation root").file().placeholder("path")
-        verbose = flag("--verbose", "-v", help = "output paths such as the Root, Conf File, DB Path")
-        color = option("--color", help = "when to enable coloring").choice("always", "never", "auto")
-        noConfirm = flag("--noconfirm", help = "bypass any and all \"Are you sure?\" messages")
+        dbPath = option("--dbpath", "-b", help = "set an alternate database location").file().placeholder("path")
+        root = option("--root", "-r", help = "set an alternate installation root").file().placeholder("path")
+        verbose = flag("--verbose", "-v", help = "be verbose")
+        arch = option("--arch", help = "set an alternate architecture").placeholder("arch")
+        cacheDirs = option("--cachedir", help = "set an alternate package cache location")
+            .file()
+            .placeholder("dir")
+            .multiple()
+        color = option("--color", help = "colorize the output").choice("always", "never", "auto")
+        config = option("--config", help = "set an alternate configuration file").file().placeholder("path")
+        confirm = flag("--confirm", help = "always ask for confirmation")
+        // Real pacman takes only 1 and 2 attached (`--debug=3` is "not a valid debug level"); the bare form
+        // binds the lower one here.
+        debug = option("--debug", help = "display debug messages").choice("1", "2").optionalValue("1")
+        disableDownloadTimeout = flag("--disable-download-timeout", help = "use relaxed timeouts for download")
+        disableSandbox = flag(
+            "--disable-sandbox",
+            help = "disables all sandbox features used for the downloader process",
+        )
+        disableSandboxFilesystem = flag(
+            "--disable-sandbox-filesystem",
+            help = "disables the filesystem part of the downloader process sandbox",
+        )
+        disableSandboxSyscalls = flag(
+            "--disable-sandbox-syscalls",
+            help = "disables the syscalls part of the downloader process sandbox",
+        )
+        gpgDir = option("--gpgdir", help = "set an alternate home directory for GnuPG").file().placeholder("path")
+        hookDirs = option("--hookdir", help = "set an alternate hook location").file().placeholder("dir").multiple()
+        logFile = option("--logfile", help = "set an alternate log file").file().placeholder("path")
+        noConfirm = flag("--noconfirm", help = "do not ask for any confirmation")
+        sysroot = option("--sysroot", help = "operate on a mounted guest system (root-only)").file().placeholder("dir")
     }
+
+    // The man page: "--confirm  Cancels the effects of a previous --noconfirm."
+    lastWins(noConfirm, confirm)
 
     val noDeps: CountFlag
     val printOnly: Flag
+    val assumeInstalled: Opt<List<String>>
+    val dbOnly: Flag
+    val noProgressBar: Flag
+    val noScriptlet: Flag
+    val printFormat: Opt<String?>
 
     group("Transaction options (-S, -R, -U)") {
         // pacman's doubled letters are genuinely cumulative ("specify this option twice to skip all
         // dependency checks"), so .count() is the faithful shape, and it clusters like a boolean flag:
         // `-Sdd` counts 2 the same way `-vv` does.
-        noDeps = flag("--nodeps", "-d", help = "skip dependency version checks; twice to skip all").count()
-        printOnly = flag("--print", "-p", help = "only print the targets instead of performing the operation")
+        noDeps = flag("--nodeps", "-d", help = "skip dependency version checks (-dd to skip all checks)").count()
+        printOnly = flag("--print", "-p", help = "print the targets instead of performing the operation")
+        assumeInstalled = option("--assume-installed", help = "add a virtual package to satisfy dependencies")
+            .placeholder("package=version")
+            .multiple()
+        dbOnly = flag("--dbonly", help = "only modify database entries, not package files")
+        noProgressBar = flag("--noprogressbar", help = "do not show a progress bar when downloading files")
+        noScriptlet = flag("--noscriptlet", help = "do not execute the install scriptlet if one exists")
+        printFormat = option("--print-format", help = "specify how the targets should be printed")
+            .placeholder("string")
     }
 
     val downloadOnly: Flag
+    val asDeps: Flag
+    val asExplicit: Flag
+    val ignore: Opt<List<String>>
+    val ignoreGroup: Opt<List<String>>
     val needed: Flag
+    val overwrite: Opt<List<String>>
 
     group("Upgrade options (-S, -U)") {
-        downloadOnly = flag("--downloadonly", "-w", help = "retrieve all packages, but do not install")
-        needed = flag("--needed", help = "do not reinstall targets that are already up-to-date")
+        downloadOnly = flag("--downloadonly", "-w", help = "download packages but do not install/upgrade anything")
+        asDeps = flag("--asdeps", help = "install packages as non-explicitly installed")
+        asExplicit = flag("--asexplicit", help = "install packages as explicitly installed")
+        ignore = option("--ignore", help = "ignore a package upgrade (can be used more than once)")
+            .placeholder("pkg")
+            .multiple()
+        ignoreGroup = option("--ignoregroup", help = "ignore a group upgrade (can be used more than once)")
+            .placeholder("grp")
+            .multiple()
+        needed = flag("--needed", help = "do not reinstall up to date packages")
+        overwrite = option("--overwrite", help = "overwrite conflicting files (can be used more than once)")
+            .placeholder("glob")
+            .multiple()
     }
 
     val refresh: CountFlag
@@ -127,15 +199,24 @@ public fun pacmanCli(): TypedCli<PacmanInputs> = cliOf("pacman") {
     val info: CountFlag
     val list: Flag
     val search: Flag
-    val groups: Flag
+    val groups: CountFlag
     val quiet: Flag
     val noSave: Flag
+    val explicit: Flag
+    val check: CountFlag
+    val foreign: Flag
+    val owns: Flag
+    val unrequired: CountFlag
+    val regex: Flag
     val changelog: Flag
     val cascade: Flag
-    val recursive: Flag
+    val recursive: CountFlag
     val unneeded: Flag
     val upgrades: Flag
     val nativePackages: Flag
+    val deps: Flag
+    val packageFile: Flag
+    val machineReadable: Flag
 
     // KLAP-GAP: real pacman resolves a modifier's meaning against the operation in its cluster (`-c` is
     // --changelog under -Q, --clean under -S); klap has no per-operation namespace, so each contested
@@ -144,24 +225,49 @@ public fun pacmanCli(): TypedCli<PacmanInputs> = cliOf("pacman") {
     // selected operation; every flag declared here is legal regardless, since a spec list can't scope
     // one input's validity to another's presence.
     group("Operation modifiers") {
-        refresh = flag("--refresh", "-y", help = "download a fresh copy of the master package databases").count()
-        sysUpgrade = flag("--sysupgrade", "-u", help = "upgrade all packages that are out-of-date").count()
-        clean = flag("--clean", "-c", help = "remove old packages from the cache").count()
-        info = flag("--info", "-i", help = "display information on a given package").count()
-        list = flag("--list", "-l", help = "list all packages in the specified repositories")
-        search = flag("--search", "-s", help = "search each package for names or descriptions matching REGEXP")
-        groups = flag("--groups", "-g", help = "display all the members for each package group specified")
-        quiet = flag("--quiet", "-q", help = "show less information for certain operations")
-        noSave = flag("--nosave", "-n", help = "ignore file backup designations")
+        refresh = flag(
+            "--refresh",
+            "-y",
+            help = "download fresh package databases from the server (-yy to force a refresh even if up to date)",
+        ).count()
+        sysUpgrade = flag("--sysupgrade", "-u", help = "upgrade installed packages (-uu enables downgrades)").count()
+        clean = flag("--clean", "-c", help = "remove old packages from cache directory (-cc for all)").count()
+        info = flag(
+            "--info",
+            "-i",
+            help = "view package information (-ii for backup files or extended information)",
+        ).count()
+        list = flag("--list", "-l", help = "list the files of a package, or the packages in a repo (-S)")
+        search = flag("--search", "-s", help = "search packages for matching strings")
+        groups = flag("--groups", "-g", help = "view all members of a package group (-gg for all groups)").count()
+        quiet = flag("--quiet", "-q", help = "show less information for query and search")
+        noSave = flag("--nosave", "-n", help = "remove configuration files")
+        // Letters only one operation uses, so klap binds them exactly as real pacman does.
+        explicit = flag("--explicit", "-e", help = "list packages explicitly installed [filter]")
+        check = flag("--check", "-k", help = "check that package files exist (-kk for file properties)").count()
+        foreign = flag("--foreign", "-m", help = "list installed packages not found in sync db(s) [filter]")
+        owns = flag("--owns", "-o", help = "query the package that owns <file>")
+        unrequired = flag(
+            "--unrequired",
+            "-t",
+            help = "list packages not (optionally) required by any package (-tt to ignore optdepends) [filter]",
+        ).count()
+        regex = flag("--regex", "-x", help = "enable searching using regular expressions")
 
         // The readings the contested shorts above displaced. Their long spellings do not collide with
         // anything, so klap can express the OPTION; only the letter is gone.
-        changelog = flag("--changelog", help = "view the ChangeLog of a package (-Q; the -c letter is taken)")
-        cascade = flag("--cascade", help = "also remove packages that depend on the targets (-R; -c is taken)")
-        recursive = flag("--recursive", help = "also remove unneeded dependencies (-R; the -s letter is taken)")
-        unneeded = flag("--unneeded", help = "remove targets not required by any package (-R; -u is taken)")
-        upgrades = flag("--upgrades", help = "filter to out-of-date packages (-Q; the -u letter is taken)")
-        nativePackages = flag("--native", help = "filter to packages in the sync databases (-Q; -n is taken)")
+        changelog = flag("--changelog", help = "view the changelog of a package (-Q)")
+        cascade = flag("--cascade", help = "remove packages and all packages that depend on them (-R)")
+        recursive = flag(
+            "--recursive",
+            help = "remove unnecessary dependencies (-R; twice includes explicitly installed dependencies)",
+        ).count()
+        unneeded = flag("--unneeded", help = "remove unneeded packages (-R)")
+        upgrades = flag("--upgrades", help = "list outdated packages (-Q) [filter]")
+        nativePackages = flag("--native", help = "list installed packages only found in sync db(s) (-Q) [filter]")
+        deps = flag("--deps", help = "list packages installed as dependencies (-Q) [filter]")
+        packageFile = flag("--file", help = "query a package file instead of the database (-Q)")
+        machineReadable = flag("--machinereadable", help = "produce machine-readable output (-F)")
     }
 
     // KLAP-GAP: real pacman's operand arity is per-operation (required for -D/-R/-U, optional for
@@ -186,7 +292,7 @@ public fun pacmanCli(): TypedCli<PacmanInputs> = cliOf("pacman") {
             "nodeps=${noDeps()}".takeIf { noDeps() > 0 },
             "list".takeIf { list() },
             "search".takeIf { search() },
-            "groups".takeIf { groups() },
+            "groups=${groups()}".takeIf { groups() > 0 },
             "quiet".takeIf { quiet() },
             "nosave".takeIf { noSave() },
             "print".takeIf { printOnly() },
@@ -197,7 +303,7 @@ public fun pacmanCli(): TypedCli<PacmanInputs> = cliOf("pacman") {
             "version-requested".takeIf { versionOperation() },
             "changelog".takeIf { changelog() },
             "cascade".takeIf { cascade() },
-            "recursive".takeIf { recursive() },
+            "recursive=${recursive()}".takeIf { recursive() > 0 },
             "unneeded".takeIf { unneeded() },
             "upgrades".takeIf { upgrades() },
             "native".takeIf { nativePackages() },
@@ -221,12 +327,35 @@ public fun pacmanCli(): TypedCli<PacmanInputs> = cliOf("pacman") {
             dbPath(),
             root(),
             verbose(),
+            arch(),
+            cacheDirs(),
             color(),
+            config(),
+            confirm(),
+            debug(),
+            disableDownloadTimeout(),
+            disableSandbox(),
+            disableSandboxFilesystem(),
+            disableSandboxSyscalls(),
+            gpgDir(),
+            hookDirs(),
+            logFile(),
             noConfirm(),
+            sysroot(),
             noDeps(),
             printOnly(),
+            assumeInstalled(),
+            dbOnly(),
+            noProgressBar(),
+            noScriptlet(),
+            printFormat(),
             downloadOnly(),
+            asDeps(),
+            asExplicit(),
+            ignore(),
+            ignoreGroup(),
             needed(),
+            overwrite(),
             refresh(),
             sysUpgrade(),
             clean(),
@@ -236,12 +365,21 @@ public fun pacmanCli(): TypedCli<PacmanInputs> = cliOf("pacman") {
             groups(),
             quiet(),
             noSave(),
+            explicit(),
+            check(),
+            foreign(),
+            owns(),
+            unrequired(),
+            regex(),
             changelog(),
             cascade(),
             recursive(),
             unneeded(),
             upgrades(),
             nativePackages(),
+            deps(),
+            packageFile(),
+            machineReadable(),
             targets(),
         )
     }
@@ -265,27 +403,59 @@ public data class PacmanInputs(
     val dbPath: String?,
     val root: String?,
     val verbose: Boolean,
+    val arch: String?,
+    val cacheDirs: List<String>,
     val color: String?,
+    val config: String?,
+    val confirm: Boolean,
+    val debug: String?,
+    val disableDownloadTimeout: Boolean,
+    val disableSandbox: Boolean,
+    val disableSandboxFilesystem: Boolean,
+    val disableSandboxSyscalls: Boolean,
+    val gpgDir: String?,
+    val hookDirs: List<String>,
+    val logFile: String?,
     val noConfirm: Boolean,
+    val sysroot: String?,
     val noDeps: Int,
     val printOnly: Boolean,
+    val assumeInstalled: List<String>,
+    val dbOnly: Boolean,
+    val noProgressBar: Boolean,
+    val noScriptlet: Boolean,
+    val printFormat: String?,
     val downloadOnly: Boolean,
+    val asDeps: Boolean,
+    val asExplicit: Boolean,
+    val ignore: List<String>,
+    val ignoreGroup: List<String>,
     val needed: Boolean,
+    val overwrite: List<String>,
     val refresh: Int,
     val sysUpgrade: Int,
     val clean: Int,
     val info: Int,
     val list: Boolean,
     val search: Boolean,
-    val groups: Boolean,
+    val groups: Int,
     val quiet: Boolean,
     val noSave: Boolean,
+    val explicit: Boolean,
+    val check: Int,
+    val foreign: Boolean,
+    val owns: Boolean,
+    val unrequired: Int,
+    val regex: Boolean,
     val changelog: Boolean,
     val cascade: Boolean,
-    val recursive: Boolean,
+    val recursive: Int,
     val unneeded: Boolean,
     val upgrades: Boolean,
     val nativePackages: Boolean,
+    val deps: Boolean,
+    val packageFile: Boolean,
+    val machineReadable: Boolean,
     val targets: List<String>,
 )
 
@@ -302,26 +472,58 @@ public val NOTHING_BOUND: PacmanInputs = PacmanInputs(
     dbPath = null,
     root = null,
     verbose = false,
+    arch = null,
+    cacheDirs = emptyList(),
     color = null,
+    config = null,
+    confirm = false,
+    debug = null,
+    disableDownloadTimeout = false,
+    disableSandbox = false,
+    disableSandboxFilesystem = false,
+    disableSandboxSyscalls = false,
+    gpgDir = null,
+    hookDirs = emptyList(),
+    logFile = null,
     noConfirm = false,
+    sysroot = null,
     noDeps = 0,
     printOnly = false,
+    assumeInstalled = emptyList(),
+    dbOnly = false,
+    noProgressBar = false,
+    noScriptlet = false,
+    printFormat = null,
     downloadOnly = false,
+    asDeps = false,
+    asExplicit = false,
+    ignore = emptyList(),
+    ignoreGroup = emptyList(),
     needed = false,
+    overwrite = emptyList(),
     refresh = 0,
     sysUpgrade = 0,
     clean = 0,
     info = 0,
     list = false,
     search = false,
-    groups = false,
+    groups = 0,
     quiet = false,
     noSave = false,
+    explicit = false,
+    check = 0,
+    foreign = false,
+    owns = false,
+    unrequired = 0,
+    regex = false,
     changelog = false,
     cascade = false,
-    recursive = false,
+    recursive = 0,
     unneeded = false,
     upgrades = false,
     nativePackages = false,
+    deps = false,
+    packageFile = false,
+    machineReadable = false,
     targets = emptyList(),
 )

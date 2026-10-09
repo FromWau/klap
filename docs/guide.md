@@ -1678,22 +1678,22 @@ cursor, plus every global, is converted and validated on that keypress — so ke
 dumping a stack trace into the terminal also swallows exceptions from your own provider code, a bug in a
 provider looks exactly like a provider that had nothing to offer.
 
-`description`, when given, is shown alongside
-the value by shells that support it (zsh, fish, PowerShell); bash shows the value alone. klap
-prefix-filters the offered candidates by the partial word by default, matching on `value` only, never
-`description`. Pass `filterByPrefix = false` to `.completeWith` to skip that filter and match `current`
-yourself, for fuzzy, substring, or alias matching; zsh still offers only a candidate that extends what was
-typed, since it never replaces typed text. For a value attached to its option (`--tag=r`, `-tr`) a provider
-offers the bare value and `current` is the partial value; klap hands the shell the whole word
-(`--tag=red`). `__complete` is internal on both shapes; the
-generated scripts always call it as
-`myapp __complete --cursor <k> -- <words>`: the words on the line (in fish, those up to the cursor) and `<k>`
-the index of the one under the cursor. To invoke it by hand to debug a provider, keep the `--` separator
-(otherwise a completion word like `--flag` is parsed as an option of `__complete`); without `--cursor`, the
-last word is the one under the cursor. One quirk when debugging by hand: where the slot takes a path (a
-`.file()` input, or a provider that called `completeFiles()`), `__complete` prints an internal one-line
-directive rather than real paths, which the generated shell script turns into that shell's native file
-completion. Its exact spelling is klap's to change and is not part of the public surface; `completeFiles()` is.
+`description`, when given, is shown alongside the value by shells that support it (zsh, fish, PowerShell);
+bash shows the value alone. klap prefix-filters the offered candidates by the partial word by default,
+matching on `value` only, never `description`. klap hands the candidates over in the order you give them, and
+the shell sorts them as it does its own (zsh, fish and bash do by default). Pass `filterByPrefix = false` to
+`.completeWith` to skip that filter and match `current` yourself, for fuzzy, substring, or alias matching; zsh
+still offers only a candidate that extends what was typed, since it never replaces typed text. For a value
+attached to its option (`--tag=r`, `-tr`) a provider offers the bare value and `current` is the partial value;
+klap hands the shell the whole word (`--tag=red`). `__complete` is internal on both shapes; the generated
+scripts always call it as `myapp __complete --cursor <k> -- <words>`: the words on the line (in fish, those up
+to the cursor) and `<k>` the index of the one under the cursor. To invoke it by hand to debug a provider, keep
+the `--` separator (otherwise a completion word like `--flag` is parsed as an option of `__complete`); without
+`--cursor`, the last word is the one under the cursor. One quirk when debugging by hand: where the slot takes
+a path (a `.file()` input, or a provider that called `completeFiles()`), `__complete` prints an internal
+one-line directive rather than real paths, which the generated shell script turns into that shell's native
+file completion. Its exact spelling is klap's to change and is not part of the public surface;
+`completeFiles()` is.
 
 ## Generated docs
 
@@ -1875,6 +1875,27 @@ assertEquals(
 
 Use `run(argv, terminal)` instead when what you want to pin is the *output* — the rendered text, the exit
 code, or a `--json` envelope. `inputs` is for binding, `run` is for rendering.
+
+To pin what Tab offers, `com.fromwau.klap.testing` runs completion the way every generated script asks for
+it, with no shell involved. `suggestionsFor(line, cursor)` returns each `Suggestion` with its description,
+`acceptSuggestion` gives the line once one is taken, and `tab` the line after one Tab press, which takes the
+one suggestion or puts in what several share:
+
+```kotlin
+val rm = cli("rm") {
+    flag("--recursive", "-r", help = "remove directories and their contents")
+    flag("--force", "-f", help = "ignore nonexistent files")
+    action { Ok("") }
+}
+
+assertEquals(Suggestion("-rf", "ignore nonexistent files"), rm.suggestionsFor("rm -r").first())
+assertEquals("rm -rf", acceptSuggestion("rm -r", Suggestion("-rf")))
+```
+
+The cursor is at the end of the line unless given; one inside a word hands klap that word as far as it is
+typed, and the words after it as well. How a shell quotes the line, and what it keeps of a word after the
+cursor, is that shell's own. A slot that takes a path suggests `filesAfter(head)`, which the shell turns into
+its own file completion of what follows `head`.
 
 A `cli { }` tree is immutable after construction: each `parse` / `run` / `runSuspending` / `runAction` /
 `runActionSuspending` records its resolved values in a per-call snapshot handed to that call's `action { }`
