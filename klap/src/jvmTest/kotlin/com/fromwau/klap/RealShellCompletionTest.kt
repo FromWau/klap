@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
  */
 class RealShellCompletionTest {
 
-    private val tool = cli("tool") {
+    private fun cliNamed(name: String) = cli(name) {
         command("get") {
             argument("filter")
             argument("file").optional()
@@ -23,14 +23,17 @@ class RealShellCompletionTest {
         }
     }
 
+    private val tool = cliNamed("tool")
+
     private val dir: File = Files.createTempDirectory("klap-shell").toFile()
     private val bin = File(dir, "bin").apply { mkdirs() }
     private val log = File(dir, "calls")
     private val reply = File(dir, "reply")
+    private val errors = File(dir, "stderr")
 
     init {
         // Each call is one line of its arguments, separated by the unit separator so an empty one shows.
-        File(bin, "tool").apply {
+        val stub = File(bin, "tool").apply {
             writeText(
                 $$"""
                 #!/bin/sh
@@ -42,6 +45,8 @@ class RealShellCompletionTest {
             )
             setExecutable(true)
         }
+        // A launcher the way a JVM CLI installs one on Windows, which PowerShell calls differently.
+        stub.copyTo(File(bin, "tool.bat")).setExecutable(true)
         File(dir, "conf.toml").writeText("")
     }
 
@@ -59,15 +64,19 @@ class RealShellCompletionTest {
         line: String,
         cursor: Int = line.length,
         answer: String = "",
+        argumentPassing: String? = null,
+        program: Cli = tool,
     ): Completed {
         val executable = shell.executable
         log.writeText("")
         reply.writeText(answer)
-        val script = File(dir, if (shell == CompletionShell.POWERSHELL) "tool.ps1" else "tool.${executable}")
-        script.writeText(tool.renderCompletion(shell))
-        val (command, extraEnv) = driver(shell, script, line, cursor)
+        // fish autoloads only `<command>.fish` from its complete path, and pwsh dot-sources only a `.ps1`.
+        val script = File(dir, if (shell == CompletionShell.POWERSHELL) "tool.ps1" else "tool.$executable")
+        script.writeText(program.renderCompletion(shell))
+        val (command, extraEnv) = driver(shell, script, line, cursor, argumentPassing)
         val process = ProcessBuilder(command)
             .directory(dir)
+            .redirectError(errors)
             .apply {
                 environment()["PATH"] = "${bin.path}:${System.getenv("PATH")}"
                 environment()["TOOL_LOG"] = log.path
@@ -76,13 +85,13 @@ class RealShellCompletionTest {
             }
             .start()
         val out = process.inputStream.bufferedReader().readText()
-        val err = process.errorStream.bufferedReader().readText()
         assertTrue(process.waitFor(60, TimeUnit.SECONDS), "$executable did not finish")
         // A script error prints here while the shell carries on, so an empty stderr is part of every check.
-        assertEquals("", err, "$executable wrote to standard error")
+        assertEquals("", errors.readText(), "$executable wrote to standard error")
         val calls = log.readLines().filter { it.isNotEmpty() }
         assertEquals(1, calls.size, "$executable called tool ${calls.size} times: $calls")
-        return Completed(calls.single().removeSuffix("\u001f").split('\u001f'), out.lines().filter { it.isNotEmpty() })
+        val call = calls.single().removeSuffix("\u001f").split('\u001f')
+        return Completed(call, out.lines().filter { it.isNotEmpty() })
     }
 
     private fun driver(
@@ -90,38 +99,37 @@ class RealShellCompletionTest {
         script: File,
         line: String,
         cursor: Int,
+        argumentPassing: String?,
     ): Pair<List<String>, Map<String, String>> {
         val env = mapOf("LINE" to line, "POINT" to cursor.toString())
         return when (shell) {
-            // COMP_WORDS as bash splits the words up to the cursor, with an empty one when the cursor starts
-            // a new word; the script rebuilds everything else from COMP_LINE and COMP_POINT.
+            // The script reads only the program and the word under the cursor from COMP_WORDS, raw and quoted as
+            // bash leaves it, and rebuilds everything else from COMP_LINE and COMP_POINT.
             CompletionShell.BASH -> listOf(
                 "bash", "--norc", "--noprofile", "-c",
                 $$"""
                 source "$1"
                 COMP_LINE="$LINE"; COMP_POINT=$POINT
-                before="${LINE:0:POINT}"
-                read -ra COMP_WORDS <<< "$before"
-                [[ -z "$before" || "$before" == *[[:space:]] ]] && COMP_WORDS+=("")
-                COMP_CWORD=$(( ${#COMP_WORDS[@]} - 1 ))
+                COMP_WORDS=("${LINE%% *}" "$CUR"); COMP_CWORD=1
                 _tool
                 printf '%s\n' "${COMPREPLY[@]}"
                 """.trimIndent(),
                 "bash", script.path,
-            ) to env
+            ) to env + ("CUR" to rawWordRanges(line).firstOrNull { cursor in it.first..it.last + 1 }
+                ?.let { line.substring(it.first, cursor) }.orEmpty())
             // Without a terminal zsh has no completion system, so its three builtins the script calls are
             // stood in for: compadd prints each value with the display text it was given.
             CompletionShell.ZSH -> {
-                val before = line.take(cursor)
-                val words = Regex("\\S+").findAll(line).toMutableList()
-                val index = words.indexOfFirst { cursor in it.range.first..it.range.last + 1 }
-                val wordList = words.map { it.value }.toMutableList()
-                val current = if (index >= 0) index else {
-                    val at = words.count { it.range.last < cursor }
-                    wordList.add(at, "")
-                    at
+                val tokens = rawWordRanges(line)
+                val touched = tokens.indexOfFirst { cursor in it.first..it.last + 1 }
+                val words = tokens.map { line.substring(it) }.toMutableList()
+                // zsh's $words holds an empty word where the cursor sits between two.
+                val current = if (touched >= 0) {
+                    touched
+                } else {
+                    tokens.count { it.last < cursor }.also { words.add(it, "") }
                 }
-                val prefix = if (index >= 0) before.substring(words[index].range.first) else ""
+                val prefix = if (touched >= 0) line.substring(tokens[touched].first, cursor) else ""
                 listOf(
                     "zsh", "-f", "-c",
                     $$"""
@@ -141,7 +149,7 @@ class RealShellCompletionTest {
                     """.trimIndent(),
                     "zsh", script.path,
                 ) to env + mapOf(
-                    "WORDS" to wordList.joinToString("\u001f"),
+                    "WORDS" to words.joinToString("\u001f"),
                     "CURRENT_WORD" to (current + 1).toString(),
                     "WORD_PREFIX" to prefix,
                 )
@@ -158,6 +166,7 @@ class RealShellCompletionTest {
             CompletionShell.POWERSHELL -> listOf(
                 "pwsh", "-NoProfile", "-NonInteractive", "-Command",
                 $$"""
+                $${argumentPassing?.let { "\$PSNativeCommandArgumentPassing = '$it'" }.orEmpty()}
                 . '$${script.path}'
                 $r = TabExpansion2 -inputScript $env:LINE -cursorColumn ([int]$env:POINT)
                 $r.CompletionMatches | ForEach-Object { $_.CompletionText + "`t" + $_.ToolTip }
@@ -166,21 +175,54 @@ class RealShellCompletionTest {
         }
     }
 
-    private val CompletionShell.executable: String
-        get() = when (this) {
-            CompletionShell.BASH -> "bash"
-            CompletionShell.ZSH -> "zsh"
-            CompletionShell.FISH -> "fish"
-            CompletionShell.POWERSHELL -> "pwsh"
-        }
-
-    /** [shells] that are installed; each missing one is reported and left out, so its checks do not run. */
+    /** [shells] that are installed, so a missing one's checks do not run. */
     private fun installed(shells: List<CompletionShell> = CompletionShell.entries): List<CompletionShell> =
-        shells.filter { shell ->
-            val found = System.getenv("PATH").split(File.pathSeparator).any { File(it, shell.executable).canExecute() }
-            if (!found) println("tests skipped because ${shell.executable} shell not installed")
-            found
+        shells.filter { it in installedShells }
+
+    /** The words of [line] as a shell splits them: raw, quotes included, a quoted space inside the word. */
+    private fun rawWordRanges(line: String): List<IntRange> {
+        val ranges = mutableListOf<IntRange>()
+        var start = -1
+        var quote: Char? = null
+        var index = 0
+        while (index < line.length) {
+            val char = line[index]
+            when {
+                quote != null -> if (char == quote) quote = null else if (char == '\\' && quote == '"') index++
+                char.isWhitespace() -> if (start >= 0) {
+                    ranges += start until index
+                    start = -1
+                }
+                else -> {
+                    if (start < 0) start = index
+                    if (char == '\'' || char == '"') quote = char else if (char == '\\') index++
+                }
+            }
+            index++
         }
+        if (start >= 0) ranges += start until line.length
+        return ranges
+    }
+
+    private companion object {
+        val CompletionShell.executable: String
+            get() = when (this) {
+                CompletionShell.BASH -> "bash"
+                CompletionShell.ZSH -> "zsh"
+                CompletionShell.FISH -> "fish"
+                CompletionShell.POWERSHELL -> "pwsh"
+            }
+
+        // Looked up once per run, so each missing shell is reported once rather than by every test.
+        val installedShells: Set<CompletionShell> by lazy {
+            val path = System.getenv("PATH").split(File.pathSeparator)
+            CompletionShell.entries.filterTo(mutableSetOf()) { shell ->
+                val found = path.any { File(it, shell.executable).canExecute() }
+                if (!found) println("tests skipped because ${shell.executable} shell not installed")
+                found
+            }
+        }
+    }
 
     // --- the call each shell makes ---
 
@@ -224,6 +266,82 @@ class RealShellCompletionTest {
         }
     }
 
+    @Test
+    fun `bash zsh and powershell send the word under the cursor only as far as it is typed`() {
+        for (shell in installed(listOf(CompletionShell.BASH, CompletionShell.ZSH, CompletionShell.POWERSHELL))) {
+            assertEquals(
+                listOf("__complete", "--cursor", "1", "--", "get", ".o", "conf.toml"),
+                complete(shell, "tool get .owner conf.toml", cursor = "tool get .o".length).call,
+                "$shell",
+            )
+            // A cursor at the start of a word is in that word, with nothing of it typed yet.
+            assertEquals(
+                listOf("__complete", "--cursor", "1", "--", "get", ""),
+                complete(shell, "tool get conf.toml", cursor = "tool get ".length).call,
+                "$shell",
+            )
+        }
+    }
+
+    @Test
+    fun `powershell sends an empty word in legacy argument passing too`() {
+        for (shell in installed(listOf(CompletionShell.POWERSHELL))) {
+            assertEquals(
+                listOf("__complete", "--cursor", "1", "--", "get", "", "conf.toml"),
+                complete(shell, "tool get  conf.toml", cursor = "tool get ".length, argumentPassing = "Legacy").call,
+            )
+        }
+    }
+
+    @Test
+    fun `powershell sends an empty word to a batch file launcher in windows argument passing`() {
+        // Windows mode, PowerShell's default on Windows, passes arguments to a `.bat` the Legacy way.
+        for (shell in installed(listOf(CompletionShell.POWERSHELL))) {
+            assertEquals(
+                listOf("__complete", "--cursor", "1", "--", "get", "", "conf.toml"),
+                complete(
+                    shell,
+                    "tool.bat get  conf.toml",
+                    cursor = "tool.bat get ".length,
+                    argumentPassing = "Windows",
+                    program = cliNamed("tool.bat"),
+                ).call,
+            )
+        }
+    }
+
+    @Test
+    fun `bash fish and powershell send a quoted word under the cursor without its quotes`() {
+        // zsh hands its script that word unquoted already, which its stand-ins here do not model.
+        for (shell in installed(listOf(CompletionShell.BASH, CompletionShell.FISH, CompletionShell.POWERSHELL))) {
+            assertEquals(listOf("__complete", "--cursor", "1", "--", "get", ".al"), complete(shell, "tool get '.al").call)
+            assertEquals(
+                listOf("__complete", "--cursor", "1", "--", "get", ".a | .b"),
+                complete(shell, "tool get \".a | .b").call,
+                "$shell",
+            )
+        }
+    }
+
+    @Test
+    fun `every shell sends a quoted word before the cursor without its quotes`() {
+        for (shell in installed()) {
+            assertEquals(
+                listOf("__complete", "--cursor", "3", "--", "get", "-f", "my file", "."),
+                complete(shell, "tool get -f 'my file' .").call,
+                "$shell",
+            )
+        }
+    }
+
+    @Test
+    fun `bash and powershell keep the opening quote of the word they complete`() {
+        for (shell in installed(listOf(CompletionShell.BASH, CompletionShell.POWERSHELL))) {
+            val offered = complete(shell, "tool get '.al", answer = ".alpha\n").candidates
+            assertTrue(offered.any { it.startsWith("'.alpha'") }, "$shell: $offered")
+        }
+    }
+
     // --- what each shell offers from the answer ---
 
     @Test
@@ -239,6 +357,7 @@ class RealShellCompletionTest {
     fun `zsh fish and powershell show a candidates description and bash does not`() {
         for (shell in installed(listOf(CompletionShell.ZSH, CompletionShell.FISH, CompletionShell.POWERSHELL))) {
             val offered = complete(shell, "tool get .ow", answer = ".owner\tthe owner\n").candidates
+            assertEquals(1, offered.size, "$shell: $offered")
             assertTrue(offered.single().contains("the owner"), "$shell: $offered")
         }
         for (shell in installed(listOf(CompletionShell.BASH))) {
@@ -250,8 +369,9 @@ class RealShellCompletionTest {
     fun `every shell completes paths for the file directive`() {
         for (shell in installed()) {
             val offered = complete(shell, "tool get . con", answer = "$COMPLETE_FILES\n").candidates
+            // zsh's file completion is stood in for, so it shows the stand-in's marker instead of the file.
             val expected = if (shell == CompletionShell.ZSH) "FILES" else "conf.toml"
-            assertTrue(offered.any { it.endsWith(expected) || it.startsWith(expected) }, "$shell: $offered")
+            assertTrue(offered.any { expected in it }, "$shell: $offered")
         }
     }
 }

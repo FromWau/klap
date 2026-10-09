@@ -77,6 +77,115 @@ class CompletionWholeLineTest {
     }
 
     @Test
+    fun `a variadic input leaves out the word under the cursor`() {
+        val tags = cli("tasks") {
+            command("add") {
+                val tag = option("--tag").multiple()
+                val labels = argument("label").multiple()
+                labels.completeWith { candidates(listOf("red", "blue") - labels().toSet()) }
+                tag.completeWith { candidates(listOf("red", "blue") - tag().toSet()) }
+                action { Ok("") }
+            }
+        }
+        // The word is typed in full, as when Tab is pressed to finish it with a space.
+        assertEquals(listOf("red"), tags.completionsAt(1, "add", "red"))
+        assertEquals(listOf("red"), tags.completionsAt(2, "add", "blue", "red"))
+        assertEquals(listOf("red"), tags.completionsAt(1, "add", "red", "blue"))
+        assertEquals(listOf("red"), tags.completionsAt(2, "add", "--tag", "red"))
+        assertEquals(listOf("red"), tags.completionsAt(1, "add", "--tag=red"))
+    }
+
+    @Test
+    fun `a variadic with a minimum leaves the operands after the cursor in their own slots`() {
+        val cp = cli("cp") {
+            command("cp") {
+                val sources = argument("source").multiple(1)
+                val target = argument("target")
+                sources.completeWith(filterByPrefix = false) { candidate("${sources()}|${target()}") }
+                action { Ok("") }
+            }
+        }
+        assertEquals(listOf("[]|dest"), cp.completionsAt(1, "cp", "", "dest"))
+    }
+
+    @Test
+    fun `a variadic option leaves out only the value under the cursor`() {
+        val git = cli("git") {
+            command("remote") {
+                val tag = option("--tag").multiple()
+                argument("name").optional()
+                tag.completeWith(filterByPrefix = false) { candidate("tag=${tag()}") }
+                command("add") { action { Ok("") } }
+                action { Ok("") }
+            }
+        }
+        assertEquals(listOf("tag=[]"), git.completionsAt(2, "remote", "--tag", "", "add"))
+    }
+
+    @Test
+    fun `a value glued to a short cluster keeps the flags before it`() {
+        val tool = cli("tool") {
+            command("add") {
+                val verbose = flag("--verbose", "-v")
+                val tag = option("--tag", "-t").multiple()
+                tag.completeWith(filterByPrefix = false) { candidate("verbose=${verbose()} tag=${tag()}") }
+                action { Ok("") }
+            }
+        }
+        assertEquals(listOf("verbose=true tag=[]"), tool.completionsAt(1, "add", "-vtre"))
+        assertEquals(listOf("verbose=true tag=[]"), tool.completionsAt(2, "add", "-vt", "re"))
+    }
+
+    @Test
+    fun `a slot removed by a trigger after the cursor is not offered`() {
+        val chmod = cli("chmod") {
+            val reference = option("--reference")
+            argument("mode").absentWhen(reference).completeWith(filterByPrefix = false) { candidate("MODE") }
+            argument("file").multiple(1).completeWith(filterByPrefix = false) { candidate("FILE") }
+            action { Ok("") }
+        }
+        assertEquals(listOf("FILE"), chmod.completionsAt(0, "", "f", "--reference", "r"))
+    }
+
+    @Test
+    fun `the slot under the cursor counts the operands after it`() {
+        val cp = cli("cp") {
+            command("cp") {
+                val sources = argument("source").multiple()
+                val target = argument("target")
+                sources.completeWith(filterByPrefix = false) { candidate("source|${target()}") }
+                target.completeWith(filterByPrefix = false) { candidate("target") }
+                action { Ok("") }
+            }
+        }
+        // Between `a` and `b` the word is a second source: `b`, the last operand, is the target.
+        assertEquals(listOf("source|b"), cp.completionsAt(2, "cp", "a", "", "b"))
+        assertEquals(listOf("target"), cp.completionsAt(2, "cp", "a", ""))
+    }
+
+    @Test
+    fun `a word under the cursor naming a subcommand does not take the parents provider into it`() {
+        val git = cli("git") {
+            abbreviation = Abbreviation.All
+            command("remote") {
+                val url = option("--url")
+                argument("name").optional().completeWith(filterByPrefix = false) { candidate("$current|${url()}") }
+                command("add") { action { Ok("") } }
+                action { Ok("") }
+            }
+        }
+        val offered = git.completionsAt(1, "remote", "a", "--url", "x")
+        assertTrue("a|x" in offered, "$offered")
+    }
+
+    @Test
+    fun `a cursor that is no index into the words is the last word`() {
+        val terminal = RecordingTerminal()
+        tool().run(arrayOf("__complete", "--cursor", "x", "--", "get", ".ow"), terminal)
+        assertEquals(".ow|null|false", terminal.out.toString().trim())
+    }
+
+    @Test
     fun `complete takes the cursor before the end of options marker`() {
         val terminal = RecordingTerminal()
         val code = tool().run(arrayOf("__complete", "--cursor", "1", "--", "get", ".ow", "conf.toml"), terminal)

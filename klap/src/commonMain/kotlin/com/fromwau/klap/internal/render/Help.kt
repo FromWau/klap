@@ -79,8 +79,10 @@ internal fun Command.argSummary(): String = arguments.filter { !it.hidden }.join
  * lines: `chmod`'s mode is Required in every other reading, so leaving its usual `<mode>` unbracketed would
  * claim the operand is always there. Wrapping rather than replacing keeps the inner `<>` legible, so the
  * reader still sees "a value, when present" instead of the plain-optional reading `[mode]` would suggest.
+ * A token already in brackets says it may be absent, so it stays as it is.
  */
-private fun ArgumentSpec.absentSlotToken(token: String): String = if (absentWhen != null) "[$token]" else token
+private fun ArgumentSpec.absentSlotToken(token: String): String =
+    if (absentWhen != null && !token.startsWith("[")) "[$token]" else token
 
 /** The name help shows for this input: an explicit `.placeholder()` if given, else the declared name. */
 internal fun ValueSpec.displayName(): String = placeholder ?: name

@@ -555,8 +555,10 @@ private fun runValidations(exec: Invocation.Execute): CliError? =
  * Without a usable cursor the last word is the one under it, which is what an installed older script sends.
  */
 private fun Cli.completeInvocation(args: List<String>): Invocation.ShowCompleteCandidates {
-    val cursor = if (args.firstOrNull() == "--cursor") args.getOrNull(1)?.toIntOrNull() else null
-    val rest = if (cursor != null) args.drop(2) else args
+    // `--cursor` always takes the word after it, so a malformed value is not mistaken for a word of the line.
+    val hasCursor = args.firstOrNull() == "--cursor"
+    val cursor = if (hasCursor) args.getOrNull(1)?.toIntOrNull() else null
+    val rest = if (hasCursor) args.drop(2) else args
     val words = if (rest.firstOrNull() == END_OF_OPTIONS) rest.drop(1) else rest
     return Invocation.ShowCompleteCandidates(this, words, cursor?.takeIf { it in words.indices } ?: words.lastIndex)
 }

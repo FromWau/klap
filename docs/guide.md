@@ -1646,7 +1646,9 @@ runtime. A scalar input the half-typed line has not supplied — a required argu
 value that failed to convert — stays unbound, and reading it aborts the provider so Tab simply offers
 nothing. That is normally what you want: a provider that cannot see the input it depends on has nothing to
 offer. A `multiple()` input is the exception: it reads back whatever is on the line, which may be
-empty or shorter than its declared minimum, so don't assume the arity an `action { }` can rely on.
+empty or shorter than its declared minimum, so don't assume the arity an `action { }` can rely on. A
+provider on that input does not see the word it is completing among those values: they are the ones already
+finished, so `candidates(all - tags())` still offers the tag being typed.
 
 An input typed after the cursor reads the same way. A provider can only name a handle declared before it, so
 when the input it needs comes later on the line, attach `.completeWith` once that handle exists:
@@ -1661,9 +1663,10 @@ command("get") {
 ```
 
 so `mytool get .own<TAB> conf.toml` offers the keys of `conf.toml`, although the file comes after the cursor.
-That works in bash, zsh and PowerShell. fish shows a completion the line only up to the word being completed,
-so there an input reads as absent while it stands after the cursor; to complete from it in every shell, take it
-as an option the user types first, such as `mytool get -f conf.toml .own<TAB>`.
+That works in bash, zsh and PowerShell. fish shows a completion the line only up to the end of the word being
+completed, so there an input reads as absent while it stands after the cursor, and `current` is that whole word
+even with the cursor inside it. To complete from an input in every shell, take it as an option the user types
+first, such as `mytool get -f conf.toml .own<TAB>`.
 
 `ValueScope` is the shared base of `ActionScope` and `CompletionScope`, and the four accessors live on it —
 which is what lets `taskStore()` above be written once and used from both. Like `ColorScope`, it is sealed:
@@ -1681,14 +1684,13 @@ prefix-filters the offered candidates by the partial word by default, matching o
 `description`. Pass `filterByPrefix = false` to `.completeWith` to skip that filter and match `current`
 yourself, for fuzzy, substring, or alias matching. `__complete` is internal on both shapes; the
 generated scripts always call it as
-`myapp __complete --cursor <k> -- <words>`, every word on the line and `<k>` the index of the one under the
-cursor. To invoke it by hand to debug a provider, keep the `--` separator (otherwise a completion word like
-`--flag` is parsed as an option of `__complete`); without `--cursor`, the last word is the one under the
-cursor. One quirk when
-debugging by hand: where the slot takes a path (a `.file()` input, or a provider that called
-`completeFiles()`), `__complete` prints an internal one-line directive rather than real paths, which the
-generated shell script turns into that shell's native file completion. Its exact spelling is klap's to
-change and is not part of the public surface; `completeFiles()` is.
+`myapp __complete --cursor <k> -- <words>`: the words on the line (in fish, those up to the cursor) and `<k>`
+the index of the one under the cursor. To invoke it by hand to debug a provider, keep the `--` separator
+(otherwise a completion word like `--flag` is parsed as an option of `__complete`); without `--cursor`, the
+last word is the one under the cursor. One quirk when debugging by hand: where the slot takes a path (a
+`.file()` input, or a provider that called `completeFiles()`), `__complete` prints an internal one-line
+directive rather than real paths, which the generated shell script turns into that shell's native file
+completion. Its exact spelling is klap's to change and is not part of the public surface; `completeFiles()` is.
 
 ## Generated docs
 
