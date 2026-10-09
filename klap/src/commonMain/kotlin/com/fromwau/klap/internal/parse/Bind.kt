@@ -198,6 +198,9 @@ internal fun Command.bindPositionals(
     policy: BindPolicy = BindPolicy.Strict,
     // Defaulted for the completion caller, whose Lenient policy discards every error built here.
     qualifiedName: String = name,
+    // The operand a variadic slot leaves out of its value while still counting it toward the slots: the word
+    // completion is typing, which is not a finished value yet.
+    skipOperand: Int? = null,
 ): Result<Unit, CliError> {
     val overridden = lastWinsLosers(sifted)
     val args = activeArguments(sifted, overridden)
@@ -222,7 +225,9 @@ internal fun Command.bindPositionals(
                 // report itself: `cp a` means "a is the source, the destination is missing", and blaming
                 // the variadic instead would answer `cp a` and bare `cp` with the same sentence.
                 val take = (left - fixedAfter).coerceAtLeast(0).coerceAtLeast(minOf(min, left))
-                val slice = values.subList(i, i + take)
+                val slice = values
+                    .subList(i, i + take)
+                    .filterIndexed { offset, _ -> i + offset != skipOperand }
                 // Rule 3: the sift is permissive (it admits when ANY argument on the command is marked), so
                 // the slot a value actually lands in is only known here. Keyed on what the sift admitted
                 // rather than on the token's shape, so a `--`-escaped operand still binds in an unmarked
@@ -415,6 +420,7 @@ internal fun Cli.completionValues(
     cmd: Command,
     sifted: Sifted,
     globalAcc: GlobalAccumulator,
+    skipOperand: Int? = null,
 ): Map<HolderSpec, Any?> {
     val sink = mutableMapOf<HolderSpec, Any?>()
     // Same order parse() binds in: the command's own inputs, then the globals the segment sift topped up.
@@ -429,7 +435,14 @@ internal fun Cli.completionValues(
         globalAcc.inferNames,
         BindPolicy.Lenient,
     )
-    cmd.bindPositionals(sifted.positionals, sink, sifted, globalAcc.inferNames, BindPolicy.Lenient)
+    cmd.bindPositionals(
+        sifted.positionals,
+        sink,
+        sifted,
+        globalAcc.inferNames,
+        BindPolicy.Lenient,
+        skipOperand = skipOperand,
+    )
     bindGlobals(globalSpecs, globalAcc.toGlobalSift(), sink, globalAcc.inferNames, BindPolicy.Lenient)
     return sink
 }

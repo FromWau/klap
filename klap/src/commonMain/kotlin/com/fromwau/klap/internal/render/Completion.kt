@@ -57,8 +57,8 @@ internal fun List<Candidate>.isNativeFileRequest(): Boolean =
  * the line (mirroring `COMP_WORDS[@]:1`) and the index of the partial word under the [cursor], return every
  * candidate valid there. Per-slot rules are commented at their branches; testable without a shell.
  *
- * Which slot is under the cursor is read from the words up to it alone. What a provider reads of the inputs is
- * bound from the whole line, the word under the cursor in its place, so an input typed further along counts.
+ * Which slot is under the cursor is read from the words up to it, counting how many operands follow it. What a
+ * provider reads of the inputs is bound from the whole line, so an input typed further along counts.
  */
 internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.lastIndex): List<Candidate> {
     // Hold the cursor's own (maybe half-typed) word out of the strips below: stripping it would discard the
@@ -96,26 +96,44 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
     // sifted.error is deliberately ignored: a line still being typed is expected to be malformed, and a Tab
     // press must never fail. Whatever the walk did collect around the offending token is what we complete.
 
+    // The whole line, walked and sifted once: what the inputs bind from and what places the cursor among the
+    // slots. A subcommand typed after the cursor would walk it to another command, whose inputs are not the ones
+    // [cmd]'s provider reads, so then [cmd] sifts the line itself, not walked again from the cursor word.
+    val wholeLine by lazy(LazyThreadSafetyMode.NONE) { walkLine(words).takeIf { it.cmd === cmd } }
+    val wholeAcc by lazy(LazyThreadSafetyMode.NONE) { wholeLine?.globalAcc ?: globalAcc }
+    val wholeSifted by lazy(LazyThreadSafetyMode.NONE) {
+        cmd.sift(wholeLine?.segment ?: (segment + current + words.drop(cursor + 1)), wholeAcc)
+    }
+
     // The bind runs user converters and validators, so it must not happen on a Tab press whose slot has no
-    // provider; a provider reading an accessor is what forces it. A subcommand typed after the cursor would
-    // walk the whole line to another command, whose inputs are not the ones [cmd]'s provider reads.
-    val values = lazy(LazyThreadSafetyMode.NONE) {
-        val whole = walkLine(words).takeIf { it.cmd === cmd } ?: walkLine(typed)
-        completionValues(cmd, cmd.sift(whole.segment, whole.globalAcc), whole.globalAcc)
+    // provider; a provider reading an accessor is what forces it.
+    fun valuesFor(target: HolderSpec) = lazy(LazyThreadSafetyMode.NONE) {
+        // A variadic input holds the values already finished, not the one being completed, so a provider
+        // leaving out what was given keeps offering it. Only that value goes: every word keeps its slot.
+        val variadic = target.cardinality is Cardinality.Multiple
+        val bound = if (variadic && target is OptionSpec) {
+            wholeSifted.withoutOccurrence(target, sifted.options[target]?.size ?: 0)
+        } else {
+            wholeSifted
+        }
+        val skipOperand = sifted.positionals.size.takeIf { variadic && target is ArgumentSpec }
+        completionValues(cmd, bound, wholeAcc, skipOperand)
     }
 
     // An option value under the cursor: `prev` names a known value-taking option (a whole `--long`/`-s`, or
     // the trailing option char of a short cluster like `-vp`), so complete only that value.
     val valueOption =
         prev?.takeIf { it.isFlagLike() }?.let { cmd.trailingValueOption(it, globalAcc) }
-    if (valueOption != null) return valueOption.candidatesFor(current, typed, values)
+    if (valueOption != null) {
+        return valueOption.candidatesFor(current, typed, valuesFor(valueOption))
+    }
 
     // An ATTACHED option value: the name and its (partial) value share ONE word (`--opt=partial` or glued
     // `-opartial`). Complete the value, filtered by the partial after the `=`/short char, not the whole word.
     val attached = cmd.attachedValueOption(current, globalAcc)
     if (attached != null) {
         val (attachedOption, partial) = attached
-        return attachedOption.candidatesFor(partial, typed, values)
+        return attachedOption.candidatesFor(partial, typed, valuesFor(attachedOption))
     }
 
     // A flag-shaped partial word (`-`, `--`, `-v`, `--verb`): offer this command's option/flag names plus
@@ -167,12 +185,15 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
     }
 
     val positionalIndex = sifted.positionals.size
-    // The bind's own slot list, not cmd.arguments: a slot an .absentWhen() trigger removed is not on this
-    // line at all, and offering its values would put completion at odds with both the parse and --help.
-    val slots = cmd.activeArguments(sifted)
-    val positional = slots.slotForOperand(positionalIndex)?.takeUnless { it.hidden }
+    // Operands after the cursor decide its slot too: in `cp a <TAB> b`, `b` is the target, so the word is a source.
+    val operands = wholeSifted.positionals.size.coerceAtLeast(positionalIndex + 1)
+    // The bind's own slot list, not cmd.arguments: a slot an .absentWhen() trigger removed, wherever on the line
+    // the trigger stands, is not on this line at all, and offering its values would put completion at odds with
+    // both the parse and --help.
+    val slots = cmd.activeArguments(wholeSifted)
+    val positional = slots.slotForOperand(positionalIndex, operands)?.takeUnless { it.hidden }
 
-    val positionalCandidates = positional?.candidatesFor(current, typed, values).orEmpty()
+    val positionalCandidates = positional?.let { it.candidatesFor(current, typed, valuesFor(it)) }.orEmpty()
     // A `.file()` slot or a completeFiles() provider must reach the shell as the LONE directive line, even at
     // a hybrid parent's first positional (subcommands beside its own operand, git-style), where a
     // subcommand name would otherwise sit next to it and be read as literal candidate text instead of
@@ -194,6 +215,25 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
         emptyList()
     }
     return subcommands + positionalCandidates
+}
+
+/** This sift without the [index]th value of [option], the one under the cursor; flags and other words stay. */
+private fun Sifted.withoutOccurrence(
+    option: OptionSpec,
+    index: Int,
+): Sifted {
+    val values = options[option] ?: return this
+    val kept = values.filterIndexed { occurrence, _ -> occurrence != index }
+    return Sifted(
+        flags,
+        negations,
+        options + (option to kept),
+        positionals,
+        error,
+        flagPositions,
+        optionPositions,
+        dashLedAdmitted,
+    )
 }
 
 /** A line walked as parse() walks one: to the command it names, with what is left for that command to sift. */
@@ -240,14 +280,16 @@ private fun Command.membersRuledOutBy(sifted: Sifted): Set<HolderSpec> = constra
     .flatMapTo(mutableSetOf()) { constraint -> constraint.members.filterNot { supplied(it, sifted) } }
 
 /**
- * The slot the operand at [index] would bind to, computed the way `bindPositionals` assigns one, on a line
- * whose LAST operand is the word under the cursor. That assumption is what gives the `SRC... DEST` shape
- * its destination back: a variadic hands the fixed slots after it what they still need, so `cp a b <TAB>`
- * lands on DEST rather than on a third SOURCE, exactly where the parse would put that word. Null once no
- * slot can hold it, which is where the parse reports too many arguments.
+ * The slot the operand at [index] would bind to on a line of [operands] operands in all, computed the way
+ * `bindPositionals` assigns one: a variadic hands the fixed slots after it what they still need, so
+ * `cp a b <TAB>` lands on DEST rather than on a third SOURCE, while `cp a <TAB> b` lands on a SOURCE, exactly
+ * where the parse would put that word. Null once no slot can hold it, which is where the parse reports too many
+ * arguments.
  */
-private fun List<ArgumentSpec>.slotForOperand(index: Int): ArgumentSpec? {
-    val operands = index + 1
+private fun List<ArgumentSpec>.slotForOperand(
+    index: Int,
+    operands: Int,
+): ArgumentSpec? {
     var filled = 0
     for ((slotIndex, spec) in withIndex()) {
         // Every fixed slot after a variadic is Required (BuilderValidation's rule), so what they claim is exact.
