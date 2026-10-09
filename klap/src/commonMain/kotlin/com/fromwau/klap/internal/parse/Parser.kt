@@ -538,8 +538,8 @@ private fun OptionSpec?.valueFrom(attached: String?, next: () -> String?): Taken
  *
  * [positions] gives each [segment] token its index in the argv [siftGlobals] walked, so a global recorded
  * here can be ordered against one the pre-strip already resolved and removed (see [Polarity], [Occurrence]).
- * It is optional: a caller with no interest in ordering (completion) may omit it, and the observations this
- * records then simply win outright.
+ * Without it each token's position is its index in [segment], which orders nothing against the pre-strip, so
+ * every caller that binds globals passes it, completion included.
  */
 internal fun Command.sift(
     segment: List<String>,
@@ -1244,7 +1244,7 @@ internal fun List<HolderSpec>.siftGlobals(
  * value-taking option, or a `--flag=value` given to a boolean flag), which [parse] raises before the
  * command bind rather than letting the leftover token be misreported as an unknown option.
  */
-internal class GlobalSift(
+internal data class GlobalSift(
     val flags: Map<FlagSpec, Int>,
     val negations: Map<FlagSpec, Polarity>,
     val options: Map<OptionSpec, List<Occurrence>>,
@@ -1274,8 +1274,7 @@ internal class GlobalPreStrip(
  * char from a glued value — and only the command's own [sift] resolves it, one pass later. Without a
  * position that later pass wins wherever the cluster sat.
  *
- * A null [position] means the caller tracks none (completion, which never orders anything); the later write
- * then simply wins outright.
+ * A null [position] means the caller tracked none; the later write then simply wins outright.
  */
 internal class Polarity(val on: Boolean, val position: ClusterPosition?)
 
@@ -1293,8 +1292,8 @@ private fun MutableMap<FlagSpec, Polarity>.recordPolarity(flag: FlagSpec, on: Bo
  * are collected in is not the order they were written in, and only an argv-scale index can say which of
  * them came last.
  *
- * A null [position] means the caller tracks none (completion), and such an occurrence sorts after every
- * positioned one, so the later pass's observation simply wins.
+ * A null [position] means the caller tracked none, and such an occurrence sorts after every positioned one, so
+ * the later pass's observation simply wins.
  */
 internal class Occurrence(val value: String, val position: ClusterPosition?)
 

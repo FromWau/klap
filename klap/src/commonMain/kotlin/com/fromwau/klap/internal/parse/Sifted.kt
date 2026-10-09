@@ -11,7 +11,7 @@ import com.fromwau.klap.internal.spec.OptionSpec
  * [error] is the first hard syntax error hit while walking, mirroring [GlobalSift.error]: [bind] raises it
  * before binding anything, while the completion planner ignores it and uses whatever the walk did collect.
  */
-internal class Sifted(
+internal data class Sifted(
     val flags: Map<FlagSpec, Int>,
     val negations: Map<FlagSpec, Boolean>,
     val options: Map<OptionSpec, List<String>>,

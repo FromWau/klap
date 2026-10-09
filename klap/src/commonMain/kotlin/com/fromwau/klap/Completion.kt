@@ -76,9 +76,10 @@ public class CompletionScope internal constructor(
     internal val collected: MutableList<Candidate> = mutableListOf()
 
     /**
-     * Offers one completion candidate: [value] is what the shell inserts and matches [current] against;
-     * [description], when present, is shown alongside it by shells that support it (zsh, fish,
-     * PowerShell) and dropped by bash, whose native menu cannot show a per-candidate description.
+     * Offers one completion candidate: [value] is what the shell inserts and matches [current] against, with
+     * the option in front for a value attached to it (`--tag=` before `red`); [description], when present, is
+     * shown alongside it by shells that support it (zsh, fish, PowerShell) and dropped by bash, whose native
+     * menu cannot show a per-candidate description.
      *
      * A call made after [completeFiles] is silently dropped, since the file directive only works alone.
      */
@@ -138,9 +139,12 @@ private fun Cli.renderBash(): String = $$"""
     # $$name bash completion (generated)
     # Splits $1 into words the way a run receives them, quotes and backslashes removed and a quoted space kept
     # inside its word, without eval: __klap_words holds them, __klap_starts where each starts in $1,
-    # __klap_quote the quote still open at the end and __klap_inWord whether $1 ends inside a word.
+    # __klap_quote the quote still open at the end, __klap_quoteAt where in $1 it opened, and __klap_inWord whether
+    # $1 ends inside a word.
     _$${name}_words() {
-      local text="$1" char word="" quote="" i start=0 inWord=0
+      local text="$1" char word="" quote="" quoteAt=-1 i start=0 inWord=0
+      # Inside double quotes a backslash escapes only these, and stays before anything else.
+      local escapable=$'$`"\\\n'
       __klap_words=()
       __klap_starts=()
       for (( i = 0; i < ${#text}; i++ )); do
@@ -148,7 +152,8 @@ private fun Cli.renderBash(): String = $$"""
         if [[ -n "$quote" ]]; then
           if [[ "$char" == "$quote" ]]; then
             quote=""
-          elif [[ "$quote" == '"' && "$char" == '\' ]]; then
+          elif [[ "$quote" == '"' && "$char" == '\' && -n "${text:i+1:1}" &&
+            "$escapable" == *"${text:i+1:1}"* ]]; then
             i=$(( i + 1 ))
             word+="${text:i:1}"
           else
@@ -165,6 +170,7 @@ private fun Cli.renderBash(): String = $$"""
           (( inWord )) || { inWord=1; start=$i; }
           if [[ "$char" == "'" || "$char" == '"' ]]; then
             quote="$char"
+            quoteAt=$i
           elif [[ "$char" == '\' ]]; then
             i=$(( i + 1 ))
             word+="${text:i:1}"
@@ -178,6 +184,7 @@ private fun Cli.renderBash(): String = $$"""
         __klap_starts+=("$start")
       fi
       __klap_quote="$quote"
+      __klap_quoteAt=$quoteAt
       __klap_inWord=$inWord
     }
     _$$name() {
@@ -186,7 +193,7 @@ private fun Cli.renderBash(): String = $$"""
       # COMP_LINE, split here.
       _$${name}_words "${COMP_LINE:0:COMP_POINT}"
       local -a relWords=("${__klap_words[@]}")
-      local fullCur="" quote="$__klap_quote"
+      local fullCur="" quote="$__klap_quote" quoteAt=$__klap_quoteAt
       if (( __klap_inWord )); then
         fullCur="${relWords[${#relWords[@]} - 1]}"
         unset 'relWords[${#relWords[@]}-1]'
@@ -204,18 +211,27 @@ private fun Cli.renderBash(): String = $$"""
       mapfile -t lines < <("${COMP_WORDS[0]}" __complete --cursor "${#relWords[@]}" -- "${relWords[@]}" "$fullCur" "${afterWords[@]}")
       # Each line is `value` or `value\tdescription`. bash's menu cannot show a per-candidate description,
       # so drop everything from the FIRST tab on, keeping the value only (a COMPLETE_FILES line has no tab).
-      local i
       for i in "${!lines[@]}"; do
         lines[$i]="${lines[$i]%%$'\t'*}"
+      done
+      # readline completes the part of $cur up to the cursor, and leaves the rest of the word after it.
+      local typedCur="" k
+      # Right after a separator COMP_WORDS holds the separator itself, while readline's word is still empty.
+      [[ -n "$cur" && -z "${cur//[$COMP_WORDBREAKS]/}" ]] && cur=""
+      for (( k = ${#cur}; k > 0; k-- )); do
+        if [[ "${COMP_LINE:0:COMP_POINT}" == *"${cur:0:k}" ]]; then
+          typedCur="${cur:0:k}"
+          break
+        fi
       done
       if [ "${#lines[@]}" -eq 1 ] && [[ "${lines[0]}" == "$$COMPLETE_FILES"* ]]; then
         # The directive's tail is the non-path head of the word (dd's `if=`), which must not reach compgen.
         local nonPath="${lines[0]#"$$COMPLETE_FILES"}"
-        local pathCur="${cur#"$nonPath"}"
+        local pathCur="${typedCur#"$nonPath"}"
         # The default COMP_WORDBREAKS holds `=` and has already split that head off $cur; where it has not,
         # bash overwrites the whole word on insertion, so put the head back on every match.
         local keep=""
-        [ "$pathCur" = "$cur" ] || keep="$nonPath"
+        [ "$pathCur" = "$typedCur" ] || keep="$nonPath"
         mapfile -t COMPREPLY < <(compgen -f -- "$pathCur")
         COMPREPLY=("${COMPREPLY[@]/#/$keep}")
         # -o filenames marks these as paths: a directory match gets a trailing `/` to descend, not compgen's plain trailing space.
@@ -223,36 +239,36 @@ private fun Cli.renderBash(): String = $$"""
         return
       fi
       COMPREPLY=()
-      if [[ -n "$quote" ]]; then
-        # The word under the cursor opened a quote, which bash puts back only if the reply carries it: each
-        # reply opens and closes the same quote, escaped for it.
-        local candidate
-        for candidate in "${lines[@]}"; do
-          if [[ "$quote" == "'" ]]; then
-            COMPREPLY+=("'${candidate//\'/\'\\\'\'}'")
-          else
-            candidate="${candidate//\\/\\\\}"
-            COMPREPLY+=("\"${candidate//\"/\\\"}\"")
-          fi
-        done
-      elif [ "$fullCur" = "$cur" ]; then
-        # bash overwrites the whole current word on insertion, so re-prepend the part a bare value candidate
-        # doesn't already cover (else "red" would blank the `-t` / `--tag=` prefix it was completing).
-        local candidate flagPrefix k suffix
-        for candidate in "${lines[@]}"; do
-          flagPrefix="$fullCur"
-          for ((k = ${#fullCur}; k >= 0; k--)); do
-            suffix="${fullCur:${#fullCur}-k}"
-            if [[ "$candidate" == "$suffix"* ]]; then
-              flagPrefix="${fullCur:0:${#fullCur}-k}"
-              break
-            fi
-          done
-          COMPREPLY+=("${flagPrefix}${candidate}")
-        done
-      else
-        COMPREPLY=("${lines[@]}")
-      fi
+      # Each line is the whole word under the cursor. Behind an opening quote readline replaces only from that
+      # quote on: $kept is what of $fullCur stays on the line outside it, ahead of a COMP_WORDBREAKS split
+      # (`--tag=`) or of the quote, so each reply is a line less $kept.
+      local replaced="$typedCur"
+      (( quoteAt >= 0 )) && replaced="${COMP_LINE:quoteAt:COMP_POINT-quoteAt}"
+      _$${name}_words "$replaced"
+      local unquoted="${__klap_words[0]-}"
+      local kept=""
+      (( ${#unquoted} < ${#fullCur} )) && kept="${fullCur:0:${#fullCur}-${#unquoted}}"
+      local candidate
+      for candidate in "${lines[@]}"; do
+        [[ "$candidate" == "$kept"* ]] && candidate="${candidate:${#kept}}"
+        if [[ -z "$quote" ]]; then
+          # Escaped as bash reads the line back, so a space or `$` reaches the run as offered.
+          printf -v candidate '%q' "$candidate"
+          COMPREPLY+=("$candidate")
+        # The word opened a quote, which bash puts back only if the reply carries it: each reply opens and
+        # closes the same quote, escaped for it.
+        elif [[ "$quote" == "'" ]]; then
+          COMPREPLY+=("'${candidate//\'/\'\\\'\'}'")
+        else
+          candidate="${candidate//\\/\\\\}"
+          candidate="${candidate//\"/\\\"}"
+          candidate="${candidate//\$/\\\$}"
+          candidate="${candidate//\`/\\\`}"
+          # History expansion reads a `!` inside double quotes, where no backslash keeps it out, so it stands
+          # outside them.
+          COMPREPLY+=("\"${candidate//!/\"\\!\"}\"")
+        fi
+      done
     }
     complete -F _$$name $$name
     """.trimIndent()
@@ -265,7 +281,10 @@ private fun Cli.renderZsh(): String = $$"""
       # part is $PREFIX: the rest of that word is not typed yet. (Q) takes the quoting off each, as a run would.
       local -a typedWords
       typedWords=("${(@Q)words}")
-      typedWords[CURRENT]=$PREFIX
+      # Inside an open single quote zsh hands $PREFIX over literally; anywhere else it is still quoted as typed.
+      local typedCurrent=${(Q)PREFIX}
+      [[ $compstate[quote] == "'" ]] && typedCurrent=$PREFIX
+      typedWords[CURRENT]=$typedCurrent
       lines=("${(@f)$("${words[1]}" __complete --cursor $(( CURRENT - 2 )) -- "${(@)typedWords[2,-1]}")}")
       if [[ ${#lines[@]} -eq 1 && "${lines[1]}" == "$$COMPLETE_FILES"* ]]; then
         # _files matches $PREFIX as a whole path, so move the directive's non-path head (dd's `if=`) into
@@ -287,27 +306,32 @@ private fun Cli.renderZsh(): String = $$"""
           descriptions+=("${line%%$'\t'*}")
         fi
       done
-      if (( ${#values[@]} > 0 )); then
-        # compadd only offers candidates starting with $PREFIX (the whole typed word, e.g. "--tag=r"), but
-        # __complete returns the bare value ("red"). Move the already-typed prefix into $IPREFIX via
-        # `compset -p <count>`, count = leading chars the candidate doesn't cover (0, a no-op, for an ordinary
-        # subcommand/flag/positional; strips "--tag=" for "--tag=r", "-t" for "-tr").
-        local cur="$PREFIX"
-        local curLen=${#cur}
-        local candidate="${values[1]}"
-        local k suffix stripLen
-        for (( k = curLen; k >= 0; k-- )); do
-          if (( k == 0 )); then
-            suffix=""
-          else
-            suffix="${cur: -$k}"
-          fi
-          if [[ "$candidate" == "$suffix"* ]]; then
-            stripLen=$(( curLen - k ))
-            (( stripLen > 0 )) && compset -p "$stripLen"
-            break
-          fi
+      if [[ $compstate[quote] == '"' ]]; then
+        # Inside a double quote zsh keeps the word as typed and adds only what a value has past it, and would
+        # quote a backslash that needs none. So only a value that extends the typed word goes in, quoted as it
+        # is typed there: a backslash doubled only where it would escape what follows, and a `!` escaped from
+        # history expansion.
+        local value char typedValue i n
+        local -a typedValues typedDescriptions
+        for (( n = 1; n <= ${#values}; n++ )); do
+          value=${values[n]}
+          [[ "$value" == "$typedCurrent"* ]] || continue
+          typedDescriptions+=("${descriptions[n]}")
+          typedValue=""
+          for (( i = 1; i <= ${#value}; i++ )); do
+            char=${value[i]}
+            if [[ $char == [\"\$\`!] ]]; then
+              typedValue+="\\$char"
+            elif [[ $char == '\' && ( i -eq ${#value} || ${value[i+1]} == [\\\"\$\`!] ) ]]; then
+              typedValue+='\\'
+            else
+              typedValue+=$char
+            fi
+          done
+          typedValues+=("$typedValue")
         done
+        compadd -U -Q -d typedDescriptions -- "${typedValues[@]}"
+        return
       fi
       compadd -d descriptions -- "${values[@]}"
     }
@@ -334,28 +358,11 @@ private fun Cli.renderFish(): String = $$"""
             end
             return
         end
-        set -l curLen (string length -- "$current")
-        # Each response line is `value` or `value\tdescription`; fish's completion reads that tab form
-        # natively, so a line is emitted WHOLE and fish splits it into the inserted value and the shown
-        # description. The value sits at the line's head, so the prefix match below is unaffected by any
-        # trailing description. fish prefix-matches each candidate against the WHOLE current token, but
-        # __complete returns the bare value ("red") for an attached `--tag=r`/`-tr`, so re-prepend the part
-        # of the token the candidate already covers (a no-op for ordinary candidates, which cover it whole).
+        # Each response line is `value` or `value\tdescription`, the value the whole token under the cursor, which
+        # fish replaces; fish reads that tab form natively. printf, not echo: fish's echo treats a leading
+        # -e/-n/-s as its own flag and would swallow a candidate that looks like one.
         for line in $response
-            set -l flagPrefix "$current"
-            for k in (seq $curLen -1 0)
-                set -l suffix ""
-                if test $k -gt 0
-                    set suffix (string sub -s -$k -- "$current")
-                end
-                if string match -q -- "$suffix*" "$line"
-                    set flagPrefix (string sub -l (math $curLen - $k) -- "$current")
-                    break
-                end
-            end
-            # printf, not echo: fish's echo treats a leading -e/-n/-s as its own flag and would swallow a
-            # candidate that looks like one; printf's first arg is always the format string, so it never does.
-            printf '%s\n' "$flagPrefix$line"
+            printf '%s\n' "$line"
         end
     end
     complete -c $$name -f -a '(__$${name}_klap_complete)'
@@ -367,20 +374,35 @@ private fun Cli.renderPowershell(): String = $$"""
         param($wordToComplete, $commandAst, $cursorPosition)
         # Every word on the line as a run receives it, a quoted one by its value, with an empty one where the
         # cursor sits between words, and the index of the word under the cursor, so a provider can read an
-        # input typed after it. The word under the cursor is sent as far as it is typed, its opening quote
-        # kept aside to put back on each completion.
+        # input typed after it. The word under the cursor goes whole, as PowerShell hands its own completers
+        # it wherever the cursor sits in it, and empty with the cursor at its start; its opening quote is kept
+        # aside to put back on each completion.
         $words = @()
         $cursor = -1
         $quote = ''
+        # PowerShell reads a typographic quote as its plain one.
+        $singleQuotes = "'" + [char]0x2018 + [char]0x2019 + [char]0x201A + [char]0x201B
+        $doubleQuotes = '"' + [char]0x201C + [char]0x201D + [char]0x201E
         foreach ($element in $commandAst.CommandElements) {
             $start = $element.Extent.StartOffset
             if ($cursor -lt 0 -and $start -gt $cursorPosition) { $cursor = $words.Count; $words += '' }
             if ($cursor -lt 0 -and $element.Extent.EndOffset -ge $cursorPosition) {
                 $cursor = $words.Count
-                $typed = $element.Extent.Text.Substring(0, $cursorPosition - $start)
-                if ($typed.Length -gt 0 -and $typed[0] -in "'", '"') {
-                    $quote = [string]$typed[0]
-                    $typed = $typed.Substring(1)
+                $typed = if ($cursorPosition -gt $start) { $element.Extent.Text } else { '' }
+                $quotes = if ($typed.Length -eq 0) { '' }
+                    elseif ($singleQuotes.Contains($typed[0])) { $quote = "'"; $singleQuotes }
+                    elseif ($doubleQuotes.Contains($typed[0])) { $quote = '"'; $doubleQuotes }
+                    else { '' }
+                if ($quote) {
+                    $closed = $typed.Length -ge 2 -and $quotes.Contains($typed[-1])
+                    $typed = if ($closed -and
+                        $element -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+                        $element.Value
+                    } elseif ($closed) {
+                        $typed.Substring(1, $typed.Length - 2)
+                    } else {
+                        $typed.Substring(1)
+                    }
                 }
                 $words += $typed
                 continue
@@ -396,9 +418,13 @@ private fun Cli.renderPowershell(): String = $$"""
         # Legacy argument passing drops an empty argument, which would shift the cursor. Windows PowerShell
         # always passes that way, and Windows mode does for a batch or script launcher such as `tool.bat`.
         $passing = $PSNativeCommandArgumentPassing
-        $program = Get-Command -Name $words[0] -CommandType Application -ErrorAction Ignore | Select-Object -First 1
-        $launcher = $program -and $program.Extension -in '.bat', '.cmd', '.js', '.vbs', '.wsf'
-        if ($null -eq $passing -or $passing -eq 'Legacy' -or ($passing -eq 'Windows' -and $launcher)) {
+        $legacy = $null -eq $passing -or $passing -eq 'Legacy'
+        if (-not $legacy -and $passing -eq 'Windows') {
+            $program = Get-Command -Name $words[0] -CommandType Application -ErrorAction Ignore |
+                Select-Object -First 1
+            $legacy = $program -and $program.Extension -in '.bat', '.cmd', '.js', '.vbs', '.wsf'
+        }
+        if ($legacy) {
             $relative = @($relative | ForEach-Object { if ($_ -eq '') { '""' } else { $_ } })
         }
         $lines = @(& $words[0] __complete --cursor ($cursor - 1) -- $relative)
@@ -422,9 +448,16 @@ private fun Cli.renderPowershell(): String = $$"""
             # becomes the tooltip (a description-less line tooltips the value, unchanged from before).
             $value, $tip = $_ -split "`t", 2
             if (-not $tip) { $tip = $value }
-            $text = if ($quote -eq "'") { "'" + $value.Replace("'", "''") + "'" }
-                elseif ($quote) { '"' + $value.Replace('`', '``').Replace('"', '`"').Replace('$', '`$') + '"' }
-                else { $value }
+            # The value is the whole word under the cursor, which PowerShell replaces. One PowerShell would split
+            # or expand goes in single quotes, as one typed without a quote would. A typographic quote reads as
+            # its plain one, so it is doubled or escaped the same way.
+            $text = if ($quote -eq "'" -or (-not $quote -and $value -match '[\s$`''"(){};,@#|&<>\u2018-\u201E]')) {
+                "'" + ($value -replace '([''\u2018-\u201B])', '$1$1') + "'"
+            } elseif ($quote) {
+                '"' + ($value -replace '([`"$\u201C-\u201E])', '`$1') + '"'
+            } else {
+                $value
+            }
             [System.Management.Automation.CompletionResult]::new($text, $value, 'ParameterValue', $tip)
         }
     }

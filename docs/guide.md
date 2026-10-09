@@ -1682,7 +1682,10 @@ provider looks exactly like a provider that had nothing to offer.
 the value by shells that support it (zsh, fish, PowerShell); bash shows the value alone. klap
 prefix-filters the offered candidates by the partial word by default, matching on `value` only, never
 `description`. Pass `filterByPrefix = false` to `.completeWith` to skip that filter and match `current`
-yourself, for fuzzy, substring, or alias matching. `__complete` is internal on both shapes; the
+yourself, for fuzzy, substring, or alias matching; zsh still offers only a candidate that extends what was
+typed, since it never replaces typed text. For a value attached to its option (`--tag=r`, `-tr`) a provider
+offers the bare value and `current` is the partial value; klap hands the shell the whole word
+(`--tag=red`). `__complete` is internal on both shapes; the
 generated scripts always call it as
 `myapp __complete --cursor <k> -- <words>`: the words on the line (in fish, those up to the cursor) and `<k>`
 the index of the one under the cursor. To invoke it by hand to debug a provider, keep the `--` separator

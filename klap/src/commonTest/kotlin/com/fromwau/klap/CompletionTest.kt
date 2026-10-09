@@ -47,11 +47,11 @@ class ShortClusterCompletionTest {
     @Test
     fun `a partial short cluster offers every remaining short as a continuation`() {
         // Guideline 5 bundles one-character options into one token, so a half-typed cluster has
-        // continuations: `-r<TAB>` must offer them, not just `-r` itself.
+        // continuations: `-r<TAB>` offers them, and only them, as `pacman -Q<TAB>` does.
         val candidates = cli.completionsFor("list", "-r")
         assertTrue("-rl" in candidates, "expected -rl among $candidates")
         assertTrue("-rn" in candidates, "expected -rn among $candidates")
-        assertTrue("-r" in candidates, "the exact match should survive: $candidates")
+        assertTrue("-r" !in candidates, "the cluster typed so far is not a continuation of itself: $candidates")
         // Never itself twice: a cluster binds each option once.
         assertTrue("-rr" !in candidates, "a short should not repeat itself: $candidates")
     }
@@ -116,16 +116,6 @@ class GeneratedShellScriptTest {
     }
 
     @Test
-    fun `bash reattaches a prefix when the current word was not wordbreak split`() {
-        // A glued short option (`-tr`) has no COMP_WORDBREAKS char, so bash's own $cur equals the whole
-        // word and would replace all of it; the script must reconstruct just the flag prefix ("-t") to
-        // re-prepend to a bare value candidate ("red"), not drop it or double it.
-        val script = sampleTree().renderCompletion(CompletionShell.BASH)
-        assertTrue($$"if [ \"$fullCur\" = \"$cur\" ]; then" in script, script)
-        assertTrue($$"COMPREPLY+=(\"${flagPrefix}${candidate}\")" in script, script)
-    }
-
-    @Test
     fun `zsh delegates every completion to complete`() {
         val script = sampleTree().renderCompletion(CompletionShell.ZSH)
         assertTrue("#compdef todo" in script, script)
@@ -161,16 +151,6 @@ class GeneratedShellScriptTest {
         assertTrue("printf '%s\\n'" in script, script)
         assertTrue($$"echo $line" !in script, script)
         assertTrue($$"echo $response" !in script, script)
-    }
-
-    @Test
-    fun `fish reattaches a prefix when the current token was not already a candidate prefix`() {
-        // fish's `commandline -ct` never splits an attached word, so __complete already returns the bare
-        // value ("red") for `--tag=r` or a glued `-tr`; fish's own pager still prefix-matches candidates
-        // against the WHOLE current token, so the script must reconcile and re-prepend the flag/`=` part.
-        val script = sampleTree().renderCompletion(CompletionShell.FISH)
-        assertTrue($$"string sub -s -$k -- \"$current\"" in script, script)
-        assertTrue($$"printf '%s\\n' \"$flagPrefix$line\"" in script, script)
     }
 
     @Test
@@ -224,12 +204,12 @@ class GeneratedShellScriptTest {
 
     @Test
     fun `fish forwards value tab description line for native rendering`() {
-        // fish's completion reads `value\tdescription` natively, so each raw response line is emitted WHOLE
-        // (only the flag prefix is re-prepended to its head); fish then splits it into the inserted value
-        // and the shown description. Contrast bash, which strips the description off.
+        // fish's completion reads `value\tdescription` natively, so each raw response line is emitted WHOLE;
+        // fish then splits it into the inserted value and the shown description. Contrast bash, which strips
+        // the description off.
         val script = sampleTree().renderCompletion(CompletionShell.FISH)
         assertTrue($$"for line in $response" in script, script)
-        assertTrue($$"printf '%s\\n' \"$flagPrefix$line\"" in script, script)
+        assertTrue($$"printf '%s\\n' \"$line\"" in script, script)
     }
 
     @Test
@@ -825,7 +805,7 @@ class AttachedValueCompletionTest {
                 action { Ok("") }
             }
         }
-        assertEquals(listOf("red"), tree.completeCandidates(listOf("add", "--tag=r")).map { it.value })
+        assertEquals(listOf("--tag=red"), tree.completeCandidates(listOf("add", "--tag=r")).map { it.value })
         assertEquals(listOf("red"), tree.completeCandidates(listOf("add", "--tag", "r")).map { it.value })
     }
 
@@ -837,7 +817,10 @@ class AttachedValueCompletionTest {
                 action { Ok("") }
             }
         }
-        assertEquals(listOf("red", "green"), tree.completeCandidates(listOf("add", "--tag=")).map { it.value })
+        assertEquals(
+            listOf("--tag=red", "--tag=green"),
+            tree.completeCandidates(listOf("add", "--tag=")).map { it.value },
+        )
     }
 
     @Test
@@ -849,7 +832,7 @@ class AttachedValueCompletionTest {
                 action { Ok("") }
             }
         }
-        assertEquals(listOf("red"), tree.completeCandidates(listOf("add", "-tr")).map { it.value })
+        assertEquals(listOf("-tred"), tree.completeCandidates(listOf("add", "-tr")).map { it.value })
     }
 }
 
@@ -1046,7 +1029,7 @@ class BuiltinColorValueCompletionTest {
             command("test") { action { Ok("") } }
         }
         assertEquals(
-            listOf("auto", "always", "never"),
+            listOf("--color=auto", "--color=always", "--color=never"),
             tree.completeCandidates(listOf("--color=")).map { it.value },
         )
     }
@@ -1161,7 +1144,7 @@ class CompletionModifierRoutingTest {
         // The strip deletes the token the SPACE form matches on, so that branch must be answered from the
         // raw head before it runs; the attached form reads `current`, which is never stripped.
         assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--color", ""))
-        assertEquals(listOf("always"), tree.candidateValuesFor("--color=al"))
+        assertEquals(listOf("--color=always"), tree.candidateValuesFor("--color=al"))
         assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("list", "--color", ""))
     }
 }
@@ -1187,8 +1170,8 @@ class ColorAbbreviationCompletionTest {
         // The attached form resolves the same way. matchingValueOption cannot cover it: --color is a
         // built-in, so there is no declared OptionSpec for it to find.
         val tree = colorAbbreviationDispatcherTree(Abbreviation.All)
-        assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--col="))
-        assertEquals(listOf("auto", "always"), tree.candidateValuesFor("--col=a"))
+        assertEquals(listOf("--col=auto", "--col=always", "--col=never"), tree.candidateValuesFor("--col="))
+        assertEquals(listOf("--col=auto", "--col=always"), tree.candidateValuesFor("--col=a"))
     }
 
     @Test
@@ -1215,7 +1198,7 @@ class ColorAbbreviationCompletionTest {
     fun `the exact color spelling still completes under every abbreviation mode`() {
         val tree = colorAbbreviationDispatcherTree(Abbreviation.All)
         assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--color", ""))
-        assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--color="))
+        assertEquals(listOf("--color=auto", "--color=always", "--color=never"), tree.candidateValuesFor("--color="))
     }
 }
 
@@ -1541,7 +1524,7 @@ class OptionalValueCompletionTest {
 
     @Test
     fun `the attached form still completes its value`() {
-        assertEquals(listOf("always", "auto", "never"), tree().candidateValuesFor("--color="))
+        assertEquals(listOf("--color=always", "--color=auto", "--color=never"), tree().candidateValuesFor("--color="))
     }
 
     @Test
@@ -1603,6 +1586,6 @@ class NumberOptionCompletionTest {
 
     @Test
     fun `a value glued after a run still completes`() {
-        assertEquals(listOf("pending"), cli.completionsFor("list", "-5np"))
+        assertEquals(listOf("-5npending"), cli.completionsFor("list", "-5np"))
     }
 }

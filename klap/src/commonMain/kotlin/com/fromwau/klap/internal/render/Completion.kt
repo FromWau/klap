@@ -92,7 +92,7 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
     // positional branch the positional count. Lazy for the value-completion branches, which need it only
     // when the option under the cursor has a provider that reads an accessor. Forcing it on a Tab press is
     // safe anywhere: sift is a pure token walk with no user code in it, unlike the bind behind [values].
-    val sifted by lazy(LazyThreadSafetyMode.NONE) { cmd.sift(segment, globalAcc) }
+    val sifted by lazy(LazyThreadSafetyMode.NONE) { cmd.sift(segment, globalAcc, line.segmentPositions) }
     // sifted.error is deliberately ignored: a line still being typed is expected to be malformed, and a Tab
     // press must never fail. Whatever the walk did collect around the offending token is what we complete.
 
@@ -102,22 +102,54 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
     val wholeLine by lazy(LazyThreadSafetyMode.NONE) { walkLine(words).takeIf { it.cmd === cmd } }
     val wholeAcc by lazy(LazyThreadSafetyMode.NONE) { wholeLine?.globalAcc ?: globalAcc }
     val wholeSifted by lazy(LazyThreadSafetyMode.NONE) {
-        cmd.sift(wholeLine?.segment ?: (segment + current + words.drop(cursor + 1)), wholeAcc)
+        val walked = wholeLine
+        if (walked != null) {
+            cmd.sift(walked.segment, wholeAcc, walked.segmentPositions)
+        } else {
+            val rest = words.drop(cursor + 1)
+            cmd.sift(segment + current + rest, wholeAcc, line.segmentPositions + (cursor..words.lastIndex))
+        }
     }
 
     // The bind runs user converters and validators, so it must not happen on a Tab press whose slot has no
     // provider; a provider reading an accessor is what forces it.
-    fun valuesFor(target: HolderSpec) = lazy(LazyThreadSafetyMode.NONE) {
+    fun valuesFor(
+        target: HolderSpec,
+        typedValue: String = current,
+    ) = lazy(LazyThreadSafetyMode.NONE) {
         // A variadic input holds the values already finished, not the one being completed, so a provider
         // leaving out what was given keeps offering it. Only that value goes: every word keeps its slot.
         val variadic = target.cardinality is Cardinality.Multiple
-        val bound = if (variadic && target is OptionSpec) {
-            wholeSifted.withoutOccurrence(target, sifted.options[target]?.size ?: 0)
+        val option = (target as? OptionSpec)?.takeIf { variadic }
+        val global = option != null && option in globalAcc.optionSpecs
+        val bound = if (option != null && !global) {
+            val finished = sifted.options[option].orEmpty().count { it == typedValue }
+            wholeSifted.copy(options = wholeSifted.options.withoutOccurrence(option, typedValue, finished) { it })
         } else {
             wholeSifted
         }
         val skipOperand = sifted.positionals.size.takeIf { variadic && target is ArgumentSpec }
-        completionValues(cmd, bound, wholeAcc, skipOperand)
+        // Read after [wholeSifted], which tops [wholeAcc] up with a global hidden in a short cluster.
+        val globals = wholeAcc.toGlobalSift()
+        val boundGlobals = if (option != null && global) {
+            // [globalAcc] may hold more than the head's own globals by now, so the head is walked afresh.
+            val headLine = walkLine(head)
+            headLine.cmd.sift(headLine.segment, headLine.globalAcc, headLine.segmentPositions)
+            val finished = headLine.globalAcc
+                .toGlobalSift()
+                .options[option]
+                .orEmpty()
+                .count { it.value == typedValue }
+            // In the order of the line, as binding orders them too, so the finished ones come first.
+            val occurrences = globals.options[option]
+                .orEmpty()
+                .sortedWith(compareBy(nullsLast()) { it.position })
+            val inLineOrder = globals.options + (option to occurrences)
+            globals.copy(options = inLineOrder.withoutOccurrence(option, typedValue, finished) { it.value })
+        } else {
+            globals
+        }
+        completionValues(cmd, bound, boundGlobals, wholeAcc.inferNames, skipOperand)
     }
 
     // An option value under the cursor: `prev` names a known value-taking option (a whole `--long`/`-s`, or
@@ -133,7 +165,8 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
     val attached = cmd.attachedValueOption(current, globalAcc)
     if (attached != null) {
         val (attachedOption, partial) = attached
-        return attachedOption.candidatesFor(partial, typed, valuesFor(attachedOption))
+        val values = attachedOption.candidatesFor(partial, typed, valuesFor(attachedOption, partial))
+        return values.asWholeWord(current.dropLast(partial.length), attachedOption.help)
     }
 
     // A flag-shaped partial word (`-`, `--`, `-v`, `--verb`): offer this command's option/flag names plus
@@ -169,17 +202,17 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
             if (builtins.docs) names += Candidate("--docs", BuiltinOptionHelp.DOCS)
         }
         // A short cluster in progress (`-r`, `-rl`): guideline 5 bundles one-character options into a
-        // single token, so offer each remaining short as a continuation of what has been typed rather
-        // than only the exact match. Gated on every typed char being a flag or part of a digit run,
+        // single token, so offer each remaining short as a continuation of what has been typed, and only
+        // those, as `pacman -Q<TAB>` does. Gated on every typed char being a flag or part of a digit run,
         // because a value-taking option ends the cluster by consuming the remainder of the token.
         val typedShorts = current.removePrefix("-")
-        if (!current.startsWith("--") && typedShorts.isNotEmpty()) {
-            if (cmd.firstNonFlagShort(typedShorts, globalAcc) < 0) {
-                names += names
-                    .filter { it.value.length == 2 && !it.value.startsWith("--") }
-                    .filterNot { it.value[1] in typedShorts }
-                    .map { Candidate(current + it.value[1], it.description) }
-            }
+        val inCluster = !current.startsWith("--") && typedShorts.isNotEmpty()
+        if (inCluster && cmd.firstNonFlagShort(typedShorts, globalAcc) < 0) {
+            return names
+                .filter { it.value.length == 2 && !it.value.startsWith("--") }
+                .filterNot { it.value[1] in typedShorts }
+                .map { Candidate(current + it.value[1], it.description) }
+                .distinctBy { it.value }
         }
         return names.distinctBy { it.value }.filter { it.value.startsWith(current) }
     }
@@ -217,24 +250,36 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
     return subcommands + positionalCandidates
 }
 
-/** This sift without the [index]th value of [option], the one under the cursor; flags and other words stay. */
-private fun Sifted.withoutOccurrence(
+/**
+ * These occurrences, in the order of the line, without the one of [option] under the cursor: the first to supply
+ * [value] after the [finished] ones before the cursor that do.
+ */
+private fun <T> Map<OptionSpec, List<T>>.withoutOccurrence(
     option: OptionSpec,
-    index: Int,
-): Sifted {
-    val values = options[option] ?: return this
-    val kept = values.filterIndexed { occurrence, _ -> occurrence != index }
-    return Sifted(
-        flags,
-        negations,
-        options + (option to kept),
-        positionals,
-        error,
-        flagPositions,
-        optionPositions,
-        dashLedAdmitted,
-    )
+    value: String,
+    finished: Int,
+    valueOf: (T) -> String,
+): Map<OptionSpec, List<T>> {
+    val occurrences = this[option] ?: return this
+    val under = occurrences.indices.filter { valueOf(occurrences[it]) == value }.getOrNull(finished) ?: return this
+    return this + (option to occurrences.filterIndexed { index, _ -> index != under })
 }
+
+/**
+ * These value candidates as the whole word under the cursor, [head] (`--tag=`, `-vt`) in front of each, since a
+ * shell replaces that word, and described by the option's [help] where they have no description of their own,
+ * as `cp --backup=<TAB>` lists them. The file directive takes [head] as the start of its non-path head, which
+ * each shell keeps off the path it completes.
+ */
+private fun List<Candidate>.asWholeWord(
+    head: String,
+    help: String,
+): List<Candidate> =
+    if (isNativeFileRequest()) {
+        map { it.copy(value = COMPLETE_FILES + head + it.value.removePrefix(COMPLETE_FILES)) }
+    } else {
+        map { Candidate(head + it.value, it.description ?: help.takeIf { text -> text.isNotBlank() }) }
+    }
 
 /** A line walked as parse() walks one: to the command it names, with what is left for that command to sift. */
 private class WalkedLine(
@@ -244,6 +289,8 @@ private class WalkedLine(
     val globalAcc: GlobalAccumulator,
     /** The argv index of the last token the walk kept, or null when it kept none. */
     val lastKeptPosition: Int?,
+    /** The argv index of each [segment] token, so a global the command's sift finds in a cluster is ordered. */
+    val segmentPositions: List<Int>,
 )
 
 private fun Cli.walkLine(line: List<String>): WalkedLine {
@@ -262,7 +309,9 @@ private fun Cli.walkLine(line: List<String>): WalkedLine {
     // Built via accumulator() to stay in lockstep with parse(), but only its spec lists are read here: they
     // are what lets the segment sift recognize a global hiding in a mixed short cluster (`-fr`).
     val globalAcc = preStrip.sift.accumulator(globalSpecs, version, builtins, metaOptions, declaredLongs, abbreviation)
-    return WalkedLine(scan, cmd, segment, globalAcc, preStrip.positions.lastOrNull())
+    // The walk drops only subcommand names from the front, so the segment is the tail of what it was handed.
+    val segmentPositions = preStrip.positions.takeLast(segment.size)
+    return WalkedLine(scan, cmd, segment, globalAcc, preStrip.positions.lastOrNull(), segmentPositions)
 }
 
 /**
@@ -341,7 +390,9 @@ private fun Cli.walkTo(argv: List<String>): Pair<Command, List<String>> {
 private fun colorValueCandidates(head: List<String>, current: String, scan: ArgvScan): List<Candidate>? {
     if (head.lastOrNull()?.let(scan::matched) == "color") return colorModeCandidates(current)
     val eq = current.indexOf('=')
-    if (eq >= 0 && scan.matched(current.take(eq)) == "color") return colorModeCandidates(current.substring(eq + 1))
+    if (eq >= 0 && scan.matched(current.take(eq)) == "color") {
+        return colorModeCandidates(current.substring(eq + 1)).asWholeWord(current.take(eq + 1), BuiltinOptionHelp.COLOR)
+    }
     return null
 }
 
