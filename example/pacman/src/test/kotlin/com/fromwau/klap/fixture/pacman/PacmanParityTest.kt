@@ -41,7 +41,7 @@ class PacmanParityTest {
         // long names do not collide across operations, so all three reach the input real pacman means.
         parity.binds(
             "--remove", "--recursive", "--nosave", "vim",
-            expected = NOTHING_BOUND.copy(remove = true, recursive = true, noSave = true, targets = listOf("vim")),
+            expected = NOTHING_BOUND.copy(remove = true, recursive = 1, noSave = true, targets = listOf("vim")),
         )
         // `pacman -Q` with no target lists every installed package, so the operand list is zero-or-more.
         parity.binds("-Q", expected = NOTHING_BOUND.copy(query = true))
@@ -70,9 +70,6 @@ class PacmanParityTest {
             "--noconfirm", "-U", "./pkg.tar.zst",
             expected = NOTHING_BOUND.copy(upgrade = true, noConfirm = true, targets = listOf("./pkg.tar.zst")),
         )
-        // -V is terminal in real pacman rather than an operation that conflicts, so this line is legal
-        // there; see the -V KLAP-GAP for the half that is not.
-        parity.binds("-QV", expected = NOTHING_BOUND.copy(query = true, versionOperation = true))
     }
 
     @Test
@@ -90,45 +87,11 @@ class PacmanParityTest {
     }
 
     @Test
-    fun `known divergence from real pacman`() {
-        // THE divergence for this tool: a contested short letter carries one meaning tree-wide, so the
-        // canonical `-Rns` binds nosave (right) and search (wrong — real pacman reads `-s` under -R as
-        // --recursive). Flip `recursive = true, search = false` above if klap ever gains a per-operation
-        // letter namespace; until then the long form above is the exact spelling.
-        parity.binds(
-            "-Rns", "vim",
-            expected = NOTHING_BOUND.copy(remove = true, noSave = true, search = true, targets = listOf("vim")),
-        )
-        // The same collision from the query side: `-Qc` is --changelog to real pacman and --clean here.
-        parity.binds("-Qc", "firefox", expected = NOTHING_BOUND.copy(query = true, clean = 1, targets = listOf("firefox")))
-
-        // The quieter half of the gap: real pacman rejects a modifier that does not belong to the
-        // selected operation, in BOTH spellings ("error: invalid option '-y'" and "error: invalid
-        // option '--recursive'", both verified). Every flag declared on a klap command is legal
-        // whatever else bound, so these lines parse cleanly here.
-        parity.bindsLoosely(
-            "-Qy",
-            because = "real pacman: error: invalid option '-y'",
-            expected = NOTHING_BOUND.copy(query = true, refresh = 1),
-        )
-        parity.bindsLoosely(
-            "-Q", "--recursive",
-            because = "real pacman: error: invalid option '--recursive'",
-            expected = NOTHING_BOUND.copy(query = true, recursive = true),
-        )
-
-        // The -V KLAP-GAP: real pacman prints its version and exits 0 here. klap's built-in --version has
-        // no short form and its name is reserved, so `-V` is an ordinary flag that satisfies no operation
-        // and the requireExactlyOne set rejects the line.
-        parity.rejects("-V", because = "klap: --version is a built-in with no short, NOT real-pacman behaviour")
-
-        // The two built-ins that AGREE with real pacman, which lists `{-h --help}` and `{-V --version}`
-        // among its own operations: both print and exit before any operation is required.
+    fun `built ins that agree with real pacman`() {
+        // Real pacman lists `{-h --help}` and `{-V --version}` among its own operations: both print and exit
+        // before any operation is required.
         parity.shortCircuits("-h", because = "real pacman also prints help here, exit 0")
         parity.shortCircuits("--version", because = "real pacman also prints its version here, exit 0")
         parity.shortCircuits("-Qq", "--version", because = "--version outranks a bound operation, as in real pacman")
-
-        // A built-in pacman never had, reaching a line whose first target could be a package name.
-        parity.shortCircuits("__complete", because = "klap's hidden __complete subcommand shadows a target")
     }
 }

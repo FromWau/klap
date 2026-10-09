@@ -1,6 +1,11 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
+import com.fromwau.klap.testing.Suggestion
+import com.fromwau.klap.testing.acceptSuggestion
+import com.fromwau.klap.testing.filesAfter
+import com.fromwau.klap.testing.suggestionsFor
+import com.fromwau.klap.testing.tab
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -44,7 +49,8 @@ class CompletionFlowTest {
     ) {
         val suggestions = suggestionsFor(line, cursor)
         assertEquals(offered, suggestions, "what `$line` offers with the cursor at $cursor")
-        assertEquals(taken, accept(line, suggestions.first(), cursor), "`$line` once ${suggestions.first()} is taken")
+        val first = suggestions.first()
+        assertEquals(taken, acceptSuggestion(line, first, cursor), "`$line` once $first is taken")
     }
 
     @Test
@@ -59,7 +65,18 @@ class CompletionFlowTest {
             ),
             taken = "rm -rb",
         )
-        assertEquals("rm -rf", accept("rm -r", rm.suggestionsFor("rm -r")[1]))
+        assertEquals("rm -rf", acceptSuggestion("rm -r", rm.suggestionsFor("rm -r")[1]))
+    }
+
+    @Test
+    fun `the guide's rm example offers and takes as it says`() {
+        val rm = cli("rm") {
+            flag("--recursive", "-r", help = "remove directories and their contents")
+            flag("--force", "-f", help = "ignore nonexistent files")
+            action { Ok("") }
+        }
+        assertEquals(Suggestion("-rf", "ignore nonexistent files"), rm.suggestionsFor("rm -r").first())
+        assertEquals("rm -rf", acceptSuggestion("rm -r", Suggestion("-rf")))
     }
 
     @Test
@@ -153,6 +170,22 @@ class CompletionFlowTest {
         val versions = listOf("1.0", "1.1").map { Suggestion("--toml=$it", "the TOML version") }
         assertEquals(versions, tool.suggestionsFor("tool check --toml=1.1", cursor = 18))
         assertEquals("tool check --toml=1.1.1", tool.tab("tool check --toml=1.1", cursor = 18))
+    }
+
+    @Test
+    fun `suggestions keep the order they are declared or provided in`() {
+        // The shell sorts a list as it does its own; an order that means something (log levels) survives in one
+        // that does not.
+        val levels = cli("tool") {
+            option("--level").choice("debug", "info", "warn", "error")
+            argument("file").completeWith { candidates(listOf("file10", "file2", "notes")) }
+            action { Ok("") }
+        }
+        assertEquals(
+            listOf("--level=debug", "--level=info", "--level=warn", "--level=error"),
+            levels.suggestionsFor("tool --level=").map { it.value },
+        )
+        assertEquals(listOf("file10", "file2", "notes"), levels.suggestionsFor("tool ").map { it.value })
     }
 
     @Test
