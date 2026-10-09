@@ -261,7 +261,9 @@ private fun Cli.renderFish(): String = $$"""
         set -l token (commandline -t)
         set -l skip (math (count $tokens) + 1)
         test -n "$token"; and set skip (math $skip + 1)
-        set -l after (commandline -op)[$skip..-1]
+        # Sliced from a variable: fish rejects a variable index on a command substitution.
+        set -l line (commandline -op)
+        set -l after $line[$skip..-1]
         set -l response ($tokens[1] __complete --cursor (math (count $tokens) - 1) -- $tokens[2..-1] "$current" $after)
         set -l marker (string length -- "$$COMPLETE_FILES")
         if test (count $response) -eq 1; and test (string sub -l $marker -- "$response[1]") = "$$COMPLETE_FILES"
