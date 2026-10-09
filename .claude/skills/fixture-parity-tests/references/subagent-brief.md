@@ -12,8 +12,8 @@ source, its existing tests (`<MODULE>/src/test/...`), `ParitySuite` in
 `build-logic/src/main/kotlin/klap-fixture.gradle.kts`, the public completion test API in
 `klap/src/commonMain/kotlin/com/fromwau/klap/testing/Completion.kt`, and the completion and testing parts of
 `docs/guide.md` (search "completeWith", "__complete", "Testing your CLI"). `example/pacman/src/test` is a worked
-example of the whole method (tables from the binary's help, generated cells, `*TargetsTest.kt` files); copy its
-structure rather than inventing one.
+example of the whole method (tables from the binary's help, generated cells, one file per matrix table); copy
+its structure rather than inventing one.
 
 The real binary: `<BINARY>`.
 
@@ -79,7 +79,9 @@ description)`, `acceptSuggestion(line, suggestion, cursor)` the line once one is
 `Cli.tab(line, cursor)` the line after one Tab press (the one suggestion taken, or what several share), and
 `filesAfter(head)` the file directive. Use `ParitySuite` (`binds`, `accepts`, `rejects`, and what else it
 offers) for parsing; if it cannot state a claim (say, which help page shows), add a small helper next to it
-in `:example:parity` rather than weakening the claim.
+in `:example:parity` rather than weakening the claim. Where klap and the real tool both refuse a line but for different reasons (an unknown
+option against a missing value, an ambiguous value against an invalid one), pass `rejects` a short `differs` note:
+the test stays green and every run prints the gap.
 
 ## Coverage
 
@@ -109,10 +111,14 @@ with a reason. The points below summarise it.
      not be offered.
 3. Structure: generate cells from compact tables (each input with its spelling, help text and value kind)
    rather than repeating near-identical functions, and make every failure message name the exact line and
-   cursor. Put the targets in their own files (`<Tool>TargetsTest.kt` and a completion counterpart), each
-   with its `@Ignore`, a short comment giving the evidence and what has to change, and a one-paragraph KDoc
-   on the file stating the convention. Prove every target: comment out its `@Ignore`, run, see it fail for
-   the stated reason, and put the annotation back. Everything that passes today goes in the ordinary files.
+   cursor. One test file per matrix file, named for what it covers: `<Tool>CompletionTest.kt` (K, K7),
+   `<Tool>ValueCandidatesTest.kt` (V), `<Tool>LineContextTest.kt` (L, S), `<Tool>SuggestionListTest.kt` (G, E),
+   `<Tool>ProjectionTest.kt` (P), `<Tool>ConverterTest.kt` (X). A test goes by the table of the axis it varies, a
+   required-cell combination under completion; shared tables and helpers go in support files beside them. Each
+   file holds a `<Tool><Name>Test` class for what passes today and a `<Tool><Name>TargetsTest` class for the
+   targets, each target with its `@Ignore`, a short comment giving the evidence and what has to change, and a
+   one-paragraph KDoc on the class stating the convention. Prove every target: comment out its `@Ignore`, run,
+   see it fail for the stated reason, and put the annotation back.
 4. Existing tests that assert a behaviour the real tool does not have: replace them with targets stating
    the real behaviour, so a later fix does not have to break a test.
 

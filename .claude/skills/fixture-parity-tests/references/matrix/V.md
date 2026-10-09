@@ -118,7 +118,7 @@ V1 to V11, each split; the first row of each split keeps the original row's mean
 - V11: the guide promises the same answer for each, but they reach it by different paths, and only the throws have
   a test.
 
-Disputed: V2c records klap matching a choice's typed prefix ignoring case, where the agreed G13 has the prefix matched in the tool's case (`--color=AL‸` offers nothing for a case-sensitive tool).
+Disputed: V2c records klap matching a choice's typed prefix ignoring case, where the agreed G13 has the prefix matched in the tool's case (`--color=AL‸` offers nothing for a case-sensitive tool). pacman backs G13: `pacman -Q --color=ALWAYS` gives "invalid argument 'ALWAYS' for --color" (pacman `a color value in capitals is not offered`, a target).
 
 ## Choices and enums
 
@@ -133,7 +133,7 @@ Disputed: V2c records klap matching a choice's typed prefix ignoring case, where
 | V18 | `.choice` with `.optionalValue(whenBare)` | attached offers every value with the option's help; the bare value is not singled out or put first; spaced is an operand (K11) |
 | V19 | `.choice` with `.default(v)` | the default is offered like any other value, in declared order, not marked |
 | V20 | klap's built-in `--color` modes | where the fixture does not decline the built-in: `--color ‸`, `--color=‸`, an abbreviation `--col=‸`, against whether the real tool has `--color` at all (G11) and with which values |
-| V21 | built-in `--completion SHELL` and the `completion` subcommand's shell | **needs checking**: whether `cp --completion ‸` offers `bash zsh fish powershell` or falls through to the operand slot; either way it is offered only where the real tool has it |
+| V21 | built-in `--completion SHELL` and the `completion` subcommand's shell | whether `cp --completion ‸` offers `bash zsh fish powershell` or falls through to the operand slot; either way it is offered only where the real tool has it. Checked on pacman: `pacman -Q --completion ‸` offers nothing (no shell names), and real pacman refuses `--completion` |
 
 - V12: `Converters.kt` `applyEnum` (`values.map { it.name.lowercase() }`); task-manager `Priority` is the only enum and has no completion test.
 - V13: `render/Completion.kt` `candidatesFor`, `choices` branch (`startsWith(current, ignoreCase = true)`); CT `a choice completes on the same case rule the parser matches on`; fixtures ls, cp.
@@ -146,7 +146,7 @@ Disputed: V2c records klap matching a choice's typed prefix ignoring case, where
 - V20: `render/Completion.kt` `colorValueCandidates`, `colorModeCandidates`; CT `complete candidates completes the builtin color option value *`, `an abbreviated color option *`; cp declines nothing (dd's `KLAP-GAP` comment says the same for dd).
 - V21: `Completion.kt` `COMPLETION_SHELL_NAMES`; `render/Completion.kt` `matchingValueOption` searches only declared options and globals, so a meta-option may not be a value slot.
 
-Disputed: V13 has the typed prefix matched ignoring case (`--color=AL‸` offers `--color=always`), where the agreed G13 has it matched in the tool's case, so a case-sensitive tool offers nothing.
+Disputed: V13 has the typed prefix matched ignoring case (`--color=AL‸` offers `--color=always`), where the agreed G13 has it matched in the tool's case, so a case-sensitive tool offers nothing. pacman backs G13, as for V2c.
 
 ## Files
 
@@ -157,7 +157,7 @@ Disputed: V13 has the typed prefix matched ignoring case (`--color=AL‸` offers
 | V24 | `.file()` on a `.multiple()` input | every occurrence, spaced or attached, gives `filesAfter(head)`; paths already given are the shell's to list again |
 | V25 | `.file()` with `.completeWith { }` on one input | **needs checking** that this compiles in a fixture: `isPath` wins and the provider never runs |
 | V26 | `.file()` with `.choice`/`.enum` on one input | `isPath` wins over the choices: `filesAfter(head)`, no values |
-| V27 | a value the tool takes only as a directory | **needs checking**: klap has one file directive and no directory-only form, so `cp -t ‸` offers files too; a target where the tool refuses a file there |
+| V27 | a value the tool takes only as a directory | klap has one file directive and no directory-only form, so `cp -t ‸` offers files too; a target where the tool refuses a file there. Checked on pacman: `pacman -Q --dbpath=<file>`, `--root=<file>`, `--sysroot=<file>` fail at run time ("could not find or read directory"), `--cachedir=<file>` and `--hookdir=<file>` are accepted under -Q; the cells keep `filesAfter(head)` (decision K37) |
 | V28 | `.file()` on a global, before and after the subcommand | `git --git-dir ‸ log`, task-manager `-f ‸ list` and `list -f ‸`: the same `filesAfter(head)`; `git log --git-dir=‸` is not a value slot (decision K38) |
 | V29 | `.file()` or `.choice` on a hidden option | the name is never offered (G8), but once typed its value completes from its source |
 | V30 | any source on a hidden operand | nothing offered, though the operand parses |

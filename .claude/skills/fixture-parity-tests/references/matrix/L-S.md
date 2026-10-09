@@ -55,8 +55,8 @@ Facts from the source that most rows lean on:
 | L3c | a word after the cursor that counts as an operand (L13): the answer follows it | `cp ‸ a b` |
 | L3d | a word after the cursor that is a trigger (L11, L12): the answer follows it | `cp ‸ -t dir` |
 | L4a | inside the end-of-options region: the cursor after `--` on a name or operand (K14) | `cp -- ‸` |
-| L4b | a flag-shaped word right before the cursor, after `--` | `cp -- --backup ‸` (**needs checking**, read from source) |
-| L4c | an attached-value word after `--` | `cp -- --backup=‸` (**needs checking**, read from source) |
+| L4b | a flag-shaped word right before the cursor, after `--` | `cp -- --backup ‸` (confirmed on pacman: `pacman -Q -- --dbpath ‸` offers files and `-- --color ‸` the colors, though `pacman -Q -- --dbpath pacman` reads `--dbpath` as a target; a klap target) |
+| L4c | an attached-value word after `--` | `cp -- --backup=‸` (confirmed on pacman: `pacman -Q -- --color=al‸` offers `--color=always`, though `pacman -Q -- --color=al` reads it as a target; a klap target) |
 | L4d | options ended by an operand (S34) | `ssh host ls -‸` |
 
 - L2a, L2b: operands after the cursor move the slot (C:222, `slotForOperand`), flags do not; an operand cell can
@@ -75,7 +75,7 @@ Facts from the source that most rows lean on:
 | L5 | a member of an exactly-one or at-most-one set after the cursor: the other members are not offered | `tar -‸ -c` offers no `-x`/`-t`; `tar -‸ -z` offers no `-j`; `pacman -‸ -S` offers no `-Q` |
 | L6 | the same member of an exactly-one set after the cursor: offered or not as the tool takes a repeat | `pacman -‸ -Q` offers no `-Q` (item 6: `-QQ` refused); `tar -‸ -c` keeps `-c` (`tar -c -c` accepted) |
 | L7 | a `lastWins` partner after the cursor: nothing is ruled out, the answer is L1's | `head -‸ -c 5` offers `-n`; `cp -‸ -n` offers `-i` |
-| L8 | a non-repeatable input after the cursor that the tool refuses twice | `pacman -‸ --root /` with a tool that refuses a second `--root` (**needs checking** which fixture refuses repeats) |
+| L8 | a non-repeatable input after the cursor that the tool refuses twice | `pacman -‸ --root /` with a tool that refuses a second `--root` (checked: pacman takes a second `--dbpath` and uses it, so its cell is L1's answer, `pacman -Q --dbp‸ --dbpath /a` offers `--dbpath`) |
 | L9 | a counted flag after the cursor: still offered | `ssh -‸ -vv` offers `-v`; `tar -‸ -v` offers `-v` |
 | L10 | a `.multiple()` option after the cursor: still offered | `tar --ex‸ --exclude a` offers `--exclude` |
 
@@ -133,7 +133,7 @@ Facts from the source that most rows lean on:
 | L25 | a hybrid command with an operand after the cursor | `tool sub ‸ value`: subcommand names and operand values both offered (**needs checking**: git `remote` has no operand of its own) |
 | L26 | the rest of the word under the cursor would change the answer, but is not sent | `tar -‸c` (klap is handed `-`), `cp --‸target-directory=d a` |
 
-Disputed: L20's cells put `--json` and `--color` on a `cp` line, while G11 says cp offers no `--json` because real cp has none (G11 decides whether these cells exist at all).
+Disputed: L20's cells put `--json` and `--color` on a `cp` line, while G11 says cp offers no `--json` because real cp has none (G11 decides whether these cells exist at all). pacman backs G11: `pacman -Q --json` is "unrecognized option", and its `--color` is its own option, so pacman has no L20 cell.
 
 - L17: `wholeLine` takes the whole-line walk only when it reaches the same command, else sifts the head plus the
   rest (C:102 to C:112). git. Existing tests: `CompletionWholeLineTest` `the planner reads only the words before the
@@ -152,8 +152,8 @@ Disputed: L20's cells put `--json` and `--color` on a `cp` line, while G11 says 
 - L23: `supplied` counts a negatable flag only in its positive form (P:319). Synthetic until a fixture has one.
 - L24: constraints may hold a positional (only `lastWins` refuses one, BI:183); `supplied(ArgumentSpec)` P:325.
 - L25: C:239 offers subcommands only at `positionalIndex == 0`, beside the operand's own candidates (C:250).
-- L26: cursor column rule ("the rest of that word is not sent"). **needs checking**: what the oracle is here, since
-  bash hands the word up to the cursor and the tool would see the whole word.
+- L26: cursor column rule ("the rest of that word is not sent"). The oracle is the completion contract, not a run of the
+  tool: pacman's cell `pacman --qu‸ery` offers `--query` and `--quiet`, as `--qu` would.
 
 ## L: shell rule
 
@@ -224,7 +224,7 @@ Disputed: L20's cells put `--json` and `--color` on a `cp` line, while G11 says 
 | S20 | a non-repeatable option given | offered again where the tool takes the later value, left out where it refuses: `head -n 1 -‸` |
 | S21 | a provider-level repeat: a key already given in a repeated operand | as the tool reads repeats: `dd if=a ‸` offers `if=` again or not |
 
-Disputed: S16 offers a plain flag again wherever the tool accepts a repeat (`cp -v -‸` offers `-v`), while the K7c and K7d note says a letter given earlier is not offered again unless the tool counts it.
+Disputed: S16 offers a plain flag again wherever the tool accepts a repeat (`cp -v -‸` offers `-v`), while the K7c and K7d note says a letter given earlier is not offered again unless the tool counts it. pacman backs S16 in another word: `pacman -Q -v -v pacman` and `pacman -Q --verbose --verbose pacman` run, and `pacman -Q --verbose --verb‸` offers `--verbose`; the cluster case stays K7's.
 
 - S16: C:178 never drops a supplied name. cp, mv, rm, ls (GNU accept repeats).
 - S17: `isCount` flags; C:178. tar, ssh, rsync, pacman, curl `-:`.
@@ -308,7 +308,7 @@ Disputed: S16 offers a plain flag again wherever the tool accepts a repeat (`cp 
 | S46 | an optional-value option given bare | still supplied, and the next word an operand: `ls --color ‸`, `cp --backup -‸` |
 | S47 | a negative short or the help short in a cluster, before or under the cursor | a cluster like any other: `cp -P‸` offers `-Pv` etc., `cp -Pv‸` offers continuations, `git -P‸` |
 
-Disputed: S44's cells put `--json` on a `cp` and a `git` line, while G11 says only the built-ins the real tool has are offered and cp has no `--json` (G11 decides).
+Disputed: S44's cells put `--json` on a `cp` and a `git` line, while G11 says only the built-ins the real tool has are offered and cp has no `--json` (G11 decides). pacman backs G11 (`pacman -Q --json` is refused), so pacman has no S44 cell.
 
 - S37: `siftGlobals` then `walkTo` in `walkLine` C:307 to C:308. git, task-manager.
 - S38: `scan.valueSlots` and `trailingValueOption` C:479 with globals in the pool (C:456). git (`-C`, `-c`,

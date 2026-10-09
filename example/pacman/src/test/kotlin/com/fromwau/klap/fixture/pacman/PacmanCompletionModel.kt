@@ -7,6 +7,7 @@ import com.fromwau.klap.testing.filesAfter
 import com.fromwau.klap.testing.suggestionsFor
 import com.fromwau.klap.testing.tab
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /*
  * What Tab should offer on a pacman line: exactly what real pacman 7.1.0 would accept at the cursor, computed
@@ -177,7 +178,7 @@ internal data class CompletionCell(
     override fun toString(): String = "$kind, $subject: ${marked(line, cursor)}"
 }
 
-private fun cell(
+private fun matrixCell(
     kind: String,
     op: Op?,
     subject: String,
@@ -185,7 +186,7 @@ private fun cell(
     cursor: Int = line.length,
     named: String? = null,
 ): CompletionCell {
-    val start = line.lastIndexOfAny(charArrayOf(' ', '\t'), cursor - 1) + 1
+    val start = wordStart(line, cursor)
     val head = line.take(start).split(' ').filter { it.isNotEmpty() }.drop(1)
     val current = line.substring(start, cursor)
     val after = line.drop(cursor).dropWhile { !it.isWhitespace() }.split(' ').filter { it.isNotEmpty() }
@@ -202,21 +203,31 @@ internal fun Cli.assertPacman(cell: CompletionCell) {
     assertEquals(actual.size, actual.toSet().size, "$cell: a suggestion is offered twice: $actual")
     val take = expected.firstOrNull { it.value == cell.named } ?: expected.minByOrNull { it.value }
     if (take != null && !take.value.startsWith(FILES.value)) {
-        val start = line.lastIndexOfAny(charArrayOf(' ', '\t'), cursor - 1) + 1
-        val taken = line.take(start) + take.value + line.drop(cursor)
+        val taken = line.take(wordStart(line, cursor)) + take.value + line.drop(cursor)
         assertEquals(taken, acceptSuggestion(line, take, cursor), "$cell: once ${take.value} is taken")
     }
-    assertEquals(tabbed(cell), tab(line, cursor), "$cell: after one Tab")
+    assertEquals(tabbed(line, cursor, expected.map { it.value }), tab(line, cursor), "$cell: after one Tab")
 }
 
-/** [cell]'s line after one Tab, as every shell does it: the one suggestion, or what all of them share. */
-private fun tabbed(cell: CompletionCell): String {
-    val line = cell.line
-    val cursor = cell.cursor
-    val values = cell.pacman.map { it.value }
+/** Checks every cell with [assertPacman], failing once for all that differ. */
+internal fun Cli.checkPacman(cells: List<CompletionCell>) = checkCells(cells) { assertPacman(it) }
+
+internal fun Cli.checkPacman(vararg cells: CompletionCell) = checkPacman(cells.toList())
+
+private fun wordStart(
+    line: String,
+    cursor: Int,
+): Int = line.lastIndexOfAny(charArrayOf(' ', '\t'), cursor - 1) + 1
+
+/** [line] after one Tab at [cursor], as every shell does it: the one of [values], or what all of them share. */
+private fun tabbed(
+    line: String,
+    cursor: Int,
+    values: List<String>,
+): String {
     if (values.isEmpty() || values.first().startsWith(FILES.value)) return line
     val shared = values.reduce { shared, value -> shared.commonPrefixWith(value) }
-    val start = line.lastIndexOfAny(charArrayOf(' ', '\t'), cursor - 1) + 1
+    val start = wordStart(line, cursor)
     val typed = line.substring(start, cursor)
     return if (shared.length > typed.length) line.take(start) + shared + line.drop(cursor) else line
 }
@@ -313,44 +324,44 @@ private fun valuePartial(kind: Kind.Value): String = kind.choices?.first()?.take
 private fun generateCells(): List<CompletionCell> = buildList {
     for (op in CONTEXTS) {
         val p = prefix(op)
-        add(cell("no word", op, NOTHING, p))
-        add(cell("no word", op, NOTHING, p + AFTER, cursor = p.length))
-        add(cell("word start", op, NOTHING, p + "pkg", cursor = p.length))
-        add(cell("dash", op, NOTHING, p + "-"))
-        add(cell("dash", op, NOTHING, p + "--"))
-        add(cell("dash", op, NOTHING, p + "-" + AFTER, cursor = p.length + 1))
-        add(cell("end of options", op, NOTHING, p + "-- -"))
-        add(cell("end of options", op, NOTHING, p + "-- --d"))
+        add(matrixCell("no word", op, NOTHING, p))
+        add(matrixCell("no word", op, NOTHING, p + AFTER, cursor = p.length))
+        add(matrixCell("word start", op, NOTHING, p + "pkg", cursor = p.length))
+        add(matrixCell("dash", op, NOTHING, p + "-"))
+        add(matrixCell("dash", op, NOTHING, p + "--"))
+        add(matrixCell("dash", op, NOTHING, p + "-" + AFTER, cursor = p.length + 1))
+        add(matrixCell("end of options", op, NOTHING, p + "-- -"))
+        add(matrixCell("end of options", op, NOTHING, p + "-- --d"))
         val names = INPUTS.map { it.long } + Op.entries.map { it.long } + listOf("--help", "--version")
         for (long in names) {
             val subject = longSubject(op, long)
-            add(cell("long end", op, subject, p + long, named = long))
-            add(cell("long end", op, subject, p + long + AFTER, cursor = p.length + long.length, named = long))
+            add(matrixCell("long end", op, subject, p + long, named = long))
+            add(matrixCell("long end", op, subject, p + long + AFTER, cursor = p.length + long.length, named = long))
             val inside = longSubject(op, long, typed = long.dropLast(1))
-            add(cell("long inside", op, inside, p + long, cursor = p.length + long.length - 1, named = long))
-            add(cell("long word start", op, subject, p + long, cursor = p.length))
+            add(matrixCell("long inside", op, inside, p + long, cursor = p.length + long.length - 1, named = long))
+            add(matrixCell("long word start", op, subject, p + long, cursor = p.length))
             if (op != null) {
                 val line = "pacman $long -${op.short}"
-                add(cell("long before the operation", op, subject, line, cursor = 7 + long.length, named = long))
+                add(matrixCell("long before the operation", op, subject, line, cursor = 7 + long.length, named = long))
             }
         }
         val letters = INPUTS.mapNotNull { it.short } + Op.entries.map { it.short } + 'V'
         for (letter in letters) {
             val subject = letterSubject(op, letter)
-            add(cell("short end", op, subject, "$p-$letter", named = "-$letter"))
-            add(cell("short end", op, subject, "$p-$letter$AFTER", cursor = p.length + 2, named = "-$letter"))
+            add(matrixCell("short end", op, subject, "$p-$letter", named = "-$letter"))
+            add(matrixCell("short end", op, subject, "$p-$letter$AFTER", cursor = p.length + 2, named = "-$letter"))
             if (op != null) {
                 val cluster = "pacman -${op.short}$letter"
-                add(cell("cluster end", op, subject, cluster))
-                add(cell("cluster end", op, subject, cluster + AFTER, cursor = cluster.length))
-                add(cell("cluster inside", op, subject, cluster + "z", cursor = cluster.length))
+                add(matrixCell("cluster end", op, subject, cluster))
+                add(matrixCell("cluster end", op, subject, cluster + AFTER, cursor = cluster.length))
+                add(matrixCell("cluster inside", op, subject, cluster + "z", cursor = cluster.length))
             }
         }
         if (op != null) {
             val cluster = "pacman -${op.short}"
-            add(cell("operation cluster", op, OPERATION, cluster, named = "${cluster.drop(7)}v"))
-            add(cell("operation cluster", op, OPERATION, cluster + AFTER, cursor = cluster.length))
-            add(cell("operation cluster after the cursor", op, OPERATION, "pacman -v -${op.short}", cursor = 9))
+            add(matrixCell("operation cluster", op, OPERATION, cluster, named = "${cluster.drop(7)}v"))
+            add(matrixCell("operation cluster", op, OPERATION, cluster + AFTER, cursor = cluster.length))
+            add(matrixCell("operation cluster after the cursor", op, OPERATION, "pacman -v -${op.short}", cursor = 9))
         }
         for (input in INPUTS) {
             val kind = input.kind as? Kind.Value ?: continue
@@ -358,30 +369,150 @@ private fun generateCells(): List<CompletionCell> = buildList {
             val long = input.long
             val partial = valuePartial(kind)
             val typedEnd = p.length + long.length + 1 + partial.length
-            add(cell("value no word", op, subject, "$p$long "))
-            add(cell("value no word", op, subject, "$p$long $AFTER", cursor = p.length + long.length + 1))
-            add(cell("value word start", op, subject, "$p$long pkg", cursor = p.length + long.length + 1))
-            add(cell("value spaced", op, subject, "$p$long $partial"))
-            add(cell("value spaced", op, subject, "$p$long ${partial}zz", cursor = typedEnd))
-            add(cell("value attached", op, subject, "$p$long="))
-            add(cell("value attached", op, subject, "$p$long=$partial"))
-            add(cell("value attached", op, subject, "$p$long=$partial$AFTER", cursor = typedEnd))
-            add(cell("value attached", op, subject, "$p$long=${partial}zz", cursor = typedEnd))
+            add(matrixCell("value no word", op, subject, "$p$long "))
+            add(matrixCell("value no word", op, subject, "$p$long $AFTER", cursor = p.length + long.length + 1))
+            add(matrixCell("value word start", op, subject, "$p$long pkg", cursor = p.length + long.length + 1))
+            add(matrixCell("value spaced", op, subject, "$p$long $partial"))
+            add(matrixCell("value spaced", op, subject, "$p$long ${partial}zz", cursor = typedEnd))
+            add(matrixCell("value attached", op, subject, "$p$long="))
+            add(matrixCell("value attached", op, subject, "$p$long=$partial"))
+            add(matrixCell("value attached", op, subject, "$p$long=$partial$AFTER", cursor = typedEnd))
+            add(matrixCell("value attached", op, subject, "$p$long=${partial}zz", cursor = typedEnd))
             abbreviationOf(long)?.let { short ->
-                add(cell("value abbreviated", op, subject, "$p$short "))
-                add(cell("value abbreviated", op, subject, "$p$short=$partial"))
+                add(matrixCell("value abbreviated", op, subject, "$p$short "))
+                add(matrixCell("value abbreviated", op, subject, "$p$short=$partial"))
             }
             val letter = input.short ?: continue
-            add(cell("value short", op, subject, "$p-$letter "))
-            add(cell("value short", op, subject, "$p-$letter$partial"))
-            add(cell("value short", op, subject, "$p-$letter$partial$AFTER", cursor = p.length + 2 + partial.length))
+            add(matrixCell("value short", op, subject, "$p-$letter "))
+            add(matrixCell("value short", op, subject, "$p-$letter$partial"))
+            val afterShort = p.length + 2 + partial.length
+            add(matrixCell("value short", op, subject, "$p-$letter$partial$AFTER", cursor = afterShort))
             if (op != null) {
-                add(cell("value cluster", op, subject, "pacman -${op.short}$letter "))
-                add(cell("value cluster", op, subject, "pacman -${op.short}$letter$partial"))
-                add(cell("value cluster", op, subject, "pacman -${op.short}v$letter$partial"))
+                add(matrixCell("value cluster", op, subject, "pacman -${op.short}$letter "))
+                add(matrixCell("value cluster", op, subject, "pacman -${op.short}$letter$partial"))
+                add(matrixCell("value cluster", op, subject, "pacman -${op.short}v$letter$partial"))
             }
         }
-        add(cell("value capitals", op, CHOICE, p + "--color=AL"))
-        add(cell("value capitals", op, CHOICE, p + "--color AL"))
+        add(matrixCell("value capitals", op, CHOICE, p + "--color=AL"))
+        add(matrixCell("value capitals", op, CHOICE, p + "--color AL"))
     }
 }
+
+// --- cells written by hand, with their matrix rows ---
+
+/*
+ * Every expectation is what real pacman 7.1.0 accepts at the cursor; a cell names its matrix rows and is typed with
+ * `|` at the cursor. The evidence is a read-only `pacman -Q` run unless a comment says the help page or the man page.
+ */
+
+/** One Tab press on [typed] (`|` at the cursor), what pacman would accept there, and the [rows] it covers. */
+internal data class ContextCell(
+    val rows: String,
+    val typed: String,
+    val offers: List<Suggestion>,
+    val take: String? = null,
+) {
+    val line: String = typed.replace("|", "")
+    val cursor: Int = typed.indexOf('|')
+
+    override fun toString(): String = "$rows `$typed`"
+}
+
+internal fun at(
+    rows: String,
+    typed: String,
+    vararg offers: Suggestion,
+    take: String? = null,
+): ContextCell = ContextCell(rows, typed, offers.toList(), take)
+
+/** [long] as `pacman -Q --help` words it. */
+internal fun onQuery(long: String): Suggestion = Suggestion(long, Op.QUERY.entryFor(long)!!.help)
+
+/** [long] on a line with no operation, in the fixture's words. */
+internal fun plain(long: String): Suggestion {
+    val op = Op.entries.firstOrNull { it.long == long }
+    return if (op != null) Suggestion(op.long, op.help) else Suggestion(long, input(long).help)
+}
+
+/** [value] attached to [option], described by the option's help. */
+internal fun attached(
+    option: String,
+    value: String,
+): Suggestion = Suggestion("$option=$value", input(option).help)
+
+/** Tab on [cell] offers exactly its set (E1 E5 E6) once each (G3), and the accepted (E7) and tabbed (E8) lines. */
+internal fun Cli.assertContext(cell: ContextCell) {
+    val actual = suggestionsFor(cell.line, cell.cursor)
+    assertEquals(cell.offers.sortedBy { it.value }, actual.sortedBy { it.value }, "$cell: offered (pacman's set first)")
+    assertEquals(actual.size, actual.toSet().size, "$cell: a suggestion is offered twice: $actual")
+    val take = cell.offers.firstOrNull { it.value == cell.take } ?: cell.offers.minByOrNull { it.value }
+    if (take != null && !take.value.startsWith(FILES.value)) {
+        val taken = cell.line.take(wordStart(cell.line, cell.cursor)) + take.value + cell.line.drop(cell.cursor)
+        assertEquals(taken, acceptSuggestion(cell.line, take, cell.cursor), "$cell: once ${take.value} is taken")
+    }
+    val afterTab = tabbed(cell.line, cell.cursor, cell.offers.map { it.value })
+    assertEquals(afterTab, tab(cell.line, cell.cursor), "$cell: after one Tab")
+}
+
+/** Checks every cell with [assertContext], failing once for all that differ. */
+internal fun Cli.checkContext(vararg cells: ContextCell) = checkCells(cells.toList()) { assertContext(it) }
+
+/** Tab on [typed] offers none of [refused], each a word pacman refuses at that point (E4 E22). */
+internal fun Cli.assertOffersNone(
+    rows: String,
+    typed: String,
+    refused: List<String>,
+) {
+    val offered = suggestionsFor(typed.replace("|", ""), typed.indexOf('|')).map { it.value }
+    val wrong = refused.filter { it in offered }
+    assertTrue(wrong.isEmpty(), "$rows `$typed`: offers $wrong, which pacman refuses there")
+}
+
+/** Tab on [typed] offers [wanted], a word pacman accepts at that point. */
+internal fun Cli.assertOffers(
+    rows: String,
+    typed: String,
+    wanted: Suggestion,
+) {
+    val offered = suggestionsFor(typed.replace("|", ""), typed.indexOf('|'))
+    assertTrue(wanted in offered, "$rows `$typed`: must offer $wanted, offered $offered")
+}
+
+/** Every operation other than [given], in both spellings. */
+internal fun otherOperations(given: Op?): List<String> =
+    Op.entries.filter { it != given }.flatMap { listOf(it.long, "-${it.short}") }
+
+/** [marked] with its `|` taken out, the cursor where it stood, and what pacman accepts there. */
+internal fun slot(
+    kind: String,
+    marked: String,
+    expected: Set<Suggestion>? = null,
+    named: String? = null,
+): CompletionCell {
+    val cursor = marked.indexOf('|')
+    require(cursor >= 0 && marked.indexOf('|', cursor + 1) < 0) { "one | marks the cursor in `$marked`" }
+    val line = marked.removeRange(cursor, cursor + 1)
+    val start = line.lastIndexOf(' ', cursor - 1) + 1
+    val head = line.take(start).split(' ').filter { it.isNotEmpty() }.drop(1)
+    val current = line.substring(start, cursor)
+    val after = line.drop(cursor).dropWhile { it != ' ' }.split(' ').filter { it.isNotEmpty() }
+    return CompletionCell(kind, null, kind, line, cursor, expected ?: pacmanOffers(head, current, after), named)
+}
+
+/** The suggestion for [long] under [op], in the words of [op]'s page, or the fixture's with no operation. */
+internal fun name(
+    long: String,
+    op: Op? = null,
+): Suggestion = Suggestion(long, op?.entryFor(long)?.help ?: input(long).help)
+
+/**
+ * What pacman accepts after [cluster] when its last letter takes no part in the reading, as `-h` does: [cluster]
+ * plus each letter the operation on the line allows, none of [cluster]'s own letters again.
+ */
+internal fun continuations(
+    cluster: String,
+    op: Op?,
+): Set<Suggestion> = pacmanOffers(listOfNotNull(op?.let { "-${it.short}" }), "-", emptyList())
+    .filter { it.value.length == 2 && it.value[1] != '-' && it.value[1] !in cluster.drop(1) }
+    .map { Suggestion(cluster + it.value[1], it.description) }
+    .toSet()
