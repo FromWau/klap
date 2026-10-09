@@ -1,7 +1,8 @@
 # Open work
 
 Numbers are never reused. A closed item keeps its place in **Done** with a verdict: what was decided or done, how
-it was proved, and the date. Every item was reproduced before it was filed; a test-first item names the failing
+it was proved, and the date. Every item was reproduced before it was filed, except those under **Found by reading,
+not reproduced**; a test-first item names the failing
 test that states it, and closing it means that test passes.
 
 ## Defects
@@ -12,6 +13,54 @@ test that states it, and closing it means that test passes.
   leaves `-S` out: `membersRuledOutBy(sifted)` reads the words before the cursor, never the cluster under it. The
   real `pacman -QS` is refused with "only one operation may be used at a time". Found by the pacman fixture QA
   pass and reproduced 2026-10-09 at `6f3bdce` (`suggestionsFor("tool -Q")` gives `[-QS, -Qi, -Qh]`).
+  The matrix extension found the same read in more places, not reproduced yet: a member typed after the cursor
+  (`tool ‸ -S`) is not seen either (`Completion.kt:95`, `:177`; matrix L5, S8 to S10).
+
+## Found by reading, not reproduced
+
+Found by the matrix-extension agents on 2026-10-09 from klap's source (at `ca1bb61`), each with the matrix rows that
+test it. A TDD pass writing those rows reproduces or refutes each finding; a reproduced one moves to **Defects**
+or a fixture section with its failing test, a refuted one is ticked here with the evidence.
+
+- [ ] **28. Completion and parsing disagree, or klap differs from getopt, at these points.**
+  - `optionsEndAtFirstOperand` is never checked while completing: `ssh web1 ls -‸` likely offers ssh's own names
+    (`Completion.kt:175` checks only a literal `--`). Rows K30, L16, S34.
+  - The two value branches do not check for `--`: `cp -- --backup=n‸` likely offers backup values
+    (`Completion.kt:157`, `:165`). Rows L4b, L4c.
+  - A lone `--` as an option's value: the parser refuses it and ends options, the completer takes it as the value,
+    and getopt gives it to the option (real `cp -b -S -- -v x1 x3` ran verbose). Rows K41, S33, P40.
+  - `-h` and negative shorts are offered as cluster continuations but end the cluster once typed, so `cp -P‸`
+    likely offers no continuations (`Completion.kt:502`). Rows K7i, K7j, S47, G59.
+  - Subcommand names are offered where the parse never routes: after `--` (`git -- ‸`) and after an unrouted
+    option (`git -s ‸`), the walk ignoring the sift error (`Completion.kt:96`, `:367`). Rows K12a, K14, K23.
+  - A long abbreviation is matched against every long in the tree, so `git remote add --ma` (unique there:
+    `--master`) is likely refused because `log` has `--max-count`; real git 2.56.0 accepts it. Rows K35, P46 to P51.
+  - A parent's own option before its child's name stops the walk: `git remote -v ‸` never reaches `add`, while
+    real `git remote -v show` works. Rows S40, P17.
+  - `chmod -w‸` never runs the provider of chmod's dash-led mode operand: the flag-name branch answers first.
+    Row V62.
+- [ ] **29. The test API and the providers see something other than what reaches the shell.**
+  - `suggestionsFor` skips `toCompletionLine`, so a value with a tab or newline (dropped on the wire) and a
+    multi-line or blank description look different in tests than in a shell. Rows G91 to G95, V44, V45.
+  - `candidate("x", "")` on an attached value replaces the option's help with nothing. Row V46.
+  - One occurrence of a `.multiple()` input that fails to convert unbinds the whole list for providers. Row V69.
+  - An `Error` thrown by an unrelated converter escapes the bind and stops every provider on the line. Row V92.
+  - A provider reading `words` never sees the words after the cursor, though the accessors do. Row V60.
+- [ ] **30. Converting and binding accept what the real tools refuse.**
+  - A single-valued option given twice converts only its last value (`Bind.kt:131`), so `--width abc --width 80`
+    binds 80; real `head`, `ls` and `dd` refuse the line. Rows P72, X55.
+  - `.int()` accepts non-ASCII digits (`"١٢"`, `"１２"` give 12) and `.double()` accepts `" 1"`, `"1.5f"`,
+    `"0x1p3"` and reads `1e400` as Infinity: `toIntOrNull` and `toDoubleOrNull` on the JVM, run on Kotlin 2.4.21,
+    not yet through klap. Rows X14, X24, X25.
+  - `TypedCli.parse` throws, with no `CliError`, when a projection reads another command's input or uses `!!` on
+    an `.absentWhen()` slot. Rows P10 to P19.
+  - A built-in klap adds that the tool lacks binds the same record as the line without it (`cp --json a b`);
+    overlaps cp item 22. Rows P30, P2 (disputed).
+- [ ] **31. The ssh fixture ends options at the host; real ssh reads them until the remote command.**
+  `example/ssh/.../Ssh.kt:31` sets `optionsEndAtFirstOperand`, so the destination ends options. Real OpenSSH
+  10.6p1 keeps reading them after the host and stops at the command's first word: `ssh -G web1 -p 2222` gives
+  port 2222, `ssh -G web1 ls -p 2222` gives port 22 (run 2026-10-09). The fixture also declares `--ipv4` and
+  `--ipv6` (`Ssh.kt:109`), and OpenSSH has no long options. Row K30; an ssh fixture pass writes the targets.
 
 ## Fixture parity targets
 
@@ -122,6 +171,12 @@ were confirmed to fail with their `@Ignore` removed; evidence is in each test's 
   (`.duration()`, `.uuid()`). A duration takes ISO 8601 (`PT1H30M`) and the human style (`1s`, `5h 31m 2s 123ms`);
   check that `Duration.parse` accepts every human form wanted, the units in decreasing order, and pin each in a
   test. An `Instant` requires a zone or offset (`...Z`, `...+02:00`); one without is refused.
+  Open before starting (matrix X74 to X86, observed on Kotlin 2.4.21 with older kotlinx-datetime 0.7.1 and
+  kotlinx-io 0.8.0): `Path("a/")` equals `Path("a")` and `//` collapses, so `.path()` loses the trailing slash
+  `rsync src/` and `cp -r a/` depend on (keep the raw text too, or say it is lost); `Duration.parse` also takes
+  `Infinity`, `-(1h 30m)` and `1h30m`, so decide which of them klap accepts; `Instant.parse` takes an offset of
+  just `+02` and refuses `12:00Z` without seconds; whether `.uuid()` takes a UUID without dashes depends on
+  which `Uuid` parse it calls.
 - [ ] **26. Spellings declared as separate short and long lists.**
   Proposed by the owner 2026-10-09: `flag(short = listOf('a', 'l'), long = listOf("all", "long"))` in place of
   the dash-carrying vararg (`flag("--all", "-a", "-l")`, `CommandBuilder.kt`), the same for `option`,
