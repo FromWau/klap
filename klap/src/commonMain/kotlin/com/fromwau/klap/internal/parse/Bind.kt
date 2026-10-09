@@ -406,20 +406,21 @@ private fun List<Occurrence>.inArgvOrder(): List<String> =
 
 /**
  * The lenient counterpart to [com.fromwau.klap.parse]'s bind phase, for tab completion: bind everything the
- * half-typed [sifted] segment and [globalAcc] can resolve for [cmd], and leave the rest unbound.
+ * half-typed [sifted] segment and [globals] can resolve for [cmd], and leave the rest unbound.
  *
  * Never fails, and [Sifted.error] is deliberately ignored — a malformed token loses only itself, not the
  * inputs around it. Reading an input this leaves unbound throws from the [com.fromwau.klap.CompletionScope]
  * accessor, which the provider seam turns into "no candidates".
  *
- * [sifted] must be the result of `cmd.sift(segment, globalAcc)` with this same [globalAcc]: that walk is
- * what records a global hiding in a mixed short cluster (`-fv`), and the [bindGlobals] below reads them
- * back off the accumulator.
+ * [globals] must be read off the accumulator `cmd.sift` filled while sifting [sifted], since that walk is what
+ * records a global hiding in a mixed short cluster (`-fv`); the caller may leave an occurrence out of them.
+ * [inferNames] is that accumulator's [GlobalAccumulator.inferNames].
  */
 internal fun Cli.completionValues(
     cmd: Command,
     sifted: Sifted,
-    globalAcc: GlobalAccumulator,
+    globals: GlobalSift,
+    inferNames: Boolean,
     skipOperand: Int? = null,
 ): Map<HolderSpec, Any?> {
     val sink = mutableMapOf<HolderSpec, Any?>()
@@ -432,17 +433,17 @@ internal fun Cli.completionValues(
         sifted.negations,
         sifted.options,
         sink,
-        globalAcc.inferNames,
+        inferNames,
         BindPolicy.Lenient,
     )
     cmd.bindPositionals(
         sifted.positionals,
         sink,
         sifted,
-        globalAcc.inferNames,
+        inferNames,
         BindPolicy.Lenient,
         skipOperand = skipOperand,
     )
-    bindGlobals(globalSpecs, globalAcc.toGlobalSift(), sink, globalAcc.inferNames, BindPolicy.Lenient)
+    bindGlobals(globalSpecs, globals, sink, inferNames, BindPolicy.Lenient)
     return sink
 }
