@@ -170,10 +170,15 @@ class SshParityTest {
 
         parity.shortCircuits("--help", because = "real ssh: unknown option -- -")
         parity.shortCircuits("-h", "web1", because = "real ssh: unknown option -- h")
-        parity.shortCircuits("--help-all", because = "real ssh: unknown option -- -")
         parity.shortCircuits("--completion", "bash", because = "real ssh: unknown option -- -")
         parity.shortCircuits("--docs", "markdown", because = "real ssh: unknown option -- -")
         // A host literally named `__complete` is unreachable: the hidden built-in wins the subcommand walk.
         parity.shortCircuits("__complete", "web1", because = "real ssh: would resolve __complete as the destination")
+    }
+
+    @Test
+    fun `--help-all is refused as the real ssh refuses it`() {
+        // klap has --help-all only where there are subcommands to expand.
+        parity.rejects("--help-all", because = "real ssh: unknown option -- -")
     }
 }

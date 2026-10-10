@@ -16,10 +16,11 @@ import com.fromwau.klap.Flag
 import com.fromwau.klap.Input
 import com.fromwau.klap.Opt
 import com.fromwau.klap.Projection
+import com.fromwau.klap.Version
 import com.fromwau.klap.holderSpec
 import com.fromwau.klap.internal.render.HelpExample
 import com.fromwau.klap.internal.spec.ArgumentSpec
-import com.fromwau.klap.internal.spec.Builtin
+import com.fromwau.klap.internal.spec.BuiltinKind
 import com.fromwau.klap.internal.spec.ConstraintArity
 import com.fromwau.klap.internal.spec.Display
 import com.fromwau.klap.internal.spec.FlagSpec
@@ -32,6 +33,8 @@ import com.fromwau.klap.internal.spec.constraintHintToken
 import com.fromwau.klap.internal.spec.constraintToken
 import com.fromwau.klap.internal.spec.hint
 import com.fromwau.klap.internal.spec.requireValidName
+import com.fromwau.klap.internal.spec.requireValidSpelling
+import com.fromwau.klap.internal.spec.spellings
 import com.fromwau.klap.resolve
 
 /** Identity converter: a raw string passes through unchanged until a type transformer replaces it. */
@@ -54,13 +57,14 @@ internal class BuilderImpl(
         requireValidName("command", name)
     }
 
-    override var description: String = ""
+    override var help: String = ""
     override var aliases: Collection<String> = emptyList()
-    override var version: String? = null
+    override var version: Version = Version.Off
     override var author: String? = null
     override var abbreviation: Abbreviation = Abbreviation.None
     override var epilogue: String = ""
     override var hidden: Boolean = false
+    override var prio: Boolean = false
     override var optionsEndAtFirstOperand: Boolean = false
 
     private val specs = mutableListOf<HolderSpec>()
@@ -82,8 +86,8 @@ internal class BuilderImpl(
         return Arg(spec)
     }
 
-    override fun option(vararg names: String, help: String): Opt<String?> {
-        val spec = OptionSpec(names.toList(), help, passthrough, currentSection)
+    override fun option(short: List<Char>, long: List<String>, help: String): Opt<String?> {
+        val spec = OptionSpec(spellings(short, long), help, passthrough, currentSection)
         specs += spec
         return Opt(spec)
     }
@@ -104,20 +108,20 @@ internal class BuilderImpl(
         return Opt(spec)
     }
 
-    override fun flag(vararg names: String, help: String): Flag {
-        val spec = FlagSpec(names.toList(), help, currentSection)
+    override fun flag(short: List<Char>, long: List<String>, help: String): Flag {
+        val spec = FlagSpec(spellings(short, long), help, currentSection)
         specs += spec
         return Flag(spec)
     }
 
-    override fun globalOption(vararg names: String, help: String): Opt<String?> {
-        val spec = OptionSpec(names.toList(), help, passthrough)
+    override fun globalOption(short: List<Char>, long: List<String>, help: String): Opt<String?> {
+        val spec = OptionSpec(spellings(short, long), help, passthrough)
         globalSpecs += spec
         return Opt(spec)
     }
 
-    override fun globalFlag(vararg names: String, help: String): Flag {
-        val spec = FlagSpec(names.toList(), help)
+    override fun globalFlag(short: List<Char>, long: List<String>, help: String): Flag {
+        val spec = FlagSpec(spellings(short, long), help)
         globalSpecs += spec
         return Flag(spec)
     }
@@ -203,19 +207,28 @@ internal class BuilderImpl(
     }
 
     /** The root's resolved built-in surface, read by [cli]; a [Command] node never carries one. */
-    internal fun builtBuiltins(): Builtins = builtinsBuilder.resolve()
+    internal fun builtBuiltins(): Builtins = builtinsBuilder.resolve(version)
 
     override fun example(command: String, description: String) {
         examples += HelpExample(command, description)
     }
 
-    override fun <R> command(name: String, help: String, block: CommandBuilder.() -> R): R {
+    override fun <R> command(name: String, block: CommandBuilder.() -> R): R =
+        child(name, emptyList(), block)
+
+    override fun <R> command(short: List<Char>, long: List<String>, block: CommandBuilder.() -> R): R {
+        val spelled = spellings(short, long)
+        require(spelled.isNotEmpty()) { "command '${this.name}': a flag-spelled command needs a short or a long" }
+        spelled.forEach { requireValidSpelling("command", it) }
+        return child(long.firstOrNull() ?: short.first().toString(), spelled, block)
+    }
+
+    private fun <R> child(name: String, flagSpellings: List<String>, block: CommandBuilder.() -> R): R {
         // The child renders under the group heading enclosing this `command(...)` call (currentSection),
         // if any; its own `hidden` comes from the child block. Both are read back off the built child.
         val child = BuilderImpl(name, rootGlobalSpecs = reachableGlobalSpecs)
-        child.description = help
         val result = child.block()
-        val built = child.build(section = currentSection)
+        val built = child.build(section = currentSection, flagSpellings = flagSpellings)
         subs += built
         // A block that ended in `projection { }` has just told us which command it reads; nothing else can
         // supply that, because the handles it closes over are locals of the block that just returned.
@@ -230,13 +243,18 @@ internal class BuilderImpl(
      * Freeze the accumulated declarations into an immutable [Command], once every well-formedness rule passes.
      * [section] is the enclosing `group(...)` heading the parent threads in so this command renders under it.
      */
-    internal fun build(section: String? = null, builtinKind: Builtin? = null): Command {
+    internal fun build(
+        section: String? = null,
+        builtinKind: BuiltinKind? = null,
+        flagSpellings: List<String> = emptyList(),
+    ): Command {
         validatePositionals(name, specs)
         validateSpellings(name, specs, globalSpecs)
         validateDuplicateOptionFlagNames(name, specs)
         validateNegationCollisions(name, specs)
         validateGlobalCollisions(name, specs, globalSpecs, subs)
         validateSubcommands(name, subs)
+        validateFlagSpelledCommands(name, specs, reachableGlobalSpecs, subs)
         validateActionlessLocalOptions(
             name,
             specs,
@@ -259,13 +277,15 @@ internal class BuilderImpl(
             action = actionSpec,
             optionsEndAtFirstOperand = optionsEndAtFirstOperand,
             display = Display(
-                description = description,
+                description = help,
                 examples = examples.toList(),
                 epilogue = epilogue,
                 section = section,
                 hidden = hidden,
             ),
             builtinKind = builtinKind,
+            flagSpellings = flagSpellings,
+            prio = prio,
         )
         if (rootGlobalSpecs == null) {
             subs.forEach(::revalidateAgainstLaterMutation)

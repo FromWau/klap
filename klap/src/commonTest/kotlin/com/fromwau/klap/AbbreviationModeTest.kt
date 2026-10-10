@@ -11,8 +11,8 @@ class AbbreviationModeTest {
 
     private fun tree(mode: Abbreviation) = cli("t") {
         abbreviation = mode
-        val recursive = flag("--recursive", "-r")
-        val reference = option("--reference")
+        val recursive = flag(short = 'r', long = "recursive")
+        val reference = option(long = "reference")
         argument("file").multiple()
         action<String>(human = { it }) { Ok("r=${recursive()} ref=${reference()}") }
     }
@@ -37,18 +37,21 @@ class AbbreviationModeTest {
 
     @Test
     fun `long options infers a long option prefix`() {
-        assertEquals("r=true ref=null", tree(Abbreviation.Options).bindText("--recu", "f"))
-        assertEquals(
-            CliError.AmbiguousOption("--re", listOf("--recursive", "--reference")),
-            tree(Abbreviation.Options).parse(listOf("--re", "f")).assertError<CliError.AmbiguousOption>(),
-        )
+        for (mode in listOf(Abbreviation.LongOptions, Abbreviation.Options, Abbreviation.All)) {
+            assertEquals("r=true ref=null", tree(mode).bindText("--recu", "f"), mode.name)
+            assertEquals(
+                CliError.AmbiguousOption("--re", listOf("--recursive", "--reference")),
+                tree(mode).parse(listOf("--re", "f")).assertError<CliError.AmbiguousOption>(),
+                mode.name,
+            )
+        }
     }
 
     @Test
     fun `none keeps the short and the full builtin spellings`() {
         val strict = cli("t") {
             abbreviation = Abbreviation.None
-            version = "1.0"
+            version = Version.Of("1.0")
             action<String>(human = { it }) { Ok("ran") }
         }
         assertIs<Invocation.ShowHelp>(strict.parse(listOf("-h")).assertSuccess())
@@ -63,7 +66,7 @@ class AbbreviationModeTest {
     fun `none refuses a global prefix in every position`() {
         val tree = cli("app") {
             abbreviation = Abbreviation.None
-            val header = globalOption("--header")
+            val header = globalOption(long = "header")
             command("build") { action<String>(human = { it }) { Ok("header=${header()}") } }
         }
         // The pre-strip runs before the walk and must obey the mode too, or a global would infer where a
@@ -88,7 +91,7 @@ class AbbreviationModeTest {
 
     private fun head(mode: Abbreviation) = cli("head") {
         abbreviation = mode
-        val named = option("--lines", "-n")
+        val named = option(short = 'n', long = "lines")
         val lines = lastOneWins(named, numberOption())
         argument("file").multiple()
         action<String>(human = { it }) { Ok("n=${lines()}") }
@@ -117,7 +120,7 @@ class AbbreviationModeTest {
     @Test
     fun `only all infers a subcommand prefix`() {
         assertEquals("listen", dispatcher(Abbreviation.All).bindText("liste"))
-        for (mode in listOf(Abbreviation.None, Abbreviation.Options)) {
+        for (mode in listOf(Abbreviation.None, Abbreviation.LongOptions, Abbreviation.Options)) {
             assertEquals(
                 CliError.UnknownSubcommand("app", "liste", "listen"),
                 dispatcher(mode).parse(listOf("liste")).assertError<CliError.UnknownSubcommand>(),
@@ -172,7 +175,7 @@ class AbbreviationModeTest {
         val tree = cli("app") {
             abbreviation = Abbreviation.All
             command("status") {
-                val short = flag("--short", "-s")
+                val short = flag(short = 's', long = "short")
                 val files = argument("file").multiple()
                 action<String>(human = { it }) { Ok("short=${short()} files=${files()}") }
             }
@@ -182,9 +185,9 @@ class AbbreviationModeTest {
         assertEquals("short=true files=[f]", tree.bindText("stat", "-s", "f"))
     }
 
-    private fun priority(mode: Abbreviation) = cli("t") {
+    private fun priority(mode: Abbreviation, ignoreCase: Boolean = false) = cli("t") {
         abbreviation = mode
-        val level = option("--priority").choice("low", "high", "highest")
+        val level = option(long = "priority").choice("low", "high", "highest", ignoreCase = ignoreCase)
         action<String>(human = { it }) { Ok("p=${level()}") }
     }
 
@@ -195,6 +198,15 @@ class AbbreviationModeTest {
             assertEquals("p=low", priority(mode).bindText("--priority", "lo"), mode.name)
         }
         priority(Abbreviation.None).parse(listOf("--priority", "lo")).assertError<CliError.InvalidChoice>()
+    }
+
+    @Test
+    fun `long options abbreviates the name but never its value`() {
+        // pacman takes `--col` for `--color` and refuses `--color=al` ("invalid argument 'al' for --color").
+        val tree = priority(Abbreviation.LongOptions)
+        assertEquals("p=low", tree.bindText("--prio", "low"))
+        tree.parse(listOf("--priority", "lo")).assertError<CliError.InvalidChoice>()
+        tree.parse(listOf("--prio=lo")).assertError<CliError.InvalidChoice>()
     }
 
     @Test
@@ -211,14 +223,21 @@ class AbbreviationModeTest {
     }
 
     @Test
-    fun `choice abbreviation composes with case insensitive matching`() {
-        // `.choice()` already matches case-insensitively; prefixing is layered on top, not instead of it.
-        assertEquals("p=low", priority(Abbreviation.Options).bindText("--priority", "LO"))
-        assertEquals("p=high", priority(Abbreviation.Options).bindText("--priority", "HIGH"))
+    fun `choice abbreviation composes with an ignoreCase choice`() {
+        // Prefixing is layered on top of the choice's own case rule, not instead of it.
+        val tree = priority(Abbreviation.Options, ignoreCase = true)
+        assertEquals("p=low", tree.bindText("--priority", "LO"))
+        assertEquals("p=high", tree.bindText("--priority", "HIGH"))
         assertEquals(
             CliError.AmbiguousValue("--priority", "HI", listOf("high", "highest")),
-            priority(Abbreviation.Options).parse(listOf("--priority", "HI")).assertError<CliError.AmbiguousValue>(),
+            tree.parse(listOf("--priority", "HI")).assertError<CliError.AmbiguousValue>(),
         )
+    }
+
+    @Test
+    fun `a choice abbreviates in its exact case only`() {
+        priority(Abbreviation.Options).parse(listOf("--priority", "LO")).assertError<CliError.InvalidChoice>()
+        assertEquals("p=low", priority(Abbreviation.Options).bindText("--priority", "lo"))
     }
 
     private enum class Level { LOW, HIGH }
@@ -227,7 +246,7 @@ class AbbreviationModeTest {
     fun `an enum value infers too`() {
         val tree = cli("t") {
             abbreviation = Abbreviation.Options
-            val level = option("--level").enum<Level>()
+            val level = option(long = "level").enum<Level>()
             action<String>(human = { it }) { Ok("l=${level()}") }
         }
         assertEquals("l=HIGH", tree.bindText("--level", "h"))
@@ -243,6 +262,12 @@ class AbbreviationModeTest {
         }
         tree.parse(listOf("--color", "al")).assertSuccess()
         tree.parse(listOf("--color", "a")).assertError<CliError.AmbiguousValue>()
+        val longOnly = cli("t") {
+            abbreviation = Abbreviation.LongOptions
+            action<String>(human = { it }) { Ok("ran") }
+        }
+        longOnly.parse(listOf("--col", "always")).assertSuccess()
+        longOnly.parse(listOf("--color", "al")).assertError<CliError>()
     }
 
     @Test
@@ -284,7 +309,7 @@ class AbbreviationModeTest {
     fun `a prefix reaching two spellings suggests the nearest`() {
         val strict = cli("t") {
             abbreviation = Abbreviation.None
-            option("--header")
+            option(long = "header")
             action<String>(human = { it }) { Ok("ran") }
         }
         // A tie is not resolvable, but the nearest spelling is still the most useful hint: excluding both
@@ -299,8 +324,8 @@ class AbbreviationModeTest {
     fun `a tied prefix never surrenders to an unrelated candidate`() {
         val strict = cli("t") {
             abbreviation = Abbreviation.None
-            option("--sort")
-            option("--sort-by")
+            option(long = "sort")
+            option(long = "sort-by")
             action<String>(human = { it }) { Ok("ran") }
         }
         // "--sor" prefixes both --sort and --sort-by; excluding the tie from the scan would let the

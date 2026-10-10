@@ -62,7 +62,7 @@ class CpCompletionTargetsTest {
         check(nameKinds.flatMap { cells(it, NEGATION) })
     }
 
-    @Ignore("TDD target: the fixture must decline -h --json --color --completion --docs and drop --recursive-r")
+    @Ignore("TDD target: the fixture must drop --recursive-r, and klap word --help as cp does (todo 45)")
     @Test
     fun `a long name completes to cp's names only`() {
         // `cp --rec` is --recursive alone, `cp --h` is --help alone, `cp --j` and `cp --col`: unrecognized option.
@@ -82,11 +82,6 @@ class CpCompletionTargetsTest {
         // fish's own `complete -C "cp -v"` lists -va to -vZ, -r among them; the descriptions here are cp --help's.
         check(letterKinds.flatMap { cells(it, LETTERS) })
     }
-
-    @Ignore("TDD target: klap must match a choice value case-sensitively, as cp's argmatch does")
-    @Test
-    fun `a choice value in capitals is not offered`() =
-        check(cells("value capitals", CAPITALS).filterNot(ATTRIBUTE_CAPITALS))
 
     @Ignore("TDD target: the fixture must give --preserve and --context an optional value as cp's help shows")
     @Test

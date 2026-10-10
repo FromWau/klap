@@ -236,7 +236,7 @@ internal val TARGET_DIRECTORY_TWICE_CELLS: List<ParseCell> by lazy {
 /** The cells klap or the fixture reads otherwise than real cp today, each group the subject of one target. */
 internal val TARGETED_CELLS: Set<ParseCell> by lazy {
     (
-        LOWERCASE_R_CELLS + U_CELLS + CHOICE_CAPITAL_CELLS + ATTRIBUTE_NAME_CELLS + ATTRIBUTE_REPEAT_CELLS +
+        LOWERCASE_R_CELLS + U_CELLS + ATTRIBUTE_NAME_CELLS + ATTRIBUTE_REPEAT_CELLS +
             OPTIONAL_VALUE_CELLS + BACKUP_CONTROL_CELLS + TARGET_DIRECTORY_TWICE_CELLS
         ).toSet()
 }

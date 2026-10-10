@@ -119,7 +119,8 @@ internal val INPUTS: List<Input> = listOf(
         copy(color = it)
     },
     value("--config", null, "set an alternate configuration file", PATH) { copy(config = it) },
-    flag("--confirm", null, "always ask for confirmation") { copy(confirm = it) },
+    // `--confirm` turns `--noconfirm` off again, so alone it binds what no word binds.
+    flag("--confirm", null, "always ask for confirmation") { copy(noConfirm = noConfirm && !it) },
     value("--debug", null, "display debug messages", Kind.Value(choices = listOf("1", "2"), bare = "1")) {
         copy(debug = it)
     },
@@ -198,15 +199,34 @@ internal val INPUTS: List<Input> = listOf(
     flag("--machinereadable", null, "produce machine-readable output (-F)") { copy(machineReadable = it) },
 )
 
+/**
+ * How klap describes [long] on a line naming no operation yet, where any operation's option may stand: in the words
+ * of the first operation's page that lists it.
+ */
+internal fun unscopedHelp(long: String): String =
+    Op.entries.firstNotNullOfOrNull { it.entryFor(long)?.help } ?: input(long).help
+
+/** How klap describes the letter [short] on a line naming no operation yet, as [unscopedHelp] describes a long. */
+internal fun unscopedHelp(short: Char): String? = Op.entries.firstNotNullOfOrNull { it.entryFor(short)?.help }
+
+/** Every letter some operation's page lists, in page order. */
+internal val PAGE_LETTERS: List<Char> by lazy {
+    Op.entries.flatMap { op -> op.page.mapNotNull { it.short } }.distinct()
+}
+
+/** Whether a doubled [letter] counts on some operation's page, which a line naming no operation yet may become. */
+internal fun countsSomewhere(letter: Char): Boolean =
+    Op.entries.any { op -> op.entryFor(letter)?.let(op::counts) == true }
+
 internal fun input(long: String): Input = INPUTS.firstOrNull { it.long == long } ?: fail("no fixture input $long")
 
 internal fun inputFor(short: Char): Input? = INPUTS.firstOrNull { it.short == short }
 
 internal const val VERSION_SHORT_HELP = "display version and exit"
 
-/** klap's own wording for its built-ins; pacman's help gives `-h --help` and `--version` no description. */
-internal const val HELP_TEXT = "Show this help"
-internal const val VERSION_TEXT = "Show the version"
+/** `man pacman` on `-h, --help` and `-V, --version`, in the fixture's lower-case style. */
+internal const val HELP_TEXT = "display syntax for the given operation"
+internal const val VERSION_TEXT = VERSION_SHORT_HELP
 
 /** Every long name either pacman or klap accepts on this line, which an abbreviation must be unique among. */
 internal val ALL_LONGS: List<String> =
@@ -562,7 +582,14 @@ private fun Input.bound(
     Kind.Flag -> record.bind(true)
     Kind.Count -> record.bind(times)
     is Kind.Value -> record.bind(if (kind.multiple) values else values.last())
-}
+}.withImplied()
+
+/** What the man page says an input implies: --print-format implies --print, --disable-sandbox both of its parts. */
+private fun PacmanInputs.withImplied(): PacmanInputs = copy(
+    printOnly = printOnly || printFormat != null,
+    disableSandboxFilesystem = disableSandboxFilesystem || disableSandbox,
+    disableSandboxSyscalls = disableSandboxSyscalls || disableSandbox,
+)
 
 /** `-<short>` with [words] and the targets this operation requires. */
 internal fun Op.line(vararg words: String): List<String> = listOf("-$short") + words + requiredTargets

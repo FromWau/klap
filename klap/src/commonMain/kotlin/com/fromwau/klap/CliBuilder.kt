@@ -6,13 +6,14 @@ import com.fromwau.kern.result.Result
 import com.fromwau.klap.internal.builder.BuilderImpl
 import com.fromwau.klap.internal.builder.validateGlobalDigitShorts
 import com.fromwau.klap.internal.builder.validateReservedNames
-import com.fromwau.klap.internal.spec.Builtin
+import com.fromwau.klap.internal.spec.requireValidSpelling
+import com.fromwau.klap.internal.spec.BuiltinKind
 
 /** DSL receiver for the root CLI: a [CommandBuilder] plus root-only settings. */
 @KlapDsl
 public abstract class CliBuilder internal constructor() : CommandBuilder() {
-    /** What `--version` reports. Leaving it null removes the `--version` option altogether. */
-    public abstract var version: String?
+    /** The tool's version and its `--version`; see [Version]. [Version.Off], the default, means neither. */
+    public abstract var version: Version
 
     /** The tool's author, rendered in `--help`'s footer, the man page's `AUTHOR` section, and generated docs. */
     public abstract var author: String?
@@ -25,12 +26,60 @@ public abstract class CliBuilder internal constructor() : CommandBuilder() {
      * after the subcommand path, bound once, and readable from any nested action by closing over the
      * returned [Opt] as a `val`.
      *
-     * @see [CommandBuilder.option] for how [names] and [help] are read.
+     * @see [CommandBuilder.option] for how [short], [long] and [help] are read.
      */
-    public abstract fun globalOption(vararg names: String, help: String = ""): Opt<String?>
+    public abstract fun globalOption(
+        short: List<Char> = emptyList(),
+        long: List<String> = emptyList(),
+        help: String = "",
+    ): Opt<String?>
+
+    /** A global option with one short and one long spelling; see the list form for how spellings are read. */
+    public fun globalOption(short: Char, long: String, help: String = ""): Opt<String?> =
+        globalOption(listOf(short), listOf(long), help)
+
+    /** A global option with one long spelling and no short; see the list form for how spellings are read. */
+    public fun globalOption(long: String, help: String = ""): Opt<String?> =
+        globalOption(emptyList(), listOf(long), help)
+
+    /** A global option with one short spelling and no long; see the list form for how spellings are read. */
+    public fun globalOption(short: Char, help: String = ""): Opt<String?> =
+        globalOption(listOf(short), emptyList(), help)
+
+    /** A global option with several shorts and one long; see the list form for how spellings are read. */
+    public fun globalOption(short: List<Char>, long: String, help: String = ""): Opt<String?> =
+        globalOption(short, listOf(long), help)
+
+    /** A global option with one short and several longs; see the list form for how spellings are read. */
+    public fun globalOption(short: Char, long: List<String>, help: String = ""): Opt<String?> =
+        globalOption(listOf(short), long, help)
 
     /** The flag counterpart of [globalOption]. */
-    public abstract fun globalFlag(vararg names: String, help: String = ""): Flag
+    public abstract fun globalFlag(
+        short: List<Char> = emptyList(),
+        long: List<String> = emptyList(),
+        help: String = "",
+    ): Flag
+
+    /** A global flag with one short and one long spelling; see the list form for how spellings are read. */
+    public fun globalFlag(short: Char, long: String, help: String = ""): Flag =
+        globalFlag(listOf(short), listOf(long), help)
+
+    /** A global flag with one long spelling and no short; see the list form for how spellings are read. */
+    public fun globalFlag(long: String, help: String = ""): Flag =
+        globalFlag(emptyList(), listOf(long), help)
+
+    /** A global flag with one short spelling and no long; see the list form for how spellings are read. */
+    public fun globalFlag(short: Char, help: String = ""): Flag =
+        globalFlag(listOf(short), emptyList(), help)
+
+    /** A global flag with several shorts and one long; see the list form for how spellings are read. */
+    public fun globalFlag(short: List<Char>, long: String, help: String = ""): Flag =
+        globalFlag(short, listOf(long), help)
+
+    /** A global flag with one short and several longs; see the list form for how spellings are read. */
+    public fun globalFlag(short: Char, long: List<String>, help: String = ""): Flag =
+        globalFlag(listOf(short), long, help)
 
     /**
      * Declines one or more of klap's injected built-ins; see [BuiltinsBuilder] for the switches and what
@@ -45,7 +94,7 @@ public abstract class CliBuilder internal constructor() : CommandBuilder() {
  *
  * ```kotlin
  * val app = cli("greet") {
- *     description = "say hello"
+ *     help = "say hello"
  *     val name = argument("name", "who to greet")
  *     action { Ok("hello, ${name()}") }
  * }
@@ -100,8 +149,8 @@ public class TypedCli<T> internal constructor(
  * data class HeadArgs(val lines: String?, val quiet: Boolean, val files: List<String>)
  *
  * val head = cliOf("head") {
- *     val lines = option("--lines", "-n")
- *     val quiet = flag("--quiet", "-q")
+ *     val lines = option(short = 'n', long = "lines")
+ *     val quiet = flag(short = 'q', long = "quiet")
  *     val files = argument("file").multiple()
  *     projection { HeadArgs(lines(), quiet(), files()) }
  * }
@@ -127,7 +176,7 @@ private fun validateEveryExecutableCommandProjects(cli: Cli, readers: Map<Comman
         if (command.builtinKind == null && command.action != null && !readers.containsKey(command)) {
             unprojected += path
         }
-        command.subcommands.forEach { walk(it, if (path.isEmpty()) it.name else "$path ${it.name}") }
+        command.subcommands.forEach { walk(it, if (path.isEmpty()) it.token else "$path ${it.token}") }
     }
     walk(cli, "")
     require(unprojected.isEmpty()) {
@@ -189,7 +238,9 @@ private fun <T> build(name: String, block: CliBuilder.() -> T): Pair<Cli, T> {
         "cli '$name': the root cannot have aliases; aliases apply to command(...) subcommands"
     }
     val base = builder.build()
-    val builtins = builder.builtBuiltins()
+    val declared = builder.builtBuiltins()
+    val builtins = declared.copy(helpAll = declared.helpAll && base.subcommands.any { !it.hidden })
+    (builder.version as? Version.Of)?.let { requireValidSpelling("version", "--${it.long}") }
     // Deferred to here, unlike every other well-formedness rule: which names a built-in reserves depends on
     // `builtins { }`, and a subcommand's own build() ran back when its `command(...)` was declared, possibly
     // before that block was reached. Walking the finished tree makes the rule independent of that order.
@@ -211,7 +262,7 @@ private fun <T> build(name: String, block: CliBuilder.() -> T): Pair<Cli, T> {
     return Cli(
         name = base.name,
         author = builder.author,
-        version = builder.version,
+        version = (builder.version as? Version.Of)?.number,
         specs = base.specs,
         constraints = base.constraints,
         subcommands = base.subcommands + injected,
@@ -230,8 +281,8 @@ private fun <T> build(name: String, block: CliBuilder.() -> T): Pair<Cli, T> {
  * docs, and completion can list it, but the parser routes it to [Cli.renderCompletion] (see `routeBuiltin`)
  * rather than executing it, so the node needs no reference to the root it renders.
  */
-private fun completionCommand(): Command = builtin("completion", Builtin.Completion) {
-    description = "Print a shell completion script (bash|zsh|fish|powershell)"
+private fun completionCommand(): Command = builtin("completion", BuiltinKind.Completion) {
+    help = "Print a shell completion script (bash|zsh|fish|powershell)"
     // .enum surfaces the shell choices in help/docs; the parser does the actual parsing (via CompletionShell.fromOrNull).
     argument("shell", help = "Shell to generate the script for").enum<CompletionShell>()
 }
@@ -241,20 +292,20 @@ private fun completionCommand(): Command = builtin("completion", Builtin.Complet
  * [Cli.completeCandidates], which prints one candidate per line for the word under the cursor. Backs a
  * `.completeWith { }` provider a static shell script cannot call back into Kotlin for.
  */
-private fun completeCommand(): Command = builtin("__complete", Builtin.Complete) {
+private fun completeCommand(): Command = builtin("__complete", BuiltinKind.Complete) {
     hidden = true
-    description = "Internal: print completion candidates for the given words"
+    help = "Internal: print completion candidates for the given words"
     argument("words", help = "words typed so far").multiple()
 }
 
 /** The built-in `docs <format>` subcommand; the parser routes it to [Cli.renderDocs] (see [completionCommand]). */
-private fun docsCommand(): Command = builtin("docs", Builtin.Docs) {
-    description = "Print generated documentation (markdown|man)"
+private fun docsCommand(): Command = builtin("docs", BuiltinKind.Docs) {
+    help = "Print generated documentation (markdown|man)"
     argument("format", help = "Doc format to generate").enum<DocFormat>()
 }
 
 private fun builtin(
     name: String,
-    kind: Builtin,
+    kind: BuiltinKind,
     block: CommandBuilder.() -> Unit,
 ): Command = BuilderImpl(name).apply(block).build(builtinKind = kind)

@@ -1,11 +1,12 @@
 package com.fromwau.klap
 
 import com.fromwau.klap.internal.parse.NameMatch
+import com.fromwau.klap.internal.parse.hoistedToken
 import com.fromwau.klap.internal.parse.resolveName
 import com.fromwau.klap.internal.render.HelpExample
 import com.fromwau.klap.internal.spec.Action
 import com.fromwau.klap.internal.spec.ArgumentSpec
-import com.fromwau.klap.internal.spec.Builtin
+import com.fromwau.klap.internal.spec.BuiltinKind
 import com.fromwau.klap.internal.spec.Display
 import com.fromwau.klap.internal.spec.FlagSpec
 import com.fromwau.klap.internal.spec.HolderSpec
@@ -34,10 +35,16 @@ public open class Command internal constructor(
     internal val display: Display = Display(),
     // Non-null only for the completion/docs/__complete nodes cli() injects: names the builtin so parse()
     // routes it to the matching render invocation, since the node carries no action. A user command is null.
-    internal val builtinKind: Builtin? = null,
+    internal val builtinKind: BuiltinKind? = null,
     // Whether THIS node's own sift stops at its first operand rather than permuting past it; see
     // CommandBuilder.optionsEndAtFirstOperand for what that trades away and why it is per-node.
     internal val optionsEndAtFirstOperand: Boolean = false,
+    // The spellings of a command reached as a flag (`--sync`, `-S`), each written as the token it is, the
+    // primary first; empty for a command reached by its word.
+    internal val flagSpellings: List<String> = emptyList(),
+    // Set by `prio = true`: given, this command runs ahead of its parent's required globals and of
+    // `--completion` and `--docs`.
+    internal val prio: Boolean = false,
 ) {
     internal val arguments: List<ArgumentSpec> get() = specs.filterIsInstance<ArgumentSpec>()
     internal val options: List<OptionSpec> get() = specs.filterIsInstance<OptionSpec>()
@@ -64,12 +71,27 @@ public open class Command internal constructor(
     /** A group prints subcommand help when invoked: it has children and no own action. */
     internal val isGroup: Boolean get() = subcommands.isNotEmpty() && action == null
 
+    /** Whether this command is reached by a flag spelling (`pacman -S`) rather than by its word (`git add`). */
+    internal val isFlagSpelled: Boolean get() = flagSpellings.isNotEmpty()
+
+    /** How a command line and its help name this command: its word, or its primary flag spelling. */
+    internal val token: String get() = flagSpellings.firstOrNull() ?: name
+
+    /** The words this command is typed as: its name and aliases, or none for a flag-spelled command. */
+    internal val words: List<String> get() = if (isFlagSpelled) emptyList() else listOf(name) + aliases
+
+    /** The children reached by their word, the only ones a subcommand token can name. */
+    internal val wordSubcommands: List<Command> get() = subcommands.filterNot { it.isFlagSpelled }
+
+    /** The children reached by a flag spelling, found anywhere among this command's options. */
+    internal val flagSubcommands: List<Command> get() = subcommands.filter { it.isFlagSpelled }
+
     /**
      * The child named exactly [token], by its own name or one of its aliases, or null. This never resolves
      * an abbreviation, even under [Abbreviation.All], so it can miss a token that parsing would have matched.
      */
     public fun subcommand(token: String): Command? =
-        subcommands.firstOrNull { it.name == token || token in it.aliases }
+        subcommands.firstOrNull { it.name == token || token in it.aliases || token in it.flagSpellings }
 }
 
 /** What a typed subcommand token reached. [Ambiguous.candidates] are full spellings, in declaration order. */
@@ -87,12 +109,14 @@ internal sealed interface SubcommandMatch {
  * command's own name AND one of its aliases is not ambiguous, since both name one command.
  */
 internal fun Command.resolveSubcommand(token: String, infer: Boolean): SubcommandMatch {
-    val pool = subcommands.flatMap { listOf(it.name) + it.aliases }
+    flagSubcommands.firstOrNull { token == it.hoistedToken }?.let { return SubcommandMatch.One(it) }
+    val pool = wordSubcommands.flatMap { it.words }
+    fun named(word: String) = wordSubcommands.firstOrNull { word in it.words }
     return when (val match = resolveName(token, pool, infer)) {
-        is NameMatch.Exact -> subcommand(match.name)?.let { SubcommandMatch.One(it) } ?: SubcommandMatch.None
-        is NameMatch.Prefix -> subcommand(match.name)?.let { SubcommandMatch.One(it) } ?: SubcommandMatch.None
+        is NameMatch.Exact -> named(match.name)?.let { SubcommandMatch.One(it) } ?: SubcommandMatch.None
+        is NameMatch.Prefix -> named(match.name)?.let { SubcommandMatch.One(it) } ?: SubcommandMatch.None
         is NameMatch.Ambiguous -> {
-            val commands = match.candidates.mapNotNull { subcommand(it) }.distinct()
+            val commands = match.candidates.mapNotNull { named(it) }.distinct()
             commands.singleOrNull()?.let { SubcommandMatch.One(it) }
                 ?: SubcommandMatch.Ambiguous(match.candidates)
         }
@@ -188,12 +212,13 @@ public class Cli internal constructor(
 private fun Command.subtreeLongs(): List<String> =
     namedInputs.flatMap { it.longs } +
             flags.filter { it.negatable }.flatMap { it.negativeLongs } +
+            flagSubcommands.flatMap { sub -> sub.flagSpellings.filter { it.startsWith("--") }.map { it.drop(2) } } +
             subcommands.flatMap { it.subtreeLongs() }
 
 private fun Command.firstSuspendingPath(prefix: String = name): String? {
     if (action?.suspending == true) return prefix
     for (sub in subcommands) {
-        sub.firstSuspendingPath("$prefix ${sub.name}")?.let { return it }
+        sub.firstSuspendingPath("$prefix ${sub.token}")?.let { return it }
     }
     return null
 }

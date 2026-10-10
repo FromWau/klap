@@ -22,9 +22,9 @@ class GlobalOptionArgvOrderTest {
     @Test
     fun `the last occurrence in argv wins`() {
         val tree = cli("app") {
-            val retries = globalOption("--retries", "-r").int().default(0)
+            val retries = globalOption(short = 'r', long = "retries").int().default(0)
             command("build") {
-                flag("--force", "-f")
+                flag(short = 'f', long = "force")
                 action { Ok("retries=${retries()}") }
             }
         }
@@ -36,9 +36,9 @@ class GlobalOptionArgvOrderTest {
     @Test
     fun `a repeatable global keeps argv order`() {
         val tree = cli("app") {
-            val tags = globalOption("--tag", "-t").multiple()
+            val tags = globalOption(short = 't', long = "tag").multiple()
             command("build") {
-                flag("--force", "-f")
+                flag(short = 'f', long = "force")
                 action { Ok("tags=${tags()}") }
             }
         }
@@ -53,9 +53,9 @@ class RequiredIfTriggerReachTest {
     @Test
     fun `a global flag triggers the requirement it advertises`() {
         val tree = cli("app") {
-            val verbose = globalFlag("--verbose")
+            val verbose = globalFlag(long = "verbose")
             command("c") {
-                val token = option("--token").requiredIf(verbose)
+                val token = option(long = "token").requiredIf(verbose)
                 action { Ok("token=${token()}") }
             }
         }
@@ -67,8 +67,8 @@ class RequiredIfTriggerReachTest {
     fun `the negative spelling does not trigger the requirement`() {
         val tree = cli("app") {
             command("c") {
-                val remote = flag("--remote", "-r").negatable()
-                val token = option("--token").requiredIf(remote)
+                val remote = flag(short = 'r', long = "remote").negatable()
+                val token = option(long = "token").requiredIf(remote)
                 action { Ok("token=${token()}") }
             }
         }
@@ -81,9 +81,9 @@ class NumberOptionClusterTest {
     @Test
     fun `a mixed global local cluster outranks the number`() {
         val tree = cli("app") {
-            globalFlag("--two", "-2")
+            globalFlag(short = '2', long = "two")
             command("head") {
-                val zero = flag("--zero", "-0")
+                val zero = flag(short = '0', long = "zero")
                 val lines = numberOption().int()
                 action { Ok("zero=${zero()} lines=${lines()}") }
             }
@@ -113,7 +113,7 @@ class ArgDefaultTypeTest {
     fun `absent when then default binds the default not null`() {
         val tree = cli("app") {
             command("c") {
-                val ref = option("--reference")
+                val ref = option(long = "reference")
                 val mode = argument("mode").absentWhen(ref).default("755")
                 val files = argument("file").multiple(min = 1)
                 action { Ok("modeLen=${mode().length} files=${files()}") }
@@ -148,8 +148,8 @@ class LastWinsCompletionTest {
     fun `a last wins member stays offered after its sibling is typed`() {
         val tree = cli("rm") {
             command("go") {
-                val interactive = flag("--interactive", "-i")
-                val force = flag("--force", "-f")
+                val interactive = flag(short = 'i', long = "interactive")
+                val force = flag(short = 'f', long = "force")
                 lastWins(interactive, force)
                 action { Ok("") }
             }
@@ -201,7 +201,7 @@ class AbbreviatedOptionCompletionTest {
         val tree = cli("tool") {
             abbreviation = Abbreviation.Options
             command("go") {
-                option("--sort").choice("name", "size")
+                option(long = "sort").choice("name", "size")
                 argument("a").choice("A1", "A2")
                 action { Ok("") }
             }

@@ -4,6 +4,7 @@ import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Flag
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
+import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
 
@@ -64,8 +65,8 @@ private fun findPerm(raw: String): FindPerm {
 /**
  * `-type f`, `-type d`, and GNU's comma list `-type f,l`.
  *
- * KLAP-GAP: find's type letters are case-sensitive (`d` directory vs `D` door), but `.choice()`
- * matches case-insensitively and rejects a set colliding under case, so `.validate` is the fallback.
+ * The letters are case-sensitive (`d` directory vs `D` door) and may come as a comma list, which one
+ * `.choice()` value cannot take, so `.validate` checks each letter.
  */
 private const val FIND_TYPE_LETTERS = "bcdpflsD"
 
@@ -79,8 +80,8 @@ private fun isFindTypeList(raw: String): Boolean =
  * `--docs` arrive as position-independent options rather than as subcommands.
  */
 public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
-    description = "Search for files in a directory hierarchy"
-    version = "0.0-study"
+    help = "Search for files in a directory hierarchy"
+    version = Version.Of("0.0-study")
     epilogue =
         "This is a klap surface study, not findutils. Predicates are spelled with two dashes; " +
             "pass a real find expression verbatim after `--` and parse it yourself."
@@ -97,19 +98,19 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
     // The pre-path switches. `-P`/`-L`/`-H`/`-D`/`-Olevel` are single-dash single-char, precisely
     // klap's short form and the only part of find that reproduces exactly; since find's own
     // predicates are all lowercase, none of them silently clusters into these uppercase shorts.
-    val physical = flag("--physical", "-P", help = "never follow symbolic links (default)")
-    val logical = flag("--logical", "-L", help = "follow symbolic links")
-    val followArgs = flag("--follow-args", "-H", help = "follow symlinks only for command-line arguments")
+    val physical = flag(short = 'P', long = "physical", help = "never follow symbolic links (default)")
+    val logical = flag(short = 'L', long = "logical", help = "follow symbolic links")
+    val followArgs = flag(short = 'H', long = "follow-args", help = "follow symlinks only for command-line arguments")
     lastWins(physical, logical, followArgs)
 
     // `-D tree,search`. Reproduces exactly, including the space form `-D x` and the
     // attached form `-Dx` (Parser.kt).
-    val debug = option("--debug", "-D", help = "print diagnostics (comma-separated)")
+    val debug = option(short = 'D', long = "debug", help = "print diagnostics (comma-separated)")
         .map { raw -> raw.split(",").filter { part -> part.isNotEmpty() } }
 
     // `-O3`. Reproduces exactly in the attached form; klap additionally accepts `-O 3`
     // and `--optimise=3`, which find does not.
-    val optimise = option("--optimise", "-O", help = "query optimisation level").int().range(0..3)
+    val optimise = option(short = 'O', long = "optimise", help = "query optimisation level").int().range(0..3)
 
     // find's "global options" (-maxdepth/-mindepth/-depth/-xdev/...) are the one family that
     // genuinely is position-independent in find, so klap's unordered binding is the right model for
@@ -127,22 +128,25 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
     val regextype: Opt<String?>
     val files0From: Opt<String?>
     group("Traversal options (find's own position-independent set)") {
-        maxDepth = option("--maxdepth", help = "descend at most N directory levels")
+        maxDepth = option(long = "maxdepth", help = "descend at most N directory levels")
             .int()
             .range(0..Int.MAX_VALUE)
 
-        minDepth = option("--mindepth", help = "do not apply any tests at levels less than N")
+        minDepth = option(long = "mindepth", help = "do not apply any tests at levels less than N")
             .int()
             .range(0..Int.MAX_VALUE)
 
-        depth = flag("--depth", help = "process a directory's contents before the directory itself")
-        xdev = flag("--xdev", help = "don't descend directories on other filesystems")
-        mount = flag("--mount", help = "synonym for --xdev (klap cannot alias a flag)")
+        depth = flag(long = "depth", help = "process a directory's contents before the directory itself")
+        xdev = flag(long = "xdev", help = "don't descend directories on other filesystems")
+        mount = flag(long = "mount", help = "synonym for --xdev (klap cannot alias a flag)")
 
-        noleaf = flag("--noleaf", help = "do not optimise assuming Unix directory link counts")
-        ignoreReaddirRace = flag("--ignore-readdir-race", help = "do not error on files removed during the scan")
+        noleaf = flag(long = "noleaf", help = "do not optimise assuming Unix directory link counts")
+        ignoreReaddirRace = flag(
+            long = "ignore-readdir-race",
+            help = "do not error on files removed during the scan",
+        )
 
-        regextype = option("--regextype", help = "syntax used by --regex")
+        regextype = option(long = "regextype", help = "syntax used by --regex")
             .choice(
                 "findutils-default",
                 "gnu-awk",
@@ -152,7 +156,7 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
                 "posix-extended",
             )
 
-        files0From = option("--files0-from", help = "read NUL-separated starting points from FILE").file()
+        files0From = option(long = "files0-from", help = "read NUL-separated starting points from FILE").file()
     }
 
     // Tests: arity and value grammar reproduce; spelling and position do not. Each binds
@@ -161,57 +165,56 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
     //
     // `.multiple()` collects occurrences of THAT option only: `--name a --name b` is recoverable,
     // but the interleaving of `--name a --size +1M --name b` is not.
-    val namePattern = option("--name", help = "base name matches shell pattern").multiple()
-    val inamePattern = option("--iname", help = "like --name, case-insensitive").multiple()
-    val pathPattern = option("--path", help = "whole path matches shell pattern").multiple()
-    val regexPattern = option("--regex", help = "whole path matches regular expression").multiple()
+    val namePattern = option(long = "name", help = "base name matches shell pattern").multiple()
+    val inamePattern = option(long = "iname", help = "like --name, case-insensitive").multiple()
+    val pathPattern = option(long = "path", help = "whole path matches shell pattern").multiple()
+    val regexPattern = option(long = "regex", help = "whole path matches regular expression").multiple()
 
-    // KLAP-GAP: see isFindTypeList; a case-sensitive choice set is not representable.
-    val typeTest = option("--type", help = "file type: one or more of b c d p f l s D (comma-separated)")
+    val typeTest = option(long = "type", help = "file type: one or more of b c d p f l s D (comma-separated)")
         .validate("must be one or more of $FIND_TYPE_LETTERS, comma-separated") { isFindTypeList(it) }
 
     // `-size +1M` / `-size -100c` / `-size 3`. The `+`-led token is not dash-led at all so it
     // binds in the space form; a `-`-led NUMERIC token binds too, because `isDashLedValue`
     // (Parser.kt) classifies `-100c` as a value rather than an option. A genuinely good fit.
-    val sizeTest = option("--size", help = "file uses N units of space ([+-]N[$FIND_SIZE_UNITS])")
+    val sizeTest = option(long = "size", help = "file uses N units of space ([+-]N[$FIND_SIZE_UNITS])")
         .map(::findSize)
 
-    val mtime = option("--mtime", help = "data last modified [+-]N*24h ago").map(::findCount)
-    val mmin = option("--mmin", help = "data last modified [+-]N minutes ago").map(::findCount)
-    val ctime = option("--ctime", help = "status last changed [+-]N*24h ago").map(::findCount)
-    val atime = option("--atime", help = "last accessed [+-]N*24h ago").map(::findCount)
-    val linkCount = option("--links", help = "file has [+-]N hard links").map(::findCount)
+    val mtime = option(long = "mtime", help = "data last modified [+-]N*24h ago").map(::findCount)
+    val mmin = option(long = "mmin", help = "data last modified [+-]N minutes ago").map(::findCount)
+    val ctime = option(long = "ctime", help = "status last changed [+-]N*24h ago").map(::findCount)
+    val atime = option(long = "atime", help = "last accessed [+-]N*24h ago").map(::findCount)
+    val linkCount = option(long = "links", help = "file has [+-]N hard links").map(::findCount)
 
-    val permTest = option("--perm", help = "permission bits ([-/]MODE)").map(::findPerm)
+    val permTest = option(long = "perm", help = "permission bits ([-/]MODE)").map(::findPerm)
 
-    val newerThan = option("--newer", help = "modified more recently than FILE").file()
-    val ownerUser = option("--user", help = "owned by USER")
-    val ownerGroup = option("--group", help = "owned by GROUP")
+    val newerThan = option(long = "newer", help = "modified more recently than FILE").file()
+    val ownerUser = option(long = "user", help = "owned by USER")
+    val ownerGroup = option(long = "group", help = "owned by GROUP")
 
-    val emptyTest = flag("--empty", help = "file or directory is empty")
-    val readableTest = flag("--readable", help = "readable by the current user")
-    val writableTest = flag("--writable", help = "writable by the current user")
-    val executableTest = flag("--executable", help = "executable/searchable by the current user")
-    val nouserTest = flag("--nouser", help = "no user corresponds to the file's numeric uid")
-    val nogroupTest = flag("--nogroup", help = "no group corresponds to the file's numeric gid")
+    val emptyTest = flag(long = "empty", help = "file or directory is empty")
+    val readableTest = flag(long = "readable", help = "readable by the current user")
+    val writableTest = flag(long = "writable", help = "writable by the current user")
+    val executableTest = flag(long = "executable", help = "executable/searchable by the current user")
+    val nouserTest = flag(long = "nouser", help = "no user corresponds to the file's numeric uid")
+    val nogroupTest = flag(long = "nogroup", help = "no group corresponds to the file's numeric gid")
 
     // KLAP-GAP (order): in find, an action's position is its meaning (`-print` fires per match,
     // `-prune` stops descent where it is reached, `-quit` stops immediately). klap binds actions as
     // unordered booleans, so all positional meaning is lost.
-    val printAction = flag("--print", help = "print the full file name, then a newline")
-    val print0Action = flag("--print0", help = "print the full file name, then a NUL")
-    val printfAction = option("--printf", help = "print FORMAT, interpreting `%` directives")
-    val lsAction = flag("--ls", help = "list the file in `ls -dils` format")
-    val deleteAction = flag("--delete", help = "delete the file")
-    val pruneAction = flag("--prune", help = "do not descend into this directory")
-    val quitAction = flag("--quit", help = "exit immediately")
+    val printAction = flag(long = "print", help = "print the full file name, then a newline")
+    val print0Action = flag(long = "print0", help = "print the full file name, then a NUL")
+    val printfAction = option(long = "printf", help = "print FORMAT, interpreting `%` directives")
+    val lsAction = flag(long = "ls", help = "list the file in `ls -dils` format")
+    val deleteAction = flag(long = "delete", help = "delete the file")
+    val pruneAction = flag(long = "prune", help = "do not descend into this directory")
+    val quitAction = flag(long = "quit", help = "exit immediately")
 
     // KLAP-GAP (terminator-delimited variadic): real `-exec COMMAND [ARG...] ;` (or `+`) swallows
     // every remaining token until the sentinel; `fixedAfter` in Parser.kt reserves trailing room for
     // later positionals but has no notion of a mid-stream sentinel, so the closest expressible thing
     // is one word per occurrence with no terminator: `-exec rm -rf {} ;` becomes
     // `--exec rm --exec=-rf --exec '{}'`.
-    val execAction = option("--exec", help = "one word of the command to run; repeat for each word")
+    val execAction = option(long = "exec", help = "one word of the command to run; repeat for each word")
         .multiple()
 
     // `validatePositionals` (BuilderValidation.kt) allows at most one variadic argument, so find's

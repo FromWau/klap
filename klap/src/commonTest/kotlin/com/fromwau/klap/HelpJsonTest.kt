@@ -13,12 +13,13 @@ import kotlinx.serialization.json.jsonPrimitive
 class HelpJsonTest {
 
     private fun tool(): Cli = cli("tool") {
-        description = "a tool"
-        version = "1.0"
-        command("get", "print a key") {
+        help = "a tool"
+        version = Version.Of("1.0")
+        command("get") {
+            help = "print a key"
             argument("key", "the key")
-            flag("--raw", "-r", help = "print it raw")
-            option("--mode", help = "how to read it").choice("fast", "slow").default("fast")
+            flag(short = 'r', long = "raw", help = "print it raw")
+            option(long = "mode", help = "how to read it").choice("fast", "slow").default("fast")
             example("tool get name", "one key")
             action { Ok("") }
         }
@@ -77,14 +78,16 @@ class HelpJsonTest {
     @Test
     fun `an argument that a flag or option removes or relaxes names it`() {
         val conditional = cli("tool") {
-            command("cp", "copy files") {
-                val target = option("--target-directory", "-t", help = "copy into this directory")
+            command("cp") {
+                help = "copy files"
+                val target = option(short = 't', long = "target-directory", help = "copy into this directory")
                 argument("source", "what to copy").multiple(min = 1)
                 argument("dest", "where to copy it").absentWhen(target)
                 action { Ok("") }
             }
-            command("rm", "remove files") {
-                val force = flag("--force", "-f", help = "ignore missing files")
+            command("rm") {
+                help = "remove files"
+                val force = flag(short = 'f', long = "force", help = "ignore missing files")
                 argument("file", "what to remove").multiple(min = 1).requiredUnless(force)
                 action { Ok("") }
             }

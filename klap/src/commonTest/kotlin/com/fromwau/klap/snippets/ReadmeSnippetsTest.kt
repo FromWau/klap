@@ -7,7 +7,6 @@ import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.getOrElse
 import com.fromwau.kern.result.map
 import com.fromwau.kern.result.mapError
-import com.fromwau.klap.internal.render.completeCandidates
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
@@ -17,9 +16,11 @@ import com.fromwau.klap.Invocation
 import com.fromwau.klap.Opt
 import com.fromwau.klap.RecordingTerminal
 import com.fromwau.klap.ValueScope
+import com.fromwau.klap.Version
 import com.fromwau.klap.bindText
 import com.fromwau.klap.cli
 import com.fromwau.klap.cliOf
+import com.fromwau.klap.internal.render.completeCandidates
 import com.fromwau.klap.parse
 import com.fromwau.klap.projection
 import com.fromwau.klap.run
@@ -160,11 +161,11 @@ class ReadmeSnippetsTest {
  * inside `fun main`, which would run the process rather than hand back something to assert on.
  */
 private fun greetCli() = cli("greet") {
-    version = "1.0.0"
+    version = Version.Of("1.0.0")
 
     val name = argument("name", "who to greet")
-    val times = option("--times", "-n", help = "repeat count").int().default(1)
-    val loud = flag("--loud", "-l", help = "shout it")
+    val times = option(short = 'n', long = "times", help = "repeat count").int().default(1)
+    val loud = flag(short = 'l', long = "loud", help = "shout it")
 
     action {
         val line = if (loud()) "HELLO, ${name().uppercase()}!" else "Hello, ${name()}."
@@ -191,7 +192,7 @@ private class TaskStore {
 }
 
 private fun CommandBuilder.tagOption() =
-    option("--tag", "-t", help = "Filter by tag").multiple()
+    option(short = 't', long = "tag", help = "Filter by tag").multiple()
 
 private fun sharedDeclaration() = cli("tasks") {
     command("list") {
@@ -205,7 +206,7 @@ private fun sharedDeclaration() = cli("tasks") {
 }
 
 private fun valueScopeHelper() = cli("tasks") {
-    val store = globalOption("--file", "-f").default("tasks.json")
+    val store = globalOption(short = 'f', long = "file").default("tasks.json")
 
     fun ValueScope.taskStore() = TaskStore()
 
@@ -225,8 +226,8 @@ private data class GreetArgs(val name: String, val times: Int, val loud: Boolean
 
 private fun greetProjection() = cliOf("greet") {
     val name = argument("name")
-    val times = option("--times", "-n").int().default(1)
-    val loud = flag("--loud", "-l")
+    val times = option(short = 'n', long = "times").int().default(1)
+    val loud = flag(short = 'l', long = "loud")
     action { Ok("...") }
     projection { GreetArgs(name(), times(), loud()) }
 }

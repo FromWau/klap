@@ -2,7 +2,10 @@ package com.fromwau.klap.fixture.ls
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Abbreviation
+import com.fromwau.klap.Builtin
+import com.fromwau.klap.Help
 import com.fromwau.klap.TypedCli
+import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
 
@@ -26,19 +29,19 @@ import com.fromwau.klap.projection
 public fun lsCli(): TypedCli<LsInputs> = cliOf("ls") {
     // GNU ls takes any unambiguous prefix of a long option or a choice value: `ls --rec` is --recursive.
     abbreviation = Abbreviation.Options
-    description = "List information about the FILEs (the current directory by default)."
-    version = "9.11"
+    help = "List information about the FILEs (the current directory by default)."
+    version = Version.Of("9.11")
     epilogue = "Sort entries alphabetically if none of -tSUX nor --sort is specified. " +
         "The WHEN argument defaults to 'always' and can also be 'auto' or 'never'."
 
     // Both of these built-ins claim a name real ls already uses, and declining them hands the name
-    // back. Without `helpShort = false`, validateReservedNames rejects `flag("human-readable", "h")`
-    // outright, and without `color = false` the same check rejects `option("color")` — and worse, parse()
+    // back. Without `helpShort = false`, validateReservedNames rejects `flag(short = 'h', long = "human-readable")`
+    // outright, and without `color = false` the same check rejects `option(long = "color")` — and worse, parse()
     // would strip `--color` and its value before ls ever saw them, silently swallowing an option the tool
     // documents.
     builtins {
-        helpShort = false
-        color = false
+        help = Help.Generate(short = null)
+        color = Builtin.Off
     }
 
     example("ls -la", "long format, including dotfiles")
@@ -46,36 +49,36 @@ public fun lsCli(): TypedCli<LsInputs> = cliOf("ls") {
     example("ls --color=never --format=single-column", "one entry per line, never coloured")
     example("ls -R --ignore '*.o' src", "recurse, skipping object files")
 
-    val all = flag("--all", "-a", help = "do not ignore entries starting with .")
-    val almostAll = flag("--almost-all", "-A", help = "do not list implied . and ..")
-    val directory = flag("--directory", "-d", help = "list directories themselves, not their contents")
-    val recursive = flag("--recursive", "-R", help = "list subdirectories recursively")
+    val all = flag(short = 'a', long = "all", help = "do not ignore entries starting with .")
+    val almostAll = flag(short = 'A', long = "almost-all", help = "do not list implied . and ..")
+    val directory = flag(short = 'd', long = "directory", help = "list directories themselves, not their contents")
+    val recursive = flag(short = 'R', long = "recursive", help = "list subdirectories recursively")
 
     // Both patterns repeat in real ls, so .multiple() is the faithful cardinality; absent binds an empty
     // list rather than erroring, since neither is mandatory.
-    val ignore = option("--ignore", "-I", help = "do not list implied entries matching shell PATTERN")
+    val ignore = option(short = 'I', long = "ignore", help = "do not list implied entries matching shell PATTERN")
         .multiple()
         .placeholder("PATTERN")
-    val hide = option("--hide", help = "like --ignore, but overridden by -a or -A")
+    val hide = option(long = "hide", help = "like --ignore, but overridden by -a or -A")
         .multiple()
         .placeholder("PATTERN")
 
     val outputFormat = group("Output format") {
         // Real ls spells these four with no long form at all; a one-character name is a short-only
         // declaration, so `-l` is `-l` and nothing else — no invented `--l` comes with it.
-        val longFormat = flag("-l", help = "use a long listing format")
-        val byColumns = flag("-C", help = "list entries by columns")
-        val byLines = flag("-x", help = "list entries by lines instead of by columns")
-        val commaSeparated = flag("-m", help = "fill width with a comma separated list of entries")
+        val longFormat = flag(short = 'l', help = "use a long listing format")
+        val byColumns = flag(short = 'C', help = "list entries by columns")
+        val byLines = flag(short = 'x', help = "list entries by lines instead of by columns")
+        val commaSeparated = flag(short = 'm', help = "fill width with a comma separated list of entries")
 
         // This fixture is deliberately the mirror of `head`, and the pair is the point: real ls REJECTS
         // every OTHER digit (`ls -5` exits 2 with "invalid option -- '5'", verified) where real head
         // ACCEPTS `-5` as a count. Neither is a global rule, so each tool declares what it means: ls
         // declares this one short and no number input, which is exactly what makes `ls -5` unknown.
-        val singleColumn = flag("-1", help = "list one file per line")
+        val singleColumn = flag(short = '1', help = "list one file per line")
 
         val format = option(
-            "--format",
+            long = "format",
             help = "across/horizontal (-x), commas (-m), long (-l), single-column (-1), verbose (-l), vertical (-C)",
         ).choice("across", "horizontal", "commas", "long", "single-column", "verbose", "vertical")
 
@@ -85,13 +88,13 @@ public fun lsCli(): TypedCli<LsInputs> = cliOf("ls") {
     val (commaSeparated, singleColumn, format) = outputFormat.second
 
     val sorting = group("Sorting") {
-        val reverse = flag("--reverse", "-r", help = "reverse order while sorting")
-        val sortByTime = flag("-t", help = "sort by time, newest first")
-        val sortBySize = flag("-S", help = "sort by file size, largest first")
-        val unsorted = flag("-U", help = "do not sort directory entries")
-        val sortByExtension = flag("-X", help = "sort alphabetically by entry extension")
+        val reverse = flag(short = 'r', long = "reverse", help = "reverse order while sorting")
+        val sortByTime = flag(short = 't', help = "sort by time, newest first")
+        val sortBySize = flag(short = 'S', help = "sort by file size, largest first")
+        val unsorted = flag(short = 'U', help = "do not sort directory entries")
+        val sortByExtension = flag(short = 'X', help = "sort alphabetically by entry extension")
 
-        val sort = option("--sort", help = "change default 'name' sort to WORD")
+        val sort = option(long = "sort", help = "change default 'name' sort to WORD")
             .choice("none", "size", "time", "version", "extension", "name", "width")
 
         // Real ls treats the sort shorts and --sort as ONE setting whose last mention wins ("sort entries
@@ -106,15 +109,15 @@ public fun lsCli(): TypedCli<LsInputs> = cliOf("ls") {
     val (reverse, sortByTime, sortBySize) = sorting.first
     val (unsorted, sortByExtension, sort) = sorting.second
 
-    val humanReadable = flag("--human-readable", "-h", help = "with -l and -s, print sizes like 1K 234M 2G")
-    val si = flag("--si", help = "likewise, but use powers of 1000 not 1024")
-    val inode = flag("--inode", "-i", help = "print the index number of each file")
-    val size = flag("--size", "-s", help = "print the allocated size of each file, in blocks")
+    val humanReadable = flag(short = 'h', long = "human-readable", help = "with -l and -s, print sizes like 1K 234M 2G")
+    val si = flag(long = "si", help = "likewise, but use powers of 1000 not 1024")
+    val inode = flag(short = 'i', long = "inode", help = "print the index number of each file")
+    val size = flag(short = 's', long = "size", help = "print the allocated size of each file, in blocks")
 
-    val width = option("--width", "-w", help = "set output width to COLS; 0 means no limit")
+    val width = option(short = 'w', long = "width", help = "set output width to COLS; 0 means no limit")
         .int()
         .placeholder("COLS")
-    val tabSize = option("--tabsize", "-T", help = "assume tab stops at each COLS instead of 8")
+    val tabSize = option(short = 'T', long = "tabsize", help = "assume tab stops at each COLS instead of 8")
         .int()
         .placeholder("COLS")
 
@@ -122,7 +125,7 @@ public fun lsCli(): TypedCli<LsInputs> = cliOf("ls") {
     // and `--color=never` binds its own value, matching real ls exactly. The space form never binds (GNU's
     // own rule, not a klap limit): `ls --color auto f` colours `f` and leaves "auto" as a second file
     // operand (see `known divergence from real ls`).
-    val color = option("--color", help = "color the output WHEN: always, auto or never")
+    val color = option(long = "color", help = "color the output WHEN: always, auto or never")
         .choice("always", "auto", "never")
         .optionalValue("always")
 
@@ -130,13 +133,13 @@ public fun lsCli(): TypedCli<LsInputs> = cliOf("ls") {
     // fails "invalid option -- 'e'", while `ls -Fla` and `ls -FZ` both succeed, reading the rest of the
     // cluster as separate shorts). `-F` is declared short-only here and `--classify` long-only with its
     // own optional value, mirroring the `-u`/`--update` split in Mv.kt for the same reason.
-    val classifyShort = flag("-F", help = "append indicator (one of */=>@|) to entries")
-    val classify = option("--classify", help = "append indicator (one of */=>@|) to entries WHEN")
+    val classifyShort = flag(short = 'F', help = "append indicator (one of */=>@|) to entries")
+    val classify = option(long = "classify", help = "append indicator (one of */=>@|) to entries WHEN")
         .choice("always", "auto", "never")
         .optionalValue("always")
         .placeholder("WHEN")
 
-    val context = flag("--context", "-Z", help = "print any security context of each file")
+    val context = flag(short = 'Z', long = "context", help = "print any security context of each file")
 
     // `[FILE]...` really is zero-or-more: bare `ls` lists the current directory, so min = 0 is the honest
     // cardinality and help renders `[file...]`, matching real ls's own synopsis.

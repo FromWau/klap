@@ -44,13 +44,6 @@ class CpTargetsTest {
         ))
     }
 
-    @Ignore("TDD target: klap must match a choice value case-sensitively, as cp's argmatch does")
-    @Test
-    fun `a choice value in capitals is refused`() {
-        // `cp --update=ALL`, `--backup=NONE`, `--reflink=AUTO`, `--sparse=AUTO`: invalid argument.
-        check(CHOICE_CAPITAL_CELLS)
-    }
-
     @Ignore("TDD target: the fixture must check each --preserve and --no-preserve name against cp's attribute list")
     @Test
     fun `an attribute list holds only cp's attribute names or their unique prefixes`() {
@@ -110,7 +103,6 @@ class CpTargetsTest {
         parity.rejects("-t", "dir", "src", "-T", because = why)
     }
 
-    @Ignore("TDD target: the fixture must decline klap's -h --json --color --completion and --docs built-ins")
     @Test
     fun `an option cp does not have is refused`() {
         // `cp --json`, `cp --color=never`, `cp --completion`, `cp --docs`, `cp --col`, `cp --j`, `cp --com`, `cp --do`:
@@ -131,13 +123,12 @@ class CpTargetsTest {
         checkCells(lines) { parity.rejects(argv = it.toTypedArray(), because = "real cp: unrecognized option") }
     }
 
-    @Ignore("TDD target: klap must let a CLI decline --help-all")
     @Test
     fun `--help-all is refused`() {
         parity.rejects("--help-all", "a", "b", because = "real cp: unrecognized option '--help-all'")
     }
 
-    @Ignore("TDD target: klap must not reserve __complete as a first operand")
+    @Ignore("Will not do (todo 40): klap reserves the first word __complete")
     @Test
     fun `__complete is a source file name`() {
         // `cp __complete a`: cannot stat '__complete', so it was a source like any other word.

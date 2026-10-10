@@ -14,7 +14,7 @@ public enum class DocFormat {
     ;
 
     public companion object {
-        public fun fromOrNull(raw: String): DocFormat? = when (raw.lowercase()) {
+        public fun fromOrNull(raw: String): DocFormat? = when (raw) {
             "markdown", "md" -> MARKDOWN
             "man", "roff" -> MAN
             else -> null

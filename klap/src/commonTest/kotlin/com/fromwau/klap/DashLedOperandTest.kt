@@ -47,7 +47,7 @@ class DashLedOperandTest {
     fun `a cluster resolves in full only when every character does`() {
         val tree = cli("app") {
             command("go") {
-                val verbose = flag("--verbose", "-v")
+                val verbose = flag(short = 'v', long = "verbose")
                 val n = argument("n").dashLed()
                 action { Ok("v=${verbose()} n=${n()}") }
             }
@@ -91,7 +91,7 @@ class DashLedOperandTest {
         // exists so a long-option typo keeps its did-you-mean instead of being swallowed as an operand.
         val tree = cli("app") {
             command("seek") {
-                flag("--verbose", "-v")
+                flag(short = 'v', long = "verbose")
                 val position = argument("position").dashLed()
                 action { Ok("pos=${position()}") }
             }
@@ -105,7 +105,7 @@ class DashLedOperandTest {
         val tree = cli("app") {
             command("seek") {
                 optionsEndAtFirstOperand = true
-                val verbose = flag("--verbose", "-v")
+                val verbose = flag(short = 'v', long = "verbose")
                 val position = argument("position").dashLed()
                 val rest = argument("rest").multiple()
                 action { Ok("v=${verbose()} pos=${position()} rest=${rest().joinToString(",")}") }
@@ -122,8 +122,8 @@ class DashLedOperandTest {
         // binds as it always has. Without this the marked slot would swallow a token the parser owns.
         val tree = cli("app") {
             command("go") {
-                val verbose = flag("--verbose", "-v")
-                val port = option("--port", "-p").int()
+                val verbose = flag(short = 'v', long = "verbose")
+                val port = option(short = 'p', long = "port").int()
                 val n = argument("n").dashLed().optional()
                 action { Ok("v=${verbose()} port=${port()} n=${n()}") }
             }
@@ -181,8 +181,8 @@ class DashLedOperandTest {
         val tree = cli("app") {
             abbreviation = Abbreviation.Options
             command("go") {
-                val verbose = flag("--verbose", "-v")
-                val mode = option("--mode")
+                val verbose = flag(short = 'v', long = "verbose")
+                val mode = option(long = "mode")
                 val n = argument("n").dashLed()
                 action { Ok("v=${verbose()} mode=${mode()} n=${n()}") }
             }

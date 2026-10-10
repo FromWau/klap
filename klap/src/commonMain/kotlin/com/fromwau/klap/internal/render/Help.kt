@@ -51,6 +51,7 @@ internal object BuiltinOptionHelp {
     const val COMPLETION = "Print a shell completion script"
     const val DOCS = "Print generated documentation"
     const val COLOR = "Colorize output: auto, always, or never"
+    const val HELP_ALL = "Show help for every subcommand"
 }
 
 // --- formatting helpers ---
@@ -117,11 +118,13 @@ internal fun NamedSpec.words(): String {
     // An input with no spelling of its own (`-<NUM>`, a lastOneWins fold) has nothing to join, and the
     // digits ARE the value, so there is no placeholder to append either.
     if (this is OptionSpec && names.isEmpty()) return name
-    val generatedNegation = this is FlagSpec && negatable && negativeNames.isEmpty()
-    val negatedShorts = if (this is FlagSpec) negativeShorts else emptyList()
+    // A negation with words of its own renders on its own row ([negationRow]), so this row is the positive half.
+    val ownRow = this is FlagSpec && negativeHelp != null
+    val generatedNegation = this is FlagSpec && negatable && negativeNames.isEmpty() && !ownRow
+    val negatedShorts = if (this is FlagSpec && !ownRow) negativeShorts else emptyList()
     // Suppressed for the generated form: `--[no-]x` below already states it, so listing the generated
     // `no-x` again would render the same negation twice.
-    val negatedLongs = if (this is FlagSpec && !generatedNegation) negativeLongs else emptyList()
+    val negatedLongs = if (this is FlagSpec && !generatedNegation && !ownRow) negativeLongs else emptyList()
     // Shorts first, and grouped positive-then-negative within each half rather than positives-then-all-
     // negatives: an explicit negative half is not a prefix of the positive one, so `--[no-]x` cannot state
     // it, and grouping keeps a pair's two real spellings next to each other the way the tools being
@@ -204,24 +207,38 @@ internal fun ValueSpec.metaHint(): String {
     return if (hints.isEmpty()) "" else " (${hints.joinToString("; ")})"
 }
 
-/** The help row for an option/flag: its word-form signature and help+metaHint description. */
-internal fun NamedSpec.helpRow(): InputRow = InputRow(
-    words(),
-    help + when (this) {
-        is OptionSpec -> metaHint()
-        is FlagSpec -> metaHint()
-    },
+/**
+ * The help rows for an option/flag: its word-form signature and help+metaHint description, then the row of a
+ * negation that has words of its own.
+ */
+internal fun NamedSpec.helpRows(): List<InputRow> = listOfNotNull(
+    InputRow(
+        words(),
+        help + when (this) {
+            is OptionSpec -> metaHint()
+            is FlagSpec -> metaHint()
+        },
+    ),
+    (this as? FlagSpec)?.negationRow(),
 )
 
+/** The negative half's own row, shorts first, when [FlagSpec.negativeHelp] gives it words; null otherwise. */
+private fun FlagSpec.negationRow(): InputRow? {
+    val words = negativeHelp ?: return null
+    val spelled = (negativeShorts.map { "-$it" } + negativeLongs.map { "--$it" }).joinToString(", ")
+    return InputRow(if (negativeShorts.isEmpty()) "    $spelled" else spelled, words)
+}
+
 /**
- * A subcommand's row name: its canonical name plus any aliases, `list, ls` (mirrors [words]'s
- * comma-separated `-s, --long` form). Used everywhere a subcommand renders as a help/doc row, so
- * `--help`, the man page, and the markdown table agree with each other and with the markdown
+ * A subcommand's row name: its canonical name plus any aliases, `list, ls`, or a flag-spelled command's
+ * spellings shorts first, `-Q, --query`, as [words] lists an option's. Used everywhere a subcommand renders as a
+ * help/doc row, so `--help`, the man page, and the markdown table agree with each other and with the markdown
  * `Aliases:` line.
  */
-internal fun Command.commandRowName(): String = (listOf(name) + aliases).joinToString(", ")
+internal fun Command.commandRowName(): String =
+    (if (isFlagSpelled) flagSpellings.sortedBy { it.startsWith("--") } else words).joinToString(", ")
 
-/** A subcommand's help row, the [NamedSpec.helpRow] counterpart for the Commands and group blocks. */
+/** A subcommand's help row, the [NamedSpec.helpRows] counterpart for the Commands and group blocks. */
 internal fun Command.helpRow(): InputRow = InputRow(commandRowName(), description)
 
 /**
@@ -299,7 +316,7 @@ internal fun Command.helpSections(
     arguments.filter { !it.hidden }.forEach {
         main += InputRow(it.absentSlotToken("<${it.displayName()}>"), it.help + it.metaHint())
     }
-    namedInputs.filter { !it.hidden && it.section == null }.forEach { main += it.helpRow() }
+    namedInputs.filter { !it.hidden && it.section == null }.forEach { main += it.helpRows() }
     if (main.isNotEmpty()) sections += HelpSection(null, main)
 
     // Ungrouped subcommands (the app's own plus the injected completion/docs) read as commands, so they
@@ -320,7 +337,7 @@ internal fun Command.helpSections(
         .forEach { groupTitles += it }
     for (title in groupTitles) {
         val rows = mutableListOf<InputRow>()
-        namedInputs.filter { !it.hidden && it.section == title }.forEach { rows += it.helpRow() }
+        namedInputs.filter { !it.hidden && it.section == title }.forEach { rows += it.helpRows() }
         subcommands
             .filter { !it.hidden && it.section == title }
             .forEach { rows += it.helpRow() }
@@ -331,7 +348,7 @@ internal fun Command.helpSections(
     // globals rather than in the default block. The section is always present since the built-ins are.
     val globalRows = globalSpecs
         .filter { !it.hidden }
-        .map { it.helpRow() }
+        .flatMap { it.helpRows() }
         .toMutableList()
     globalRows += builtinOptions(rootVersioned, builtins).map { it.row() }
     sections += HelpSection("Global options", globalRows)
@@ -352,22 +369,27 @@ internal fun Command.builtinOptions(
     builtins: Builtins,
 ): List<BuiltinOption> = buildList {
     // --help is never declinable; only its -h short is.
-    add(BuiltinOption(if (builtins.helpShort) listOf("-h", "--help") else listOf("--help"), BuiltinOptionHelp.HELP))
+    if (builtins.help) {
+        val spellings = listOfNotNull(builtins.helpShort?.let { "-$it" }, "--help")
+        add(BuiltinOption(spellings, builtins.helpText))
+    }
     // --help-all is only meaningful (and only advertised) where there are subcommands to expand.
-    if (subcommands.any { !it.hidden }) add(BuiltinOption(listOf("--help-all"), "Show help for every subcommand"))
-    if (builtins.json) add(BuiltinOption(listOf("--json"), BuiltinOptionHelp.JSON))
+    if (builtins.helpAll && subcommands.any { !it.hidden }) {
+        add(BuiltinOption(listOf("--help-all"), builtins.helpAllText))
+    }
+    if (builtins.json) add(BuiltinOption(listOf("--json"), builtins.jsonText))
     // --color is universal (like --json), so it advertises on every node the tree still offers it on.
-    if (builtins.color) add(BuiltinOption(listOf("--color"), BuiltinOptionHelp.COLOR, COLOR_MODE_NAMES))
+    if (builtins.color) add(BuiltinOption(listOf("--color"), builtins.colorText, COLOR_MODE_NAMES))
     // version/metaOptions are root-only ([Cli]) facts; a plain node relies on the caller's [rootVersioned].
     val node = this@builtinOptions
     if ((node is Cli && node.version != null) || rootVersioned) {
-        add(BuiltinOption(listOf("--version"), BuiltinOptionHelp.VERSION))
+        add(BuiltinOption(listOfNotNull(builtins.versionShort?.let { "-$it" }, "--${builtins.versionLong}"), builtins.versionText))
     }
     if (node is Cli && node.metaOptions) {
         if (builtins.completion) {
-            add(BuiltinOption(listOf("--completion"), BuiltinOptionHelp.COMPLETION, COMPLETION_SHELL_NAMES))
+            add(BuiltinOption(listOf("--completion"), builtins.completionText, COMPLETION_SHELL_NAMES))
         }
-        if (builtins.docs) add(BuiltinOption(listOf("--docs"), BuiltinOptionHelp.DOCS, DOC_FORMAT_NAMES))
+        if (builtins.docs) add(BuiltinOption(listOf("--docs"), builtins.docsText, DOC_FORMAT_NAMES))
     }
 }
 
@@ -557,7 +579,7 @@ internal fun Command.helpTextAll(
 internal fun Command.visibleTree(qualifiedName: String): List<Pair<Command, String>> = buildList {
     fun visit(node: Command, path: String) {
         add(node to path)
-        node.subcommands.filterNot { it.hidden }.forEach { visit(it, "$path ${it.name}") }
+        node.subcommands.filterNot { it.hidden }.forEach { visit(it, "$path ${it.token}") }
     }
     visit(this@visibleTree, qualifiedName)
 }

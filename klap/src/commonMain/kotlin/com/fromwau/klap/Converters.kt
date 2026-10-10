@@ -1,12 +1,12 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Result
-import com.fromwau.kern.result.map
 import com.fromwau.klap.internal.render.reason
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.ValueSpec
 import com.fromwau.klap.internal.spec.requireValidSpelling
+import com.fromwau.klap.internal.spec.spellings
 import com.fromwau.klap.internal.spec.token
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.jvm.JvmName
@@ -63,34 +63,23 @@ private fun ValueSpec.andThenConvert(typeChanging: Boolean = false, next: (Strin
 }
 
 /**
- * Matching is case-insensitive, so two choices equal ignoring case (including exact duplicates)
- * would leave the later one permanently unreachable while `--help` still advertises both. Fail
- * loudly at construction instead.
+ * Two choices [ignoreCase] matches alike, or a constant spelled twice, would leave the later one permanently
+ * unreachable while `--help` still advertises both. Fail loudly at construction instead, naming [owner].
  */
-private fun requireNoCaseInsensitiveDuplicateChoices(choices: List<String>) {
-    val seen = mutableSetOf<String>()
-    for (choice in choices) {
-        require(seen.add(choice.lowercase())) {
-            "duplicate choice '$choice' (choices must be distinct, ignoring case)"
-        }
-    }
-}
-
-/**
- * `.enum<E>()` matches names case-insensitively, so two constants equal ignoring case would leave
- * the later one permanently unreachable while `--help` still advertises both. Fail loudly at
- * construction instead, naming the enum and both colliding constants.
- */
-private fun requireNoCaseInsensitiveDuplicateEnumNames(enumName: String?, names: List<String>) {
+private fun requireDistinctChoices(owner: String, choices: List<String>, ignoreCase: Boolean) {
     val seen = mutableMapOf<String, String>()
-    for (name in names) {
-        val key = name.lowercase()
+    for (choice in choices) {
+        val key = if (ignoreCase) choice.lowercase() else choice
         val previous = seen[key]
         require(previous == null) {
-            "enum $enumName has case-colliding constant names '$previous' and '$name' (constant names " +
-                "must be distinct, ignoring case)"
+            if (previous == choice) {
+                "$owner: duplicate choice '$choice'"
+            } else {
+                "$owner: choices '$previous' and '$choice' differ only in case, which ignoreCase = true " +
+                    "cannot tell apart"
+            }
         }
-        seen[key] = name
+        seen[key] = choice
     }
 }
 
@@ -98,11 +87,11 @@ private fun requireNoCaseInsensitiveDuplicateEnumNames(enumName: String?, names:
  * A declared [bareValue] runs through the option's own converter at parse time exactly like a typed value,
  * so a choice set that excludes it would only fail once a user typed the bare form — blaming them for a
  * value the AUTHOR wrote on a line `--help` renders as legal. Checked at construction instead, in both
- * declaration orders (`applyChoice`/`applyEnum` call this too), matching [choices] case-insensitively so a
+ * declaration orders (`applyChoice`/`applyEnum` call this too), matching [choices] as the parser does so a
  * value the parser would accept is never rejected here.
  */
-private fun requireBareValueInChoices(name: String, bareValue: String, choices: List<String>) {
-    require(choices.any { it.equals(bareValue, ignoreCase = true) }) {
+private fun OptionSpec.requireBareValueInChoices(bareValue: String, choices: List<String>) {
+    require(choices.any { it.equals(bareValue, ignoreCase = choiceIgnoreCase) }) {
         "option '$name': the bare value '$bareValue' from .optionalValue() is not one of ${choices.joinToString(", ")}"
     }
 }
@@ -110,14 +99,14 @@ private fun requireBareValueInChoices(name: String, bareValue: String, choices: 
 /**
  * A `.default()` outside [ValueSpec.choices] would be a value `--help` advertises but no input can produce.
  * [andThenConvert] already covers the `.default()`-then-`.choice()` order; this covers the reverse, matching
- * case-insensitively and storing the declared spelling so an absent input binds what a matching one would.
+ * as the parser does and storing the declared spelling so an absent input binds what a matching one would.
  * A default that is no longer a raw `String` never reached [choices], so it passes through unchecked.
  */
 private fun ValueSpec.canonicalDefaultOrThrow(value: Any?): Any? {
     val current = choices ?: return value
     if (value !is String) return value
     val label = if (this is OptionSpec) "option" else "argument"
-    val canonical = current.firstOrNull { it.equals(value, ignoreCase = true) }
+    val canonical = current.firstOrNull { it.equals(value, ignoreCase = choiceIgnoreCase) }
     require(canonical != null) {
         "$label '$name': default value '$value' is invalid: not one of ${current.joinToString(", ")}"
     }
@@ -126,15 +115,16 @@ private fun ValueSpec.canonicalDefaultOrThrow(value: Any?): Any? {
 
 // Shared bodies behind the mirrored Arg/Opt converter pairs (which differ only in their typed wrapper).
 
-private fun ValueSpec.applyChoice(choices: List<String>) {
+private fun ValueSpec.applyChoice(choices: List<String>, ignoreCase: Boolean) {
     require(choices.isNotEmpty()) { "choice() requires at least one choice" }
-    requireNoCaseInsensitiveDuplicateChoices(choices)
-    (this as? OptionSpec)?.bareValue?.let { requireBareValueInChoices(name, it, choices) }
+    requireDistinctChoices("'$name'", choices, ignoreCase)
+    choiceIgnoreCase = ignoreCase
+    (this as? OptionSpec)?.let { spec -> spec.bareValue?.let { spec.requireBareValueInChoices(it, choices) } }
     this.choices = choices
     andThenConvert { raw ->
         // Reads the live field, not this call's [choices], so a later choice()/enum() overwrite retargets it too.
         val current = this.choices!!
-        current.firstOrNull { it.equals(raw, ignoreCase = true) }
+        current.firstOrNull { it.equals(raw, ignoreCase = choiceIgnoreCase) }
             ?.let { Result.Success(it) }
             ?: Result.Error(ConversionError.NotOneOf(current))
     }
@@ -164,20 +154,26 @@ private fun <T> ValueSpec.applyValidate(message: String, predicate: (T) -> Boole
  * The enum body behind both `.enum<E>()` overloads. `@PublishedApi` (not `private`) because those are
  * `inline`/`reified` and must call it; keeping the reified `enumValues<E>()` in the wrappers and passing
  * [values] in means the inline sites touch only this one member, so [andThenConvert] and
- * [requireNoCaseInsensitiveDuplicateEnumNames] can both stay `private`.
+ * [requireDistinctChoices] can both stay `private`.
  */
 @PublishedApi
-internal fun <E : Enum<E>> ValueSpec.applyEnum(enumName: String?, values: Array<out E>) {
+internal fun <E : Enum<E>> ValueSpec.applyEnum(
+    enumName: String?,
+    values: Array<out E>,
+    ignoreCase: Boolean,
+    spelling: (E) -> String,
+) {
     require(values.isNotEmpty()) { "enum $enumName has no constants to choose from" }
-    requireNoCaseInsensitiveDuplicateEnumNames(enumName, values.map { it.name })
-    // Display choices CLI-style (lowercase); matching stays case-insensitive, same as .choice().
-    val displayNames = values.map { it.name.lowercase() }
-    (this as? OptionSpec)?.bareValue?.let { requireBareValueInChoices(name, it, displayNames) }
-    choices = displayNames
+    val spellings = values.map(spelling)
+    spellings.forEach { require(it.isNotBlank()) { "enum $enumName spells a constant as a blank value" } }
+    requireDistinctChoices("enum $enumName", spellings, ignoreCase)
+    choiceIgnoreCase = ignoreCase
+    (this as? OptionSpec)?.let { spec -> spec.bareValue?.let { spec.requireBareValueInChoices(it, spellings) } }
+    choices = spellings
     andThenConvert(true) { raw ->
-        values.firstOrNull { it.name.equals(raw, ignoreCase = true) }
-            ?.let { Result.Success(it) }
-            ?: Result.Error(ConversionError.NotOneOf(values.map { it.name.lowercase() }))
+        values.indices.firstOrNull { spellings[it].equals(raw, ignoreCase = ignoreCase) }
+            ?.let { Result.Success(values[it]) }
+            ?: Result.Error(ConversionError.NotOneOf(spellings))
     }
 }
 
@@ -186,7 +182,7 @@ internal fun <E : Enum<E>> ValueSpec.applyEnum(enumName: String?, values: Array<
  * how it looks in help.
  *
  * ```kotlin
- * val port = option("--port", "-p").int().range(1..65535).default(8080)
+ * val port = option(short = 'p', long = "port").int().range(1..65535).default(8080)
  * ```
  *
  * These only compile inside a builder block, so a handle you kept hold of cannot be reshaped after the CLI
@@ -221,15 +217,24 @@ public abstract class ConverterScope internal constructor() {
         return Arg(spec)
     }
 
-    /** Parses this operand as one of [E]'s entries, matched case-insensitively and listed in `--help`. */
-    public inline fun <reified E : Enum<E>> Arg<String>.enum(): Arg<E> {
-        spec.applyEnum(E::class.simpleName, enumValues<E>())
+    /**
+     * Parses this operand as one of [E]'s entries, each typed as its [spelling] (the lower-cased name unless
+     * given) and listed in `--help`. A value matches in its exact case unless [ignoreCase] is set.
+     */
+    public inline fun <reified E : Enum<E>> Arg<String>.enum(
+        ignoreCase: Boolean = false,
+        noinline spelling: (E) -> String = { it.name.lowercase() },
+    ): Arg<E> {
+        spec.applyEnum(E::class.simpleName, enumValues<E>(), ignoreCase, spelling)
         return Arg(spec)
     }
 
-    /** Matches [choices] case-insensitively; the converted value is always the declared (canonical) spelling. */
-    public fun Arg<String>.choice(vararg choices: String): Arg<String> {
-        spec.applyChoice(choices.toList())
+    /**
+     * Takes one of [choices], in its exact case unless [ignoreCase] is set; the converted value is always the
+     * declared spelling.
+     */
+    public fun Arg<String>.choice(vararg choices: String, ignoreCase: Boolean = false): Arg<String> {
+        spec.applyChoice(choices.toList(), ignoreCase)
         return Arg(spec)
     }
 
@@ -348,6 +353,16 @@ public abstract class ConverterScope internal constructor() {
         return Arg(spec)
     }
 
+    /** Sugar over [validate] for an integer progression, including stepped and descending ranges. */
+    public fun Arg<Int>.range(range: IntProgression): Arg<Int> {
+        require(!range.isEmpty()) { "range must not be empty: ${range.first}..${range.last}" }
+        spec.valueHint = "${range.first}..${range.last}"
+        return validate("must be in ${range.first}..${range.last}") { it in range }
+    }
+
+    /** Resolves the overlap between IntRange, ClosedRange<Int>, and IntProgression. */
+    public fun Arg<Int>.range(range: IntRange): Arg<Int> = range(range as IntProgression)
+
     /** Sugar over [validate] for a bounded value; also adds a "1..65535"-style hint to the help row. */
     public fun <T : Comparable<T>> Arg<T>.range(range: ClosedRange<T>): Arg<T> {
         require(!range.isEmpty()) { "range must not be empty: ${range.start}..${range.endInclusive}" }
@@ -436,9 +451,12 @@ public abstract class ConverterScope internal constructor() {
         return Opt(spec)
     }
 
-    /** Matches [choices] case-insensitively; the converted value is always the declared (canonical) spelling. */
-    public fun Opt<String?>.choice(vararg choices: String): Opt<String?> {
-        spec.applyChoice(choices.toList())
+    /**
+     * Takes one of [choices], in its exact case unless [ignoreCase] is set (`ls --color=ALWAYS` is refused); the
+     * converted value is always the declared spelling.
+     */
+    public fun Opt<String?>.choice(vararg choices: String, ignoreCase: Boolean = false): Opt<String?> {
+        spec.applyChoice(choices.toList(), ignoreCase)
         return Opt(spec)
     }
 
@@ -448,9 +466,16 @@ public abstract class ConverterScope internal constructor() {
         return Opt(spec)
     }
 
-    /** Parses this option's value as one of [E]'s entries, matched case-insensitively and listed in `--help`. */
-    public inline fun <reified E : Enum<E>> Opt<String?>.enum(): Opt<E?> {
-        spec.applyEnum(E::class.simpleName, enumValues<E>())
+    /**
+     * Parses this option's value as one of [E]'s entries, each typed as its [spelling] (the lower-cased name
+     * unless given) and listed in `--help`: `.enum<Level>(spelling = { it.cli })`. A value matches in its exact
+     * case unless [ignoreCase] is set.
+     */
+    public inline fun <reified E : Enum<E>> Opt<String?>.enum(
+        ignoreCase: Boolean = false,
+        noinline spelling: (E) -> String = { it.name.lowercase() },
+    ): Opt<E?> {
+        spec.applyEnum(E::class.simpleName, enumValues<E>(), ignoreCase, spelling)
         return Opt(spec)
     }
 
@@ -467,7 +492,7 @@ public abstract class ConverterScope internal constructor() {
 
     /**
      * Generic input adapter for an option: reads the raw string and returns a domain type; a thrown
-     * exception becomes a clean parse error. e.g. `option("--timeout", "-t").map { it.toInt().seconds }`.
+     * exception becomes a clean parse error. e.g. `option(short = 't', long = "timeout").map { it.toInt().seconds }`.
      */
     public fun <T> Opt<String?>.map(transform: (String) -> T): Opt<T?> {
         spec.applyMap(transform)
@@ -488,8 +513,8 @@ public abstract class ConverterScope internal constructor() {
     }
 
     /**
-     * Requires this option only when [flag] was given: `option("--token").requiredIf(remote)` is optional on
-     * its own and a usage error alongside `--remote`. The rule reads what your user actually typed.
+     * Requires this option only when [flag] was given: `option(long = "token").requiredIf(remote)` is
+     * optional on its own and a usage error alongside `--remote`. The rule reads what your user actually typed.
      *
      * Because it takes the [Flag] handle rather than a condition of your own, `--help` can state the rule as
      * `(required when --remote)` instead of leaving it to be discovered by hitting it.
@@ -528,10 +553,7 @@ public abstract class ConverterScope internal constructor() {
             "option '${spec.name}': .optionalValue() needs a non-blank value to bind when the option is " +
                     "given bare; a blank one is indistinguishable from the option being absent"
         }
-        require(spec.cardinality !is Cardinality.Multiple) {
-            "option '${spec.name}': .optionalValue() cannot be combined with .multiple()"
-        }
-        spec.choices?.let { requireBareValueInChoices(spec.name, whenBare, it) }
+        spec.choices?.let { spec.requireBareValueInChoices(whenBare, it) }
         spec.bareValue = whenBare
         return this
     }
@@ -560,9 +582,6 @@ public abstract class ConverterScope internal constructor() {
         require(spec.cardinality !is Cardinality.Default && spec.cardinality !is Cardinality.Required) {
             "option '${spec.name}': .multiple() cannot be combined with .default()/.required()"
         }
-        require(spec.bareValue == null) {
-            "option '${spec.name}': .multiple() cannot be combined with .optionalValue()"
-        }
         spec.cardinality = Cardinality.Multiple(min)
         return Opt(spec)
     }
@@ -584,6 +603,16 @@ public abstract class ConverterScope internal constructor() {
         spec.valueHint = "${range.start}..${range.endInclusive}"
         return validate("must be in ${range.start}..${range.endInclusive}") { it in range }
     }
+
+    /** Sugar over [validate] for an integer progression, including stepped and descending ranges. */
+    public fun Opt<Int?>.range(range: IntProgression): Opt<Int?> {
+        require(!range.isEmpty()) { "range must not be empty: ${range.first}..${range.last}" }
+        spec.valueHint = "${range.first}..${range.last}"
+        return validate("must be in ${range.first}..${range.last}") { it in range }
+    }
+
+    /** Resolves the overlap between IntRange, ClosedRange<Int>, and IntProgression. */
+    public fun Opt<Int?>.range(range: IntRange): Opt<Int?> = range(range as IntProgression)
 
     /** Names this option's value in help and usage, e.g. `--output <FILE>`. Display-only; overrides a choice list. */
     public fun <T> Opt<T>.placeholder(name: String): Opt<T> {
@@ -633,44 +662,57 @@ public abstract class ConverterScope internal constructor() {
     }
 
     /**
-     * Recognizes an auto-generated `--no-<long>` counterpart, one per long spelling. Absent binds to
-     * [default]; last occurrence wins between the positive and negative forms.
-     */
-    public fun Flag.negatable(default: Boolean = true): Flag {
-        require(!spec.isCount) { "flag '${spec.name}': .count() and .negatable() are mutually exclusive" }
-        spec.negatable = true
-        spec.cardinality = Cardinality.Default(default)
-        return Flag(spec)
-    }
-
-    /**
-     * Recognizes [negativeSpellings] as the negative half instead of the generated `--no-<long>`, so a
-     * short can turn the flag off (`cp -L`/`-P`, `ssh -A`/`-a`) and an asymmetric pair keeps both real
-     * names (`git --paginate`/`--no-pager`).
+     * Recognizes a negative half that turns the flag off. With no spellings it is the generated `--no-<long>`, one
+     * per long spelling. Absent binds to [default]; last occurrence wins between the positive and negative forms.
      *
-     * The list REPLACES the generated form rather than adding to it, so `--no-<long>` stops being
-     * recognized. Write it out yourself when you want it kept, as `.negatable("--no-dereference", "-P")`
-     * does.
+     * Given [short] or [long], those are the negative half instead, so a short can turn the flag off (`cp -L`/`-P`,
+     * `ssh -A`/`-a`) and an asymmetric pair keeps both real names (`git --paginate`/`--no-pager`). They REPLACE
+     * the generated form rather than adding to it, so `--no-<long>` stops being recognized; write it out yourself
+     * when you want it kept, as `.negatable(short = 'P', long = "no-dereference")` does. None of them may
+     * collide with a declared option/flag spelling or with another flag's negation.
      *
-     * Each spelling carries its own dashes and is validated exactly like a positive one, and none of them
-     * may collide with a declared option/flag spelling or with another flag's negation.
+     * [help] describes the negative half in its own words, on a `--help` row of its own and in Tab, as pacman's
+     * `--confirm` against `--noconfirm`; without it the negation shares the flag's row and words.
      */
-    public fun Flag.negatable(vararg negativeSpellings: String, default: Boolean = true): Flag {
+    public fun Flag.negatable(
+        short: List<Char> = emptyList(),
+        long: List<String> = emptyList(),
+        default: Boolean = true,
+        help: String? = null,
+    ): Flag {
         require(!spec.isCount) { "flag '${spec.name}': .count() and .negatable() are mutually exclusive" }
-        require(negativeSpellings.isNotEmpty()) {
-            "flag '${spec.name}': .negatable() with an empty spelling list says nothing; call .negatable() " +
-                "with no arguments for the generated '--no-...' form"
-        }
+        val negativeSpellings = spellings(short, long)
         negativeSpellings.forEach { requireValidSpelling("flag negation", it) }
         require(negativeSpellings.none { it in spec.names }) {
             "flag '${spec.name}': negative spelling '${negativeSpellings.first { it in spec.names }}' is " +
                 "already one of this flag's own spellings"
         }
         spec.negatable = true
-        spec.negativeNames = negativeSpellings.toList()
+        spec.negativeNames = negativeSpellings
+        spec.negativeHelp = help
         spec.cardinality = Cardinality.Default(default)
         return Flag(spec)
     }
+
+    /** A negative half with one short and one long spelling; see the list form for how spellings are read. */
+    public fun Flag.negatable(short: Char, long: String, default: Boolean = true, help: String? = null): Flag =
+        negatable(listOf(short), listOf(long), default, help)
+
+    /** A negative half with one long spelling and no short; see the list form for how spellings are read. */
+    public fun Flag.negatable(long: String, default: Boolean = true, help: String? = null): Flag =
+        negatable(emptyList(), listOf(long), default, help)
+
+    /** A negative half with one short spelling and no long; see the list form for how spellings are read. */
+    public fun Flag.negatable(short: Char, default: Boolean = true, help: String? = null): Flag =
+        negatable(listOf(short), emptyList(), default, help)
+
+    /** A negative half with several shorts and one long; see the list form for how spellings are read. */
+    public fun Flag.negatable(short: List<Char>, long: String, default: Boolean = true, help: String? = null): Flag =
+        negatable(short, listOf(long), default, help)
+
+    /** A negative half with one short and several longs; see the list form for how spellings are read. */
+    public fun Flag.negatable(short: Char, long: List<String>, default: Boolean = true, help: String? = null): Flag =
+        negatable(listOf(short), long, default, help)
 
     /** Omit this flag from `--help`; it still parses and binds normally. */
     public fun Flag.hidden(): Flag {

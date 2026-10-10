@@ -20,7 +20,8 @@ except pulse's row, which points at its module rather than a single file.
 
 | You want                                                                                                    | Look at                                                         | The construct                       |
 |-------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------|-------------------------------------|
-| Mutually exclusive operation modes, exactly one required (`pacman -S` vs `-R` vs `-Q`)                      | [`pacman`](pacman/), [`tar`](tar/)                              | `requireExactlyOne`                 |
+| Mutually exclusive operation modes, exactly one required (`tar -c` vs `-x` vs `-t`)                         | [`tar`](tar/)                                                   | `requireExactlyOne`                 |
+| Operations spelled as flags, each with its own options (`pacman -S` vs `-R` vs `-Q`)                        | [`pacman`](pacman/)                                             | `command(short, long)`              |
 | Two options that conflict but are both optional (`tar -z` vs `-j`)                                          | [`tar`](tar/)                                                   | `requireAtMostOne`                  |
 | A flag repeated to raise a level (`-v`, `-vv`, `-vvv`)                                                      | [`pacman`](pacman/), [`ssh`](ssh/), [`curl`](curl/)             | `.count()`                          |
 | A cluster whose last character takes a value (`tar -cvf out.tar`)                                           | [`tar`](tar/)                                                   | short clustering                    |
@@ -35,14 +36,14 @@ except pulse's row, which points at its module rather than a single file.
 | Two spellings of one quantity read off one handle (`head -5` / `head -n 5`)                                 | [`head`](head/), [`git`](git/), [`task-manager`](task-manager/) | `lastOneWins`                       |
 | A single-dash token that should bind as an operand, not an option (`chmod -w f`)                            | [`chmod`](chmod/)                                               | `.dashLed()`                        |
 | A subcommand tree with aliases (`git add` / `git stage`)                                                    | [`git`](git/)                                                   | `command { }`, `aliases`            |
-| Help split into sections on a wide flat tool                                                                | [`pacman`](pacman/), [`curl`](curl/), [`ls`](ls/)               | `group { }`                         |
+| Help split into sections on a wide flat tool                                                                | [`curl`](curl/), [`ls`](ls/)                                    | `group { }`                         |
 | A value restricted to a fixed set (`--sort=WORD`)                                                           | [`cp`](cp/), [`ls`](ls/), [`git`](git/)                         | `.choice()`                         |
 | A value parsed into your own enum                                                                           | [`task-manager`](task-manager/)                                 | `.enum<E>()`                        |
 | A number with bounds (`--max-time`, `-p PORT`)                                                              | [`find`](find/), [`ssh`](ssh/), [`curl`](curl/)                 | `.int()`, `.range()`                |
 | Rejecting a malformed value with your own message                                                           | [`head`](head/), [`mkdir`](mkdir/), [`git`](git/)               | `.validate()`                       |
 | Rejecting a value only wrong because of another input (`--due` in the past unless `--done`)                 | [`task-manager`](task-manager/)                                 | `validateInputs { }`                |
 | An input kept out of `--help`                                                                               | [`git`](git/), [`task-manager`](task-manager/)                  | `hidden`                            |
-| Taking `-h` back from klap so it can mean something else                                                    | [`ls`](ls/), [`pacman`](pacman/)                                | `builtins { }`                      |
+| Taking `-h` back from klap so it can mean something else                                                    | [`ls`](ls/)                                                     | `builtins { }`                      |
 | Tab completion that reads your CLI's own parsed inputs                                                      | [`task-manager`](task-manager/), [`chmod`](chmod/), [`dd`](dd/) | `completeWith { }`                  |
 | An option that may appear many times (`curl -H a -H b`)                                                     | [`git`](git/), [`ssh`](ssh/), [`curl`](curl/)                   | `.multiple()`                       |
 | An action that suspends, with real cancellation reaching it from the caller's scope (`pulse watch`, Ctrl-C) | [`pulse`](pulse/)                                               | `actionSuspending`, `runSuspending` |
@@ -101,7 +102,7 @@ what an argv bound without running the action:
 
 ```kotlin
 public fun headCli(): TypedCli<HeadInputs> = cliOf("head") {
-    val lines = option("--lines", "-n")           // 1. handles are ordinary vals
+    val lines = option(short = 'n', long = "lines") // 1. handles are ordinary vals
     val files = argument("file").multiple()
     action { ... }
     projection { HeadInputs(lines(), files()) }   // 2. the block ends by reading them into your type

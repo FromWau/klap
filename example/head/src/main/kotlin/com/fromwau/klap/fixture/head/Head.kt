@@ -3,6 +3,7 @@ package com.fromwau.klap.fixture.head
 import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.TypedCli
+import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
 
@@ -30,8 +31,8 @@ private val HEAD_NUM = Regex("""-?\d+(?:b|[kKMGTPEZYRQ](?:B|iB)?)?""")
 public fun headCli(): TypedCli<HeadInputs> = cliOf("head") {
     // GNU head takes any unambiguous prefix of a long option: `head --ver f` is ambiguous.
     abbreviation = Abbreviation.Options
-    description = "Print the first 10 lines of each FILE to standard output."
-    version = "9.11"
+    help = "Print the first 10 lines of each FILE to standard output."
+    version = Version.Of("9.11")
     epilogue = "With no FILE, or when FILE is -, read standard input. " +
         "NUM may have a multiplier suffix: b 512, kB 1000, K 1024, MB 1000*1000, M 1024*1024, and so on."
 
@@ -41,7 +42,7 @@ public fun headCli(): TypedCli<HeadInputs> = cliOf("head") {
     example("head -qv a.txt b.txt", "two operands; the later of -q/-v decides whether headers print")
 
     // A dash-led NUM reaches this option's value slot in both forms: `-n -5` and `--lines -5`.
-    val named = option("--lines", "-n", help = "print the first NUM lines instead of the first 10")
+    val named = option(short = 'n', long = "lines", help = "print the first NUM lines instead of the first 10")
         .validate("invalid number of lines") { HEAD_NUM.matches(it) }
         .placeholder("[-]NUM")
 
@@ -52,7 +53,7 @@ public fun headCli(): TypedCli<HeadInputs> = cliOf("head") {
     // written; the fold then takes part in the unit override below as one member.
     val lines = lastOneWins(named, direct)
 
-    val bytes = option("--bytes", "-c", help = "print the first NUM bytes of each file")
+    val bytes = option(short = 'c', long = "bytes", help = "print the first NUM bytes of each file")
         .validate("invalid number of bytes") { HEAD_NUM.matches(it) }
         .placeholder("[-]NUM")
 
@@ -63,11 +64,15 @@ public fun headCli(): TypedCli<HeadInputs> = cliOf("head") {
 
     // One holder carries all three of real head's spellings, so `-q`, `--quiet` and `--silent` are the
     // one input GNU head documents rather than three that an action has to OR back together.
-    val quiet = flag("--quiet", "-q", "--silent", help = "never print headers giving file names")
+    val quiet = flag(
+        short = 'q',
+        long = listOf("quiet", "silent"),
+        help = "never print headers giving file names",
+    )
 
-    val verbose = flag("--verbose", "-v", help = "always print headers giving file names")
+    val verbose = flag(short = 'v', long = "verbose", help = "always print headers giving file names")
 
-    val zeroTerminated = flag("--zero-terminated", "-z", help = "line delimiter is NUL, not newline")
+    val zeroTerminated = flag(short = 'z', long = "zero-terminated", help = "line delimiter is NUL, not newline")
 
     // Deliberately NOT `dashLed()`, unlike chmod's mode: real head rejects a dash-led FILE, so `head -x f`
     // must stay an unknown option here too. Only `-NUM` slips through, claimed by the number input above.

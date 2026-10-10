@@ -76,7 +76,10 @@ internal fun pacmanOffers(
     return pool.filter { it.value.startsWith(current) }.toSet()
 }
 
-/** Whether [letter] may follow [typed] in a cluster: once, or a second time where [op]'s page counts it. */
+/**
+ * Whether [letter] may follow [typed] in a cluster: once, or a second time where [op]'s page counts it. With no
+ * operation there is no page to read, so the letter's input decides, as the descriptions there come from it.
+ */
 private fun again(
     op: Op?,
     letter: Char,
@@ -84,7 +87,8 @@ private fun again(
 ): Boolean {
     val times = typed.count { it == letter }
     if (times == 0) return true
-    val entry = op?.entryFor(letter) ?: return false
+    if (op == null) return times == 1 && countsSomewhere(letter)
+    val entry = op.entryFor(letter) ?: return false
     return times == 1 && op.counts(entry)
 }
 
@@ -133,7 +137,7 @@ private fun valueSuggestions(
     val kind = input.kind as Kind.Value
     if (kind.path) return setOf(filesAfter(head.orEmpty()))
     val choices = kind.choices ?: return emptySet()
-    val help = op?.entryFor(input.long)?.help ?: input.help
+    val help = op?.entryFor(input.long)?.help ?: unscopedHelp(input.long)
     return choices
         .filter { it.startsWith(partial) }
         .map { value -> if (head == null) Suggestion(value) else Suggestion(head + value, help) }
@@ -147,10 +151,8 @@ private fun pool(op: Op?): List<Suggestion> = buildList {
             entry.short?.let { add(Suggestion("-$it", entry.help)) }
         }
     } else {
-        for (input in INPUTS) {
-            add(Suggestion(input.long, input.help))
-            input.short?.let { add(Suggestion("-$it", input.help)) }
-        }
+        for (input in INPUTS) add(Suggestion(input.long, unscopedHelp(input.long)))
+        for (letter in PAGE_LETTERS) add(Suggestion("-$letter", unscopedHelp(letter)))
         for (each in Op.entries) {
             add(Suggestion(each.long, each.help))
             add(Suggestion("-${each.short}", each.help))
@@ -431,14 +433,14 @@ internal fun onQuery(long: String): Suggestion = Suggestion(long, Op.QUERY.entry
 /** [long] on a line with no operation, in the fixture's words. */
 internal fun plain(long: String): Suggestion {
     val op = Op.entries.firstOrNull { it.long == long }
-    return if (op != null) Suggestion(op.long, op.help) else Suggestion(long, input(long).help)
+    return if (op != null) Suggestion(op.long, op.help) else Suggestion(long, unscopedHelp(long))
 }
 
 /** [value] attached to [option], described by the option's help. */
 internal fun attached(
     option: String,
     value: String,
-): Suggestion = Suggestion("$option=$value", input(option).help)
+): Suggestion = Suggestion("$option=$value", unscopedHelp(option))
 
 /** Tab on [cell] offers exactly its set (E1 E5 E6) once each (G3), and the accepted (E7) and tabbed (E8) lines. */
 internal fun Cli.assertContext(cell: ContextCell) {
@@ -503,7 +505,7 @@ internal fun slot(
 internal fun name(
     long: String,
     op: Op? = null,
-): Suggestion = Suggestion(long, op?.entryFor(long)?.help ?: input(long).help)
+): Suggestion = Suggestion(long, op?.entryFor(long)?.help ?: unscopedHelp(long))
 
 /**
  * What pacman accepts after [cluster] when its last letter takes no part in the reading, as `-h` does: [cluster]

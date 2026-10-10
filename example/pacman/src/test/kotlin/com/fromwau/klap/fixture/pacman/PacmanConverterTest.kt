@@ -1,7 +1,6 @@
 package com.fromwau.klap.fixture.pacman
 
 import com.fromwau.klap.fixture.ParitySuite
-import kotlin.test.Ignore
 import kotlin.test.Test
 
 /*
@@ -63,55 +62,7 @@ class PacmanConverterTest {
             cell(q(*words.toTypedArray(), "pacman"), QUERY.copy(debug = "2", targets = listOf("pacman")), "level 2")
         },
     )
-}
 
-/**
- * The typed pacman values pacman 7.1.0 reads one way and the fixture or klap another today (X of the testing matrix).
- * Each test states what real pacman 7.1.0 does and is ignored with `TDD target: <what must change>`; removing the
- * annotation shows it failing for that reason, and no other test pins today's behaviour, so a fix breaks nothing else.
- */
-class PacmanConverterTargetsTest {
-
-    private val parity = ParitySuite(pacmanCli())
-
-    @Ignore("TDD target: klap must let a choice refuse a prefix of its values, as pacman's --color does")
-    @Test
-    fun `a color value is never abbreviated`() = parity.checkAll(
-        listOf("al", "nev", "au", "alw").map {
-            ParseCell(q("--color=$it", "pacman"), null, "pacman: error: invalid argument '$it' for --color")
-        },
-    )
-
-    @Ignore("TDD target: the fixture must read --debug's level as a decimal number (01, +2), not as a word")
-    @Test
-    fun `a debug level binds every spelling pacman reads as a number`() = parity.checkAll(
-        // `pacman -Q --debug=01` prints debug: lines only, `--debug=+2`, `--debug=002` and `--debug=' 2'` add the
-        // function: lines of level 2.
-        listOf("01" to "1", "002" to "2", "+2" to "2", " 2" to "2").map { (typed, level) ->
-            ParseCell(q("--debug=$typed", "pacman"), QUERY.copy(debug = level, targets = listOf("pacman")), "exit 0")
-        },
-    )
-
-    @Ignore("TDD target: the fixture must bind the highest --debug level on the line, not the last one")
-    @Test
-    fun `a lower debug level after level 2 keeps level 2`() = parity.checkAll(
-        // Both lines printed the 3562 function: lines of level 2 beside the 274 debug: lines.
-        listOf(listOf("--debug=2", "--debug"), listOf("--debug=2", "--debug=1")).map { words ->
-            val line = q(*words.toTypedArray(), "pacman")
-            ParseCell(line, QUERY.copy(debug = "2", targets = listOf("pacman")), "level 2")
-        },
-    )
-
-    @Ignore("TDD target: klap must convert every occurrence of a single-valued option, not only the last")
-    @Test
-    fun `an invalid earlier occurrence of a single-valued option is refused`() = parity.checkAll(
-        listOf(
-            ParseCell(q("--color=bogus", "--color=never", "pacman"), null, "invalid argument 'bogus' for --color"),
-            ParseCell(q("--debug=3", "--debug=2", "pacman"), null, "pacman: error: '3' is not a valid debug level"),
-        ),
-    )
-
-    @Ignore("TDD target: the fixture must refuse an empty value for every path option but --logfile")
     @Test
     fun `an empty path is refused`() = parity.checkAll(
         // `pacman -Q --dbpath= pacman`: "error: 'failed to resolve path '' passed to '--dbpath'", and the same for
@@ -127,7 +78,15 @@ class PacmanConverterTargetsTest {
         ),
     )
 
-    @Ignore("TDD target: the fixture must split --ignore --ignoregroup and --overwrite values at commas")
+    @Test
+    fun `a debug level binds every spelling pacman reads as a number`() = parity.checkAll(
+        // `pacman -Q --debug=01` prints debug: lines only, `--debug=+2`, `--debug=002` and `--debug=' 2'` add the
+        // function: lines of level 2.
+        listOf("01" to "1", "002" to "2", "+2" to "2", " 2" to "2").map { (typed, level) ->
+            ParseCell(q("--debug=$typed", "pacman"), QUERY.copy(debug = level, targets = listOf("pacman")), "exit 0")
+        },
+    )
+
     @Test
     fun `a comma separates the packages groups and globs of an upgrade option`() {
         // From the man page only, as -S and -U are not run here: --ignore "Multiple packages can be specified by
@@ -155,7 +114,23 @@ class PacmanConverterTargetsTest {
         )
     }
 
-    @Ignore("TDD target: klap must let a choice match case-sensitively, as pacman's --color does")
+    @Test
+    fun `a lower debug level after level 2 keeps level 2`() = parity.checkAll(
+        // Both lines printed the 3562 function: lines of level 2 beside the 274 debug: lines.
+        listOf(listOf("--debug=2", "--debug"), listOf("--debug=2", "--debug=1")).map { words ->
+            val line = q(*words.toTypedArray(), "pacman")
+            ParseCell(line, QUERY.copy(debug = "2", targets = listOf("pacman")), "level 2")
+        },
+    )
+
+    @Test
+    fun `an invalid earlier occurrence of a single-valued option is refused`() = parity.checkAll(
+        listOf(
+            ParseCell(q("--color=bogus", "--color=never", "pacman"), null, "invalid argument 'bogus' for --color"),
+            ParseCell(q("--debug=3", "--debug=2", "pacman"), null, "pacman: error: '3' is not a valid debug level"),
+        ),
+    )
+
     @Test
     fun `a color value in capitals is refused`() {
         // `pacman -Q --color=ALWAYS`: "error: invalid argument 'ALWAYS' for --color".
@@ -163,4 +138,11 @@ class PacmanConverterTargetsTest {
             parity.check(ParseCell(listOf("-Q", "--color=$it"), null, "pacman: error: invalid argument '$it'"))
         }
     }
+
+    @Test
+    fun `a color value is never abbreviated`() = parity.checkAll(
+        listOf("al", "nev", "au", "alw").map {
+            ParseCell(q("--color=$it", "pacman"), null, "pacman: error: invalid argument '$it' for --color")
+        },
+    )
 }

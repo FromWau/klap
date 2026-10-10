@@ -38,17 +38,17 @@ class SubcommandProjectionTest {
     }
 
     private fun git() = cliOf("git") {
-        val gitDir = globalOption("--git-dir").default(".git")
+        val gitDir = globalOption(long = "git-dir").default(".git")
 
         val commit = command("commit") {
-            val message = option("--message", "-m").multiple()
-            val amend = flag("--amend")
+            val message = option(short = 'm', long = "message").multiple()
+            val amend = flag(long = "amend")
             action { Ok("committed") }
             projection { GitArgs.Commit(gitDir(), message(), amend()) }
         }
 
         val status = command("status") {
-            val short = flag("--short", "-s")
+            val short = flag(short = 's', long = "short")
             action { Ok("status") }
             projection { GitArgs.Status(gitDir(), short()) }
         }
@@ -138,7 +138,7 @@ class SubcommandProjectionTest {
         val failure = try {
             cliOf("git") {
                 val status = command("status") {
-                    val short = flag("-s")
+                    val short = flag(short = 's')
                     action { Ok("status") }
                     projection { GitArgs.Status(".git", short()) }
                 }
@@ -171,7 +171,7 @@ class ActingGroupProjectionTest {
 
     private fun cli() = cliOf("git") {
         val remote = command("remote") {
-            val verbose = flag("--verbose", "-v")
+            val verbose = flag(short = 'v', long = "verbose")
             val add = command("add") {
                 val name = argument("name")
                 action { Ok("added") }

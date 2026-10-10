@@ -371,7 +371,6 @@ class PacmanProjectionTest {
                 cacheDirs = listOf("a"),
                 color = "never",
                 config = "/etc/pacman.conf",
-                confirm = false,
                 noConfirm = true,
                 debug = "1",
                 disableDownloadTimeout = true,
@@ -412,7 +411,6 @@ class PacmanProjectionTest {
         parity.showsHelp("-Qih", because = "pacman -Qih prints the -Q page")
         parity.showsHelp("-Q", "--hel", because = "pacman -Q --hel prints the -Q page")
         parity.showsHelp("-Q", "--he", because = "pacman -Q --he prints the -Q page")
-        parity.showsHelp("-QV", "--help", because = "pacman -QV --help prints the -Q page")
     }
 
     @Test
@@ -506,7 +504,7 @@ class PacmanProjectionTest {
     @Test
     fun `the later of --noconfirm and --confirm wins`() {
         // The man page: "--confirm  Cancels the effects of a previous --noconfirm."
-        parity.binds("-Q", "--noconfirm", "--confirm", expected = query.copy(confirm = true))
+        parity.binds("-Q", "--noconfirm", "--confirm", expected = query)
         parity.binds("-Q", "--confirm", "--noconfirm", expected = query.copy(noConfirm = true))
     }
 
@@ -523,6 +521,7 @@ class PacmanProjectionTest {
                 noProgressBar = true,
                 noScriptlet = true,
                 needed = true,
+                printOnly = true,
                 printFormat = "%n",
                 ignore = listOf("a", "b"),
                 ignoreGroup = listOf("g"),
@@ -617,16 +616,65 @@ class PacmanProjectionTest {
         parity.showsHelp("-hQ", because = "real pacman: usage:  pacman {-Q --query} [options] [package(s)]")
         parity.showsHelp("-Q", "--help", because = "real pacman: usage:  pacman {-Q --query} [options] [package(s)]")
     }
-}
 
-/**
- * The lines pacman 7.1.0 reads one way and klap or the fixture another today (P of the testing matrix). Each test
- * states what real pacman 7.1.0 does and is ignored with `TDD target: <what must change>`; removing the annotation
- * shows it failing for that reason, and no other test pins today's behaviour, so a fix breaks nothing else.
- */
-class PacmanProjectionTargetsTest {
+    @Test
+    fun `two -Q modifiers pacman forbids together are refused`() {
+        // Every pair of -Q flags was run as `pacman -Q <a> <b> pacman`; these are the ones answering "error:
+        // invalid option: '<a>' and '<b>' may not be used together".
+        val pairs = listOf(
+            "--changelog" to "--groups", "--changelog" to "--owns", "--changelog" to "--search",
+            "--deps" to "--explicit", "--deps" to "--owns", "--deps" to "--search",
+            "--explicit" to "--owns", "--explicit" to "--search",
+            "--groups" to "--info", "--groups" to "--check", "--groups" to "--list", "--groups" to "--owns",
+            "--groups" to "--file", "--groups" to "--search",
+            "--info" to "--owns", "--info" to "--search",
+            "--check" to "--owns", "--check" to "--search",
+            "--list" to "--owns", "--list" to "--search",
+            "--foreign" to "--native", "--foreign" to "--owns", "--foreign" to "--search",
+            "--native" to "--owns", "--native" to "--search",
+            "--owns" to "--file", "--owns" to "--search", "--owns" to "--unrequired", "--owns" to "--upgrades",
+            "--file" to "--search",
+            "--search" to "--unrequired", "--search" to "--upgrades",
+        )
+        parity.checkAll(
+            pairs.flatMap { (a, b) ->
+                val why = "pacman: error: invalid option: '$a' and '$b' may not be used together"
+                listOf(ParseCell(q(a, b, "pacman"), null, why), ParseCell(q(b, a, "pacman"), null, why))
+            },
+        )
+    }
 
-    private val parity = ParitySuite(pacmanCli())
+    @Test
+    fun `--print-format implies --print`() = parity.checkAll(
+        // From the man page only: "--print-format <format> ... Implies --print."
+        listOf(
+            ParseCell(
+                listOf("-S", "--print-format", "%n", "pkg"),
+                Op.SYNC.record().copy(printOnly = true, printFormat = "%n", targets = listOf("pkg")),
+                "man pacman: Implies --print",
+            ),
+        ),
+    )
+
+    @Test
+    fun `--disable-sandbox disables both parts of the sandbox`() = parity.checkAll(
+        // The man page: "Equivalent to jointly specifying --disable-sandbox-filesystem and --disable-sandbox-syscalls."
+        listOf(
+            ParseCell(
+                q("--disable-sandbox"),
+                QUERY.copy(disableSandbox = true, disableSandboxFilesystem = true, disableSandboxSyscalls = true),
+                "man pacman: equivalent to both",
+            ),
+        ),
+    )
+
+    @Test
+    fun `-V prints the version`() {
+        // `pacman -V` and `pacman -QV` both print the banner and exit 0.
+        parity.showsVersion("-V", because = "pacman -V prints its banner, exit 0")
+        parity.showsVersion("-QV", because = "pacman -QV prints its banner, exit 0")
+        parity.showsVersion("-Q", "-V", because = "pacman -Q -V prints its banner, exit 0")
+    }
 
     private fun offPageLongs(op: Op) {
         // Under -Q every one was run: `pacman -Q --needed pacman` says "error: invalid option '--needed'", and the
@@ -658,6 +706,123 @@ class PacmanProjectionTargetsTest {
         checkCells(cells) { parity.check(it) }
     }
 
+    @Test
+    fun `a prefix of a klap built-in pacman lacks is refused`() = parity.checkAll(
+        listOf(
+            ParseCell(q("--comp", "bash"), null, "pacman: unrecognized option '--comp'"),
+            ParseCell(q("--js"), null, "pacman: unrecognized option '--js'"),
+        ),
+    )
+
+    @Test
+    fun `a prefix shared only with a klap built-in names pacman's own option`() = parity.checkAll(
+        // `pacman -Q --do` answers "error: invalid option '--downloadonly'": the prefix reached --downloadonly
+        // alone, which -S accepts (from `pacman -Sh` only, -S is not run here).
+        listOf(
+            ParseCell(
+                listOf("-S", "--do", "pkg"),
+                Op.SYNC.record().copy(downloadOnly = true, targets = listOf("pkg")),
+                "--do is --downloadonly",
+            ),
+        ),
+    )
+
+    @Test
+    fun `a long of another operation is refused under -Q`() = offPageLongs(Op.QUERY)
+
+    @Test
+    fun `a long of another operation is refused under -S`() = offPageLongs(Op.SYNC)
+
+    @Test
+    fun `a long of another operation is refused under -R`() = offPageLongs(Op.REMOVE)
+
+    @Test
+    fun `a long of another operation is refused under -U`() = offPageLongs(Op.UPGRADE)
+
+    @Test
+    fun `a long of another operation is refused under -D`() = offPageLongs(Op.DATABASE)
+
+    @Test
+    fun `a long of another operation is refused under -F`() = offPageLongs(Op.FILES)
+
+    @Test
+    fun `a long of another operation is refused under -T`() = offPageLongs(Op.DEPTEST)
+
+    @Test
+    fun `a letter of another operation is refused under -Q`() = offPageLetters(Op.QUERY)
+
+    @Test
+    fun `a letter of another operation is refused under -S`() = offPageLetters(Op.SYNC)
+
+    @Test
+    fun `a letter of another operation is refused under -R`() = offPageLetters(Op.REMOVE)
+
+    @Test
+    fun `a letter of another operation is refused under -U`() = offPageLetters(Op.UPGRADE)
+
+    @Test
+    fun `a letter of another operation is refused under -D`() = offPageLetters(Op.DATABASE)
+
+    @Test
+    fun `a letter of another operation is refused under -F`() = offPageLetters(Op.FILES)
+
+    @Test
+    fun `a letter of another operation is refused under -T`() = offPageLetters(Op.DEPTEST)
+
+    // `pacman -Q --help`: -c --changelog, -d --deps, -n --native, -p --file, -u --upgrades.
+    @Test
+    fun `a contested letter means what -Q gives it`() = contestedLetters(Op.QUERY)
+
+    // `pacman -R --help`: -c --cascade, -s --recursive (-ss), -u --unneeded.
+    @Test
+    fun `a contested letter means what -R gives it`() = contestedLetters(Op.REMOVE)
+
+    @Test
+    fun `an option pacman does not have is refused`() {
+        // `pacman --json`, `pacman --docs`, `pacman --completion bash`, `pacman --help-all`: all "unrecognized
+        // option". klap's completion scripts are installed through --completion, so declining it needs another way.
+        val cells = listOf(
+            listOf("-Q", "--json"), listOf("--json", "-Q"), listOf("--docs", "man"), listOf("-Q", "--docs", "man"),
+            listOf("--completion", "bash"), listOf("-Q", "--completion", "bash"), listOf("--help-all"),
+            listOf("-Q", "--help-all"),
+        )
+        checkCells(cells) { words ->
+            val option = words.first { it.startsWith("--") }
+            parity.check(ParseCell(words, null, "pacman: unrecognized option '$option'"))
+        }
+    }
+
+    @Test
+    fun `an operation's help lists that operation's options only`() {
+        // `pacman -Qh` prints "usage:  pacman {-Q --query} [options] [package(s)]" and the -Q rows only.
+        checkCells(Op.entries) { op ->
+            val page = parity.helpPage("-${op.short}h", because = "pacman -${op.short}h prints the -${op.short} page")
+            val missing = op.page.map { it.long }.filterNot { it in page }
+            val foreign = longsOffPage(op)
+                .map { it.long }
+                .filter { long -> Regex("$long\\b(?!-)").containsMatchIn(page) }
+            assertTrue(missing.isEmpty() && foreign.isEmpty(), "-${op.short}h page: missing $missing, foreign $foreign")
+        }
+    }
+
+    @Test
+    fun `an operation whose usage requires targets refuses a line without them`() {
+        // From the usage lines only, as these operations are never run here: `pacman {-R --remove} [options]
+        // <package(s)>` and `pacman {-U --upgrade} [options] <file(s)>`.
+        checkCells(Op.entries.filter { it.requiredTargets.isNotEmpty() }) { op ->
+            parity.check(ParseCell(listOf("-${op.short}"), null, "pacman ${op.long} requires <package(s)>"))
+        }
+    }
+}
+
+/**
+ * The lines pacman 7.1.0 reads one way and klap or the fixture another today (P of the testing matrix). Each test
+ * states what real pacman 7.1.0 does and is ignored with `TDD target: <what must change>`; removing the annotation
+ * shows it failing for that reason, and no other test pins today's behaviour, so a fix breaks nothing else.
+ */
+class PacmanProjectionTargetsTest {
+    private val parity = ParitySuite(pacmanCli())
+
     @Ignore("Will not do (todo 36): states a pacman quirk klap does not follow")
     @Test
     fun `help outranks version in either order`() {
@@ -667,6 +832,7 @@ class PacmanProjectionTargetsTest {
             listOf("--version", "--help"),
             listOf("-Q", "--version", "--help"),
             listOf("-Qh", "--version"),
+            listOf("-QV", "--help"),
         )
         checkCells(lines) { parity.showsHelp(argv = it.toTypedArray(), because = "pacman prints its usage") }
     }
@@ -704,149 +870,6 @@ class PacmanProjectionTargetsTest {
         ),
     )
 
-    @Ignore("TDD target: the fixture must decline klap's --completion and --json, so no prefix reaches them")
-    @Test
-    fun `a prefix of a klap built-in pacman lacks is refused`() = parity.checkAll(
-        listOf(
-            ParseCell(q("--comp", "bash"), null, "pacman: unrecognized option '--comp'"),
-            ParseCell(q("--js"), null, "pacman: unrecognized option '--js'"),
-        ),
-    )
-
-    @Ignore("TDD target: klap must leave a built-in pacman lacks out of the pool an abbreviation is resolved in")
-    @Test
-    fun `a prefix shared only with a klap built-in names pacman's own option`() = parity.checkAll(
-        // `pacman -Q --do` answers "error: invalid option '--downloadonly'": the prefix reached --downloadonly
-        // alone, which -S accepts (from `pacman -Sh` only, -S is not run here).
-        listOf(
-            ParseCell(
-                listOf("-S", "--do", "pkg"),
-                Op.SYNC.record().copy(downloadOnly = true, targets = listOf("pkg")),
-                "--do is --downloadonly",
-            ),
-        ),
-    )
-
-    @Ignore("TDD target: the fixture must refuse the -Q modifier pairs pacman forbids together")
-    @Test
-    fun `two -Q modifiers pacman forbids together are refused`() {
-        // Every pair of -Q flags was run as `pacman -Q <a> <b> pacman`; these are the ones answering "error:
-        // invalid option: '<a>' and '<b>' may not be used together".
-        val pairs = listOf(
-            "--changelog" to "--groups", "--changelog" to "--owns", "--changelog" to "--search",
-            "--deps" to "--explicit", "--deps" to "--owns", "--deps" to "--search",
-            "--explicit" to "--owns", "--explicit" to "--search",
-            "--groups" to "--info", "--groups" to "--check", "--groups" to "--list", "--groups" to "--owns",
-            "--groups" to "--file", "--groups" to "--search",
-            "--info" to "--owns", "--info" to "--search",
-            "--check" to "--owns", "--check" to "--search",
-            "--list" to "--owns", "--list" to "--search",
-            "--foreign" to "--native", "--foreign" to "--owns", "--foreign" to "--search",
-            "--native" to "--owns", "--native" to "--search",
-            "--owns" to "--file", "--owns" to "--search", "--owns" to "--unrequired", "--owns" to "--upgrades",
-            "--file" to "--search",
-            "--search" to "--unrequired", "--search" to "--upgrades",
-        )
-        parity.checkAll(
-            pairs.flatMap { (a, b) ->
-                val why = "pacman: error: invalid option: '$a' and '$b' may not be used together"
-                listOf(ParseCell(q(a, b, "pacman"), null, why), ParseCell(q(b, a, "pacman"), null, why))
-            },
-        )
-    }
-
-    @Ignore("TDD target: the fixture must bind printOnly when --print-format is given")
-    @Test
-    fun `--print-format implies --print`() = parity.checkAll(
-        // From the man page only: "--print-format <format> ... Implies --print."
-        listOf(
-            ParseCell(
-                listOf("-S", "--print-format", "%n", "pkg"),
-                Op.SYNC.record().copy(printOnly = true, printFormat = "%n", targets = listOf("pkg")),
-                "man pacman: Implies --print",
-            ),
-        ),
-    )
-
-    @Ignore("TDD target: the fixture must bind both sandbox parts as disabled when --disable-sandbox is given")
-    @Test
-    fun `--disable-sandbox disables both parts of the sandbox`() = parity.checkAll(
-        // The man page: "Equivalent to jointly specifying --disable-sandbox-filesystem and --disable-sandbox-syscalls."
-        listOf(
-            ParseCell(
-                q("--disable-sandbox"),
-                QUERY.copy(disableSandbox = true, disableSandboxFilesystem = true, disableSandboxSyscalls = true),
-                "man pacman: equivalent to both",
-            ),
-        ),
-    )
-
-    @Ignore("TDD target: klap must let an option belong to some operations only, refusing it under the others")
-    @Test
-    fun `a long of another operation is refused under -Q`() = offPageLongs(Op.QUERY)
-
-    @Ignore("TDD target: klap must let an option belong to some operations only, refusing it under the others")
-    @Test
-    fun `a long of another operation is refused under -S`() = offPageLongs(Op.SYNC)
-
-    @Ignore("TDD target: klap must let an option belong to some operations only, refusing it under the others")
-    @Test
-    fun `a long of another operation is refused under -R`() = offPageLongs(Op.REMOVE)
-
-    @Ignore("TDD target: klap must let an option belong to some operations only, refusing it under the others")
-    @Test
-    fun `a long of another operation is refused under -U`() = offPageLongs(Op.UPGRADE)
-
-    @Ignore("TDD target: klap must let an option belong to some operations only, refusing it under the others")
-    @Test
-    fun `a long of another operation is refused under -D`() = offPageLongs(Op.DATABASE)
-
-    @Ignore("TDD target: klap must let an option belong to some operations only, refusing it under the others")
-    @Test
-    fun `a long of another operation is refused under -F`() = offPageLongs(Op.FILES)
-
-    @Ignore("TDD target: klap must let an option belong to some operations only, refusing it under the others")
-    @Test
-    fun `a long of another operation is refused under -T`() = offPageLongs(Op.DEPTEST)
-
-    @Ignore("TDD target: klap must let a letter belong to some operations only, refusing it under the others")
-    @Test
-    fun `a letter of another operation is refused under -Q`() = offPageLetters(Op.QUERY)
-
-    @Ignore("TDD target: klap must let a letter belong to some operations only, refusing it under the others")
-    @Test
-    fun `a letter of another operation is refused under -S`() = offPageLetters(Op.SYNC)
-
-    @Ignore("TDD target: klap must let a letter belong to some operations only, refusing it under the others")
-    @Test
-    fun `a letter of another operation is refused under -R`() = offPageLetters(Op.REMOVE)
-
-    @Ignore("TDD target: klap must let a letter belong to some operations only, refusing it under the others")
-    @Test
-    fun `a letter of another operation is refused under -U`() = offPageLetters(Op.UPGRADE)
-
-    @Ignore("TDD target: klap must let a letter belong to some operations only, refusing it under the others")
-    @Test
-    fun `a letter of another operation is refused under -D`() = offPageLetters(Op.DATABASE)
-
-    @Ignore("TDD target: klap must let a letter belong to some operations only, refusing it under the others")
-    @Test
-    fun `a letter of another operation is refused under -F`() = offPageLetters(Op.FILES)
-
-    @Ignore("TDD target: klap must let a letter belong to some operations only, refusing it under the others")
-    @Test
-    fun `a letter of another operation is refused under -T`() = offPageLetters(Op.DEPTEST)
-
-    // `pacman -Q --help`: -c --changelog, -d --deps, -n --native, -p --file, -u --upgrades.
-    @Ignore("TDD target: klap must resolve a letter by the operation on the line (-Qc is --changelog, -Sc --clean)")
-    @Test
-    fun `a contested letter means what -Q gives it`() = contestedLetters(Op.QUERY)
-
-    // `pacman -R --help`: -c --cascade, -s --recursive (-ss), -u --unneeded.
-    @Ignore("TDD target: klap must resolve a letter by the operation on the line (-Rs is --recursive, -Ss --search)")
-    @Test
-    fun `a contested letter means what -R gives it`() = contestedLetters(Op.REMOVE)
-
     @Ignore("Will not do (todo 6): states a pacman quirk klap does not follow")
     @Test
     fun `the operation given twice is refused`() {
@@ -861,54 +884,5 @@ class PacmanProjectionTargetsTest {
             )
         }
         checkCells(cells) { parity.check(it) }
-    }
-
-    @Ignore("TDD target: the fixture must decline klap's --json --completion and --docs built-ins, and klap --help-all")
-    @Test
-    fun `an option pacman does not have is refused`() {
-        // `pacman --json`, `pacman --docs`, `pacman --completion bash`, `pacman --help-all`: all "unrecognized
-        // option". klap's completion scripts are installed through --completion, so declining it needs another way.
-        val cells = listOf(
-            listOf("-Q", "--json"), listOf("--json", "-Q"), listOf("--docs", "man"), listOf("-Q", "--docs", "man"),
-            listOf("--completion", "bash"), listOf("-Q", "--completion", "bash"), listOf("--help-all"),
-            listOf("-Q", "--help-all"),
-        )
-        checkCells(cells) { words ->
-            val option = words.first { it.startsWith("--") }
-            parity.check(ParseCell(words, null, "pacman: unrecognized option '$option'"))
-        }
-    }
-
-    @Ignore("TDD target: klap must let -V print the version like --version, with or without an operation")
-    @Test
-    fun `-V prints the version`() {
-        // `pacman -V` and `pacman -QV` both print the banner and exit 0.
-        parity.showsVersion("-V", because = "pacman -V prints its banner, exit 0")
-        parity.showsVersion("-QV", because = "pacman -QV prints its banner, exit 0")
-        parity.showsVersion("-Q", "-V", because = "pacman -Q -V prints its banner, exit 0")
-    }
-
-    @Ignore("TDD target: klap must print an operation's own help page for -Qh and -Q --help")
-    @Test
-    fun `an operation's help lists that operation's options only`() {
-        // `pacman -Qh` prints "usage:  pacman {-Q --query} [options] [package(s)]" and the -Q rows only.
-        checkCells(Op.entries) { op ->
-            val page = parity.helpPage("-${op.short}h", because = "pacman -${op.short}h prints the -${op.short} page")
-            val missing = op.page.map { it.long }.filterNot { it in page }
-            val foreign = longsOffPage(op)
-                .map { it.long }
-                .filter { long -> Regex("$long\\b(?!-)").containsMatchIn(page) }
-            assertTrue(missing.isEmpty() && foreign.isEmpty(), "-${op.short}h page: missing $missing, foreign $foreign")
-        }
-    }
-
-    @Ignore("TDD target: klap must let an operand be required under some operations only (-R and -U need targets)")
-    @Test
-    fun `an operation whose usage requires targets refuses a line without them`() {
-        // From the usage lines only, as these operations are never run here: `pacman {-R --remove} [options]
-        // <package(s)>` and `pacman {-U --upgrade} [options] <file(s)>`.
-        checkCells(Op.entries.filter { it.requiredTargets.isNotEmpty() }) { op ->
-            parity.check(ParseCell(listOf("-${op.short}"), null, "pacman ${op.long} requires <package(s)>"))
-        }
     }
 }

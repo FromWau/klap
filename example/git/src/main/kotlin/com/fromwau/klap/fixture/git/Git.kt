@@ -5,6 +5,7 @@ import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.ValueScope
+import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.dispatch
 import com.fromwau.klap.projection
@@ -32,8 +33,8 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
     // Real git abbreviates a subcommand's long options (`git commit --am` reaches `--amend`) but never a
     // top-level one; klap's switch is root-only, so it abbreviates both (see `known divergence from real git`).
     abbreviation = Abbreviation.Options
-    description = "the stupid content tracker"
-    version = "2.55.0"
+    help = "the stupid content tracker"
+    version = Version.Of("2.55.0")
     epilogue = "See 'git help <command>' to read about a specific subcommand."
 
     example("git -C /tmp/repo status --short", "a global option before the subcommand")
@@ -41,39 +42,39 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
     example("git commit -m subject -m body --amend", "a repeatable option plus a flag")
     example("git log -n 5 --oneline main..HEAD", "a short option with a value")
 
-    val directory = globalOption("--directory", "-C", help = "run as if git was started in <path>")
+    val directory = globalOption(short = 'C', long = "directory", help = "run as if git was started in <path>")
         .file()
         .multiple()
 
-    val config = globalOption("--config", "-c", help = "pass a configuration parameter to the command")
+    val config = globalOption(short = 'c', long = "config", help = "pass a configuration parameter to the command")
         .multiple()
 
     // KLAP-GAP: `validateGlobalCollisions` reserves a global's short tree-wide, but git reuses the same
     // letter below the subcommand with a different meaning, so `-p` (git's paginate/patch overload)
     // stays unclaimed here and `git -p log` is not expressible.
-    val paginate = globalFlag("--paginate", help = "pipe all output into a pager")
-        .negatable("--no-pager", "-P")
+    val paginate = globalFlag(long = "paginate", help = "pipe all output into a pager")
+        .negatable(short = 'P', long = "no-pager")
 
-    val gitDir = globalOption("--git-dir", help = "set the path to the repository (.git directory)").file()
-    val workTree = globalOption("--work-tree", help = "set the path to the working tree").file()
-    val namespace = globalOption("--namespace", help = "set the git namespace")
-    val bare = globalFlag("--bare", help = "treat the repository as a bare repository")
+    val gitDir = globalOption(long = "git-dir", help = "set the path to the repository (.git directory)").file()
+    val workTree = globalOption(long = "work-tree", help = "set the path to the working tree").file()
+    val namespace = globalOption(long = "namespace", help = "set the git namespace")
+    val bare = globalFlag(long = "bare", help = "treat the repository as a bare repository")
 
     // `--exec-path[=<path>]` is optional-value: a bare occurrence binds the default below, and the space
     // form leaves the next token alone, so `git --exec-path log` routes to `log` rather than swallowing
     // it as the path. Real git's bare form is actually print-and-exit (verified against 2.55.0), which
     // klap has no way to express for a single option — it binds and continues instead, so `log` runs here
     // where real git never gets that far. Pinned in `known divergence from real git` below.
-    val execPath = globalOption("--exec-path", help = "path to where your core git programs are installed")
+    val execPath = globalOption(long = "exec-path", help = "path to where your core git programs are installed")
         .file()
         .optionalValue("/usr/lib/git-core")
 
     // These two are negative-ONLY in git (there is no `--replace-objects`), which klap expresses exactly:
     // a plain flag whose declared long name happens to start with "no-". requireValidName only rejects a
     // LEADING dash (HolderSpec.kt), so the literal spelling is legal.
-    val noReplaceObjects = globalFlag("--no-replace-objects", help = "do not use replacement refs")
+    val noReplaceObjects = globalFlag(long = "no-replace-objects", help = "do not use replacement refs")
     val noOptionalLocks =
-        globalFlag("--no-optional-locks", help = "do not perform optional operations that require locks")
+        globalFlag(long = "no-optional-locks", help = "do not perform optional operations that require locks")
 
     // One helper, because 10 globals on every variant would be worse than what we are replacing.
     fun ValueScope.globals() = GitGlobals(
@@ -84,9 +85,10 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
     // KLAP-GAP: git's top-level `-v` is a short for `--version`, but the built-in `--version` has no short
     // form and none can be added, so `git -v` is not expressible (`git --vers` still abbreviates fine).
 
-    val status = command("status", "show the working tree status") {
-        val short = flag("--short", "-s", help = "show status concisely")
-        val branch = flag("--branch", "-b", help = "show branch information")
+    val status = command("status") {
+        help = "show the working tree status"
+        val short = flag(short = 's', long = "short", help = "show status concisely")
+        val branch = flag(short = 'b', long = "branch", help = "show branch information")
 
         action {
             val where = directory().lastOrNull() ?: "."
@@ -99,26 +101,34 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         projection { GitInputs.Status(globals(), short(), branch()) }
     }
 
-    val add = command("add", "add file contents to the index") {
+    val add = command("add") {
+        help = "add file contents to the index"
         // `git stage` ships as a synonym for `git add` (its own -h prints git-add's usage).
         aliases = listOf("stage")
 
-        val dryRun = flag("--dry-run", "-n", help = "dry run").negatable(default = false)
-        val verbose = flag("--verbose", "-v", help = "be verbose").negatable(default = false)
-        val force = flag("--force", "-f", help = "allow adding otherwise ignored files")
-        val patch = flag("--patch", "-p", help = "select hunks interactively")
-        val update = flag("--update", "-u", help = "update tracked files")
-        val addAll = flag("--all", "-A", help = "add changes from all tracked and untracked files")
-        val intentToAdd = flag("--intent-to-add", "-N", help = "record only that the path will be added later")
-        val ignoreErrors = flag("--ignore-errors", help = "skip files that cannot be added because of errors")
+        val dryRun = flag(short = 'n', long = "dry-run", help = "dry run").negatable(default = false)
+        val verbose = flag(short = 'v', long = "verbose", help = "be verbose").negatable(default = false)
+        val force = flag(short = 'f', long = "force", help = "allow adding otherwise ignored files")
+        val patch = flag(short = 'p', long = "patch", help = "select hunks interactively")
+        val update = flag(short = 'u', long = "update", help = "update tracked files")
+        val addAll = flag(short = 'A', long = "all", help = "add changes from all tracked and untracked files")
+        val intentToAdd = flag(
+            short = 'N',
+            long = "intent-to-add",
+            help = "record only that the path will be added later",
+        )
+        val ignoreErrors = flag(
+            long = "ignore-errors",
+            help = "skip files that cannot be added because of errors",
+        )
 
         // Real git accepts `git add --chmod -x file`: parse-options hands a required-value option the next
         // token whatever it looks like (verified against 2.55.0), so the space-separated `-x` binds as the
         // value here too, same as the attached `--chmod=-x` form.
-        val chmod = option("--chmod", help = "override the executable bit of the listed files")
+        val chmod = option(long = "chmod", help = "override the executable bit of the listed files")
             .choice("+x", "-x")
 
-        val pathspecFromFile = option("--pathspec-from-file", help = "read pathspec from file").file()
+        val pathspecFromFile = option(long = "pathspec-from-file", help = "read pathspec from file").file()
 
         // git's usage line writes `<pathspec>...` as mandatory, but real `git add` with zero operands
         // exits 0 with "Nothing specified, nothing added." (verified against 2.55.0), so min = 0 is the
@@ -153,7 +163,8 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         }
     }
 
-    val commit = command("commit", "record changes to the repository") {
+    val commit = command("commit") {
+        help = "record changes to the repository"
         // group(...) returns Unit, so a holder declared inside it needs the lateinit dance the README
         // documents; the block runs synchronously, so these are set before any action runs.
         val message: Opt<List<String>>
@@ -163,29 +174,33 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         val reuseMessage: Opt<String?>
 
         group("Commit message options") {
-            message = option("--message", "-m", help = "commit message").multiple()
-            messageFile = option("--file", "-F", help = "read message from file").file()
-            author = option("--author", help = "override author for commit")
-            date = option("--date", help = "override date for commit")
+            message = option(short = 'm', long = "message", help = "commit message").multiple()
+            messageFile = option(short = 'F', long = "file", help = "read message from file").file()
+            author = option(long = "author", help = "override author for commit")
+            date = option(long = "date", help = "override date for commit")
 
             // KLAP-GAP: real spelling is `-C, --reuse-message <commit>`, but the short is unavailable — the
             // global `-C` (chdir) already claims that letter tree-wide. Same story for `-c, --reedit-message`.
-            reuseMessage = option("--reuse-message", help = "reuse message from the specified commit")
+            reuseMessage = option(long = "reuse-message", help = "reuse message from the specified commit")
         }
 
-        val commitAll = flag("--all", "-a", help = "commit all changed files")
-        val amend = flag("--amend", help = "amend previous commit")
-        val edit = flag("--edit", "-e", help = "force edit of commit").negatable(default = true)
-        val signoff = flag("--signoff", "-s", help = "add a Signed-off-by trailer").negatable(default = false)
-        val allowEmpty = flag("--allow-empty", help = "allow an empty commit")
-        val dryRun = flag("--dry-run", help = "show what would be committed")
-        val quiet = flag("--quiet", "-q", help = "suppress summary after successful commit")
+        val commitAll = flag(short = 'a', long = "all", help = "commit all changed files")
+        val amend = flag(long = "amend", help = "amend previous commit")
+        val edit = flag(short = 'e', long = "edit", help = "force edit of commit").negatable(default = true)
+        val signoff = flag(
+            short = 's',
+            long = "signoff",
+            help = "add a Signed-off-by trailer",
+        ).negatable(default = false)
+        val allowEmpty = flag(long = "allow-empty", help = "allow an empty commit")
+        val dryRun = flag(long = "dry-run", help = "show what would be committed")
+        val quiet = flag(short = 'q', long = "quiet", help = "suppress summary after successful commit")
 
-        val cleanup = option("--cleanup", help = "how to strip spaces and #comments from the message")
+        val cleanup = option(long = "cleanup", help = "how to strip spaces and #comments from the message")
             .choice("strip", "whitespace", "verbatim", "scissors", "default")
 
-        val verify = flag("--verify", help = "verify pre-commit and commit-msg hooks")
-            .negatable("--no-verify", "-n")
+        val verify = flag(long = "verify", help = "verify pre-commit and commit-msg hooks")
+            .negatable(short = 'n', long = "no-verify")
 
         // `-S[<keyid>]` / `--gpg-sign[=<key-id>]` is optional-value, and the short spelling
         // matches real git exactly here — its own docs say the key-id "must be stuck to the option without
@@ -199,7 +214,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         // form and lost `--no-gpg-sign`: the trade goes the other way because picking WHICH key signs
         // (`-S`/`-S<keyid>`) is what git users actually reach for on this option, where `--decorate` and
         // `--preserve-root` are reached for by their bare negative spelling.
-        val gpgSign = option("--gpg-sign", "-S", help = "GPG-sign the commit")
+        val gpgSign = option(short = 'S', long = "gpg-sign", help = "GPG-sign the commit")
             .optionalValue("default")
 
         // `git commit [--] [<pathspec>...]` takes zero or more paths, and zero is the normal case.
@@ -238,8 +253,9 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         }
     }
 
-    val log = command("log", "show commit logs") {
-        val namedMaxCount = option("--max-count", "-n", help = "limit the number of commits to output")
+    val log = command("log") {
+        help = "show commit logs"
+        val namedMaxCount = option(short = 'n', long = "max-count", help = "limit the number of commits to output")
             .int()
             .validate("must be a positive count") { it > 0 }
 
@@ -250,26 +266,29 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
 
         val maxCount = lastOneWins(namedMaxCount, directMaxCount)
 
-        val skip = option("--skip", help = "skip <n> commits before starting to show output").int()
+        val skip = option(long = "skip", help = "skip <n> commits before starting to show output").int()
 
-        val since = option("--since", help = "show commits more recent than a specific date")
-        val until = option("--until", help = "show commits older than a specific date")
+        val since = option(long = "since", help = "show commits more recent than a specific date")
+        val until = option(long = "until", help = "show commits older than a specific date")
 
-        val author = option("--author", help = "limit to commits whose author matches <pattern>")
-        val grep = option("--grep", help = "limit to commits whose message matches <pattern>")
-        val pretty = option("--pretty", help = "pretty-print the commits in the given format")
+        val author = option(long = "author", help = "limit to commits whose author matches <pattern>")
+        val grep = option(long = "grep", help = "limit to commits whose message matches <pattern>")
+        val pretty = option(long = "pretty", help = "pretty-print the commits in the given format")
 
-        val patch = flag("--patch", "-p", help = "show the patch for each commit")
-        val stat = flag("--stat", help = "show a diffstat for each commit")
-        val oneline = flag("--oneline", help = "shorthand for --pretty=oneline --abbrev-commit")
-        val graph = flag("--graph", help = "draw a text-based graph of the commit history")
-        val allRefs = flag("--all", help = "pretend as if all refs were listed on the command line")
-        val reversed = flag("--reverse", help = "output the commits in reverse order")
+        val patch = flag(short = 'p', long = "patch", help = "show the patch for each commit")
+        val stat = flag(long = "stat", help = "show a diffstat for each commit")
+        val oneline = flag(long = "oneline", help = "shorthand for --pretty=oneline --abbrev-commit")
+        val graph = flag(long = "graph", help = "draw a text-based graph of the commit history")
+        val allRefs = flag(long = "all", help = "pretend as if all refs were listed on the command line")
+        val reversed = flag(long = "reverse", help = "output the commits in reverse order")
 
         // KLAP-GAP: git's `--decorate[=short|full|auto|no]` plus `--no-decorate` needs BOTH `.negatable()`
         // and `.optionalValue()` on one holder, but the first lives on `Flag` and the second on `Opt<T>`.
         // Keeping `.negatable()` matches `--decorate`/`--no-decorate` exactly and drops the `=WHEN` spellings.
-        val decorate = flag("--decorate", help = "print the ref names of shown commits").negatable(default = true)
+        val decorate = flag(
+            long = "decorate",
+            help = "print the ref names of shown commits",
+        ).negatable(default = true)
 
         // KLAP-GAP: `--` only ends option parsing rather than separating git's two operand groups, so `git
         // log -- src/` misbinds "src/" as the revision range, and a multi-rev invocation can't be absorbed
@@ -309,23 +328,28 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
 
     // A hybrid: `git remote` bare lists the remotes, and it also routes to add/remove. klap allows both
     // on one node, and routing wins over a free positional (there is none here, so nothing collides).
-    val remote = command("remote", "manage the set of tracked repositories") {
+    val remote = command("remote") {
+        help = "manage the set of tracked repositories"
         // KLAP-GAP: real git accepts `git remote -v add up <url>` (verified against 2.55.0); klap's walk
         // breaks at the first non-child token, so `-v` binds on `remote` instead — only a global survives
         // there, since `siftGlobals` strips globals out of argv before the walk runs.
-        val verbose = flag("--verbose", "-v", help = "be verbose")
+        val verbose = flag(short = 'v', long = "verbose", help = "be verbose")
 
-        val remoteAdd = command("add", "add a remote named <name> for the repository at <url>") {
-            val fetch = flag("--fetch", "-f", help = "fetch the remote branches")
-            val tags = flag("--tags", help = "import all tags and associated objects when fetching")
+        val remoteAdd = command("add") {
+            help = "add a remote named <name> for the repository at <url>"
+            val fetch = flag(short = 'f', long = "fetch", help = "fetch the remote branches")
+            val tags = flag(long = "tags", help = "import all tags and associated objects when fetching")
                 .negatable(default = true)
-            val track = option("--track", "-t", help = "branch(es) to track").multiple()
-            val master = option("--master", "-m", help = "master branch")
+            val track = option(short = 't', long = "track", help = "branch(es) to track").multiple()
+            val master = option(short = 'm', long = "master", help = "master branch")
 
             // git's is `--mirror[=(push|fetch)]` (bare `--mirror` is the deprecated push-mirror form); this
             // stays value-required on purpose, not for lack of an expressible form — `.optionalValue()`
             // could express it too, like `--exec-path`/`-S` above.
-            val mirror = option("--mirror", help = "set up the remote as a mirror to push to or fetch from")
+            val mirror = option(
+                long = "mirror",
+                help = "set up the remote as a mirror to push to or fetch from",
+            )
                 .choice("fetch", "push")
 
             val name = argument("name", "the remote's short name")
@@ -352,7 +376,8 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
             }
         }
 
-        val remoteRemove = command("remove", "remove the remote named <name> and all its tracking branches") {
+        val remoteRemove = command("remove") {
+            help = "remove the remote named <name> and all its tracking branches"
             aliases = listOf("rm")
             val name = argument("name", "the remote to remove")
             action { Ok("would remove remote ${name()}") }
@@ -368,7 +393,8 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
     }
 
     // Hidden diagnostic: proves the globals really are readable from anywhere in the tree.
-    val gitVar = command("var", "print a git logical variable") {
+    val gitVar = command("var") {
+        help = "print a git logical variable"
         hidden = true
         action {
             Ok(
@@ -507,7 +533,7 @@ public sealed interface GitInputs {
 public val NO_GLOBALS: GitGlobals = GitGlobals(
     directory = emptyList(),
     config = emptyList(),
-    // globalFlag(...).negatable("--no-pager", "-P") took no explicit `default`, so the vararg overload's
+    // globalFlag(...).negatable(short = 'P', long = "no-pager") took no explicit `default`, so the vararg overload's
     // own default of true applies: real git paginates unless told not to, and so does this fixture.
     paginate = true,
     gitDir = null,

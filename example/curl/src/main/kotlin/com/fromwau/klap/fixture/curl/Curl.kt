@@ -8,6 +8,7 @@ import com.fromwau.klap.CountFlag
 import com.fromwau.klap.Flag
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
+import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
 
@@ -26,8 +27,8 @@ import com.fromwau.klap.projection
 public fun curlCli(): TypedCli<CurlInputs> = cliOf("curl") {
     // curl matches long options exactly: `--loc` and `--sil` really do answer "option --loc: is unknown".
     abbreviation = Abbreviation.None
-    description = "Transfer a URL"
-    version = "8.21.0"
+    help = "Transfer a URL"
+    version = Version.Of("8.21.0")
     epilogue = "This is a parsing-surface study: no request is ever sent."
 
     example("curl https://example.com", "GET a URL to stdout")
@@ -41,22 +42,22 @@ public fun curlCli(): TypedCli<CurlInputs> = cliOf("curl") {
     val urlOption: Opt<List<String>>
     group("Request") {
         // KLAP-GAP: real curl's `-X` takes an arbitrary method token; declaring it via `.choice()` gains
-        // validation but rejects custom verbs and matches case-insensitively (`-X post` binds `POST`).
-        method = option("--request", "-X", help = "Specify request method to use")
+        // validation but rejects custom verbs, and a known one in lower case (`-X post`).
+        method = option(short = 'X', long = "request", help = "Specify request method to use")
             .choice("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE")
 
         // The clean case: repeatable option -> List<String>, in occurrence order.
-        headers = option("--header", "-H", help = "Pass custom header(s) to server").multiple()
+        headers = option(short = 'H', long = "header", help = "Pass custom header(s) to server").multiple()
 
         // curl's `-d` is repeatable too (occurrences are joined with '&'), so `.multiple()` is the
         // faithful shape rather than the single-valued `[-d DATA]` of the sketch.
-        postData = option("--data", "-d", help = "HTTP POST data").multiple()
+        postData = option(short = 'd', long = "data", help = "HTTP POST data").multiple()
 
-        user = option("--user", "-u", help = "Server user and password")
+        user = option(short = 'u', long = "user", help = "Server user and password")
 
         // KLAP-GAP: curl requires at least one URL across `--url` and the bare positional combined; klap
         // has no cross-input arity check, so the requirement is enforced by hand in `action { }` instead.
-        urlOption = option("--url", help = "URL(s) to work with").multiple()
+        urlOption = option(long = "url", help = "URL(s) to work with").multiple()
     }
 
     val output: Opt<List<String>>
@@ -66,20 +67,20 @@ public fun curlCli(): TypedCli<CurlInputs> = cliOf("curl") {
     group("Output") {
         // KLAP-GAP: curl pairs each `-o` (and every other per-URL option) with the URL at the same
         // ordinal; klap's `sift` keeps options and positionals as two independent lists, losing that pairing.
-        output = option("--output", "-o", help = "Write to file instead of stdout").file().multiple()
+        output = option(short = 'o', long = "output", help = "Write to file instead of stdout").file().multiple()
 
         // Same per-URL problem, one step worse: `-O` is a boolean, so klap collapses N occurrences
         // to a single Boolean (Parser.kt) and the per-URL pairing is gone entirely. `.count()`
         // would at least preserve "how many", but still not "which URL each one belonged to".
-        remoteName = flag("--remote-name", "-O", help = "Write output to file named as remote file")
+        remoteName = flag(short = 'O', long = "remote-name", help = "Write output to file named as remote file")
 
         // curl accepts `--no-silent` for every boolean option, which `.negatable()` mirrors exactly
         // (long-form negation only, matching curl). Renders as `--[no-]silent (default: off)`.
-        silent = flag("--silent", "-s", help = "Silent mode").negatable(default = false)
+        silent = flag(short = 's', long = "silent", help = "Silent mode").negatable(default = false)
 
         // A non-alphanumeric short works: validateShortNames only rejects a digit, '.', or '-'
         // (BuilderValidation.kt), and sift's short-cluster walk matches on the raw char.
-        progressBar = flag("--progress-bar", "-#", help = "Display transfer progress as a bar")
+        progressBar = flag(short = '#', long = "progress-bar", help = "Display transfer progress as a bar")
     }
 
     val location: Flag
@@ -88,20 +89,20 @@ public fun curlCli(): TypedCli<CurlInputs> = cliOf("curl") {
     val ipv6: Flag
     val next: CountFlag
     group("Connection") {
-        location = flag("--location", "-L", help = "Follow redirects").negatable(default = false)
+        location = flag(short = 'L', long = "location", help = "Follow redirects").negatable(default = false)
 
         // curl's --max-time takes fractional seconds, so .double() rather than .int(); the range
         // both validates and prints `(0.0..86400.0)` into the help row.
-        maxTime = option("--max-time", "-m", help = "Maximum time allowed for transfer")
+        maxTime = option(short = 'm', long = "max-time", help = "Maximum time allowed for transfer")
             .double()
             .range(0.0..86_400.0)
 
-        ipv4 = flag("--ipv4", "-4", help = "Resolve names to IPv4 addresses")
-        ipv6 = flag("--ipv6", "-6", help = "Resolve names to IPv6 addresses")
+        ipv4 = flag(short = '4', long = "ipv4", help = "Resolve names to IPv4 addresses")
+        ipv6 = flag(short = '6', long = "ipv6", help = "Resolve names to IPv6 addresses")
 
         // KLAP-GAP: curl's `-:, --next` restarts the option set mid-line into a new request; klap's parse
         // always produces one flat bind, so `.count()` recovers only how many sections, not their contents.
-        next = flag("--next", "-:", help = "Make next URL use separate options").count()
+        next = flag(short = ':', long = "next", help = "Make next URL use separate options").count()
     }
 
     // Positionals are never sectioned: BuilderImpl.argument() ignores currentSection

@@ -59,4 +59,10 @@ class CpProjectionMatrixTest {
             }
         }
     }
+
+    @Test
+    fun `a choice value in capitals is refused`() {
+        // `cp --update=ALL`, `--backup=NONE`, `--reflink=AUTO`, `--sparse=AUTO`: invalid argument.
+        check(CHOICE_CAPITAL_CELLS)
+    }
 }

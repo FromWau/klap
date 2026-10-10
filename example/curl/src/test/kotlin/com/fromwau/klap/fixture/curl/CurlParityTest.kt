@@ -35,11 +35,10 @@ class CurlParityTest {
                 urls = listOf("https://example.com"),
             ),
         )
-        // `.choice()` matches case-insensitively and binds the declared spelling; real curl would put
-        // the literal lowercase `post` on the wire.
-        parity.binds(
+        parity.rejects(
             "-X", "post", "https://example.com",
-            expected = NOTHING_BOUND.copy(method = "POST", urls = listOf("https://example.com")),
+            because = "the fixture's `.choice()` takes the methods in their declared case",
+            differs = "real curl takes any method token and puts the literal `post` on the wire",
         )
         // curl's --url and a bare operand are the same list to curl, so this line carries no operand.
         parity.binds(
@@ -144,7 +143,7 @@ class CurlParityTest {
         )
 
         // klap strips its own `--json` before binding, so curl's JSON body lands in the URL list;
-        // `builtins { json = false }` would free the name, but this fixture declines nothing.
+        // `builtins { json = Builtin.Off }` would free the name, but this fixture declines nothing.
         parity.binds(
             "--json", "{\"a\":1}", "https://api.example.com",
             expected = NOTHING_BOUND.copy(urls = listOf("{\"a\":1}", "https://api.example.com")),
@@ -173,9 +172,14 @@ class CurlParityTest {
         // curl's own help takes a category, and `--help` is the one built-in `builtins { }` cannot decline,
         // so klap answers the whole line with its own help and drops the subject.
         parity.shortCircuits("--help", "all", because = "real curl: --help all lists the 'all' category")
-        parity.shortCircuits("--help-all", "https://example.com", because = "real curl: option --help-all: is unknown")
         parity.shortCircuits("--docs", "markdown", because = "real curl: option --docs: is unknown")
         parity.shortCircuits("--completion", "bash", because = "real curl: option --completion: is unknown")
         parity.shortCircuits("__complete", "https://ex", because = "real curl: '__complete' is a URL operand")
+    }
+
+    @Test
+    fun `--help-all is refused as the real curl refuses it`() {
+        // klap has --help-all only where there are subcommands to expand.
+        parity.rejects("--help-all", "https://example.com", because = "real curl: option --help-all: is unknown")
     }
 }

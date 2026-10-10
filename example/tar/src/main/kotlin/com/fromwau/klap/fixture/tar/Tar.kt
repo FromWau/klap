@@ -3,6 +3,7 @@ package com.fromwau.klap.fixture.tar
 import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.TypedCli
+import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
 
@@ -20,8 +21,8 @@ import com.fromwau.klap.projection
 public fun tarCli(): TypedCli<TarInputs> = cliOf("tar") {
     // GNU tar takes any unambiguous prefix of a long option: `tar --cr --file a.tar` is --create.
     abbreviation = Abbreviation.Options
-    description = "Manipulate tape archives"
-    version = "1.35"
+    help = "Manipulate tape archives"
+    version = Version.Of("1.35")
     epilogue = "The mode flags -c, -x and -t are mutually exclusive; exactly one must be given."
 
     // In a cluster only the LAST character may take a value, so `-cvf out.tar` binds `f`'s value and
@@ -32,27 +33,27 @@ public fun tarCli(): TypedCli<TarInputs> = cliOf("tar") {
     example("tar -xf backup.tar --exclude '*.log' --exclude '*.tmp'", "extract, skipping two glob patterns")
     example("tar -cf - src | ssh host 'cat > backup.tar'", "write the archive to stdout")
 
-    val create = flag("--create", "-c", help = "create a new archive")
-    val extract = flag("--extract", "-x", help = "extract files from an archive")
-    val listContents = flag("--list", "-t", help = "list the contents of an archive")
+    val create = flag(short = 'c', long = "create", help = "create a new archive")
+    val extract = flag(short = 'x', long = "extract", help = "extract files from an archive")
+    val listContents = flag(short = 't', long = "list", help = "list the contents of an archive")
 
     requireExactlyOne(create, extract, listContents)
 
     // GNU tar's -v really is cumulative (-vv lists more per member), so .count() is the faithful shape and
     // it clusters exactly like a boolean flag does (`-cvvf out.tar` counts 2).
-    val verbose = flag("--verbose", "-v", help = "list files processed; repeat for more detail").count()
+    val verbose = flag(short = 'v', long = "verbose", help = "list files processed; repeat for more detail").count()
 
-    val gzip = flag("--gzip", "-z", help = "filter the archive through gzip")
-    val bzip2 = flag("--bzip2", "-j", help = "filter the archive through bzip2")
+    val gzip = flag(short = 'z', long = "gzip", help = "filter the archive through gzip")
+    val bzip2 = flag(short = 'j', long = "bzip2", help = "filter the archive through bzip2")
 
     requireAtMostOne(gzip, bzip2)
 
     // Real tar falls back to $TAPE/stdin when -f is absent; the studied surface declares it mandatory.
-    val archive = option("--file", "-f", help = "use archive file ARCHIVE ('-' for stdin/stdout)")
+    val archive = option(short = 'f', long = "file", help = "use archive file ARCHIVE ('-' for stdin/stdout)")
         .file()
         .required()
 
-    val exclude = option("--exclude", help = "exclude files matching PATTERN").multiple()
+    val exclude = option(long = "exclude", help = "exclude files matching PATTERN").multiple()
 
     // tar's trailing operands are zero-or-more, so `tar -tf a.tar` and `tar -xf a.tar` — the tool's two
     // most common invocations, both naming no FILE — bind an empty list rather than failing.

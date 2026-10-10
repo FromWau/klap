@@ -5,6 +5,7 @@ import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.CliError
 import com.fromwau.klap.TypedCli
+import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
 
@@ -38,8 +39,8 @@ import com.fromwau.klap.projection
 public fun mvCli(): TypedCli<MvInputs> = cliOf("mv") {
     // GNU mv takes any unambiguous prefix of a long option: `mv --strip` reaches --strip-trailing-slashes.
     abbreviation = Abbreviation.Options
-    description = "Rename SOURCE to DEST, or move SOURCE(s) to DIRECTORY."
-    version = "9.11"
+    help = "Rename SOURCE to DEST, or move SOURCE(s) to DIRECTORY."
+    version = Version.Of("9.11")
     epilogue = "The backup suffix is '~', unless set with --suffix or SIMPLE_BACKUP_SUFFIX. " +
         "If you specify more than one of -i, -f, -n, only the final one takes effect."
 
@@ -51,43 +52,51 @@ public fun mvCli(): TypedCli<MvInputs> = cliOf("mv") {
     // `--backup[=CONTROL]` is optional-value: bare `--backup` binds "existing" (GNU's own documented
     // default when CONTROL is omitted and VERSION_CONTROL is unset), matching real mv's `-b` exactly, and
     // the space form still leaves the operands alone.
-    val backup = option("--backup", help = "make a backup of each existing destination file")
+    val backup = option(long = "backup", help = "make a backup of each existing destination file")
         .choice("none", "off", "numbered", "t", "existing", "nil", "simple", "never")
         .optionalValue("existing")
 
     // Short-only, with no invented `--b` alongside it.
-    val backupSimple = flag("-b", help = "like --backup but does not accept an argument")
+    val backupSimple = flag(short = 'b', help = "like --backup but does not accept an argument")
 
-    val force = flag("--force", "-f", help = "do not prompt before overwriting")
-    val interactive = flag("--interactive", "-i", help = "prompt before overwrite")
-    val noClobber = flag("--no-clobber", "-n", help = "do not overwrite an existing file")
+    val force = flag(short = 'f', long = "force", help = "do not prompt before overwriting")
+    val interactive = flag(short = 'i', long = "interactive", help = "prompt before overwrite")
+    val noClobber = flag(short = 'n', long = "no-clobber", help = "do not overwrite an existing file")
 
     lastWins(force, interactive, noClobber)
 
-    val targetDirectory = option("--target-directory", "-t", help = "move all SOURCE arguments into DIRECTORY")
+    val targetDirectory = option(
+        short = 't',
+        long = "target-directory",
+        help = "move all SOURCE arguments into DIRECTORY",
+    )
         .file()
         .placeholder("DIRECTORY")
-    val noTargetDirectory = flag("--no-target-directory", "-T", help = "treat DEST as a normal file")
+    val noTargetDirectory = flag(short = 'T', long = "no-target-directory", help = "treat DEST as a normal file")
 
-    val suffix = option("--suffix", "-S", help = "override the usual backup suffix").placeholder("SUFFIX")
+    val suffix = option(short = 'S', long = "suffix", help = "override the usual backup suffix").placeholder("SUFFIX")
 
     // mv spells --update two ways: the long form takes a value, the short form (`-u`) takes none. klap
     // has no way to express that as one input, so they stay independent holders the action reconciles by
     // hand — `mv -u --update=none a b` is legal here, where real mv simply resolves to `none`.
-    val update = option("--update", help = "control which existing files are updated")
+    val update = option(long = "update", help = "control which existing files are updated")
         .choice("all", "none", "none-fail", "older")
         .optionalValue("older")
-    val updateOlder = flag("-u", help = "equivalent to --update=older")
+    val updateOlder = flag(short = 'u', help = "equivalent to --update=older")
 
-    val verbose = flag("--verbose", "-v", help = "explain what is being done")
-    val debug = flag("--debug", help = "explain how a file is copied; implies -v")
-    val exchange = flag("--exchange", help = "exchange source and destination")
-    val noCopy = flag("--no-copy", help = "do not copy if renaming fails")
+    val verbose = flag(short = 'v', long = "verbose", help = "explain what is being done")
+    val debug = flag(long = "debug", help = "explain how a file is copied; implies -v")
+    val exchange = flag(long = "exchange", help = "exchange source and destination")
+    val noCopy = flag(long = "no-copy", help = "do not copy if renaming fails")
     val stripTrailingSlashes = flag(
-        "--strip-trailing-slashes",
+        long = "strip-trailing-slashes",
         help = "remove any trailing slashes from each SOURCE argument",
     )
-    val context = flag("--context", "-Z", help = "set the SELinux security context of DEST to the default type")
+    val context = flag(
+        short = 'Z',
+        long = "context",
+        help = "set the SELinux security context of DEST to the default type",
+    )
 
     // Two slots, and the shape-dependent minimum comes with them: `mv a b c` binds sources = [a, b] and
     // dest = c, `-t DIR` removes the DEST slot so `mv -t d a` binds sources = [a] with no destination

@@ -13,6 +13,7 @@ import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.constraintToken
 import com.fromwau.klap.internal.spec.longs
 import com.fromwau.klap.internal.spec.negativeLongs
+import com.fromwau.klap.internal.spec.negationTokens
 import com.fromwau.klap.internal.spec.negativeShorts
 import com.fromwau.klap.internal.spec.requireValidName
 import com.fromwau.klap.internal.spec.shorts
@@ -20,22 +21,25 @@ import com.fromwau.klap.internal.spec.token
 
 /**
  * Long names silently consumed by klap's pre-strip/help injection at every command level, for a root whose
- * [builtins] resolved this way. `help`/`help-all`/`version` are always injected — `builtins { }` cannot
- * decline them — so they are reserved unconditionally; the rest free their name when declined.
+ * [builtins] resolved this way. `help`/`version` are always injected — `builtins { }` cannot decline them —
+ * so they are reserved unconditionally, `help-all` wherever the tree has a subcommand for it to expand; the
+ * rest free their name when declined.
  */
 private fun reservedLongNames(builtins: Builtins): Set<String> = buildSet {
-    add("help")
-    add("help-all")
-    add("version")
+    if (builtins.help) add("help")
+    if (builtins.helpAll) add("help-all")
+    add(builtins.versionLong)
     if (builtins.json) add("json")
     if (builtins.completion) add("completion")
     if (builtins.docs) add("docs")
     if (builtins.color) add("color")
 }
 
-/** Short names silently consumed by klap's pre-strip/help injection; only `-h`, and only while it is offered. */
-private fun reservedShortNames(builtins: Builtins): Set<String> =
-    if (builtins.helpShort) setOf("h") else emptySet()
+/** Short names klap's own built-ins consume: `-h` while it is offered, and the version short a tool set. */
+private fun reservedShortNames(builtins: Builtins): Set<String> = setOfNotNull(
+    builtins.helpShort?.toString(),
+    builtins.versionShort?.toString(),
+)
 
 /** Section headings `--help` emits on its own (see `Help.kt`); a group titled with one renders a duplicate heading. */
 private val RESERVED_SECTIONS = setOf("Commands", "Global options", "Examples")
@@ -227,7 +231,7 @@ internal fun validateSpellings(
         if (spec is FlagSpec && spec.negatable && spec.negativeNames.isEmpty()) {
             require(spec.longs.isNotEmpty()) {
                 "command '$name': flag '${spec.token()}' is negatable but has no long spelling to generate " +
-                    "'--no-...' from; pass the negative spellings explicitly, as .negatable(\"-P\")"
+                    "'--no-...' from; pass the negative spellings explicitly, as .negatable(short = 'P')"
             }
         }
     }
@@ -255,6 +259,39 @@ internal fun validateSubcommands(name: String, subs: List<Command>) {
     requireWellFormedAliases(name, subs)
     requireNoAliasCollisions(name, subs)
     subs.forEach { requireUnreservedSectionTitle(name, "subcommand '${it.name}'", it.section) }
+}
+
+/**
+ * A flag-spelled command is found by its spelling anywhere among its parent's options, so that spelling must
+ * name nothing else there: not one of the parent's own inputs, not a global, not a sibling's, and not one of the
+ * command's own inputs, whose spelling the parent would take first. It has no word to alias.
+ */
+internal fun validateFlagSpelledCommands(
+    name: String,
+    specs: List<HolderSpec>,
+    globalSpecs: List<NamedSpec>,
+    subs: List<Command>,
+) {
+    val flagSubs = subs.filter { it.isFlagSpelled }
+    if (flagSubs.isEmpty()) return
+    val taken = (specs.filterIsInstance<NamedSpec>() + globalSpecs).flatMap { spec ->
+        spec.names + if (spec is FlagSpec) spec.negationTokens else emptyList()
+    }.toSet()
+    val duplicate = flagSubs.flatMap { it.flagSpellings }.firstDuplicate()
+    require(duplicate == null) { "command '$name': two commands are spelled '$duplicate'" }
+    for (sub in flagSubs) {
+        require(sub.aliases.isEmpty()) {
+            "command '$name': '${sub.token}' is reached by its spelling, so it takes no aliases"
+        }
+        for (spelling in sub.flagSpellings) {
+            require(spelling !in taken) {
+                "command '$name': command '${sub.token}' is spelled '$spelling', which an option or global already uses"
+            }
+            require(sub.namedInputs.none { spelling in it.names }) {
+                "command '${sub.token}': one of its own inputs is spelled '$spelling', the command's own spelling"
+            }
+        }
+    }
 }
 
 /**
@@ -366,7 +403,7 @@ internal fun validateNegationCollisions(name: String, specs: List<HolderSpec>) {
     val declaredNames = specs.filterIsInstance<NamedSpec>().flatMap { it.names }.toSet()
     val negatedNamesSeen = mutableSetOf<String>()
     for (spec in specs.filterIsInstance<FlagSpec>().filter { it.negatable }) {
-        val negations = spec.negativeLongs.map { "--$it" } + spec.negativeShorts.map { "-$it" }
+        val negations = spec.negationTokens
         for (negation in negations) {
             require(negation !in declaredNames) {
                 "command '$name': flag '${spec.token()}' negation '$negation' collides with a declared option/flag name"
@@ -402,7 +439,7 @@ internal fun validateGlobalCollisions(
     val globalNegations = globalSpecs
         .filterIsInstance<FlagSpec>()
         .filter { it.negatable }
-        .flatMap { spec -> spec.negativeLongs.map { "--$it" } + spec.negativeShorts.map { "-$it" } }
+        .flatMap { spec -> spec.negationTokens }
     // A plain global name colliding with another global's negation (or two negations colliding with each
     // other) is just as unreachable as two plain names colliding, so check the combined set here too.
     val globalEffectiveNames = globalNames + globalNegations
@@ -420,7 +457,7 @@ internal fun validateGlobalCollisions(
                 }
             }
             if (spec is FlagSpec && spec.negatable) {
-                val negations = spec.negativeLongs.map { "--$it" } + spec.negativeShorts.map { "-$it" }
+                val negations = spec.negationTokens
                 for (negation in negations) {
                     require(negation !in globalEffectiveNameSet) {
                         "command '$cmdName': flag '${spec.token()}' negation '$negation' collides with a global's name or a global's negation"
@@ -431,6 +468,11 @@ internal fun validateGlobalCollisions(
     }
 
     fun walk(command: Command) {
+        for (spelling in command.flagSpellings) {
+            require(spelling !in globalEffectiveNameSet) {
+                "command '${command.token}': its spelling '$spelling' collides with a global's name or negation"
+            }
+        }
         checkSpecs(command.name, command.specs)
         command.subcommands.forEach(::walk)
     }
@@ -487,6 +529,14 @@ internal fun validateReservedNames(
     }
 
     fun walk(command: Command) {
+        for (spelling in command.flagSpellings) {
+            val reserved = if (spelling.startsWith("--")) {
+                spelling.drop(2) in reservedLong
+            } else {
+                spelling.drop(1) in reservedShort
+            }
+            require(!reserved) { "command '${command.token}': its spelling '$spelling' is reserved by a klap built-in" }
+        }
         check(command.name, command.specs, emptyList())
         command.subcommands.forEach(::walk)
     }

@@ -52,11 +52,11 @@ targets have no floor.
 
 ```kotlin
 fun main(args: Array<String>) = cli("greet") {
-    version = "1.0.0"
+    version = Version.Of("1.0.0")
 
     val name = argument("name", "who to greet")
-    val times = option("--times", "-n", help = "repeat count").int().default(1)
-    val loud = flag("--loud", "-l", help = "shout it")
+    val times = option(short = 'n', long = "times", help = "repeat count").int().default(1)
+    val loud = flag(short = 'l', long = "loud", help = "shout it")
 
     action {
         val line = if (loud()) "HELLO, ${name().uppercase()}!" else "Hello, ${name()}."
@@ -84,8 +84,8 @@ data class GreetArgs(val name: String, val times: Int, val loud: Boolean)
 
 val greet = cliOf("greet") {
     val name = argument("name")
-    val times = option("--times", "-n").int().default(1)
-    val loud = flag("--loud", "-l")
+    val times = option(short = 'n', long = "times").int().default(1)
+    val loud = flag(short = 'l', long = "loud")
     action { Ok("...") }
     projection { GreetArgs(name(), times(), loud()) }
 }

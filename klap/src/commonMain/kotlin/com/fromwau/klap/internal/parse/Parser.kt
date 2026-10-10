@@ -6,6 +6,7 @@ import com.fromwau.kern.result.getOrElse
 import com.fromwau.kern.result.getOrNull
 import com.fromwau.kern.result.map
 import com.fromwau.klap.Abbreviation
+import com.fromwau.klap.infersValues
 import com.fromwau.klap.ActionScope
 import com.fromwau.klap.Builtins
 import com.fromwau.klap.Cli
@@ -61,9 +62,9 @@ internal fun String.isFlagLike(): Boolean =
     startsWith("-") && this != END_OF_OPTIONS && this != "-"
 
 /**
- * Every short spelling [specs] answer to, a negatable flag's negative shorts included: `.negatable("-3")`
- * declares `-3` as surely as `flag("-4")` declares `-4`, and a run that swallowed it would leave a declared
- * spelling no line could reach.
+ * Every short spelling [specs] answer to, a negatable flag's negative shorts included:
+ * `.negatable(short = '3')` declares `-3` as surely as `flag(short = '4')` declares `-4`, and a run
+ * that swallowed it would leave a declared spelling no line could reach.
  */
 private fun declaredShortsOf(specs: List<NamedSpec>): Set<String> =
     specs.flatMapTo(mutableSetOf()) { spec ->
@@ -76,13 +77,13 @@ private fun declaredShortsOf(specs: List<NamedSpec>): Set<String> =
  * the run names a declared short.
  *
  * That last case is POSIX.1 XBD 12.2 guideline 14 — a token identifiable as a group of options must be
- * treated as one — scoped to the RUN rather than to the whole token. `-4` where `flag("-4")` is declared is
+ * treated as one — scoped to the RUN rather than to the whole token. `-4` where a flag `-4` is declared is
  * that flag; `-45` where only `-4` is declared is not a valid group, so it is the number 45. A global's
  * shorts count as much as this command's own, since a cluster mixing the two reaches this sift whole
  * ([siftGlobals]), and a flag's negative shorts count as much as its positive ones ([declaredShortsOf]).
  *
  * The run is cut out before the per-character walk reaches inside it, which is what settles `-25` beside a
- * value-taking `option("--two", "-2")`: the run wins and the number is 25, rather than `-2` taking `5` as
+ * value-taking `option(short = '2', long = "two")`: the run wins and the number is 25, rather than `-2` taking `5` as
  * its value. Where the run IS fully covered (`-2 5`) this declines and the ordinary cluster reading holds.
  */
 internal fun Command.numberRunAt(
@@ -104,7 +105,14 @@ internal fun Command.numberRunAt(
  * the character is reserved at build time while the built-in is offered, so no spec can be holding it.
  */
 internal fun GlobalAccumulator?.isHelpShort(ch: Char): Boolean =
-    ch == 'h' && (this?.builtins ?: Builtins.DEFAULT).helpShort
+    ch == (this?.builtins ?: Builtins.DEFAULT).helpShort
+
+/** Whether [ch] is the short alias a tool gave `--version`; reserved at build time like the help short. */
+internal fun GlobalAccumulator?.isVersionShort(ch: Char): Boolean =
+    ch == (this?.builtins ?: Builtins.DEFAULT).versionShort
+
+/** Whether [ch] is one of klap's own shorts, which a cluster reads past like a declared flag. */
+internal fun GlobalAccumulator?.isBuiltinShort(ch: Char): Boolean = isHelpShort(ch) || isVersionShort(ch)
 
 /** Whether any operand slot is `dashLed()`; over [Command.specs] so the answer costs one pass and no list. */
 private val Command.hasDashLedSlot: Boolean get() = specs.any { it is ArgumentSpec && it.dashLed }
@@ -182,13 +190,13 @@ internal fun Command.bind(
         sifted.negations,
         sifted.options,
         sink,
-        globalAcc?.inferNames ?: false,
+        globalAcc?.inferValues ?: false,
     ).getOrElse { return Result.Error(it) }
     // Ahead of resolveLastWins: a fold reads its winner's bound value, and an ENCLOSING set that overrode
     // the fold must then be free to reset it.
     resolveFolds(sifted, sink)
     resolveLastWins(sifted, sink)
-    bindPositionals(sifted.positionals, sink, sifted, globalAcc?.inferNames ?: false, qualifiedName = qualifiedName)
+    bindPositionals(sifted.positionals, sink, sifted, globalAcc?.inferValues ?: false, qualifiedName = qualifiedName)
         .getOrElse { return Result.Error(it) }
     checkConditionalRequirements(sifted, globalAcc)?.let { return Result.Error(it) }
     // Placeholder scope: parse() attaches the completed snapshot (command inputs + globals) via copy().
@@ -344,15 +352,21 @@ internal fun Command.activeArguments(
  * unmatched value is left for the converter to reject, so the InvalidChoice list and its suggestion are
  * still what the user sees.
  *
- * Matching is case-insensitive on both halves, because `.choice()` / `.enum<E>()` already are: the pool is
- * lowered only to compare, and the DECLARED spelling is what comes back, since that is what the converter
- * canonicalises against. A free function, taking [name] rather than a [ValueSpec] receiver, so klap's own
+ * Matching is in exact case unless [ignoreCase], as the converter's own is: the pool is lowered only to
+ * compare, and the DECLARED spelling is what comes back, since that is what the converter canonicalises
+ * against. A free function, taking [name] rather than a [ValueSpec] receiver, so klap's own
  * built-in choice values (`--color`, `completion <shell>`, `docs <format>`) share this implementation
  * without a spec of their own to be an extension on.
  */
-internal fun resolveChoice(name: String, raw: String, choices: List<String>): Result<String, CliError> {
-    val lowered = choices.map { it.lowercase() }
-    return when (val match = resolveName(raw.lowercase(), lowered, infer = true)) {
+internal fun resolveChoice(
+    name: String,
+    raw: String,
+    choices: List<String>,
+    ignoreCase: Boolean = false,
+): Result<String, CliError> {
+    val lowered = if (ignoreCase) choices.map { it.lowercase() } else choices
+    val typed = if (ignoreCase) raw.lowercase() else raw
+    return when (val match = resolveName(typed, lowered, infer = true)) {
         is NameMatch.Exact, NameMatch.None -> Result.Success(raw)
         is NameMatch.Prefix -> Result.Success(choices[lowered.indexOf(match.name)])
         is NameMatch.Ambiguous -> Result.Error(
@@ -378,9 +392,9 @@ private fun Command.longOptionCandidates(globalAcc: GlobalAccumulator?): List<St
     val negatable = (localFlags + globalFlags).filter { it.negatable }
     val offered = globalAcc?.builtins ?: Builtins.DEFAULT
     val builtins = listOfNotNull(
-        "--help",
+        "--help".takeIf { offered.help },
         "--json".takeIf { offered.json },
-        "--version".takeIf { globalAcc?.rootVersion != null },
+        "--${offered.versionLong}".takeIf { globalAcc?.rootVersion != null },
     )
     return (localOptions + localFlags + globalOptions + globalFlags).flatMap { spec -> spec.longs.map { "--$it" } } +
             negatable.flatMap { spec -> spec.negativeLongs.map { "--$it" } } +
@@ -471,7 +485,7 @@ private fun Command.ambiguousOrUnknown(
  * Hidden subcommands are excluded so a typo suggestion never reveals a hidden command's name.
  */
 internal fun Command.subcommandCandidates(): List<String> =
-    subcommands.filterNot { it.hidden }.flatMap { listOf(it.name) + it.aliases }
+    subcommands.filterNot { it.hidden }.flatMap { it.words }
 
 /**
  * A cluster char resolved to the spec it names. [globals] is non-null exactly when the char named a global
@@ -730,6 +744,13 @@ internal fun Command.sift(
                         continue
                     }
 
+                    if (globalAcc.isVersionShort(chars[j])) {
+                        // Klap's own, so it binds nothing here; the version ladder answers it.
+                        if (chars.getOrNull(j + 1) == '=') record { CliError.FlagTakesNoValue("--${(globalAcc?.builtins ?: Builtins.DEFAULT).versionLong}", null) }
+                        j += 1
+                        continue
+                    }
+
                     if (globalAcc.isHelpShort(chars[j])) {
                         // Klap's own, so it binds nothing here; the help ladder answers it. An inline
                         // `=value` on it is the same usage error a declared boolean short reports.
@@ -815,7 +836,7 @@ internal fun List<FlagSpec>.findNegatedShort(short: String): FlagSpec? =
 /**
  * [findFlag], but also matching a dash-prefixed short by its NEGATED spelling: a short cluster's
  * preceding char (see [clusterCharError]) may have been consumed as either half, and only this combined
- * lookup lets a negative short (`-P` in `.negatable("-P")`) be blamed by name instead of falling through
+ * lookup lets a negative short (`-P` in `.negatable(short = 'P')`) be blamed by name instead of falling through
  * to a phantom [CliError.UnknownOption].
  */
 private fun List<FlagSpec>.findFlagOrNegatedShort(token: String): FlagSpec? =
@@ -879,7 +900,7 @@ private fun Command.firstUnresolvedShort(
             continue
         }
         val c = chars[j]
-        if (globalAcc.isHelpShort(c)) {
+        if (globalAcc.isBuiltinShort(c)) {
             j += 1
             continue
         }
@@ -908,7 +929,18 @@ private fun Command.firstUnresolvedShort(
  * sits in a cluster already refused (`-xh`), and on a `dashLed()` command a cluster that resolves to
  * nothing is an operand (`-1h`).
  */
-internal fun Command.namesHelpShort(token: String, globalAcc: GlobalAccumulator?): Boolean {
+internal fun Command.namesHelpShort(token: String, globalAcc: GlobalAccumulator?): Boolean =
+    namesBuiltinShort(token, globalAcc) { globalAcc.isHelpShort(it) }
+
+/** Whether [token] asks for the version through the short a tool gave it; read as [namesHelpShort] reads `-h`. */
+internal fun Command.namesVersionShort(token: String, globalAcc: GlobalAccumulator?): Boolean =
+    namesBuiltinShort(token, globalAcc) { globalAcc.isVersionShort(it) }
+
+private fun Command.namesBuiltinShort(
+    token: String,
+    globalAcc: GlobalAccumulator?,
+    asked: (Char) -> Boolean,
+): Boolean {
     if (!token.isFlagLike() || token.startsWith("--")) return false
     val chars = token.removePrefix("-")
     if (hasDashLedSlot && !shortClusterResolvesInFull(chars, globalAcc)) return false
@@ -920,7 +952,11 @@ internal fun Command.namesHelpShort(token: String, globalAcc: GlobalAccumulator?
             continue
         }
         // An `=value` on a boolean built-in is a usage error, raised where the sift walks the cluster.
-        if (globalAcc.isHelpShort(chars[j])) return chars.getOrNull(j + 1) != '='
+        if (asked(chars[j])) return chars.getOrNull(j + 1) != '='
+        if (globalAcc.isBuiltinShort(chars[j])) {
+            j += 1
+            continue
+        }
         val ch = chars[j].toString()
         if (globalAcc.clusterHit(findFlag("-$ch")) { flagSpecs.findFlag("-$ch") } != null) {
             j += 1
@@ -939,6 +975,10 @@ internal fun Command.namesHelpShort(token: String, globalAcc: GlobalAccumulator?
 internal fun ArgvScan.namesHelpShort(cmd: Command, globalAcc: GlobalAccumulator?): Boolean =
     openTokens.any { cmd.namesHelpShort(it, globalAcc) }
 
+/** Whether any token [this] scan may act on names the version short; see [Command.namesVersionShort]. */
+internal fun ArgvScan.namesVersionShort(cmd: Command, globalAcc: GlobalAccumulator?): Boolean =
+    openTokens.any { cmd.namesVersionShort(it, globalAcc) }
+
 /**
  * The error for an unrecognized char at `chars[j]` inside a short cluster (the chars before it, `chars[0
  * until j]`, were all consumed by the walk — a flag, a negative short, klap's help short, or a digit run
@@ -947,7 +987,7 @@ internal fun ArgvScan.namesHelpShort(cmd: Command, globalAcc: GlobalAccumulator?
  * form does. It names the preceding flag rather than the phantom `-=` a bare `"-$ch"` would fabricate;
  * both callers back [findFlag] with [findFlagOrNegatedShort], so a preceding NEGATIVE short is named too.
  * That lookup is per-character, so where a run was consumed the char before the `=` is its last DIGIT, and
- * `-12=x` beside `flag("-2")` blames `-2` — a spelling the run swallowed. Left as it is: the `=` is a usage
+ * `-12=x` beside a flag `-2` blames `-2` — a spelling the run swallowed. Left as it is: the `=` is a usage
  * error under either reading.
  * Any other stray non-alphanumeric char (e.g. the
  * `-` in `-f-y`) blames the whole original [token] instead of fabricating `"-$ch"` (which for `ch == '-'`
@@ -1328,8 +1368,11 @@ internal class GlobalAccumulator(
         if (spec.negatable) negations.recordPolarity(spec, on = on, at = position)
     }
 
-    /** Whether a long option or a declared choice value resolves by prefix here; an exact spelling always binds. */
+    /** Whether a long option name resolves by prefix here; an exact spelling always binds. */
     val inferNames: Boolean get() = abbreviation != Abbreviation.None
+
+    /** Whether a declared choice value resolves by prefix here: [Abbreviation.Options] and [Abbreviation.All]. */
+    val inferValues: Boolean get() = abbreviation.infersValues
 
     /** Whether a subcommand name resolves by prefix here; only [Abbreviation.All] reaches this far. */
     val inferSubcommands: Boolean get() = abbreviation == Abbreviation.All

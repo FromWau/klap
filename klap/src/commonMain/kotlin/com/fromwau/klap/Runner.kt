@@ -76,7 +76,7 @@ private inline fun Cli.runCore(
     val json = builtins.json && scan.names("json")
     // --color=always/never beats the whole env ladder below; auto (absent/bare/invalid) defers to the
     // terminal's own reading, unchanged. A bad/missing --color value is reported by parse() itself, not here.
-    val mode = argList.colorMode(builtins, builtinPool, scan.valueSlots, abbreviation != Abbreviation.None)
+    val mode = argList.colorMode(builtins, builtinPool, scan.valueSlots, abbreviation)
     val effectiveColor = when (mode) {
         ColorMode.ALWAYS -> true
         ColorMode.NEVER -> false
@@ -123,6 +123,7 @@ private inline fun Invocation.render(
 ): Int = when (this) {
     is Invocation.ShowHelp -> {
         val text = when {
+            builtins.helpPage != null && !json -> builtins.helpPage
             json -> command.helpJsonText(qualifiedName, globalSpecs, rootVersioned, builtins, recursive)
             recursive -> command.helpTextAll(qualifiedName, globalSpecs, style, rootVersioned, builtins)
             else -> command.helpText(qualifiedName, globalSpecs, style, rootVersioned, builtins)
@@ -134,7 +135,8 @@ private inline fun Invocation.render(
         // One expression for both shapes: `version` is non-null for anything parse() produces, but this
         // class is publicly constructible, so the two branches must not disagree about a null one.
         val version = cli.version.orEmpty()
-        terminal.outputLine(if (json) jsonVersionEnvelope(cli.name, version) else "${cli.name} $version")
+        val line = cli.builtins.versionPrint ?: "${cli.name} $version"
+        terminal.outputLine(if (json) jsonVersionEnvelope(cli.name, version) else line)
     }
     is Invocation.ShowCompletion -> terminal.outputLine(cli.renderCompletion(shell))
     is Invocation.ShowDocs -> terminal.outputLine(cli.renderDocs(format))

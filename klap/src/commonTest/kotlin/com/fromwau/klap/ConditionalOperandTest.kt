@@ -11,7 +11,7 @@ import kotlin.test.assertTrue
 class ConditionalOperandTest {
 
     private fun chmodLike() = cli("chmod") {
-        val reference = option("--reference")
+        val reference = option(long = "reference")
         val mode = argument("mode").absentWhen(reference)
         val files = argument("file").multiple(min = 1)
         action<String>(human = { it }) { Ok("mode=${mode()} files=${files()}") }
@@ -42,7 +42,7 @@ class ConditionalOperandTest {
     }
 
     private fun rmLike() = cli("rm") {
-        val force = flag("--force", "-f")
+        val force = flag(short = 'f', long = "force")
         val files = argument("file").multiple(min = 1).requiredUnless(force)
         action<String>(human = { it }) { Ok("files=${files()}") }
     }
@@ -76,7 +76,7 @@ class ConditionalOperandTest {
     @Test
     fun `a slot already shown as optional keeps a single pair of brackets when it can disappear`() {
         fun usage(slot: CommandBuilder.(Opt<String?>) -> Unit) = cli("tool") {
-            val file = option("--file")
+            val file = option(long = "file")
             slot(file)
             action { Ok("") }
         }.helpLines().first()
@@ -99,7 +99,7 @@ class ConditionalOperandTest {
         // hold at build time, or the whole variadic silently vanishes on a line that names the trigger.
         val e = assertFailsWith<IllegalArgumentException> {
             cli("chmod") {
-                val reference = option("--reference")
+                val reference = option(long = "reference")
                 val files = argument("file").absentWhen(reference).multiple(min = 1)
                 action<String>(human = { it }) { Ok("files=${files()}") }
             }
@@ -111,7 +111,7 @@ class ConditionalOperandTest {
     fun `a slot with no declared minimum cannot relax one`() {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
-                val force = flag("--force", "-f")
+                val force = flag(short = 'f', long = "force")
                 val out = argument("out").requiredUnless(force)
                 action<String>(human = { it }) { Ok("out=${out()}") }
             }
@@ -120,8 +120,8 @@ class ConditionalOperandTest {
     }
 
     private fun cpLike() = cli("cp") {
-        val targetDirectory = option("--target-directory", "-t")
-        val noTargetDirectory = flag("--no-target-directory", "-T")
+        val targetDirectory = option(short = 't', long = "target-directory")
+        val noTargetDirectory = flag(short = 'T', long = "no-target-directory")
         lastWins(targetDirectory, noTargetDirectory)
         val source = argument("source").multiple(min = 1)
         val dest = argument("dest").absentWhen(targetDirectory)
@@ -143,8 +143,8 @@ class ConditionalOperandTest {
     }
 
     private fun rmLikeWithOverride() = cli("rm") {
-        val force = flag("--force", "-f")
-        val interactive = flag("--interactive", "-i")
+        val force = flag(short = 'f', long = "force")
+        val interactive = flag(short = 'i', long = "interactive")
         lastWins(force, interactive)
         val files = argument("file").multiple(min = 1).requiredUnless(force)
         action<String>(human = { it }) { Ok("force=${force()} files=${files()}") }
@@ -169,7 +169,7 @@ class ConditionalOperandTest {
             cli("app") {
                 var foreign: Opt<String?>? = null
                 command("one") {
-                    foreign = option("--reference")
+                    foreign = option(long = "reference")
                     action { Ok("") }
                 }
                 command("two") {
@@ -185,7 +185,7 @@ class ConditionalOperandTest {
     fun `a global trigger is rejected`() {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
-                val force = globalFlag("--force", "-f")
+                val force = globalFlag(short = 'f', long = "force")
                 command("go") {
                     argument("file").multiple(min = 1).requiredUnless(force)
                     action { Ok("") }

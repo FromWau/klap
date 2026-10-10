@@ -23,14 +23,16 @@ class TerminalPolicyTest {
     @Test
     fun `color mode value prefix resolves only under abbreviation`() {
         // Unambiguous prefix, abbreviation on: resolves through the same resolveChoice parse() uses.
-        assertEquals(ColorMode.ALWAYS, listOf("--color", "al").colorMode(infer = true))
+        assertEquals(ColorMode.ALWAYS, listOf("--color", "al").colorMode(abbreviation = Abbreviation.Options))
         // "a" reaches both "auto" and "always"; lenient, so ambiguity falls back to AUTO, never errors.
-        assertEquals(ColorMode.AUTO, listOf("--color", "a").colorMode(infer = true))
-        // Abbreviation off: a prefix is just an unrecognized value, so it falls back to AUTO too.
-        assertEquals(ColorMode.AUTO, listOf("--color", "al").colorMode(infer = false))
+        assertEquals(ColorMode.AUTO, listOf("--color", "a").colorMode(abbreviation = Abbreviation.Options))
+        // Abbreviation off, or on for long names only: a prefix is just an unrecognized value, so AUTO too.
+        assertEquals(ColorMode.AUTO, listOf("--color", "al").colorMode(abbreviation = Abbreviation.None))
+        assertEquals(ColorMode.AUTO, listOf("--color", "al").colorMode(abbreviation = Abbreviation.LongOptions))
+        assertEquals(ColorMode.ALWAYS, listOf("--col", "always").colorMode(abbreviation = Abbreviation.LongOptions))
         // An exact spelling resolves regardless of the flag.
-        assertEquals(ColorMode.ALWAYS, listOf("--color", "always").colorMode(infer = true))
-        assertEquals(ColorMode.ALWAYS, listOf("--color", "always").colorMode(infer = false))
+        assertEquals(ColorMode.ALWAYS, listOf("--color", "always").colorMode(abbreviation = Abbreviation.Options))
+        assertEquals(ColorMode.ALWAYS, listOf("--color", "always").colorMode(abbreviation = Abbreviation.None))
     }
 
     @Test
