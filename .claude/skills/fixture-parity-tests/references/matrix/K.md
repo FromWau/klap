@@ -68,7 +68,7 @@ quoted in each row's note.
 | K12d2 | an operand an `.absentWhen()` trigger removes, the trigger after the cursor | | | | | `cp ‸ -t dir` (the trigger after the cursor) |
 | K12d3 | an operand an `.absentWhen()` trigger removes, the trigger attached, glued, abbreviated | `cp --target-directory=d a‸`, `cp -td a‸`, `cp --target=d a‸` | | | | |
 | K13a | built-in `--help` | `cp --he‸` | `cp --h‸e` | `cp ‸--help` | | `cp --he‸ src`; a built-in that answers alone, then the cursor: `cp --help ‸` (K59) |
-| K13b | built-in `-h`, and its absence where `helpShort = false` | `-h` on its own: `cp -h‸` | | | | |
+| K13b | built-in `-h`, and its absence where `help = Help.Generate(short = null)` | `-h` on its own: `cp -h‸` | | | | |
 | K13c | built-in `--help-all`, only where visible subcommands exist | `git --help‸` against `cp --help‸` | | | | |
 | K13d | built-in `--version`, only with a version | `--version` only where declared | | | | |
 | K13e | built-in `--json` | the `--json` name | | | | |
@@ -305,7 +305,7 @@ Notes:
 - K53: `colorValueCandidates` on the raw head, before the walk strips `--color` (planner L79, L390). Every fixture
   that keeps `color` (all but ls and pacman).
 - K54: `scan.matched` resolves `--col` by abbreviation mode (planner L391); CompletionTest "an abbreviated color
-  option ..." tests. git (Options), curl and rsync (None: `--col ‸` is an operand), ls and pacman (`color = false`).
+  option ..." tests. git (Options), curl and rsync (None: `--col ‸` is an operand), ls and pacman (`color = Builtin.Off`).
 - Disputed: K54's `pacman --color ‸` (declined: an operand) misreads pacman, whose own `--color <when>` takes a
   required value (`pacman -Q --color` is "option '--color' requires an argument"), so the slot is its value: the
   choices, a pass.
@@ -327,7 +327,7 @@ Notes:
   git; the real tool's own completion decides each cell.
 - K60: `walkLine` strips `--json`, then `--color` with its value, before the walk (planner L303-304). git, dd,
   task-manager.
-- K61: `builtins { helpShort = false }` drops klap's `-h` (planner L191) so the declared flag answers. ls, rsync.
+- K61: `builtins { help = Help.Generate(short = null) }` drops klap's `-h` (planner L191) so the declared flag answers. ls, rsync.
 
 ## Routing: which command the slot belongs to
 
@@ -441,7 +441,7 @@ Notes:
 | K7l | a cluster made only of global letters before the subcommand | `tasks -vv‸`, `tasks -vv l‸` (routes on) | | | `tasks -vv‸ list` |
 | K7m | a global value-taking short ending a cluster | `tasks -vf‸`, `tasks -vfstore.json‸` (glued value) | `tasks -vf‸store.json` | | `tasks -vf ‸ list` (the value in its own word) |
 | K7n | a global value-taking short after local letters (needs checking) | `tasks list -rf‸`, `tasks list -rfx.json‸` | | | `tasks list -rf ‸` |
-| K7o | another spelling of an input already in the cluster | `tool -r‸` offers `-rR`? (`flag("--recursive", "-r", "-R")`, one holder); cp's `-r`/`-R` are two flags, `cp -r‸` offering `-rR` | | | `tool -r‸ src` |
+| K7o | another spelling of an input already in the cluster | `tool -r‸` offers `-rR`? (`flag(short = listOf('r', 'R'), long = "recursive")`, one holder); cp's `-r`/`-R` are two flags, `cp -r‸` offering `-rR` | | | `tool -r‸ src` |
 | K7p | a counted letter given twice already | `ssh -vv‸`, `pacman -Syy‸` | `ssh -v‸v` | | `ssh -vv‸ host` |
 | K7q | a member of an exactly-one or at-most-one set in the cluster | `pacman -S‸` (no `-SQ`, `-SR`), `tar -c‸` (no `-cx`), `tar -cz‸` (no `-czj`) | `tar -c‸z` | | `tar -cz‸ src` |
 | K7r | a punctuation or digit letter in a cluster | `curl -s:‸`, `ls -1l‸`, `curl -4s‸` | `ls -1‸l` | | `ls -1l‸ dir` |
@@ -451,13 +451,23 @@ Notes:
 | K7v | a cluster after options ended at the first operand (needs checking) | `ssh web1 -vt‸` (an operand, no continuations) | | | `ssh web1 -vt‸ x` |
 | K7w | a cluster ending in an optional-value short | `git commit -aS‸`, `git commit -aSkey‸` | `git commit -aS‸key` | | `git commit -aS ‸` (an operand) |
 | K7x | a cluster ending in a value-taking short, value in the next word | `tar -cvf ‸`, `cp -rS ‸` | | | `tar -cvf ‸ src` |
+| K7y | a flag-spelled command's letter heading a cluster | `pacman -Qi‸`, `pacman -Syu‸` | `pacman -Q‸i` | `pacman ‸-Qi` | `pacman -Qi‸ pkg` |
+| K7z | the command letter not first in its cluster (47e) | `pacman -iQ‸` | `pacman -i‸Q` | | `pacman -iQ‸ pkg` |
+| K7aa | a global letter and the command letter in one cluster | `pacman -vQi‸`, `pacman -Qvi‸` (`-v` global) | `pacman -Qv‸i` | | `pacman -Qvi‸ pkg` |
+| K7ab | a global value-taking letter ending a cluster that holds the command letter | `pacman -Qvb‸`, `pacman -Qvb/tm‸` | `pacman -Qvb/‸tmp` | | `pacman -Qvb ‸ pkg` |
+| K7ac | a command's own letter in a word before the command's letter (47d) | `pacman -i -Q‸`, `pacman -i -‸` | | | `pacman -i -Q‸ pkg` |
+| K7ad | two command letters of one parent in one cluster or line | `pacman -QS‸` (nothing), `pacman -Q -S‸` | | | `pacman -Q‸ -S` |
+| K7ae | a letter two commands spell differently (pacman's `-c`: `--changelog` under `-Q`, `--cascade` under `-R`) | `pacman -Qc‸`, `pacman -Rc‸` | | | `pacman -Qc‸ pkg` |
+| K7af | the help short or the version short beside the command letter | `pacman -Qh‸`, `pacman -hQ‸`, `pacman -QV‸` | | | `pacman -Qh‸ pkg` |
+| K7ag | a parent's own (not global) letter in a word command's cluster | `tasks list -Xr‸` with `-X` the root's own flag | `tasks list -X‸r` | | `tasks list -Xr‸ x` |
+| K7ah | a flag-spelled command with word subcommands, a cluster after the subcommand (needs checking: no real tool) | `tool -Q list -vi‸` | | | `tool -Q list -vi‸ x` |
 
 Notes:
 
-- K7i: `firstNonFlagShort` does not step over the help short (planner L497-500), so `-rh` stops the cluster, while
-  `-h` is among the two-char names that become continuations (L191, L212). Every fixture keeping `helpShort`.
-  pacman: `pacman -Qhi` prints the -Q page and `pacman -Qhz` is "invalid option -- 'z'", so letters go on after
-  `-h`; klap offers only `-h` for `-h‸` and nothing for `-Qh‸` (a target).
+- K7i: since 2026-10-10 (todo 34) `firstNonFlagShort` steps over the help short where it is on, as the parse does,
+  so `-rh` continues. pacman: `pacman -Qhi` prints the -Q page and `pacman -Qhz` is "invalid option -- 'z'"; klap's
+  `ShortClusterCompletionTest` `the help short continues a cluster as any flag does`. Every fixture keeping
+  `helpShort`.
 - K7j: continuations include negative shorts (planner L184, L212), but `firstNonFlagShort` looks up `flagLookup`
   only (L511), so a typed negative short ends the cluster. cp (`-P`), ssh (`-a`), git (global `-P`).
 - K7k: `flagLookup` adds `globalAcc.flagSpecs` (planner L521). task-manager (`-v`), git (`-P`).
@@ -467,9 +477,11 @@ Notes:
   CompletionTest "a global hiding in a mixed short cluster resolves". task-manager.
 - K7o: continuations drop only the typed letters (planner L213), not other spellings of the same input. Invented
   (guide "Spellings"); cp declares `-r` and `-R` as two flags (its own comment), the nearest fixture case.
-- K7p: the typed letter is filtered (planner L213) even when counted; companion to K7e. ssh, pacman, tar, curl,
-  rsync.
-- K7q: `membersRuledOutBy(sifted)` applies to continuations (planner L177-178). pacman, tar.
+- K7p: since 2026-10-10 (todo 15) a counted letter continues a cluster that holds it, as often as typed
+  (`ShortClusterCompletionTest` `a counted short continues a cluster that already holds it`); companion to K7e.
+  ssh, pacman, tar, curl, rsync.
+- K7q: since 2026-10-10 (todo 1) a member in the cluster being continued, or typed after the cursor, rules the
+  other members out (`CompletionLineRulesTest`). pacman, tar.
 - K7r: `Candidate("-$it")` for non-letter shorts (L181). curl (`-:`, `-4`), ls (`-1`), ssh.
 - K7s: `firstNonFlagShort` stops at the unknown letter, the prefix filter leaves `[]` (planner L217). Every fixture.
 - K7t: `attachedValueOption` finds no option for `=` (planner L557), names give `[]`. cp, every fixture.
@@ -478,6 +490,17 @@ Notes:
 - K7v: as K30. ssh.
 - K7w: as K48 inside a cluster. git (`-S`).
 - K7x: as K36; the cluster-shaped half of the own-word value. tar, cp, ssh.
+- K7y to K7af: a flag-spelled command (todo 47, 48; decided 47d and 47e) reads its cluster as one set: the command
+  letter picks the command wherever it stands, the other letters are that command's options or globals, and a
+  value-taking letter takes the rest. Since klap 0.6.0 `command(short = 'Q', long = "query") { }` declares one, and
+  klap's own `FlagCommandTest` pins K7y to K7ah as parses and completion, and pacman's operations are such commands
+  since 2026-10-10, so its own cells pass too (todo 4, 5, 12).
+- K7ag: a parent's own flag is not global, so in a subcommand's cluster it names nothing, as K7s; the parse
+  refuses it.
+- K7h, K7k to K7n and K7ag are pinned in klap's own `ClusterMatrixTest`, each as a parse and as completion, and
+  pass (2026-10-10).
+- K7ah: the case that combines all three kinds: a global, a flag-spelled command's own letter and a word
+  subcommand's letter. No real tool has it; klap's own tests.
 
 ## Cursor columns
 
@@ -504,6 +527,7 @@ they apply to writes them as cells of its nearest standard column.
 | K2 to K6 | end, inside, start, words after; "no word" shows names are not offered before a dash | L1 L2 L3 | S1 S2 S3 S4 | |
 | K7a to K7e | as each row lists | L1 L2 L3 | S1 S2 S3 | |
 | K7f to K7h | as each row lists | L1 L2 | S1 | each source the input declares |
+| K7y to K7ah | as each row lists, each also as a parse (P): what the cluster binds, or its refusal | L1 L2 L3 | S1 S2 S3 | each source the input declares |
 | K8 to K10 | as each row lists | L1 L2 L3 | S1 S3 | each source the input declares |
 | K11 | as its row lists | L1 L2 | S1 | each source the input declares |
 | K12 | all five | L1 L2 L3 | S1 S5 | each source the operand declares |

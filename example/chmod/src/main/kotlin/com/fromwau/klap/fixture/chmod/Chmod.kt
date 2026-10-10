@@ -8,6 +8,7 @@ import com.fromwau.kern.result.fold
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.TypedCli
+import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
 
@@ -65,8 +66,8 @@ private fun chmodModeLabel(mode: ChmodMode): String = when (mode) {
 public fun chmodCli(): TypedCli<ChmodInputs> = cliOf("chmod") {
     // GNU chmod takes any unambiguous prefix of a long option: `chmod --re 700 d` is ambiguous.
     abbreviation = Abbreviation.Options
-    description = "Change the mode of each FILE to MODE"
-    version = "9.11"
+    help = "Change the mode of each FILE to MODE"
+    version = Version.Of("9.11")
     author = "David MacKenzie and Jim Meyering"
     epilogue = "Each MODE is of the form '[ugoa]*([-+=]([rwxXst]*|[ugo]))+|[-+=][0-7]+'."
 
@@ -74,30 +75,30 @@ public fun chmodCli(): TypedCli<ChmodInputs> = cliOf("chmod") {
     example("chmod u+x,go-w -R src", "symbolic mode, recursively")
     example("chmod -w notes.txt", "a dash-led mode binds directly; `--` still works too")
 
-    val changes = flag("--changes", "-c", help = "like verbose but report only when a change is made")
-    val silent = flag("--silent", "-f", help = "suppress most error messages")
+    val changes = flag(short = 'c', long = "changes", help = "like verbose but report only when a change is made")
+    val silent = flag(short = 'f', long = "silent", help = "suppress most error messages")
 
-    val quiet = flag("--quiet", help = "suppress most error messages (alias of --silent)")
+    val quiet = flag(long = "quiet", help = "suppress most error messages (alias of --silent)")
 
-    val verbose = flag("--verbose", "-v", help = "output a diagnostic for every file processed")
+    val verbose = flag(short = 'v', long = "verbose", help = "output a diagnostic for every file processed")
 
     // --dereference / --no-dereference is exactly .negatable(); the default matches chmod's own.
     //
-    // The negative half's short, `.negatable("--no-dereference", "-h")`, is blocked by the built-in `-h`
+    // The negative half's short, `.negatable(short = 'h', long = "no-dereference")`, is blocked by the built-in `-h`
     // (reserved while `builtins.helpShort` is on), not by the negation model. This fixture keeps `-h` as
     // help deliberately, to pin what a tool pays for leaving the built-in on; `example/ls` declines it
     // instead.
-    val dereference = flag("--dereference", help = "affect the referent of each symbolic link")
+    val dereference = flag(long = "dereference", help = "affect the referent of each symbolic link")
         .negatable(default = true)
 
     // --preserve-root / --no-preserve-root maps onto .negatable() cleanly, default off, as in chmod.
-    val preserveRoot = flag("--preserve-root", help = "fail to operate recursively on '/'")
+    val preserveRoot = flag(long = "preserve-root", help = "fail to operate recursively on '/'")
         .negatable(default = false)
 
-    val reference = option("--reference", help = "use RFILE's mode instead of specifying MODE values")
+    val reference = option(long = "reference", help = "use RFILE's mode instead of specifying MODE values")
         .file()
 
-    val recursive = flag("--recursive", "-R", help = "change files and directories recursively")
+    val recursive = flag(short = 'R', long = "recursive", help = "change files and directories recursively")
 
     // group(title) { } returns whatever the block returns, so the three traversal flags come back
     // together as the block's own Triple rather than a hoisted lateinit var.
@@ -106,11 +107,11 @@ public fun chmodCli(): TypedCli<ChmodInputs> = cliOf("chmod") {
         // takes effect. -H is the default."), an override rule rather than an exclusivity one —
         // `requireAtMostOne` would reject `chmod -R -H -L`, which real chmod accepts.
         val traverseArgLinks =
-            flag("--traverse-arg-links", "-H", help = "traverse a command-line symlink to a directory")
+            flag(short = 'H', long = "traverse-arg-links", help = "traverse a command-line symlink to a directory")
         val traverseAllLinks =
-            flag("--traverse-all-links", "-L", help = "traverse every symlink to a directory encountered")
+            flag(short = 'L', long = "traverse-all-links", help = "traverse every symlink to a directory encountered")
         val traverseNoLinks =
-            flag("--traverse-no-links", "-P", help = "do not traverse any symbolic links")
+            flag(short = 'P', long = "traverse-no-links", help = "do not traverse any symbolic links")
         lastWins(traverseArgLinks, traverseAllLinks, traverseNoLinks)
         Triple(traverseArgLinks, traverseAllLinks, traverseNoLinks)
     }

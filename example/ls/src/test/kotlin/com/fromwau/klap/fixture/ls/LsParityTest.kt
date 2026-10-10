@@ -19,7 +19,7 @@ class LsParityTest {
                 files = listOf("src"),
             ),
         )
-        // `-h` is real ls's --human-readable only because `builtins { helpShort = false }` handed the
+        // `-h` is real ls's --human-readable only because `builtins { help = Help.Generate(short = null) }` handed the
         // short back; with the built-in left on, this line would print klap's help instead.
         parity.binds("-h", expected = NOTHING_BOUND.copy(humanReadable = true))
         parity.binds("-A", "-d", expected = NOTHING_BOUND.copy(almostAll = true, directory = true))

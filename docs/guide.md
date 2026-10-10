@@ -29,7 +29,7 @@ ships, so if you are building against a release, read this file at that release'
 ## Quick start
 
 `cli(name)` builds the root command. A single-command tool can act at the root, so no subcommand is
-required. This is the [README](../README.md)'s front-page program with a `description` and a bound on
+required. This is the [README](../README.md)'s front-page program with a `help` text and a bound on
 `--times` added:
 
 ```kotlin
@@ -39,12 +39,12 @@ import com.fromwau.klap.main
 
 fun main(args: Array<String>) {
     cli("greet") {
-        description = "Say hello"
-        version = "1.0.0"
+        help = "Say hello"
+        version = Version.Of("1.0.0")
 
         val name = argument("name", "who to greet")
-        val loud = flag("--loud", "-l", help = "shout it")
-        val times = option("--times", "-n", help = "how many times").int().range(1..10).default(1)
+        val loud = flag(short = 'l', long = "loud", help = "shout it")
+        val times = option(short = 'n', long = "times", help = "how many times").int().range(1..10).default(1)
 
         action {
             val line = "Hello, ${name()}!".let { if (loud()) it.uppercase() else it }
@@ -74,7 +74,7 @@ Those receivers have names, and you will want them the first time you factor a d
 
 | Receiver         | Where it is the receiver | What it carries                                                                                                                                                                                                                                                       |
 |------------------|--------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `CommandBuilder` | `command(name) { }`      | `argument`, `option`, `flag`, `numberOption`, `command`, `group`, `example`, `action`; the cross-input rules `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `lastOneWins`, `validateInputs`; the per-command settings `description`, `aliases`, `epilogue`, `hidden`, `optionsEndAtFirstOperand` |
+| `CommandBuilder` | `command(name) { }`      | `argument`, `option`, `flag`, `numberOption`, `command`, `group`, `example`, `action`; the cross-input rules `requireExactlyOne`, `requireAtMostOne`, `lastWins`, `lastOneWins`, `validateInputs`; the per-command settings `help`, `aliases`, `epilogue`, `hidden`, `optionsEndAtFirstOperand` |
 | `CliBuilder`     | `cli(name) { }`          | everything on `CommandBuilder`, plus the root-only `globalOption`, `globalFlag`, `version`, `author`, `abbreviation`, `builtins { }`                                                                                                                                  |
 | `ConverterScope` | the base of both         | every converter: `.int()`, `.map()`, `.default()`, `.range()`, `.count()`, `.negatable()`, `.absentWhen()`, `.completeWith()`, ...                                                                                                                                    |
 
@@ -87,7 +87,7 @@ Naming the receiver is what lets two subcommands share a declaration instead of 
 ```kotlin
 // One place to change the spelling, the help text and the converter chain.
 private fun CommandBuilder.tagOption() =
-    option("--tag", "-t", help = "Filter by tag").multiple()
+    option(short = 't', long = "tag", help = "Filter by tag").multiple()
 
 cli("tasks") {
     command("list") {
@@ -128,7 +128,7 @@ import kotlinx.serialization.Serializable
 import kotlin.math.pow
 import kotlin.math.round
 
-enum class Temp { C, F, K }                    // .enum<Temp>() matches these case-insensitively
+enum class Temp { C, F, K }                    // .enum<Temp>() spells these c, f and k
 
 @Serializable
 data class Conversion(val value: Double, val from: String, val to: String, val result: Double)
@@ -139,14 +139,14 @@ private fun roundTo(v: Double, places: Int) = (v * 10.0.pow(places)).let(::round
 
 fun main(args: Array<String>) {
     cli("convert") {
-        description = "Convert a temperature between Celsius, Fahrenheit, and Kelvin"
-        version = "1.0.0"
+        help = "Convert a temperature between Celsius, Fahrenheit, and Kelvin"
+        version = Version.Of("1.0.0")
         example("convert 100 --from c --to f", "boiling point of water, in Fahrenheit")
 
         val value = argument("value", "the value to convert").double().range(-1_000_000.0..1_000_000.0)
-        val from = option("--from", help = "unit to convert from").enum<Temp>().required()
-        val to = option("--to", help = "unit to convert to").enum<Temp>().required()
-        val precision = option("--precision", help = "decimal places").int().range(0..10).default(2)
+        val from = option(long = "from", help = "unit to convert from").enum<Temp>().required()
+        val to = option(long = "to", help = "unit to convert to").enum<Temp>().required()
+        val precision = option(long = "precision", help = "decimal places").int().range(0..10).default(2)
 
         action(human = { r -> "${r.value} ${r.from} = ${r.result} ${r.to}" }) {
             val floor = mapOf(Temp.C to -273.15, Temp.F to -459.67, Temp.K to 0.0).getValue(from())
@@ -174,25 +174,26 @@ the same way, since `group` returns its block's value; see [Help output](#help-o
 
 ### Spellings
 
-`option` and `flag` take **any number of spellings, each written as the token it is**: `--verbose` is a
-long, `-v` a short. The dashes are declared, not inferred, so there is no separate `short` parameter and
-nothing about a spelling's length changes its meaning.
+`option` and `flag` take their spellings **without dashes**, as `short` characters and `long` words: a short
+is typed `-v`, a long `--verbose`, so the parameter decides the shape and no dash can be missing or extra.
+One spelling of a kind is a value (a `Char` short, a `String` long) and several are a list, in any mix.
 
 ```kotlin
-option("--verbose", "-v")          // --verbose and -v
-flag("--recursive", "-r", "-R")    // --recursive, -r and -R, one holder
-option("--since", "--after", "-a") // --since, --after and -a, one holder
-option("-Z")                       // -Z only, no long form
-option("--x")                      // a one-character long, distinct from -x
+option(short = 'v', long = "verbose")                  // --verbose and -v
+flag(short = listOf('r', 'R'), long = "recursive")     // --recursive, -r and -R, one holder
+option(short = 'a', long = listOf("since", "after"))   // --since, --after and -a, one holder
+option(short = 'Z')                                    // -Z only, no long form
+option(long = "x")                                     // a one-character long, distinct from -x
 ```
 
-A short is exactly one character, because the parser reads a one-dash token as a cluster (`-xzf` is three
-flags); a long may be any length. The first spelling is the **primary**: it is what error messages name and
-what `--help` sorts by. Help rows list every spelling, shorts first (`-r, -R, --recursive`).
+The same forms take `globalOption`, `globalFlag`, `.negatable()` and a [flag-spelled
+command](#commands-spelled-as-flags), with one exception: a long-only flag-spelled command keeps its list,
+`command(long = listOf("sync")) { }`, since `command("sync") { }` is the word command.
 
-Because the spellings are a vararg, **`help` is a named-only argument** — `option("--port", "-p", help = "…")`,
-never `option("--port", "-p", "…")`. A positionally passed help string would be one more spelling, so klap
-rejects it at construction — it carries no dashes — with a message pointing at `help =`.
+A short is a `Char`, because the parser reads a one-dash token as a cluster (`-xzf` is three flags); a long
+may be any length, but carries no dash of its own and no `=`. The **primary** spelling is the first long, or
+the first short when there is none: it is what error messages name. Help rows list every spelling, shorts
+first (`-r, -R, --recursive`).
 
 ### Dash-led values
 
@@ -201,8 +202,8 @@ git's `parse-options` do. `git commit -m -weird` commits with the subject `-weir
 excludes the pattern `-foo`.
 
 ```kotlin
-run(listOf("-m", "-weird"))      // message = "-weird"
-run(listOf("--message", "-x"))   // message = "-x"
+run(listOf("-m", "-weird"))    // message = "-weird"
+run(listOf("--message", "-x")) // message = "-x"
 ```
 
 Two tokens are never swallowed: there has to *be* a next token (otherwise the option reports a missing
@@ -223,9 +224,9 @@ declares it. That matches `ls -5` and `sleep -1`, which both reject.
 These declarations give it a meaning:
 
 ```kotlin
-flag("-4")                       // curl -4: an ordinary short whose character is a digit
-numberOption()                   // head -5, git log -5: -<NUM> is an input of its own
-argument("n").int()              // app -- -100: a negative OPERAND
+flag(short = '4') // curl -4: an ordinary short whose character is a digit
+numberOption()            // head -5, git log -5: -<NUM> is an input of its own
+argument("n").int()       // app -- -100: a negative OPERAND
 ```
 
 `numberOption()` declares a run of digits as an input. The digits are the value, so it takes the same
@@ -243,9 +244,10 @@ It gets a help row of its own, under the label errors name it by:
 ```
 
 The run is maximal and it may sit anywhere in the token, so `-12v` is twelve then `v`, never one then two.
-A run every character of which names a declared short is that cluster instead: a tree with both `flag("-4")`
-and a number input binds `-4` to the flag and `-45` to the number, which is what lets a tool have both. A
-flag's negative spellings are declared too, so `.negatable("-3")` keeps `-3` as the negation.
+A run every character of which names a declared short is that cluster instead: a tree with both
+`flag(short = '4')` and a number input binds `-4` to the flag and `-45` to the number, which is what lets
+a tool have both. A flag's negative spellings are declared too, so `.negatable(short = '3')` keeps `-3`
+as the negation.
 
 One combination klap refuses at build: a **global option** with a digit short, on a tree where any command
 declares a number input. Globals are pulled out before the command is known, so that option would claim the
@@ -258,9 +260,9 @@ above. A negative **operand** needs the `--` escape, unless its slot is marked w
 Where one quantity has both spellings, fold them so your action reads a single handle:
 
 ```kotlin
-val named = option("--lines", "-n").int()
+val named = option(short = 'n', long = "lines").int()
 val direct = numberOption().int()
-val bytes = option("--bytes", "-c").int()
+val bytes = option(short = 'c', long = "bytes").int()
 val lines = lastOneWins(named, direct)
 lastWins(lines, bytes)           // the fold is an ordinary member of a further rule
 ```
@@ -290,20 +292,20 @@ accepts. Long options are unaffected and keep their did-you-mean, and `seek -- -
 declaration.
 
 ```kotlin
-val port    = option("--port", "-p").int().default(8080)           //  Int
-val level   = option("--level").enum<LogLevel>()                   //  LogLevel?  (case-insensitive)
-val timeout = option("--timeout", "-t").map { it.toInt().seconds } //  Duration?
-val tags    = option("--tag").multiple(min = 1)                    //  List<String>  (at least one)
-val region  = option("--region").required()                        //  String  (must be provided)
-val files   = argument("files").file().multiple(min = 1)           //  List<String>  (min 1, path-completed)
+val port    = option(short = 'p', long = "port").int().default(8080)           // Int
+val level   = option(long = "level").enum<LogLevel>()                  // LogLevel?
+val timeout = option(short = 't', long = "timeout").map { it.toInt().seconds } // Duration?
+val tags    = option(long = "tag").multiple(min = 1)                   // List<String>, at least one
+val region  = option(long = "region").required()                       // String, must be given
+val files   = argument("files").file().multiple(min = 1)                       // List<String>, path-completed
 ```
 
 | Converter                      | On                              | Result                                                                                                                                                                                                                                                                                                                                                          |
 |--------------------------------|---------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `.int()` `.long()` `.double()` | argument, option                | the parsed primitive                                                                                                                                                                                                                                                                                                                                            |
 | `.boolean()`                   | argument, option                | `Boolean`, accepting only the exact lowercase literals `true` / `false` (case-sensitive: `True`, `TRUE`, `yes`, `no`, `1`, `0`, and `""` are all rejected)                                                                                                                                                                                                      |
-| `.enum<E>()`                   | argument, option                | `E`, matched case-insensitively; choices shown lowercase                                                                                                                                                                                                                                                                                                        |
-| `.choice("a", "b")`            | argument, option                | the raw string, restricted to the given set (matched case-insensitively, returns the declared spelling)                                                                                                                                                                                                                                                         |
+| `.enum<E>()`                   | argument, option                | `E`, matched in exact case (`ignoreCase = true` opts out); choices shown lowercase                                                                                                                                                                                                                                                                              |
+| `.choice("a", "b")`            | argument, option                | the raw string, restricted to the given set (matched in exact case unless `ignoreCase = true`, returns the declared spelling)                                                                                                                                                                                                                                   |
 | `.map { raw -> T }`            | argument, option                | any type; a thrown exception becomes a clean parse error                                                                                                                                                                                                                                                                                                        |
 | `.convert { raw -> Result }`   | argument, option                | any type, failing with a case of your own                                                                                                                                                                                                                                                                                                                       |
 | `.validate("msg") { it > 0 }`  | argument, option                | same type; fails with `BadValue` when the predicate is false. The predicate always runs per element, so declare it *before* `.multiple()`: a chain that puts it after fails at parse instead of validating                                                                                                                                                      |
@@ -333,7 +335,7 @@ sealed hierarchy of klap's own conversion failures, and `Domain` is the case you
 ```kotlin
 data object NotAPort : IError
 
-val port = option("--port").convert { raw ->
+val port = option(long = "port").convert { raw ->
     raw.toIntOrNull()?.let(::Ok) ?: Err(ConversionError.Domain(NotAPort, "not a port"))   // Int?
 }
 ```
@@ -360,7 +362,7 @@ fun PortError.detail(): String = when (this) {
     is PortError.OutOfRange -> "$given is outside 1..65535"
 }
 
-val port = option("--port").convert { raw ->
+val port = option(long = "port").convert { raw ->
     parsePort(raw).mapError { ConversionError.Domain(it, it.detail()) }
 }
 
@@ -393,7 +395,7 @@ still surfaces as `BadValue`. Converters also chain by composition, so
 Validation runs at parse time and renders like any other input error:
 
 ```kotlin
-val port = option("--port").int().validate("must be 1..65535") { it in 1..65535 }
+val port = option(long = "port").int().validate("must be 1..65535") { it in 1..65535 }
 ```
 ```
 $ app --port 70000
@@ -453,11 +455,11 @@ and `rm -f` with nothing to remove is a success rather than a usage error. Two c
 `--help`, the usage line and completion learn the rule instead of an `action { }` re-implementing it:
 
 ```kotlin
-val target = option("--target-directory", "-t").file()
+val target = option(short = 't', long = "target-directory").file()
 argument("source").placeholder("SOURCE").file().multiple(min = 1)
 argument("dest").placeholder("DEST").file().absentWhen(target)   // usage: <SOURCE>... [<DEST>]
 
-val force = flag("--force", "-f")
+val force = flag(short = 'f', long = "force")
 argument("file").file().multiple(min = 1).requiredUnless(force)  // `rm` errors, `rm -f` exits 0
 ```
 
@@ -480,7 +482,7 @@ names the trigger rather than only bracketing the slot, since only its spelling 
 `ls --color[=<WHEN>]`, `git commit -S[<keyid>]`: the option may be given bare or with an attached value.
 
 ```kotlin
-val color = option("--color").placeholder("WHEN")
+val color = option(long = "color").placeholder("WHEN")
     .choice("always", "auto", "never")
     .optionalValue("always")     // bare --color means --color=always
 ```
@@ -494,17 +496,18 @@ one option outside the guideline, knowingly; every option that does not call it 
 `.negatable()` first if the tool's real shape is a two-state switch — it costs no conformance and it gives
 you `--no-opt` as well.
 
-`--help` renders the row as `--color[=<WHEN>]` with a trailing `bare: always` note, and `.optionalValue()`
-cannot be combined with `.multiple()` in either call order — a repeatable holder has no single "the value
-when bare" to bind. Tab completion matches the parser: the word after a bare occurrence completes as an
-operand, not as this option's value.
+`--help` renders the row as `--color[=<WHEN>]` with a trailing `bare: always` note. Combined with
+`.multiple()`, in either call order, each occurrence binds its own value and a bare one binds `whenBare`, in
+line order: `--debug=2 --debug` binds `["2", "1"]`, for an action that reduces them (the highest level, say).
+Tab completion matches the parser: the word after a bare occurrence completes as an operand, not as this
+option's value.
 
 ## Flags: boolean, counted, negatable
 
 ```kotlin
-val verbose = flag("--verbose", "-v")         // Boolean
-val level   = flag("--verbose", "-v").count() // Int: -vvv or -v -v -v yields 3
-val cache   = flag("--cache").negatable()     // Boolean: --cache / --no-cache, default on
+val verbose = flag(short = 'v', long = "verbose")         // Boolean
+val level   = flag(short = 'v', long = "verbose").count() // Int: -vvv or -v -v -v yields 3
+val cache   = flag(long = "cache").negatable()    // Boolean: --cache / --no-cache, default on
 ```
 
 `.count()` and `.negatable()` are mutually exclusive. A negatable flag renders as `--[no-]cache
@@ -514,18 +517,26 @@ val cache   = flag("--cache").negatable()     // Boolean: --cache / --no-cache, 
 `--no-<long>` is not what the tool answers to, either a *short* that turns the flag off or an asymmetric pair:
 
 ```kotlin
-flag("--dereference", "-L").negatable("--no-dereference", "-P")   // cp: -L on, -P off
-flag("--forward-agent", "-A").negatable("--no-forward-agent", "-a")
-flag("--paginate", "-p").negatable("--no-pager", "-P")            // git: and NOT --no-paginate
+flag(short = 'L', long = "dereference").negatable(short = 'P', long = "no-dereference") // cp: -L on, -P off
+flag(short = 'A', long = "forward-agent").negatable(short = 'a', long = "no-forward-agent")
+flag(short = 'p', long = "paginate").negatable(short = 'P', long = "no-pager")         // git: not --no-paginate
 ```
 
 The explicit list **replaces** the generated form rather than adding to it, because a tool that spells its
 negative half differently also rejects the generated one: `git` takes `--paginate` and `--no-pager` and
 answers to neither `--pager` nor `--no-paginate`. Write the generated spelling out when you want it kept,
-as the `cp` line does. Each spelling carries its own dashes, is validated exactly like a positive one, and
+as the `cp` line does. Each spelling is validated exactly like a positive one, and
 may not collide with any declared spelling or with another flag's negation. A negative short clusters like
 any other (`-vP`), and help lists every spelling the flag answers to, shorts first, positives before
 negatives: `-L, -P, --dereference, --no-dereference`.
+
+A negation with words of its own takes `help`, and then has its own row in `--help` and its own description in
+Tab, as pacman's pair does:
+
+```kotlin
+val noConfirm = globalFlag(long = "noconfirm", help = "do not ask for any confirmation")
+    .negatable(long = "confirm", default = false, help = "always ask for confirmation")
+```
 
 **Command-line forms.** An option value is written `--opt value`, `--opt=value`, `-o value`, or attached
 to a short as `-ovalue`; a short option does **not** accept `-o=value` (the `=` is taken as part of the
@@ -537,8 +548,9 @@ even beside `-h`. `--` ends option parsing: every token after it is positional.
 An option that takes a value takes the next token whatever it looks like, dash-led or not; see
 [Dash-led values](#dash-led-values) above.
 
-A single-value option can be given more than once; the last occurrence silently wins (reach for
-`.multiple()` if you want every occurrence collected instead). `--opt=` with nothing after the `=` binds
+A single-value option can be given more than once; the last occurrence wins, but every occurrence is
+converted, so `-n abc -n 5` is refused as GNU `head` refuses it (reach for `.multiple()` if you want every
+occurrence collected instead). `--opt=` with nothing after the `=` binds
 an explicit empty string (`""`), which is distinct from omitting the option entirely, which leaves it at
 its default or `null`.
 
@@ -558,16 +570,14 @@ cli("tasks") {
 | Mode                          | Long options | `.choice()` / `.enum<E>()` values | Subcommands |
 |-------------------------------|--------------|-----------------------------------|-------------|
 | `Abbreviation.None` (default) | no           | no                                | no          |
+| `Abbreviation.LongOptions`    | yes          | no                                | no          |
 | `Abbreviation.Options`        | yes          | yes                               | no          |
 | `Abbreviation.All`            | yes          | yes                               | yes         |
 
 `Options` is the GNU shape, and a name and its value travel together there: `mkdir --par d` reaches
 `--parents`, `--no-der` reaches a negatable flag's negative half, and `ls --color=al` reaches `always`
-the same way. `All` adds what `ip` does (`ip a` for `ip address`).
-
-**`Options` is a superset of what klap had before this switch existed:** its long-option abbreviation is
-the direct replacement, but its `.choice()` / `.enum<E>()` value abbreviation is new behaviour, so an
-author reaching for `Options` purely to restore the old long-option handling gets the value abbreviation too.
+the same way. `All` adds what `ip` does (`ip a` for `ip address`). `LongOptions` abbreviates the names
+alone, as pacman does: `pacman --quer` is `--query`, but `pacman -Q --color=al` is refused.
 
 `git` is the reason the middle mode exists. It abbreviates the options of a subcommand — `git branch --f`
 answers *ambiguous option: f (could be --force or --format)* — while refusing `git stat`, because its
@@ -618,16 +628,16 @@ already hold:
 
 ```kotlin
 cli("tar") {
-    val create  = flag("--create", "-c", help = "create a new archive")
-    val extract = flag("--extract", "-x", help = "extract files from an archive")
-    val list    = flag("--list", "-t", help = "list the contents of an archive")
+    val create  = flag(short = 'c', long = "create", help = "create a new archive")
+    val extract = flag(short = 'x', long = "extract", help = "extract files from an archive")
+    val list    = flag(short = 't', long = "list", help = "list the contents of an archive")
     requireExactlyOne(create, extract, list)
 
-    val gzip  = flag("--gzip", "-z", help = "filter through gzip")
-    val bzip2 = flag("--bzip2", "-j", help = "filter through bzip2")
+    val gzip  = flag(short = 'z', long = "gzip", help = "filter through gzip")
+    val bzip2 = flag(short = 'j', long = "bzip2", help = "filter through bzip2")
     requireAtMostOne(gzip, bzip2)
 
-    val file = option("--file", "-f", help = "archive to operate on").required()
+    val file = option(short = 'f', long = "file", help = "archive to operate on").required()
     action { ... }
 }
 ```
@@ -675,8 +685,8 @@ into `[options]` said the opposite. It renders with its own value placeholder �
 `requireAtMostOne` would reject a line both tools accept. `lastWins` is the rule itself:
 
 ```kotlin
-val interactive = flag("--interactive", "-i", help = "prompt before every removal")
-val force       = flag("--force", "-f", help = "never prompt")
+val interactive = flag(short = 'i', long = "interactive", help = "prompt before every removal")
+val force       = flag(short = 'f', long = "force", help = "never prompt")
 lastWins(interactive, force)
 ```
 
@@ -690,12 +700,12 @@ including *inside* a cluster, so `-if` forces and `-fi` prompts. A set nobody su
 **A set may mix flags and options**, because a tool routinely spells one setting both ways:
 
 ```kotlin
-val lines = option("--lines", "-n")
-val bytes = option("--bytes", "-c")
+val lines = option(short = 'n', long = "lines")
+val bytes = option(short = 'c', long = "bytes")
 lastWins(lines, bytes)                 // head -c 5 -n 3 counts lines; head -n 3 -c 5 counts bytes
 
-val bySize = flag("--sort-size", "-S")
-val sort   = option("--sort")
+val bySize = flag(short = 'S', long = "sort-size")
+val sort   = option(long = "sort")
 lastWins(bySize, sort)                 // ls -S --sort=time sorts by time; ls --sort=time -S by size
 ```
 
@@ -714,8 +724,8 @@ line spells it. [Numbers on the command line](#numbers-on-the-command-line) is t
 ### `requiredIf`: a conditional requirement
 
 ```kotlin
-val remote = flag("--remote")
-val token  = option("--token").requiredIf(remote)   // optional alone, mandatory with --remote
+val remote = flag(long = "remote")
+val token  = option(long = "token").requiredIf(remote)   // optional alone, mandatory with --remote
 ```
 
 Checked after binding, against what was actually typed — a `.default()` on the conditional option does
@@ -748,8 +758,8 @@ with, or null to accept:
 
 ```kotlin
 command("add") {
-    val due  = option("--due", "-d").validate("must be YYYY-MM-DD") { it.asDate() != null }
-    val done = flag("--done", "-D")
+    val due  = option(short = 'd', long = "due").validate("must be YYYY-MM-DD") { it.asDate() != null }
+    val done = flag(short = 'D', long = "done")
 
     validateInputs {
         val d = due()
@@ -811,8 +821,8 @@ where the subcommand's short is legal and nowhere else: `fleet build -vf` binds 
 
 ```kotlin
 cli("fleet") {
-    val verbose = globalFlag("--verbose", "-v", help = "log everything")
-    val config  = globalOption("--config", "-c", help = "path to a config file")
+    val verbose = globalFlag(short = 'v', long = "verbose", help = "log everything")
+    val config  = globalOption(short = 'c', long = "config", help = "path to a config file")
 
     command("build") {
         action {
@@ -858,21 +868,20 @@ A required global (or any required input) never blocks klap's built-ins: `--help
 
 ### Which built-in answers
 
-Which built-in answers is fixed, and never a question of where you wrote it: `mytool --version --help`
-and `mytool --help --version` both print the version, and `mytool --docs man --completion bash` and the
-reverse both print the completion script. Highest first:
+The built-ins answer in two buckets. The first holds `--help` / `-h`, `--help-all` and `--version` (with its
+short, if you gave it one); the second holds `--completion <shell>` and `--docs <format>`. A built-in of the
+first bucket beats one of the second wherever they stand, and inside a bucket the line's first one answers,
+as GNU tools answer `--help` and `--version`: `mytool --help --version` prints the help, `mytool --version
+--help` the version, and `mytool --docs man --completion bash` the docs.
 
-1. `--version`
-2. `--help-all`
-3. `--help` / `-h`
-4. `--completion <shell>`
-5. `--docs <format>`
-
-A dispatcher's `completion` / `docs` subcommands sit on those same bottom two rungs, so
+A dispatcher's `completion` / `docs` subcommands sit in that same second bucket, so
 `mytool completion bash --help` describes that command instead of emitting the script. `--json` and
 `--color` are not rungs at all: they never answer a line, only shape whatever does.
 
-So a line naming two built-ins answers only the higher one, and the lower one is never looked at:
+A command declared with `prio = true` runs ahead of the second bucket; see [Commands that answer ahead of the
+line](#commands-that-answer-ahead-of-the-line).
+
+So a line naming two built-ins answers only one, and the other is never looked at:
 `mytool --help --completion bsh` prints help and says nothing about the misspelled shell.
 
 ### Which command help documents
@@ -896,18 +905,19 @@ unknown option rather than a request for `add`'s help.
 
 ### Declining a built-in
 
-When your tool's own interface needs one of those names, a root-only `builtins { }` block declines the
-built-in that claims it. Every switch defaults to `true`:
+The root's `builtins { }` block takes one value per built-in. `--help-all`, `--json`, `--color`, `completion` and
+`docs` take `Builtin.On(description = ...)`, the default, or `Builtin.Off`; `--help` takes a `Help`:
 
 ```kotlin
 cli("curl") {
     builtins {
-        json = false        // frees --json for the app's own option
-        completion = false  // no `completion` subcommand and no --completion option
-        docs = false
-        helpShort = false   // frees -h; --help itself remains
+        json = Builtin.Off                   // frees --json for the app's own option
+        completion = Builtin.Off             // no `completion` subcommand and no --completion option
+        docs = Builtin.Off
+        help = Help.Generate(short = null)   // frees -h; --help itself remains
+        helpAll = Builtin.Off                // no --help-all
     }
-    option("--json", "-j", help = "post this JSON body") // now legal
+    option(short = 'j', long = "json", help = "post this JSON body") // now legal
 }
 ```
 
@@ -917,8 +927,27 @@ longer injected, and `--help`, the generated docs, tab completion, and did-you-m
 advertising it. `--json` declined also means `Execute.globals.json` stays `false`. The block is
 order-independent: it may sit above or below the `command(...)` declarations it frees names for.
 
-`--help` and `--help-all` cannot be declined (only the `-h` short can), and `--version` needs no switch —
-it only exists when you set `version`.
+`--help` takes one of three: `Help.Generate(description, short = 'h')` prints the page klap generates, the default;
+`Help.Custom(page, description, short = 'h')` prints your page as written; `Help.Off` removes `--help` and its
+short, so a group invoked bare is a missing-subcommand error rather than its help. `--help-all` exists only where
+the tree has a visible subcommand for it to expand.
+
+The version is the root's own `version`, since it holds the number as well as the built-in: `Version.Off`, the
+default, means no version and no `--version`, and `Version.Of(number, long = "version", short, description, text)`
+gives both. `short = 'V'` answers alone or in a cluster (`-V`, `-QV`), as pacman, curl and ssh have, and `text`
+replaces the `<name> <number>` line with your own.
+
+Each `description` is what `--help`, the generated docs and tab completion say beside that built-in; a null one keeps
+klap's wording:
+
+```kotlin
+cli("cp") {
+    version = Version.Of("9.12", description = "output version information and exit")
+    builtins {
+        help = Help.Generate(description = "display this help and exit") // as GNU cp words it
+    }
+}
+```
 
 ## Typed results and errors
 
@@ -964,8 +993,8 @@ them. So you *write* `Ok(x)` and *match* `is Result.Success`, and the names neve
 
 ```kotlin
 when (val parsed = cli.parse(argv)) {
-    is Result.Success -> parsed.value       // not `is Ok`
-    is Result.Error -> parsed.error         // not `is Err`
+    is Result.Success -> parsed.value // not `is Ok`
+    is Result.Error -> parsed.error   // not `is Err`
 }
 ```
 
@@ -1095,8 +1124,8 @@ exposes to you, so a rule you write yourself is phrased and thresholded identica
 ```kotlin
 import com.fromwau.kern.fuzzy.didYouMean
 
-didYouMean("lst", listOf("list", "add"))   // "list"
-didYouMean("zzzzzzzz", listOf("list"))     // null - nothing close enough
+didYouMean("lst", listOf("list", "add")) // "list"
+didYouMean("zzzzzzzz", listOf("list"))   // null - nothing close enough
 ```
 
 Both `Usage.detail` and `Failure.detail` are yours to word, so a newline in one renders as a real line
@@ -1291,7 +1320,7 @@ infers `T` as `Shape.Circle` and serializes it without the `"type"` field.
 `--json` is a property of the program, not of a command. There is no per-command opt-out, and that is
 deliberate: a caller writing `app ... --json | jq` needs the flag to mean one thing everywhere, and a flag
 honored by some subcommands and not others is worse than no flag at all. So either every command in the
-tree has a structured form, or the tree declines the built-in with `builtins { json = false }`.
+tree has a structured form, or the tree declines the built-in with `builtins { json = Builtin.Off }`.
 
 That leaves one case to answer: a command that writes as it goes (a progress line per tick, a table
 streamed row by row, a prompt), where the printed output is not the value the action returns.
@@ -1413,7 +1442,7 @@ implementations of it.
 
 A built-in, position-independent option recognized on every command like `--json`:
 `--color=auto|always|never` (or the space form, `--color never`). It is reserved, so you cannot declare
-your own `option`/`flag` named `color` unless you decline it with `builtins { color = false }`. Bare
+your own `option`/`flag` named `color` unless you decline it with `builtins { color = Builtin.Off }`. Bare
 `--color` with no value is a `MissingOptionValue`; an
 unrecognized value is an `InvalidChoice`; both are reported before the `--version`/`--help`/completion/docs
 short-circuits, so a malformed `--color` is never silently swallowed by one of those.
@@ -1440,17 +1469,17 @@ case; native targets are unaffected, since they check stdout alone.
 ## Command groups and nesting
 
 A command with subcommands and no `action` is a group; klap prints its help when invoked bare. Nest
-with `command(name) { }` to any depth, or `command(name, help) { }` to set the subcommand's description
-inline instead of via `description =` inside the block. A group has nothing to read its own
+with `command(name) { }` to any depth, a `help = "..."` inside the block giving the subcommand's
+description. A group has nothing to read its own
 `option`/`flag`, so declaring a local one on an action-less command throws at construction; put the
 option on a leaf command's `action`, or use `globalOption` / `globalFlag` to share it across subcommands:
 
 ```kotlin
 cli("fleet") {
-    version = "2.4.0"
+    version = Version.Of("2.4.0")
     command("list") { action { Ok(machines.toList()) } }
-    command("disk") {                       // a group
-        command("attach") {                 // fleet disk attach ...
+    command("disk") {       // a group
+        command("attach") { // fleet disk attach ...
             val machine = argument("machine")
             val disk = argument("disk")
             action { Ok("attached ${disk()} to ${machine()}") }
@@ -1484,22 +1513,76 @@ command("list") {
 not a separate mechanism, and a near-miss typo close to an alias is suggested the same way a near-miss
 of the real name is.
 
+### Commands spelled as flags
+
+Some tools pick their mode with a flag rather than a word: pacman's `-Q` queries, `-S` syncs. Declare such a
+command with `short` and `long`, written without dashes as for a flag; it is reached by `-Q` or `--query` and
+never by its word, so `pacman query` names nothing:
+
+```kotlin
+cli("pacman") {
+    globalFlag(short = 'v', long = "verbose", help = "be verbose")
+    command(short = 'Q', long = "query") {
+        help = "query the package database"
+        val info = flag(short = 'i', long = "info", help = "view package information").count()
+        val packages = argument("package").multiple()
+        action { Ok("info=${info()} ${packages()}") }
+    }
+    command(short = 'R', long = "remove") {
+        help = "remove packages from the system"
+        val cascade = flag(short = 'c', long = "cascade", help = "remove what depends on them too")
+        action { Ok("cascade=${cascade()}") }
+    }
+}
+```
+
+The spelling may stand anywhere among the options, and the command's own options bind wherever they stand,
+before it or after it: `pacman -Qi pkg`, `pacman -iQ pkg`, `pacman -i -Q pkg` and `pacman -vQi pkg` all reach
+`-Q` with `--info` once. Inside a cluster the command's letter picks the command and the other letters are its
+own or the globals, so one letter can mean what each command gives it (`-Qc` and `-Rc` above). A value-taking
+letter still takes the rest of the cluster. Two commands of one parent on one line are refused, and so is a
+value on one (`--query=x`). Help lists the command by its spellings, `-Q, --query`, and names it `pacman
+--query` in its own usage line; Tab offers `-Q` and `--query` where the parent's options are offered, and
+continues `-Q` with `-Q`'s letters. A flag-spelled command takes no `aliases`, and its spelling must name nothing
+else at its parent: no option, global or sibling.
+
+### Commands that answer ahead of the line
+
+`prio = true` lets a command run ahead of the rest of the line, the way `mytool license` should run whatever
+else the tool requires:
+
+```kotlin
+cli("mytool") {
+    val token = globalOption(long = "token").required()
+    command("license") {
+        prio = true
+        action { Ok("MIT") }
+    }
+    command("sync") { action { Ok("synced with ${token()}") } }
+}
+```
+
+Given, it runs without its parent's required globals (`mytool license` needs no `--token`, while `mytool sync`
+still does) and ahead of `--completion` and `--docs` (`mytool --completion bash license` prints the license).
+Its action must not read a required global it runs without. `--help` and `--version` keep their usual meaning
+beside it, so `mytool license --help` and `mytool --help license` both show license's help.
+
 ## Help output
 
 Beyond the automatic usage/options/subcommands listing, you can shape help:
 
 ```kotlin
 cli("deploy") {
-    description = "Ship a build"
+    help = "Ship a build"
     author = "Jane Doe <jane@example.com>"
     epilogue = "See https://docs.example.com for the full guide."
     example("deploy --host web1 --dry-run", "dry-run against one host")
 
     group("Networking") {
-        option("--host", "-H", help = "target host").required()
-        option("--port", "-p", help = "target port").int().default(22)
+        option(short = 'H', long = "host", help = "target host").required()
+        option(short = 'p', long = "port", help = "target port").int().default(22)
     }
-    flag("--debug", help = "verbose internal logging").hidden() // parses, never shown
+    flag(long = "debug", help = "verbose internal logging").hidden() // parses, never shown
 
     action { Ok("shipped") }
 }
@@ -1532,7 +1615,7 @@ construction (`callsInPlace(EXACTLY_ONCE)`), so the holder is already set by the
 ```kotlin
 fun main(args: Array<String>) = cli("deploy") {
     val host = group("Networking") {
-        option("--host", "-H", help = "target host").required()
+        option(short = 'H', long = "host", help = "target host").required()
     }
     action { Ok("shipped to ${host()}") }
 }.main(args)
@@ -1545,8 +1628,8 @@ declaration, and definite assignment still holds:
 val jobs: Opt<Int>
 val tags: Opt<List<String>>
 group("Tuning") {
-    jobs = option("--jobs", "-j", help = "parallelism").int().default(1)
-    tags = option("--tag", "-t", help = "labels").multiple()
+    jobs = option(short = 'j', long = "jobs", help = "parallelism").int().default(1)
+    tags = option(short = 't', long = "tag", help = "labels").multiple()
 }
 ```
 
@@ -1615,7 +1698,7 @@ too, with the word under the cursor read as far as it is typed:
 
 ```kotlin
 cli("tasks") {
-    val store = globalOption("--file", "-f").default("tasks.json")
+    val store = globalOption(short = 'f', long = "file").default("tasks.json")
 
     // One helper, both scopes: `ValueScope` is the shared base of `ActionScope` and `CompletionScope`.
     // Declared INSIDE the block, as a local extension function, so it can close over the `store`
@@ -1701,8 +1784,8 @@ klap renders documentation from the same command tree and the same layout as `--
 drift:
 
 ```kotlin
-val markdown = cli.renderMarkdownDocs()    // a browsable GitHub-Flavored-Markdown page for the whole tree
-val man = cli.renderManPage()              // a roff/man page (pass renderManPage(date = "...") to stamp it)
+val markdown = cli.renderMarkdownDocs() // a browsable GitHub-Flavored-Markdown page for the whole tree
+val man = cli.renderManPage()           // a roff/man page (pass renderManPage(date = "...") to stamp it)
 ```
 
 The markdown targets GitHub Flavored Markdown: it lays inputs out in pipe tables, so render it with a
@@ -1795,8 +1878,8 @@ data class TarArgs(val create: Boolean, val file: String?)
 @Test
 fun archiveFlagsBindFromACluster() {
     val tar = cliOf("tar") {
-        val create = flag("--create", "-c", help = "create a new archive")
-        val file = option("--file", "-f", help = "archive to operate on")
+        val create = flag(short = 'c', long = "create", help = "create a new archive")
+        val file = option(short = 'f', long = "file", help = "archive to operate on")
         action { Ok("") }
         projection { TarArgs(create(), file()) }
     }
@@ -1826,7 +1909,7 @@ sealed interface GitArgs {
 
 val git = cliOf("git") {
     val commit = command("commit") {
-        val message = option("--message", "-m").multiple()
+        val message = option(short = 'm', long = "message").multiple()
         action { Ok("") }
         projection { GitArgs.Commit(message()) }
     }
@@ -1883,8 +1966,8 @@ one suggestion or puts in what several share:
 
 ```kotlin
 val rm = cli("rm") {
-    flag("--recursive", "-r", help = "remove directories and their contents")
-    flag("--force", "-f", help = "ignore nonexistent files")
+    flag(short = 'r', long = "recursive", help = "remove directories and their contents")
+    flag(short = 'f', long = "force", help = "ignore nonexistent files")
     action { Ok("") }
 }
 

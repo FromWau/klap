@@ -3,10 +3,13 @@ package com.fromwau.klap.fixture.cp
 import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Abbreviation
+import com.fromwau.klap.Builtin
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Flag
+import com.fromwau.klap.Help
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
+import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
 
@@ -24,8 +27,16 @@ import com.fromwau.klap.projection
 public fun cpCli(): TypedCli<CpInputs> = cliOf("cp") {
     // GNU cp takes any unambiguous prefix of a long option or a choice value: `cp --parent` is --parents.
     abbreviation = Abbreviation.Options
-    description = "Copy SOURCE to DEST, or multiple SOURCE(s) to DIRECTORY."
-    version = "9.11"
+    // GNU cp has no -h (`cp -h` is "invalid option -- 'h'") and none of klap's other built-ins; --help stays.
+    builtins {
+        help = Help.Generate(short = null)
+        json = Builtin.Off
+        color = Builtin.Off
+        completion = Builtin.Off
+        docs = Builtin.Off
+    }
+    help = "Copy SOURCE to DEST, or multiple SOURCE(s) to DIRECTORY."
+    version = Version.Of("9.11")
     author = "Torbjorn Granlund, David MacKenzie, and Jim Meyering"
     epilogue = "Report bugs to: bug-coreutils@gnu.org"
 
@@ -37,31 +48,35 @@ public fun cpCli(): TypedCli<CpInputs> = cliOf("cp") {
     // Copy behaviour
     // ---------------------------------------------------------------------------------------------
 
-    val archive = flag("--archive", "-a", help = "same as -dR --preserve=all")
+    val archive = flag(short = 'a', long = "archive", help = "same as -dR --preserve=all")
 
-    val recursive = flag("--recursive", "-R", help = "copy directories recursively")
-    val recursiveLowercase = flag("--recursive-r", "-r", help = "alias of -R (klap cannot give one flag two shorts)")
+    val recursive = flag(short = 'R', long = "recursive", help = "copy directories recursively")
+    val recursiveLowercase = flag(
+        short = 'r',
+        long = "recursive-r",
+        help = "alias of -R (klap cannot give one flag two shorts)",
+    )
 
-    val copyContents = flag("--copy-contents", help = "copy contents of special files when recursive")
+    val copyContents = flag(long = "copy-contents", help = "copy contents of special files when recursive")
 
-    val noDereferencePreserveLinks = flag("-d", help = "same as --no-dereference --preserve=links")
+    val noDereferencePreserveLinks = flag(short = 'd', help = "same as --no-dereference --preserve=links")
 
-    val debug = flag("--debug", help = "explain how a file is copied; implies -v")
+    val debug = flag(long = "debug", help = "explain how a file is copied; implies -v")
 
-    val attributesOnly = flag("--attributes-only", help = "don't copy the file data, just the attributes")
+    val attributesOnly = flag(long = "attributes-only", help = "don't copy the file data, just the attributes")
 
-    val link = flag("--link", "-l", help = "hard link files instead of copying")
+    val link = flag(short = 'l', long = "link", help = "hard link files instead of copying")
 
-    val symbolicLink = flag("--symbolic-link", "-s", help = "make symbolic links instead of copying")
+    val symbolicLink = flag(short = 's', long = "symbolic-link", help = "make symbolic links instead of copying")
 
-    val oneFileSystem = flag("--one-file-system", "-x", help = "stay on this file system")
+    val oneFileSystem = flag(short = 'x', long = "one-file-system", help = "stay on this file system")
 
-    val parents = flag("--parents", help = "use full source file name under DIRECTORY")
+    val parents = flag(long = "parents", help = "use full source file name under DIRECTORY")
 
     val stripTrailingSlashes =
-        flag("--strip-trailing-slashes", help = "remove any trailing slashes from each SOURCE argument")
+        flag(long = "strip-trailing-slashes", help = "remove any trailing slashes from each SOURCE argument")
 
-    val verbose = flag("--verbose", "-v", help = "explain what is being done")
+    val verbose = flag(short = 'v', long = "verbose", help = "explain what is being done")
 
     // ---------------------------------------------------------------------------------------------
     // Overwrite policy
@@ -75,22 +90,26 @@ public fun cpCli(): TypedCli<CpInputs> = cliOf("cp") {
     // ---------------------------------------------------------------------------------------------
 
     val force =
-        flag("--force", "-f", help = "if an existing destination file cannot be opened, remove it and try again")
+        flag(
+            short = 'f',
+            long = "force",
+            help = "if an existing destination file cannot be opened, remove it and try again",
+        )
 
-    val interactive = flag("--interactive", "-i", help = "prompt before overwrite")
+    val interactive = flag(short = 'i', long = "interactive", help = "prompt before overwrite")
 
-    val noClobber = flag("--no-clobber", "-n", help = "(deprecated) silently skip existing files")
+    val noClobber = flag(short = 'n', long = "no-clobber", help = "(deprecated) silently skip existing files")
 
     lastWins(interactive, noClobber)
 
     val removeDestination =
-        flag("--remove-destination", help = "remove each existing destination file before opening it")
+        flag(long = "remove-destination", help = "remove each existing destination file before opening it")
 
-    val update = option("--update", help = "control which existing files are updated")
+    val update = option(long = "update", help = "control which existing files are updated")
         .choice("all", "none", "none-fail", "older")
         .optionalValue("older")
 
-    val updateOlder = flag("-u", help = "equivalent to --update=older")
+    val updateOlder = flag(short = 'u', help = "equivalent to --update=older")
 
     // ---------------------------------------------------------------------------------------------
     // Symbolic links
@@ -100,15 +119,15 @@ public fun cpCli(): TypedCli<CpInputs> = cliOf("cp") {
     // spellings; `-H` is a separate flag because it is a third state rather than the negation of either.
     // ---------------------------------------------------------------------------------------------
 
-    val dereference = flag("--dereference", "-L", help = "always follow symbolic links in SOURCE")
-        .negatable("--no-dereference", "-P", default = false)
+    val dereference = flag(short = 'L', long = "dereference", help = "always follow symbolic links in SOURCE")
+        .negatable(short = 'P', long = "no-dereference", default = false)
 
-    val dereferenceArgs = flag("-H", help = "follow command-line symbolic links in SOURCE")
+    val dereferenceArgs = flag(short = 'H', help = "follow command-line symbolic links in SOURCE")
 
     lastWins(dereference, dereferenceArgs)
 
     val keepDirectorySymlink =
-        flag("--keep-directory-symlink", help = "follow existing symlinks to directories")
+        flag(long = "keep-directory-symlink", help = "follow existing symlinks to directories")
 
     // ---------------------------------------------------------------------------------------------
     // Backups (declared inside a group to exercise the help-section API)
@@ -119,13 +138,13 @@ public fun cpCli(): TypedCli<CpInputs> = cliOf("cp") {
     val suffix: Opt<String?>
 
     group("Backup") {
-        backup = option("--backup", help = "make a backup of each existing destination file")
+        backup = option(long = "backup", help = "make a backup of each existing destination file")
             .choice("none", "off", "numbered", "t", "existing", "nil", "simple", "never")
             .optionalValue("existing")
 
-        backupSimple = flag("-b", help = "like --backup but does not accept an argument")
+        backupSimple = flag(short = 'b', help = "like --backup but does not accept an argument")
 
-        suffix = option("--suffix", "-S", help = "override the usual backup suffix")
+        suffix = option(short = 'S', long = "suffix", help = "override the usual backup suffix")
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -134,37 +153,47 @@ public fun cpCli(): TypedCli<CpInputs> = cliOf("cp") {
 
     // `--preserve` could carry `.optionalValue()` too, like `--update`/`--backup`/`--reflink` above; it
     // stayed value-required on purpose, not for lack of an expressible form.
-    val preserve = option("--preserve", help = "preserve the specified attributes (comma-separated)")
+    val preserve = option(long = "preserve", help = "preserve the specified attributes (comma-separated)")
         .map { raw -> raw.split(",").map { it.trim() } }
 
     // Required-value in real cp too, so this one is exact.
-    val noPreserve = option("--no-preserve", help = "don't preserve the specified attributes")
+    val noPreserve = option(long = "no-preserve", help = "don't preserve the specified attributes")
         .map { raw -> raw.split(",").map { it.trim() } }
 
-    // KLAP-GAP: this must NOT be spelled `flag("preserve", "p")` — `--preserve` is already an option above,
-    // and `validateDuplicateOptionFlagNames` rejects two inputs sharing a long name at construction.
-    val preserveDefaults = flag("-p", help = "same as --preserve=mode,ownership,timestamps")
+    // KLAP-GAP: this must NOT be spelled `flag(short = 'p', long = "preserve")` — `--preserve` is already an option
+    // above, and `validateDuplicateOptionFlagNames` rejects two inputs sharing a long name at construction.
+    val preserveDefaults = flag(short = 'p', help = "same as --preserve=mode,ownership,timestamps")
 
-    val sparse = option("--sparse", help = "control creation of sparse files")
+    val sparse = option(long = "sparse", help = "control creation of sparse files")
         .choice("auto", "always", "never")
 
-    val reflink = option("--reflink", help = "control clone/CoW copies")
+    val reflink = option(long = "reflink", help = "control clone/CoW copies")
         .choice("auto", "always", "never")
         .optionalValue("always")
 
-    val selinuxDefault = flag("-Z", help = "set the SELinux security context of the destination to the default type")
+    val selinuxDefault = flag(
+        short = 'Z',
+        help = "set the SELinux security context of the destination to the default type",
+    )
 
     // `--context` could carry `.optionalValue()` too, like `--preserve` above; it stayed value-required on
     // purpose, not for lack of an expressible form.
-    val context = option("--context", help = "like -Z, or set the SELinux or SMACK security context to CTX")
+    val context = option(
+        long = "context",
+        help = "like -Z, or set the SELinux or SMACK security context to CTX",
+    )
 
     // ---------------------------------------------------------------------------------------------
     // Destination selection
     // ---------------------------------------------------------------------------------------------
 
-    val targetDirectory = option("--target-directory", "-t", help = "copy all SOURCE arguments into DIRECTORY").file()
+    val targetDirectory = option(
+        short = 't',
+        long = "target-directory",
+        help = "copy all SOURCE arguments into DIRECTORY",
+    ).file()
 
-    val noTargetDirectory = flag("--no-target-directory", "-T", help = "treat DEST as a normal file")
+    val noTargetDirectory = flag(short = 'T', long = "no-target-directory", help = "treat DEST as a normal file")
 
     // ---------------------------------------------------------------------------------------------
     // Operands

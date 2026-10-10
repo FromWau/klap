@@ -15,6 +15,8 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class SuspendingActionTest {
 
@@ -22,7 +24,7 @@ class SuspendingActionTest {
     fun `a suspending action runs through runSuspending and resumes after a real suspension`() = runTest {
         val tree = cli("app") {
             actionSuspending {
-                delay(10)
+                delay(10.milliseconds)
                 Ok("resumed")
             }
         }
@@ -43,7 +45,7 @@ class SuspendingActionTest {
     fun `runActionSuspending hands back the action's own typed result`() = runTest {
         val tree = cli("app") {
             actionSuspending {
-                delay(10)
+                delay(10.milliseconds)
                 Ok("value")
             }
         }
@@ -57,7 +59,7 @@ class SuspendingActionTest {
     fun `a suspending action renders through json and through a human renderer`() = runTest {
         val tree = cli("app") {
             actionSuspending(human = { "human $it" }) {
-                delay(10)
+                delay(10.milliseconds)
                 Ok("v")
             }
         }
@@ -164,7 +166,7 @@ class SuspendingActionTest {
         val tree = cli("app") {
             // A fail-only action can't infer T from Err (that would be Nothing); name it explicitly.
             actionSuspending<String> {
-                delay(10)
+                delay(10.milliseconds)
                 Err(CliError.Failure("fail", exitCode = 3))
             }
         }
@@ -202,7 +204,7 @@ class SuspendingActionTest {
         val tree = cli("app") {
             actionSuspending {
                 started.complete(Unit)
-                delay(10_000)
+                delay(10.seconds)
                 completed = true
                 Ok("never")
             }

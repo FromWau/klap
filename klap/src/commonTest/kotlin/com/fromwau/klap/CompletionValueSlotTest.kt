@@ -18,17 +18,17 @@ class CompletionValueSlotTest {
     // Every candidate set below is distinct, so a failure names which branch answered instead of only
     // saying "not that": TAG1/TAG2 is the global's, alpha/beta the local option's, FILE the operand's.
     private fun grep(): Cli = cli("mygrep") {
-        val tag = globalOption("--tag", "-t").choice("TAG1", "TAG2")
-        val invert = flag("--invert-match", "-v")
-        val regexp = option("--regexp", "-e").choice("alpha", "beta")
+        val tag = globalOption(short = 't', long = "tag").choice("TAG1", "TAG2")
+        val invert = flag(short = 'v', long = "invert-match")
+        val regexp = option(short = 'e', long = "regexp").choice("alpha", "beta")
         val files = argument("file").multiple(min = 0).completeWith { candidate("FILE") }
         action { Ok("${tag()} ${invert()} ${regexp()} ${files()}") }
     }
 
     private fun dispatcher(): Cli = cli("app") {
-        globalOption("--tag", "-t").choice("TAG1", "TAG2")
+        globalOption(short = 't', long = "tag").choice("TAG1", "TAG2")
         command("sub") {
-            option("--regexp", "-e").choice("alpha", "beta")
+            option(short = 'e', long = "regexp").choice("alpha", "beta")
             argument("file").multiple(min = 0).completeWith { candidate("FILE") }
             action { Ok("") }
         }

@@ -17,10 +17,10 @@ class CommandBuilderTest {
     @Test
     fun `builder registers specs in order`() {
         val cmd = cli("add") {
-            description = "Add a task"
+            help = "Add a task"
             argument("text")
-            option("--priority", "-p")
-            flag("--done", "-d")
+            option(short = 'p', long = "priority")
+            flag(short = 'd', long = "done")
             action { Ok("") }
         }
         assertEquals("add", cmd.name)
@@ -128,8 +128,8 @@ class NegatableFlagDeclarationTest {
     fun `negatable flag colliding with declared name fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
-                flag("--color").negatable()
-                flag("--no-color")
+                flag(long = "color").negatable()
+                flag(long = "no-color")
                 action { Ok("") }
             }
         }
@@ -139,8 +139,8 @@ class NegatableFlagDeclarationTest {
     fun `negatable flag colliding with declared option fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
-                flag("--color").negatable()
-                option("--no-color")
+                flag(long = "color").negatable()
+                option(long = "no-color")
                 action { Ok("") }
             }
         }
@@ -150,7 +150,7 @@ class NegatableFlagDeclarationTest {
     fun `count and negatable are mutually exclusive`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
-                flag("--verbose", "-v").negatable().count()
+                flag(short = 'v', long = "verbose").negatable().count()
                 action { Ok("") }
             }
         }
@@ -163,7 +163,7 @@ class NegatableFlagDeclarationTest {
         // after .count() has already flipped isCount on the shared spec.
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
-                val verbose = flag("--verbose", "-v")
+                val verbose = flag(short = 'v', long = "verbose")
                 verbose.count()
                 verbose.negatable()
                 action { Ok("") }
@@ -182,9 +182,9 @@ class GlobalAndLocalNameCollisionTest {
         // no-color ever sees a value, so the local is silently shadowed. Fail loudly at build instead.
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
-                globalFlag("--color").negatable()
+                globalFlag(long = "color").negatable()
                 command("run") {
-                    flag("--no-color")
+                    flag(long = "no-color")
                     action { Ok("") }
                 }
             }
@@ -195,9 +195,9 @@ class GlobalAndLocalNameCollisionTest {
     fun `subcommand redeclaring global long name fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
-                globalFlag("--verbose", "-v")
+                globalFlag(short = 'v', long = "verbose")
                 command("run") {
-                    option("--verbose")
+                    option(long = "verbose")
                     action { Ok("") }
                 }
             }
@@ -208,9 +208,9 @@ class GlobalAndLocalNameCollisionTest {
     fun `subcommand redeclaring global short fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
-                globalFlag("--verbose", "-v")
+                globalFlag(short = 'v', long = "verbose")
                 command("run") {
-                    flag("--loud", "-v")
+                    flag(short = 'v', long = "loud")
                     action { Ok("") }
                 }
             }
@@ -223,8 +223,8 @@ class GlobalAndLocalNameCollisionTest {
         // would strip the token first, so the local could never receive a value. Fail loudly at build.
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
-                globalOption("--only")
-                option("--only")
+                globalOption(long = "only")
+                option(long = "only")
                 action { Ok("") }
             }
         }
@@ -236,9 +236,9 @@ class GlobalAndLocalNameCollisionTest {
         // by siftGlobals before the local negation ever sees a value.
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
-                globalFlag("--no-foo")
+                globalFlag(long = "no-foo")
                 command("run") {
-                    flag("--foo").negatable()
+                    flag(long = "foo").negatable()
                     action { Ok("") }
                 }
             }
@@ -251,8 +251,8 @@ class GlobalAndLocalNameCollisionTest {
         // themselves, colliding with another global plainly named "no-foo".
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
-                globalFlag("--foo").negatable()
-                globalFlag("--no-foo")
+                globalFlag(long = "foo").negatable()
+                globalFlag(long = "no-foo")
                 command("run") { action { Ok("") } }
             }
         }
@@ -265,7 +265,7 @@ class GlobalAndLocalNameCollisionTest {
         // where every other walk reads the number 25. Refuse the pair instead of letting them disagree.
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("bad") {
-                globalOption("--two", "-2")
+                globalOption(short = '2', long = "two")
                 command("go") {
                     numberOption().int()
                     action { Ok("") }
@@ -278,9 +278,9 @@ class GlobalAndLocalNameCollisionTest {
     @Test
     fun `non colliding local negatable flag and global still build`() {
         val cmd = cli("ok") {
-            globalFlag("--bar")
+            globalFlag(long = "bar")
             command("run") {
-                flag("--foo").negatable()
+                flag(long = "foo").negatable()
                 action { Ok("") }
             }
         }
@@ -341,7 +341,7 @@ class ReservedNameTest {
     fun `option named json fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
-                option("--json")
+                option(long = "json")
                 action { Ok("") }
             }
         }
@@ -351,7 +351,7 @@ class ReservedNameTest {
     fun `flag named help fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
-                flag("--help")
+                flag(long = "help")
                 action { Ok("") }
             }
         }
@@ -361,7 +361,7 @@ class ReservedNameTest {
     fun `global option named version fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
-                globalOption("--version")
+                globalOption(long = "version")
                 command("c") { action { Ok("") } }
             }
         }
@@ -372,7 +372,7 @@ class ReservedNameTest {
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
-                    option("--color")
+                    option(long = "color")
                     action { Ok("") }
                 }
             }
@@ -383,7 +383,7 @@ class ReservedNameTest {
     fun `option with reserved short h fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
-                option("--thing", "-h")
+                option(short = 'h', long = "thing")
                 action { Ok("") }
             }
         }
@@ -436,8 +436,8 @@ class ShortNameSpellingTest {
         // A dash-led numeric token can reach these, because the parser asks the tree which shorts it
         // declares before deciding what the token is.
         val cmd = cli("x") {
-            option("--level", "-1")
-            flag("--verbose", "-.")
+            option(short = '1', long = "level")
+            flag(short = '.', long = "verbose")
             action { Ok("") }
         }
         assertEquals(listOf("1"), cmd.options.single().shorts)
@@ -450,7 +450,7 @@ class ShortNameSpellingTest {
         // end-of-options sentinel, so it could never be recognized as a flag.
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
-                flag("--verbose", "-")
+                flag(short = '-', long = "verbose")
                 action { Ok("") }
             }
         }
@@ -459,7 +459,7 @@ class ShortNameSpellingTest {
     @Test
     fun `option with single char short still builds`() {
         val cmd = cli("x") {
-            option("--level", "-l")
+            option(short = 'l', long = "level")
             action { Ok("") }
         }
         assertEquals("--level", cmd.options.single().name)
@@ -468,7 +468,7 @@ class ShortNameSpellingTest {
     @Test
     fun `normal cli still builds`() {
         val cmd = cli("x") {
-            option("--out", "-o")
+            option(short = 'o', long = "out")
             command("build") { action { Ok("") } }
             action { Ok("") }
         }
@@ -496,8 +496,8 @@ class DuplicateDeclarationTest {
     fun `duplicate option long name fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
-                option("--mode")
-                option("--mode")
+                option(long = "mode")
+                option(long = "mode")
                 action { Ok("") }
             }
         }
@@ -507,8 +507,8 @@ class DuplicateDeclarationTest {
     fun `duplicate flag long name fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
-                flag("--verbose")
-                flag("--verbose")
+                flag(long = "verbose")
+                flag(long = "verbose")
                 action { Ok("") }
             }
         }
@@ -520,8 +520,8 @@ class DuplicateDeclarationTest {
         // the option becomes permanently unreachable while --help still lists it.
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
-                option("--mode")
-                flag("--mode")
+                option(long = "mode")
+                flag(long = "mode")
                 action { Ok("") }
             }
         }
@@ -531,8 +531,8 @@ class DuplicateDeclarationTest {
     fun `duplicate short name among options flags fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("bad") {
-                option("--mode", "-m")
-                flag("--verbose", "-m")
+                option(short = 'm', long = "mode")
+                flag(short = 'm', long = "verbose")
                 action { Ok("") }
             }
         }
@@ -753,7 +753,7 @@ class InputNameValidationTest {
         // '--' end-of-options sentinel ('--=hello' would bind as the value).
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
-                option("--", "-z")
+                option(short = 'z', long = "")
                 action { Ok("") }
             }
         }
@@ -763,18 +763,18 @@ class InputNameValidationTest {
     fun `option with blank long name fails at construction`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
-                option("   ")
+                option(long = "   ")
                 action { Ok("") }
             }
         }
     }
 
     @Test
-    fun `option with leading dash long name fails at construction`() {
-        // A leading '-' would be indistinguishable from an option token on the command line.
+    fun `option with a dash written in its long name fails at construction`() {
+        // A long is typed after `--`, so a dash of its own would make the typed token `---bad`.
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
-                option("-bad")
+                option(long = "-bad")
                 action { Ok("") }
             }
         }
@@ -784,7 +784,7 @@ class InputNameValidationTest {
     fun `flag with empty long name fails at construction`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
-                flag("--")
+                flag(long = "")
                 action { Ok("") }
             }
         }
@@ -807,7 +807,7 @@ class InputNameValidationTest {
         // specifically rather than the whitespace check already covered above.
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
-                flag("na${Char(1)}me")
+                flag(long = "na${Char(1)}me")
                 action { Ok("") }
             }
         }
@@ -816,8 +816,8 @@ class InputNameValidationTest {
     @Test
     fun `normal option and flag names still construct`() {
         val cmd = cli("x") {
-            option("--name")
-            flag("--verbose", "-v")
+            option(long = "name")
+            flag(short = 'v', long = "verbose")
             action { Ok("") }
         }
         assertEquals("--name", cmd.options.single().name)
@@ -832,7 +832,7 @@ class ActionlessCommandInputTest {
     fun `actionless root with local option fails at build`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
-                option("--color", "-c")
+                option(short = 'c', long = "color")
                 command("build") { action { Ok("") } }
             }
         }
@@ -845,7 +845,7 @@ class ActionlessCommandInputTest {
     fun `actionless root with local flag fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
-                flag("--verbose", "-v")
+                flag(short = 'v', long = "verbose")
                 command("build") { action { Ok("") } }
             }
         }
@@ -854,7 +854,7 @@ class ActionlessCommandInputTest {
     @Test
     fun `hybrid root with local option and action still builds`() {
         val cmd = cli("app") {
-            option("--tint", "-c")
+            option(short = 'c', long = "tint")
             command("build") { action { Ok("") } }
             action { Ok("") }
         }
@@ -873,7 +873,7 @@ class ActionlessCommandInputTest {
     @Test
     fun `actionless root with global option instead of local still builds`() {
         val cmd = cli("app") {
-            globalOption("--tint", "-c")
+            globalOption(short = 'c', long = "tint")
             command("build") { action { Ok("") } }
         }
         assertTrue(cmd.isGroup)
@@ -885,7 +885,7 @@ class ActionlessCommandInputTest {
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("outer") {
-                    option("--verbose")
+                    option(long = "verbose")
                     command("inner") { action { Ok("") } }
                 }
             }
@@ -941,7 +941,7 @@ class ReservedSectionTitleTest {
         // exercise the reserved-section check on its own.
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
-                group("Global options") { flag("-f") }
+                group("Global options") { flag(short = 'f') }
                 command("build") { action { Ok("") } }
             }
         }
@@ -953,7 +953,7 @@ class ReservedSectionTitleTest {
         // heading "Global options" on the flag's group is the sole reason this fails.
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
-                group("Global options") { flag("-f") }
+                group("Global options") { flag(short = 'f') }
                 action { Ok("") }
             }
         }
@@ -979,7 +979,7 @@ class ReservedSectionTitleTest {
         // has example(...) entries, so a group titled "Examples" would render a duplicate heading.
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
-                group("Examples") { flag("-f") }
+                group("Examples") { flag(short = 'f') }
                 action { Ok("") }
             }
         }
@@ -992,7 +992,7 @@ class ReservedSectionTitleTest {
             group("Networking") {
                 command("connect") { action { Ok("") } }
             }
-            option("--out", "-o")
+            option(short = 'o', long = "out")
             action { Ok("") }
         }
         assertEquals("app", cmd.name)
@@ -1006,7 +1006,7 @@ class CommandCanActOrDispatchTest {
         // Not a parse error: such a command would parse fine and silently exit 0, which reads as success.
         // A command with inputs but no action is already caught by its own check, so this is the bare case.
         val ex = assertFailsWith<IllegalArgumentException> {
-            cli("app") { command("dead") { description = "does nothing" } }
+            cli("app") { command("dead") { help = "does nothing" } }
         }
         assertTrue("can never run" in ex.message.orEmpty(), ex.message)
     }

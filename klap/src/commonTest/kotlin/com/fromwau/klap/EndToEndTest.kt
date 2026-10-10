@@ -8,13 +8,13 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 
 private fun todo(): Cli = cli("todo") {
-    description = "A tiny todo CLI"
-    version = "1.0.0"
+    help = "A tiny todo CLI"
+    version = Version.Of("1.0.0")
     command("add") {
-        description = "Add a task"
+        help = "Add a task"
         val text = argument("text").multiple(min = 1)
-        val priority = option("--priority", "-p").int().default(0)
-        val done = flag("--done", "-d")
+        val priority = option(short = 'p', long = "priority").int().default(0)
+        val done = flag(short = 'd', long = "done")
         action {
             val label = "[${priority()}] ${text().joinToString(" ")}"
             Ok(if (done()) "$label (done)" else "added $label")
@@ -48,8 +48,8 @@ class EndToEndTest {
         lateinit var name: Opt<String?>
         lateinit var loud: Flag
         val tree = cli("app") {
-            name = option("--name", "-n", help = "who")
-            loud = flag("--loud", "-l", help = "shout")
+            name = option(short = 'n', long = "name", help = "who")
+            loud = flag(short = 'l', long = "loud", help = "shout")
             action { ran = true; Ok("") }
         }
         val parsed = tree.parse(listOf("-n", "ada", "--loud")).assertSuccess()

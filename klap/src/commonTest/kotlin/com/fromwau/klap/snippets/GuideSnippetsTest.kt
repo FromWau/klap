@@ -14,6 +14,7 @@ import com.fromwau.klap.Opt
 import com.fromwau.klap.RecordingTerminal
 import com.fromwau.klap.USAGE_ERROR_EXIT
 import com.fromwau.klap.ValueScope
+import com.fromwau.klap.Version
 import com.fromwau.klap.bindText
 import com.fromwau.klap.cli
 import com.fromwau.klap.cliOf
@@ -68,8 +69,8 @@ class GuideSnippetsTest {
     @Test
     fun `the guides rendered value errors name the dashed option`() {
         val tree = cli("app") {
-            val port = option("--port").int().validate("must be 1..65535") { it in 1..65535 }
-            val level = option("--level").choice("debug", "info", "warn", "error")
+            val port = option(long = "port").int().validate("must be 1..65535") { it in 1..65535 }
+            val level = option(long = "level").choice("debug", "info", "warn", "error")
             action { Ok("${port()} ${level()}") }
         }
         val t = RecordingTerminal()
@@ -90,7 +91,7 @@ class GuideSnippetsTest {
     fun `the guides group snippet captures a handle by plain val`() {
         val tree = cli("deploy") {
             val host = group("Networking") {
-                option("--host", "-H", help = "target host").required()
+                option(short = 'H', long = "host", help = "target host").required()
             }
             action { Ok("shipped to ${host()}") }
         }
@@ -105,8 +106,8 @@ class GuideSnippetsTest {
             val jobs: Opt<Int>
             val tags: Opt<List<String>>
             group("Tuning") {
-                jobs = option("--jobs", "-j", help = "parallelism").int().default(1)
-                tags = option("--tag", "-t", help = "labels").multiple()
+                jobs = option(short = 'j', long = "jobs", help = "parallelism").int().default(1)
+                tags = option(short = 't', long = "tag", help = "labels").multiple()
             }
             action { Ok("jobs=${jobs()} tags=${tags()}") }
         }
@@ -172,7 +173,7 @@ private sealed interface PortError : IError {
 }
 
 private fun guidePortCli() = cli("net") {
-    val port = option("--port").convert { raw ->
+    val port = option(long = "port").convert { raw ->
         val n = raw.toIntOrNull()
             ?: return@convert Err(ConversionError.Domain(PortError.NotANumber(raw), "'$raw' is not a number"))
         if (n in 1..65535) Ok(n)
@@ -199,7 +200,7 @@ class GuideConversionErrorSnippetTest {
     @Test
     fun `a builtin converter reports its own case rather than a domain error`() {
         val tree = cli("lvl") {
-            option("--level").int()
+            option(long = "level").int()
             action { Ok("ok") }
         }
         val bad = tree.parse(listOf("--level", "x")).assertError<CliError.BadValue>()
@@ -223,8 +224,8 @@ private fun String.isPast(): Boolean = this < GUIDE_TODAY
 private fun guideValidateInputsCli() = cli("app") {
     command("add") {
         val title = argument("title")
-        val due = option("--due", "-d").validate("must be YYYY-MM-DD") { it.looksLikeDate() }
-        val done = flag("--done", "-D")
+        val due = option(short = 'd', long = "due").validate("must be YYYY-MM-DD") { it.looksLikeDate() }
+        val done = flag(short = 'D', long = "done")
 
         validateInputs {
             val d = due()
@@ -271,7 +272,7 @@ class GuideValidateInputsSnippetTest {
     @Test
     fun `the guides Input name idiom renders like klaps own value errors`() {
         val tree = cli("app") {
-            val tag = option("--tag")
+            val tag = option(long = "tag")
             validateInputs {
                 val typed = tag() ?: return@validateInputs null
                 if (typed == "known") null else CliError.BadValue(tag.name, typed, "no such tag")
@@ -299,7 +300,7 @@ class GuideValidateInputsSnippetTest {
     @Test
     fun `a block never runs for --help or --version`() {
         val tree = cli("app") {
-            version = "1.0.0"
+            version = Version.Of("1.0.0")
             validateInputs { CliError.Usage("must not reach this") }
             action { Ok("ran") }
         }

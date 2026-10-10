@@ -16,7 +16,7 @@ class CompletionWholeLineTest {
         command("get") {
             val filter = argument("filter")
             val file = argument("file").optional()
-            val raw = flag("--raw", "-r")
+            val raw = flag(short = 'r', long = "raw")
             filter.completeWith(filterByPrefix = false) { candidate("$current|${file()}|${raw()}") }
             action { Ok("") }
         }
@@ -40,7 +40,7 @@ class CompletionWholeLineTest {
     @Test
     fun `a provider reads a global typed after the cursor instead of its default`() {
         val tasks = cli("tasks") {
-            val store = globalOption("--file", "-f").default("tasks.json")
+            val store = globalOption(short = 'f', long = "file").default("tasks.json")
             command("done") {
                 argument("id").completeWith { candidate(store()) }
                 action { Ok("") }
@@ -80,7 +80,7 @@ class CompletionWholeLineTest {
     fun `a variadic input leaves out the word under the cursor`() {
         val tags = cli("tasks") {
             command("add") {
-                val tag = option("--tag").multiple()
+                val tag = option(long = "tag").multiple()
                 val labels = argument("label").multiple()
                 labels.completeWith { candidates(listOf("red", "blue") - labels().toSet()) }
                 tag.completeWith { candidates(listOf("red", "blue") - tag().toSet()) }
@@ -99,8 +99,11 @@ class CompletionWholeLineTest {
     fun `an attached value completes as the whole word`() {
         val tool = cli("tool") {
             command("add") {
-                flag("--verbose", "-v")
-                option("--tag", "-t").completeWith(filterByPrefix = false) { candidates(listOf("red", "blue")) }
+                flag(short = 'v', long = "verbose")
+                option(
+                    short = 't',
+                    long = "tag",
+                ).completeWith(filterByPrefix = false) { candidates(listOf("red", "blue")) }
                 action { Ok("") }
             }
         }
@@ -114,7 +117,7 @@ class CompletionWholeLineTest {
     @Test
     fun `a global variadic option leaves out the value under the cursor too`() {
         val tags = cli("tasks") {
-            val tag = globalOption("--tag", "-t").multiple()
+            val tag = globalOption(short = 't', long = "tag").multiple()
             tag.completeWith { candidates(listOf("red", "blue") - tag().toSet()) }
             command("add") { action { Ok("") } }
         }
@@ -127,10 +130,10 @@ class CompletionWholeLineTest {
     @Test
     fun `a global variadic option reads its values in the order of the line`() {
         val git = cli("git") {
-            val tag = globalOption("--tag", "-t").multiple()
+            val tag = globalOption(short = 't', long = "tag").multiple()
             tag.completeWith(filterByPrefix = false) { candidate("${tag()}") }
             command("remote") {
-                flag("--verbose", "-v")
+                flag(short = 'v', long = "verbose")
                 action { Ok("") }
             }
         }
@@ -156,7 +159,7 @@ class CompletionWholeLineTest {
     fun `a variadic option leaves out only the value under the cursor`() {
         val git = cli("git") {
             command("remote") {
-                val tag = option("--tag").multiple()
+                val tag = option(long = "tag").multiple()
                 argument("name").optional()
                 tag.completeWith(filterByPrefix = false) { candidate("tag=${tag()}") }
                 command("add") { action { Ok("") } }
@@ -170,8 +173,8 @@ class CompletionWholeLineTest {
     fun `a value glued to a short cluster keeps the flags before it`() {
         val tool = cli("tool") {
             command("add") {
-                val verbose = flag("--verbose", "-v")
-                val tag = option("--tag", "-t").multiple()
+                val verbose = flag(short = 'v', long = "verbose")
+                val tag = option(short = 't', long = "tag").multiple()
                 tag.completeWith(filterByPrefix = false) { candidate("verbose=${verbose()} tag=${tag()}") }
                 action { Ok("") }
             }
@@ -183,7 +186,7 @@ class CompletionWholeLineTest {
     @Test
     fun `a slot removed by a trigger after the cursor is not offered`() {
         val chmod = cli("chmod") {
-            val reference = option("--reference")
+            val reference = option(long = "reference")
             argument("mode").absentWhen(reference).completeWith(filterByPrefix = false) { candidate("MODE") }
             argument("file").multiple(1).completeWith(filterByPrefix = false) { candidate("FILE") }
             action { Ok("") }
@@ -212,7 +215,7 @@ class CompletionWholeLineTest {
         val git = cli("git") {
             abbreviation = Abbreviation.All
             command("remote") {
-                val url = option("--url")
+                val url = option(long = "url")
                 argument("name").optional().completeWith(filterByPrefix = false) { candidate("$current|${url()}") }
                 command("add") { action { Ok("") } }
                 action { Ok("") }

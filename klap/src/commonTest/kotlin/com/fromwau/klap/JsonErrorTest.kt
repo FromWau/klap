@@ -23,7 +23,7 @@ class JsonErrorTest {
     @Test
     fun `an unknown option is its fields`() {
         val (code, err) = stderr("--verbos", "--json") {
-            flag("--verbose")
+            flag(long = "verbose")
             action { Ok("") }
         }
         assertEquals(2, code)
@@ -33,7 +33,7 @@ class JsonErrorTest {
     @Test
     fun `a bad value carries its converter cause`() {
         val (_, err) = stderr("--port", "x", "--json") {
-            val port = option("--port").int()
+            val port = option(long = "port").int()
             action { Ok("${port()}") }
         }
         assertEquals(
@@ -64,7 +64,9 @@ class JsonErrorTest {
     @Test
     fun `a conversion domain error writes the json its converter gave`() {
         val (_, err) = stderr("--size", "huge", "--json") {
-            val size = option("--size").convert { Err(ConversionError.Domain(DiskFull, "too big", JsonPrimitive(1))) }
+            val size = option(
+                long = "size",
+            ).convert { Err(ConversionError.Domain(DiskFull, "too big", JsonPrimitive(1))) }
             action { Ok("${size()}") }
         }
         assertEquals("""{"error":{"type":"BadValue","name":"--size","value":"huge","cause":1},"code":2}""" + "\n", err)

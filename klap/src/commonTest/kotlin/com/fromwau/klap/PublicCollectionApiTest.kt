@@ -19,7 +19,7 @@ class PublicCollectionApiTest {
     private data class Args(val lines: String?, val files: List<String>)
 
     private fun greet() = cliOf("head") {
-        val lines = option("--lines", "-n")
+        val lines = option(short = 'n', long = "lines")
         val files = argument("file").multiple()
         action { Ok("stub") }
         projection { Args(lines(), files()) }

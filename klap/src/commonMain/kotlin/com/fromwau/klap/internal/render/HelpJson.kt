@@ -82,7 +82,9 @@ internal fun Command.helpJson(
     description = description,
     arguments = arguments.filter { !it.hidden }.map { it.toHelp() },
     options = namedInputs.filter { !it.hidden }.map { it.toHelp() },
-    commands = subcommands.filter { !it.hidden }.map { CommandHelp(it.name, it.aliases, it.description, it.section) },
+    commands = subcommands.filter { !it.hidden }.map {
+        CommandHelp(it.token, it.aliases + it.flagSpellings.drop(1), it.description, it.section)
+    },
     globalOptions = globalSpecs.filter { !it.hidden }.map { it.toHelp() } +
         builtinOptions(rootVersioned, builtins).map { it.toHelp() },
     examples = examples.map { ExampleHelp(it.command, it.description) },

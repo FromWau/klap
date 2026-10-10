@@ -53,6 +53,12 @@ internal class ArgvScan(
      */
     fun names(long: String): Boolean = open.any { '=' !in tokens[it] && matched(tokens[it]) == long }
 
+    /** Where the first token a scan may act on that passes [test] stands, for ordering two built-ins; null if none. */
+    fun firstOpen(test: (String) -> Boolean): Int? = open.firstOrNull { test(tokens[it]) }
+
+    /** Where the first bare token naming one of [longs] stands; see [firstOpen]. */
+    fun firstNaming(vararg longs: String): Int? = firstOpen { '=' !in it && matched(it) in longs }
+
     /**
      * The value of a position-independent `--<long> value` / `--<long>=value` meta-option: the value,
      * `null` when it is absent, or MissingOptionValue when it is present without one. The LAST occurrence
@@ -241,7 +247,7 @@ private class ArityWalk(private val cli: Cli) {
                 j += run.length
                 continue
             }
-            if (globals.isHelpShort(chars[j])) {
+            if (globals.isBuiltinShort(chars[j])) {
                 // Reads on past it like any other resolved char, but siftGlobals cannot strip a cluster
                 // carrying klap's own short, so the token survives into the walk and stops the routing.
                 allGlobal = false

@@ -184,13 +184,13 @@ class RealShellCompletionTest {
                 require(cursor == line.length) { "fish completes only at the end of the line" }
                 listOf(
                     "fish", "--no-config", "-c",
-                    "set fish_complete_path ${dir.path}; complete -C \"\$LINE\"",
+                    $$"set fish_complete_path $${dir.path}; complete -C \"$LINE\"",
                 ) to env
             }
             CompletionShell.POWERSHELL -> listOf(
                 "pwsh", "-NoProfile", "-NonInteractive", "-Command",
                 $$"""
-                $${argumentPassing?.let { "\$PSNativeCommandArgumentPassing = '$it'" }.orEmpty()}
+                $${argumentPassing?.let { $$"$PSNativeCommandArgumentPassing = '$$it'" }.orEmpty()}
                 . '$${script.path}'
                 $r = TabExpansion2 -inputScript $env:LINE -cursorColumn ([int]$env:POINT)
                 $r.CompletionMatches | ForEach-Object { $_.CompletionText + "`t" + $_.ToolTip }
@@ -396,8 +396,8 @@ class RealShellCompletionTest {
     fun `powershell sends a closed double quoted word under the cursor without its quotes`() {
         for (shell in installed(listOf(CompletionShell.POWERSHELL))) {
             assertEquals(
-                listOf("__complete", "--cursor", "1", "--", "get", "a\$x"),
-                complete(shell, "tool get \"a\$x\"").call,
+                listOf("__complete", "--cursor", "1", "--", "get", $$"a$x"),
+                complete(shell, $$"tool get \"a$x\"").call,
             )
         }
     }
@@ -514,9 +514,9 @@ class RealShellCompletionTest {
             val offered = complete(shell, "tool get \"C:\\di", answer = "C:\\dir\nxyz\n").candidates
             // A value that does not extend the typed word would be added to it, so it is left out.
             assertEquals(listOf("compadd -U -Q", "C:\\dir"), offered.map { it.substringBefore('\t') })
-            val escaped = complete(shell, "tool get \"", answer = "a\"b$5\nx\\\$y\n").candidates
+            val escaped = complete(shell, "tool get \"", answer = $$"a\"b$5\nx\\$y\n").candidates
             assertEquals(
-                listOf("compadd -U -Q", "a\\\"b\\$5", "x\\\\\\\$y"),
+                listOf("compadd -U -Q", "a\\\"b\\$5", $$"x\\\\\\$y"),
                 escaped.map { it.substringBefore('\t') },
             )
             val glued = complete(shell, "tool get \"--tag=r", answer = "--tag=red\n").candidates

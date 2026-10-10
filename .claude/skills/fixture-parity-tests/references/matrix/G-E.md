@@ -77,7 +77,7 @@ Splits:
 - **G7** into G52 (blank help is `null`, and a provider's `""`) and G41 (spaced values are `null` though the option has help).
 - **G8** into G55 to G58 (hidden option value, operand, negation, global) and G34 (hidden command aliases): hidden suppresses names only, and the value of a hidden option still completes.
 - **G10** into G59 to G63 and G44: either the row changes to "the positive's help unless the tool words it differently (target)", or klap needs a help parameter.
-- **G11** into G64 to G70, one per built-in, since each has its own gate (`helpShort`, `--help-all` on visible subcommands, `version != null`, `metaOptions`) and `-h` also shows up as a cluster continuation.
+- **G11** into G64 to G70, one per built-in, since each has its own gate (`help`'s `short`, `--help-all` on visible subcommands, `version != null`, `metaOptions`) and `-h` also shows up as a cluster continuation.
 - **G12** into G71 to G75: drops subcommand names, the head for each word shape, the glued short with nothing after it, exclusivity, and the prefix-filter exemption.
 - **G13** into G76 to G79: choices match ignoring case, providers and names match by case, enums display lower case.
 - **G14** into G80 to G85: attached values filter after the head, a provider value gets the head prepended, a dash-led value in a value slot, a dash-led operand value, `=` inside a value, a value inside a cluster.
@@ -102,7 +102,7 @@ Decided: klap does not sort (G2), `-‸` offers both spellings and `--‸` only 
 Notes:
 
 - G16: `render/Completion.kt` name branch, `(cmd.options + cmd.flags + globalSpecs)` then the built-in `names +=` lines. Touches every fixture mixing `option` and `flag` (cp, ls, git, pacman). Whether "declared order" in G2 means this is the open question this row settles.
-- G17: `render/Completion.kt` the `forEach` over `spec.longs`, `spec.shorts`, `negativeLongs`, `negativeShorts`. cp (`.negatable("--no-dereference", "-P")`), git (`--no-pager`, `-P`), ssh (`-a`).
+- G17: `render/Completion.kt` the `forEach` over `spec.longs`, `spec.shorts`, `negativeLongs`, `negativeShorts`. cp (`.negatable(short = 'P', long = "no-dereference")`), git (`--no-pager`, `-P`), ssh (`-a`).
 - G18: `render/Completion.kt` the built-in `names +=` block. `CompletionTest.kt` `builtin option names carry their own help text`. Every fixture.
 - G19: `render/Completion.kt` `return subcommands + positionalCandidates`. git root (subcommands only, so mostly `n/a`); `CompletionTest.kt` `complete files stays exclusive of a sibling subcommand name at the first positional`.
 - G20: `render/Completion.kt` `listOf(Candidate(sub.name, help)) + sub.aliases.map`. git (`add`/`stage`, `remote remove`/`rm`).
@@ -130,7 +130,7 @@ Notes:
 
 | ID | Property | What a cell checks | Example |
 |---|---|---|---|
-| G28 | an input with several longs | every long is its own entry, each with the same description | an option declared `option("--dereference", "--deref", ...)` lists both |
+| G28 | an input with several longs | every long is its own entry, each with the same description | an option declared `option(long = listOf("dereference", "deref"), ...)` lists both |
 | G29 | a value-taking long is offered bare | `--backup`, never `--backup=` or `--backup ` with a no-space marker; the real tool's own shell completion may offer `--backup=`, a presentation difference noted, not asserted | `cp --backu‸` offers `--backup` |
 | G30 | an optional-value long | offered once, bare, never also as `--color=`; its values only after the `=` (K11) | `ls --col‸` offers `--color` |
 | G31 | a digit short (`numberOption`) | never a name entry: `head -‸` offers no `-NUM` placeholder, and a cluster continuation never offers a digit | `head -‸` |
@@ -232,7 +232,7 @@ Notes:
 
 | ID | Property | What a cell checks | Example |
 |---|---|---|---|
-| G59 | an explicit negative spelling replaces the generated one | `.negatable("--no-dereference", "-P")` offers exactly those, never a generated `--no-<long>` for any other long | cp, git `-P`, ssh `-a` |
+| G59 | an explicit negative spelling replaces the generated one | `.negatable(short = 'P', long = "no-dereference")` offers exactly those, never a generated `--no-<long>` for any other long | cp, git `-P`, ssh `-a` |
 | G60 | a generated negation per long | a negatable with two longs offers `--no-` of each | a flag with `--foo` and `--foobar` |
 | G61 | a negative short in a cluster | offered as a continuation with the positive's help, and a cluster that starts with one continues (needs checking: `firstNonFlagShort` looks up `shorts` only, so `cp -P‸` offers `-P` alone, not `-Pr`, `-Pf`) | `cp -P‸`, `cp -rP‸` |
 | G62 | a negation after its positive is given | still offered, since the pair overrides (`lastWins`-like) as the real tool reads it | `cp -L --no-d‸` offers `--no-dereference` |

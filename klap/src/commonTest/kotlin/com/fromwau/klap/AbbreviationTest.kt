@@ -55,9 +55,9 @@ class AbbreviationTest {
 
     private fun tree() = cli("t") {
         abbreviation = Abbreviation.Options
-        val recursive = flag("--recursive", "-r")
-        val reference = option("--reference")
-        val verbose = flag("--verbose", "-v").negatable(default = false)
+        val recursive = flag(short = 'r', long = "recursive")
+        val reference = option(long = "reference")
+        val verbose = flag(short = 'v', long = "verbose").negatable(default = false)
         argument("file").multiple()
         action<String>(human = { it }) {
             Ok("r=${recursive()} ref=${reference()} v=${verbose()}")
@@ -90,7 +90,7 @@ class AbbreviationTest {
     fun `a builtin abbreviates`() {
         val versioned = cli("t") {
             abbreviation = Abbreviation.Options
-            version = "1.0"
+            version = Version.Of("1.0")
             action<String>(human = { it }) { Ok("ran") }
         }
         assertIs<Invocation.ShowVersion>(versioned.parse(listOf("--vers")).assertSuccess())
@@ -100,7 +100,7 @@ class AbbreviationTest {
     fun `a builtin takes part in ambiguity`() {
         val withHeader = cli("t") {
             abbreviation = Abbreviation.Options
-            option("--header")
+            option(long = "header")
             action<String>(human = { it }) { Ok("ran") }
         }
         val err = withHeader.parse(listOf("--he", "x")).assertError<CliError.AmbiguousOption>()
@@ -128,8 +128,8 @@ class AbbreviationTest {
     fun `a hidden input matches but is still never suggested`() {
         val tree = cli("t") {
             abbreviation = Abbreviation.Options
-            val secret = flag("--secret").hidden()
-            val send = flag("--send")
+            val secret = flag(long = "secret").hidden()
+            val send = flag(long = "send")
             action<String>(human = { it }) { Ok("secret=${secret()} send=${send()}") }
         }
         // Hiding an input removes it from help, not from the parser: an abbreviation that could reach it
@@ -151,7 +151,7 @@ class AbbreviationTest {
     fun `a global abbreviates and shares one pool with the builtins`() {
         val tree = cli("app") {
             abbreviation = Abbreviation.Options
-            val header = globalOption("--header")
+            val header = globalOption(long = "header")
             command("build") {
                 action<String>(human = { it }) { Ok("header=${header()}") }
             }
@@ -169,7 +169,7 @@ class AbbreviationTest {
     fun `a group node reports the same ambiguity a leaf would`() {
         val tree = cli("app") {
             abbreviation = Abbreviation.Options
-            globalOption("--header")
+            globalOption(long = "header")
             command("build") { action<String>(human = { it }) { Ok("built") } }
         }
         // A group binds nothing, so the token is an error either way; it must not be an error that names
@@ -182,8 +182,8 @@ class AbbreviationTest {
 
     private fun head() = cli("head") {
         abbreviation = Abbreviation.Options
-        version = "9.11"
-        val verbose = flag("--verbose", "-v")
+        version = Version.Of("9.11")
+        val verbose = flag(short = 'v', long = "verbose")
         argument("file").multiple()
         action<String>(human = { it }) { Ok("v=${verbose()}") }
     }
@@ -214,13 +214,13 @@ class AbbreviationTest {
 
     private fun dispatcher() = cli("app") {
         abbreviation = Abbreviation.Options
-        version = "1.0"
+        version = Version.Of("1.0")
         command("fetch") {
-            val header = option("--header")
+            val header = option(long = "header")
             action<String>(human = { it }) { Ok("header=${header()}") }
         }
         command("build") {
-            val xx = flag("--xx")
+            val xx = flag(long = "xx")
             action<String>(human = { it }) { Ok("xx=${xx()}") }
         }
     }
@@ -245,7 +245,7 @@ class AbbreviationTest {
         val tree = cli("app") {
             abbreviation = Abbreviation.Options
             command("fetch") {
-                val collate = option("--collate")
+                val collate = option(long = "collate")
                 action<String>(human = { it }) { Ok("collate=${collate()}") }
             }
             command("build") { action<String>(human = { it }) { Ok("built") } }
@@ -262,12 +262,12 @@ class AbbreviationTest {
     private fun addListDispatcher() = cli("app") {
         abbreviation = Abbreviation.Options
         command("list") {
-            val limit = option("--limit")
-            val long = flag("--long")
+            val limit = option(long = "limit")
+            val long = flag(long = "long")
             action<String>(human = { it }) { Ok("limit=${limit()} long=${long()}") }
         }
         command("show") {
-            val limit = option("--limit")
+            val limit = option(long = "limit")
             action<String>(human = { it }) { Ok("limit=${limit()}") }
         }
         command("add") {
@@ -307,9 +307,9 @@ class AbbreviationTest {
     fun `a global and a command long share one pool in the pre strip`() {
         val tree = cli("app") {
             abbreviation = Abbreviation.Options
-            val sort = globalOption("--sort")
+            val sort = globalOption(long = "sort")
             command("sub") {
-                val sortBy = option("--sort-by")
+                val sortBy = option(long = "sort-by")
                 val files = argument("file").multiple()
                 action<String>(human = { it }) { Ok("sort=${sort()} by=${sortBy()} files=${files()}") }
             }
@@ -330,7 +330,7 @@ class AbbreviationTest {
         val tree = cli("app") {
             abbreviation = Abbreviation.Options
             command("sub") {
-                val collate = option("--collate")
+                val collate = option(long = "collate")
                 val files = argument("file").multiple()
                 action<String>(human = { it }) { Ok("collate=${collate()} files=${files()}") }
             }
@@ -355,7 +355,7 @@ class AbbreviationTest {
     fun `an abbreviated global that collides with a builtin is ambiguous in both positions`() {
         val tree = cli("app") {
             abbreviation = Abbreviation.Options
-            val collate = globalOption("--collate")
+            val collate = globalOption(long = "collate")
             command("sub") {
                 action<String>(human = { it }) { Ok("collate=${collate()}") }
             }

@@ -34,6 +34,10 @@ internal sealed interface ValueSpec : HolderSpec {
     var convert: (String) -> Result<Any?, ConversionError>
     var choices: List<String>?
 
+    // Set by .choice(ignoreCase = true) or .enum(ignoreCase = true): a value matches its choice in any case.
+    // Off by default, as `ls --color=ALWAYS` and `cp --backup=NUMBERED` refuse a value in the wrong case.
+    var choiceIgnoreCase: Boolean
+
     // Runs after a successful convert(); null = pass, non-null = error message. Always yields BadValue,
     // even on a choices-backed spec, so a validation failure is never mislabeled as "choose from ...".
     var validate: ((Any?) -> String?)?
@@ -100,6 +104,10 @@ internal val FlagSpec.negativeShorts: List<String>
         negativeNames.filterNot { it.startsWith("--") }.map { it.removePrefix("-") }
     }
 
+/** The negative half's spellings as the tokens they are typed as (`--no-cache`, `-P`); empty when not negatable. */
+internal val FlagSpec.negationTokens: List<String>
+    get() = negativeLongs.map { "--$it" } + negativeShorts.map { "-$it" }
+
 @PublishedApi
 internal class ArgumentSpec(
     override val name: String,
@@ -108,6 +116,7 @@ internal class ArgumentSpec(
     override var cardinality: Cardinality = Cardinality.Required,
 ) : ValueSpec {
     override var choices: List<String>? = null
+    override var choiceIgnoreCase: Boolean = false
     override var validate: ((Any?) -> String?)? = null
     override var valueHint: String? = null
     override var placeholder: String? = null
@@ -165,6 +174,7 @@ internal class OptionSpec(
     override val name: String = label ?: names.first()
     override var cardinality: Cardinality = Cardinality.Optional
     override var choices: List<String>? = null
+    override var choiceIgnoreCase: Boolean = false
     override var validate: ((Any?) -> String?)? = null
     override var valueHint: String? = null
     override var placeholder: String? = null
@@ -216,13 +226,16 @@ internal class FlagSpec(
     // tool whose negative half is spelled differently must also REJECT the generated form: git takes
     // `--paginate`/`--no-pager` and answers to neither `--pager` nor `--no-paginate`.
     var negativeNames: List<String> = emptyList()
+
+    // Set by Flag.negatable(help = ...): the negative half's own words, which give it a help row of its own.
+    var negativeHelp: String? = null
 }
 
 /**
  * Shared by the bare-name identities — positionals, command names, subcommand aliases: a blank name renders
  * a broken help row, and a leading '-' is ambiguous with an option token / the '--' end-of-options
  * sentinel. Dotted/normal identifier names stay allowed. Option/flag spellings go through
- * [requireValidSpelling] instead, which demands the dashes this one forbids.
+ * [requireValidSpelling] instead.
  */
 internal fun requireValidName(label: String, name: String) {
     require(name.isNotBlank()) {
@@ -237,40 +250,29 @@ internal fun requireValidName(label: String, name: String) {
 }
 
 /**
- * An option/flag spelling is written as the token it is (`--verbose`, `-v`), so the dashes are declared
- * rather than inferred from the spelling's length. That is what makes the vararg's one real trap —
- * `flag("--force", "-f", "ignore nonexistent files")`, where the help text is silently accepted as a third
- * spelling — a construction error naming the mistake instead of a puzzle discovered at runtime.
- *
- * A short is exactly one character: the parser walks a single-dash token as a cluster of one-character
- * flags (`-xzf`), so a longer single-dash spelling could never be matched whole.
+ * The internal form of a declaration's spellings: each written as the token it is (`--since`, `-a`), the first
+ * long first so it is the primary, then the other longs and the shorts in declaration order.
+ */
+internal fun spellings(short: List<Char>, long: List<String>): List<String> =
+    long.map { "--$it" } + short.map { "-$it" }
+
+/**
+ * A short is a [Char], so its shape needs no check beyond being visible; a long is a word typed after `--`, so it
+ * carries no dashes of its own and no `=`, which would end the name and start the value.
  */
 internal fun requireValidSpelling(label: String, spelling: String) {
-    require(spelling.isNotBlank()) {
-        "invalid $label spelling '$spelling': must not be blank"
+    val bare = if (spelling.startsWith("--")) spelling.drop(2) else spelling.drop(1)
+    require(bare.isNotBlank()) {
+        "invalid $label spelling '$bare': must not be blank"
     }
-    require(spelling.none { it.isWhitespace() || it.code in 0..0x1F || it.code == 0x7F }) {
-        "invalid $label spelling '$spelling': must not contain whitespace or control characters$HELP_TEXT_POINTER"
+    require(bare.none { it.isWhitespace() || it.code in 0..0x1F || it.code == 0x7F }) {
+        "invalid $label spelling '$bare': must not contain whitespace or control characters"
     }
-    require(spelling.startsWith("-")) {
-        val suggestion = if (spelling.length == 1) "-$spelling" else "--$spelling"
-        "invalid $label spelling '$spelling': a spelling carries its own dashes, so write it as " +
-                "'$suggestion'$HELP_TEXT_POINTER"
+    require(!bare.startsWith("-")) {
+        "invalid $label spelling '$bare': write it without dashes, as long = \"${bare.trimStart('-')}\"; " +
+                "a long is typed after '--' and a short after '-'"
     }
-    require(!spelling.startsWith("---")) {
-        "invalid $label spelling '$spelling': at most two leading dashes ('--long' or '-s')"
-    }
-    require(spelling != "-" && spelling != "--") {
-        "invalid $label spelling '$spelling': nothing follows the dashes ('-' is a conventional operand " +
-                "and '--' the end-of-options marker, so neither can name an input)"
-    }
-    require(spelling.startsWith("--") || spelling.length == 2) {
-        "invalid $label spelling '$spelling': a one-dash spelling is a single-character short, and the " +
-                "parser reads '$spelling' as the cluster ${spelling.drop(1).map { "-$it" }}; write " +
-                "'--${spelling.removePrefix("-")}' for a long"
+    require('=' !in bare) {
+        "invalid $label spelling '$bare': must not contain '=', which separates a long from its attached value"
     }
 }
-
-/** Appended to the two spelling rules a positionally passed help string trips, which is why it trips them. */
-private const val HELP_TEXT_POINTER =
-    " (if this is help text, pass it as help = \"...\", which is a named-only parameter)"

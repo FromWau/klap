@@ -16,10 +16,10 @@ import kotlin.test.assertIs
 class HelpScopeTest {
 
     private fun tree() = cli("app") {
-        globalFlag("--verbose", "-v")
+        globalFlag(short = 'v', long = "verbose")
         command("remote") {
             command("add") {
-                flag("--force", "-f")
+                flag(short = 'f', long = "force")
                 argument("url")
                 action { Ok("") }
             }

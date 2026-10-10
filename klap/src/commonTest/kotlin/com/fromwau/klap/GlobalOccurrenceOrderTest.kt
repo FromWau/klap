@@ -14,7 +14,7 @@ class GlobalOccurrenceOrderTest {
     @Test
     fun `a negatable global in a fully global cluster takes the polarity written last`() {
         val tree = cli("app") {
-            val check = globalFlag("--check", "-c").negatable("-C")
+            val check = globalFlag(short = 'c', long = "check").negatable(short = 'C')
             command("go") { action { Ok("check=${check()}") } }
         }
         // Every character is global, so the pre-strip claims the token and resolves both halves itself.
@@ -26,9 +26,9 @@ class GlobalOccurrenceOrderTest {
     @Test
     fun `a negatable global in a mixed cluster takes the polarity written last`() {
         val tree = cli("app") {
-            val check = globalFlag("--check", "-c").negatable("-C")
+            val check = globalFlag(short = 'c', long = "check").negatable(short = 'C')
             command("go") {
-                val verbose = flag("--verbose", "-v")
+                val verbose = flag(short = 'v', long = "verbose")
                 action { Ok("check=${check()} v=${verbose()}") }
             }
         }
@@ -41,10 +41,10 @@ class GlobalOccurrenceOrderTest {
     @Test
     fun `a repeatable global collects in argv order across both passes`() {
         val tree = cli("app") {
-            val tag = globalOption("--tag", "-t").multiple()
+            val tag = globalOption(short = 't', long = "tag").multiple()
             command("go") {
-                val verbose = flag("--verbose", "-v")
-                val extra = flag("--extra", "-x")
+                val verbose = flag(short = 'v', long = "verbose")
+                val extra = flag(short = 'x', long = "extra")
                 action { Ok("tags=${tag()} v=${verbose()} x=${extra()}") }
             }
         }

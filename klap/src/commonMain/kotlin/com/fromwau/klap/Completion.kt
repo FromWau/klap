@@ -9,7 +9,7 @@ public enum class CompletionShell {
     ;
 
     public companion object {
-        public fun fromOrNull(raw: String): CompletionShell? = when (raw.lowercase()) {
+        public fun fromOrNull(raw: String): CompletionShell? = when (raw) {
             "bash" -> BASH
             "zsh" -> ZSH
             "fish" -> FISH

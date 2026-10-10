@@ -16,9 +16,9 @@ import kotlin.test.assertEquals
 class CompletionFlowTest {
 
     private val rm = cli("rm") {
-        flag("--recursive", "-r", help = "remove directories and their contents")
-        option("--backend", "-b", help = "the backend to remove through")
-        flag("--force", "-f", help = "ignore nonexistent files")
+        flag(short = 'r', long = "recursive", help = "remove directories and their contents")
+        option(short = 'b', long = "backend", help = "the backend to remove through")
+        flag(short = 'f', long = "force", help = "ignore nonexistent files")
         action { Ok("") }
     }
 
@@ -26,14 +26,14 @@ class CompletionFlowTest {
 
     private val tool = cli("tool") {
         command("check") {
-            flag("--raw", "-r", help = "print strings without quotes")
-            option("--file", "-f", help = "the file to read").completeWith { candidates(files) }
-            option("--toml", help = "the TOML version").choice("1.0", "1.1")
+            flag(short = 'r', long = "raw", help = "print strings without quotes")
+            option(short = 'f', long = "file", help = "the file to read").completeWith { candidates(files) }
+            option(long = "toml", help = "the TOML version").choice("1.0", "1.1")
             argument("path").multiple().completeWith { candidates(files) }
             action { Ok("") }
         }
         command("get") {
-            val file = option("--file", "-f", help = "the file to read").file()
+            val file = option(short = 'f', long = "file", help = "the file to read").file()
             // Offered once `--file` is given, wherever on the line it stands.
             argument("filter").completeWith { if (file() != null) candidate(".owner") }
             action { Ok("") }
@@ -71,8 +71,8 @@ class CompletionFlowTest {
     @Test
     fun `the guide's rm example offers and takes as it says`() {
         val rm = cli("rm") {
-            flag("--recursive", "-r", help = "remove directories and their contents")
-            flag("--force", "-f", help = "ignore nonexistent files")
+            flag(short = 'r', long = "recursive", help = "remove directories and their contents")
+            flag(short = 'f', long = "force", help = "ignore nonexistent files")
             action { Ok("") }
         }
         assertEquals(Suggestion("-rf", "ignore nonexistent files"), rm.suggestionsFor("rm -r").first())
@@ -177,7 +177,7 @@ class CompletionFlowTest {
         // The shell sorts a list as it does its own; an order that means something (log levels) survives in one
         // that does not.
         val levels = cli("tool") {
-            option("--level").choice("debug", "info", "warn", "error")
+            option(long = "level").choice("debug", "info", "warn", "error")
             argument("file").completeWith { candidates(listOf("file10", "file2", "notes")) }
             action { Ok("") }
         }

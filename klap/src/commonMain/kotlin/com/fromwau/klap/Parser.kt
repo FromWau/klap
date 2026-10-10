@@ -10,15 +10,17 @@ import com.fromwau.klap.internal.parse.accumulator
 import com.fromwau.klap.internal.parse.bind
 import com.fromwau.klap.internal.parse.bindGlobals
 import com.fromwau.klap.internal.parse.globalLookup
+import com.fromwau.klap.internal.parse.hoistCommands
 import com.fromwau.klap.internal.parse.isFlagLike
 import com.fromwau.klap.internal.parse.namesHelpShort
+import com.fromwau.klap.internal.parse.namesVersionShort
 import com.fromwau.klap.internal.parse.optionValueSlots
 import com.fromwau.klap.internal.parse.resolveChoice
 import com.fromwau.klap.internal.parse.resolvedLongPool
 import com.fromwau.klap.internal.parse.sift
 import com.fromwau.klap.internal.parse.siftGlobals
 import com.fromwau.klap.internal.parse.subcommandCandidates
-import com.fromwau.klap.internal.spec.Builtin
+import com.fromwau.klap.internal.spec.BuiltinKind
 import com.fromwau.klap.internal.spec.FlagSpec
 import com.fromwau.klap.internal.spec.HolderSpec
 import com.fromwau.klap.internal.spec.longs
@@ -32,7 +34,7 @@ internal enum class ColorMode {
     ;
 
     companion object {
-        fun fromOrNull(raw: String): ColorMode? = when (raw.lowercase()) {
+        fun fromOrNull(raw: String): ColorMode? = when (raw) {
             "auto" -> AUTO
             "always" -> ALWAYS
             "never" -> NEVER
@@ -56,11 +58,11 @@ internal fun builtinLongs(
     versioned: Boolean,
     metaOptions: Boolean,
 ): List<String> = listOfNotNull(
-    "help",
-    "help-all",
+    "help".takeIf { builtins.help },
+    "help-all".takeIf { builtins.helpAll },
     "json".takeIf { builtins.json },
     "color".takeIf { builtins.color },
-    "version".takeIf { versioned },
+    builtins.versionLong.takeIf { versioned },
     "completion".takeIf { metaOptions && builtins.completion },
     "docs".takeIf { metaOptions && builtins.docs },
 )
@@ -99,7 +101,7 @@ internal fun Cli.builtinScan(
 ): ArgvScan = ArgvScan(pool, abbreviation != Abbreviation.None, optionValueSlots(argv), argv)
 
 /** The built-ins that are boolean, so an inline `=value` on one is always a usage error. */
-private val VALUELESS_BUILTIN_LONGS = listOf("help", "help-all", "json", "version")
+private fun Builtins.valuelessLongs(): List<String> = listOf("help", "help-all", "json", versionLong)
 
 /**
  * The effective `--color` mode read leniently from raw [argv]: absent, present without a value, or an
@@ -111,23 +113,27 @@ private val VALUELESS_BUILTIN_LONGS = listOf("help", "help-all", "json", "versio
  * the app's own (or unknown), and AUTO is the only mode klap still has an opinion about.
  *
  * [pool] is the root's own [positionIndependentLongs], [valueSlots] the root's own [optionValueSlots], and
- * [infer] the root's own [Cli.abbreviation] reduced to a boolean, so `--col` abbreviates, `-e --color` stays
- * `-e`'s value, and `al` resolves to `always` here exactly as they do in [parse]; the defaults stand in for
- * a caller with no root at hand, mirroring [Builtins.DEFAULT] and [Abbreviation.None].
+ * [abbreviation] the root's own [Cli.abbreviation], so `--col` abbreviates, `-e --color` stays `-e`'s value,
+ * and `al` resolves to `always` here exactly as they do in [parse]; the defaults stand in for a caller with no
+ * root at hand, mirroring [Builtins.DEFAULT] and [Abbreviation.None].
  */
 internal fun List<String>.colorMode(
     builtins: Builtins = Builtins.DEFAULT,
     pool: List<String> = builtinLongs(builtins, versioned = true, metaOptions = true),
     valueSlots: Set<Int> = emptySet(),
-    infer: Boolean = false,
+    abbreviation: Abbreviation = Abbreviation.None,
 ): ColorMode {
     if (!builtins.color) return ColorMode.AUTO
-    val scan = ArgvScan(pool, infer, valueSlots, this)
+    val scan = ArgvScan(pool, abbreviation != Abbreviation.None, valueSlots, this)
     val head = if (builtins.json) scan.strip("json") else scan
     val raw = head.value("color").getOrElse { null }
     // Same gate as parse(): an ambiguous prefix has no single mode to report here, so it falls back to AUTO.
     val resolved = raw?.let {
-        if (infer) (resolveChoice("--color", it, COLOR_MODE_NAMES) as? Result.Success)?.value else it
+        if (abbreviation.infersValues) {
+            (resolveChoice("--color", it, COLOR_MODE_NAMES) as? Result.Success)?.value
+        } else {
+            it
+        }
     }
     return resolved?.let { ColorMode.fromOrNull(it) } ?: ColorMode.AUTO
 }
@@ -142,7 +148,7 @@ internal fun List<String>.colorMode(
 private fun Cli.builtinInlineValueError(scan: ArgvScan): CliError? {
     // The whole-token form only, and literal since a short never abbreviates: inside a cluster the same
     // shape is reported by the sift that resolves the character (`-vh=x`).
-    if (builtins.helpShort && scan.openTokens.any { it.startsWith("-h=") }) {
+    if (builtins.helpShort?.let { short -> scan.openTokens.any { it.startsWith("-$short=") } } == true) {
         return CliError.FlagTakesNoValue("--help", null)
     }
     val inline = scan.openTokens.filter { '=' in it }
@@ -152,7 +158,7 @@ private fun Cli.builtinInlineValueError(scan: ArgvScan): CliError? {
     val offered = builtinLongs(builtins, version != null, metaOptions)
     // Keyed on the built-in rather than on argv order, so which one a line with two offenders reports
     // does not depend on how the user ordered them.
-    val offender = VALUELESS_BUILTIN_LONGS.filter { it in offered }.firstNotNullOfOrNull { long ->
+    val offender = builtins.valuelessLongs().filter { it in offered }.firstNotNullOfOrNull { long ->
         inline.firstOrNull { scan.matched(it) == long }
     }
     return offender?.let { CliError.FlagTakesNoValue(it.substringBefore('='), null) }
@@ -169,7 +175,8 @@ private fun Cli.builtinInlineValueError(scan: ArgvScan): CliError? {
  * either a `--h` a sibling's long makes ambiguous or a cluster whose other chars belong to a subcommand.
  */
 private fun Cli.hasHelpRequest(scan: ArgvScan, cmd: Command, globalAcc: GlobalAccumulator): Boolean =
-    scan.names("help") || scan.names("help-all") || scan.namesHelpShort(cmd, globalAcc)
+    (builtins.help && scan.names("help")) || (builtins.helpAll && scan.names("help-all")) ||
+        scan.namesHelpShort(cmd, globalAcc)
 
 /**
  * The same [CliError.UnknownSubcommand] `Command.bind`'s group branch raises for a group handed a leading
@@ -190,9 +197,11 @@ private fun Cli.hasHelpRequest(scan: ArgvScan, cmd: Command, globalAcc: GlobalAc
  * which is precisely what is not known yet here.
  */
 private fun Cli.routesTransparently(token: String, globalFlagShorts: Set<String>): Boolean = when {
-    token == "--help" || token == "--help-all" -> true
+    (token == "--help" && builtins.help) || (token == "--help-all" && builtins.helpAll) -> true
     token.startsWith("--") || !token.startsWith("-") || token.length < 2 -> false
-    else -> token.drop(1).all { it.toString() in globalFlagShorts || (builtins.helpShort && it == 'h') }
+    else -> token.drop(1).all {
+        it.toString() in globalFlagShorts || it == builtins.helpShort || it == builtins.versionShort
+    }
 }
 
 private fun Cli.unknownSubcommandBeforeHelp(
@@ -222,7 +231,7 @@ private fun Cli.unknownSubcommandBeforeHelp(
 // Reads this tree's own abbreviation mode rather than globalAcc.inferNames: the meta-option checks that call this
 // run before the accumulator is constructed, so there is no globalAcc yet to read it from.
 private fun Cli.resolveBuiltinChoice(name: String, raw: String, choices: List<String>): Result<String, CliError> =
-    if (abbreviation != Abbreviation.None) resolveChoice(name, raw, choices) else Result.Success(raw)
+    if (abbreviation.infersValues) resolveChoice(name, raw, choices) else Result.Success(raw)
 
 /**
  * Parses [argv] and hands back what it resolved to, without printing anything or exiting. Use it when you
@@ -237,7 +246,11 @@ public fun Cli.parse(argv: Collection<String>): Result<Invocation, CliError> = p
  * but the walk indexes and slices argv throughout, so it copies to a [List] once here rather than at every
  * use. Passing an unordered collection is the caller's error: argv is a sequence and the order is the input.
  */
-private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
+private fun Cli.parseTokens(typed: List<String>): Result<Invocation, CliError> {
+    // A flag-spelled command stands where its word would from here on, and a prio command at the front of its
+    // parent's segment, so every scan below routes both as words.
+    val hoisted = hoistCommands(typed)
+    val argv = hoisted.tokens
     val builtinPool = positionIndependentLongs()
     // Resolved once, ahead of every scan below and shared by all of them: a token standing in a
     // value-taking option's argument slot belongs to that option, so no built-in may claim it.
@@ -278,15 +291,38 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
         withoutJson
     }
 
-    if (version != null && scan.names("version")) {
-        return Result.Success(Invocation.ShowVersion(this, json))
+    // --help and --version answer whichever the line gives first, as GNU tools do: `ls --help --version` prints
+    // the usage, `ls --version --help` the version. --help-all sits with them.
+    val versionAt = if (version == null) {
+        null
+    } else {
+        listOfNotNull(scan.firstNaming(builtins.versionLong), scan.firstOpen { namesVersionShort(it, globalLookup()) }).minOrNull()
+    }
+    if (versionAt != null) {
+        val helpAt = listOfNotNull(
+            scan.firstNaming(*listOfNotNull("help".takeIf { builtins.help }, "help-all").toTypedArray()),
+            scan.firstOpen { namesHelpShort(it, globalLookup()) },
+        ).minOrNull()
+        if (helpAt == null || versionAt < helpAt) return Result.Success(Invocation.ShowVersion(this, json))
+    }
+
+    // A `prio` command runs ahead of the meta-options, which then name nothing.
+    val withoutMeta = if (metaOptions) {
+        withoutColor
+            .let { if (builtins.completion) it.stripValued("completion") else it }
+            .let { if (builtins.docs) it.stripValued("docs") else it }
+    } else {
+        withoutColor
     }
 
     // Single-command roots expose completion/docs as position-independent, print-and-exit meta-options
     // (dispatchers use subcommands). Recognized here like --version, before the walk and binding.
-    // --help / -h outrank the meta-options (design precedence: version, help, then completion/docs).
-    if (metaOptions && !hasHelpRequest(scan, this, globalLookup())) {
-        if (builtins.completion) {
+    // --help / -h outrank the meta-options, and between the two the line's first one answers.
+    if (metaOptions && !hoisted.prio && !hasHelpRequest(scan, this, globalLookup())) {
+        val docsAt = withoutColor.firstOpen { withoutColor.matched(it.substringBefore('=')) == "docs" }
+        val completionAt = withoutColor.firstOpen { withoutColor.matched(it.substringBefore('=')) == "completion" }
+        val docsFirst = builtins.docs && docsAt != null && (completionAt == null || docsAt < completionAt)
+        if (builtins.completion && !docsFirst) {
             withoutColor.value("completion").getOrElse { return Result.Error(it) }
                 ?.let { raw ->
                     val resolved = resolveBuiltinChoice("--completion", raw, COMPLETION_SHELL_NAMES)
@@ -323,7 +359,7 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
 
     // Globals are position-independent: pulled out before the subcommand walk, the same move --json already
     // makes, and stopping at a value slot for the same reason the built-in strips above do.
-    val preStrip = globalSpecs.siftGlobals(withoutColor, builtinPool)
+    val preStrip = globalSpecs.siftGlobals(if (hoisted.prio) withoutMeta else withoutColor, builtinPool)
     val globalSift = preStrip.sift
 
     // Valueless globals only: the walk cannot tell a value-taking global's argument from a subcommand
@@ -342,7 +378,7 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
         when (val match = cmd.resolveSubcommand(token, abbreviation == Abbreviation.All)) {
             is SubcommandMatch.One -> {
                 cmd = match.command
-                path += match.command.name
+                path += match.command.token
                 consumed += idx
                 idx += 1
             }
@@ -396,8 +432,13 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
             ?.let { return Result.Error(it) }
     }
 
-    // --help-all outranks --help (a more specific request for the same node); both sit below --version.
-    if (segment.names("help-all")) {
+    // --help-all and --help, like --version, answer whichever the line gives first.
+    val helpAllAt = if (builtins.helpAll) segment.firstNaming("help-all") else null
+    val plainHelpAt = listOfNotNull(
+        segment.firstNaming("help").takeIf { builtins.help },
+        segment.firstOpen { cmd.namesHelpShort(it, globalAcc) },
+    ).minOrNull()
+    if (helpAllAt != null && (plainHelpAt == null || helpAllAt < plainHelpAt)) {
         return Result.Success(
             Invocation.ShowHelp(
                 cmd,
@@ -419,6 +460,7 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
     // A hard global-sift error (dangling global value, or a value handed to a global boolean flag) is a
     // usage error regardless of where the walk ends up; raise it before the command bind sees the leftover.
     globalSift.error?.let { return Result.Error(it) }
+    hoisted.error?.let { return Result.Error(it) }
 
     // A resolved built-in renders the whole tree via this root, so route it straight to its Show* invocation
     // using `this`, with no binding, no action, no self-reference. Its node exists only to be listed/documented.
@@ -436,7 +478,7 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
                 globalSpecs,
                 globalAcc.toGlobalSift(),
                 sink,
-                globalAcc.inferNames,
+                globalAcc.inferValues,
             ).getOrElse { return Result.Error(it) }
             when (val invocation = outcome.value) {
                 is Invocation.Execute -> {
@@ -444,7 +486,8 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
                     // Output mode resolves here, not in run() where the color switch waits for a terminal, so
                     // an embedder driving parse() + runAction() reads the same mode the terminal path gives.
                     val exec = invocation.copy(scope = ActionScope(sink, json = invocation.globals.json))
-                    deferredGlobalErrors.firstOrNull()?.let { return Result.Error(it) }
+                    // A prio command runs without its parent's required globals.
+                    if (!cmd.prio) deferredGlobalErrors.firstOrNull()?.let { return Result.Error(it) }
                     // Only this branch: a validateInputs block reads bound values, which --help, --version,
                     // completion and docs never produce, and must not refuse to render over an input they
                     // were never going to use.
@@ -452,7 +495,7 @@ private fun Cli.parseTokens(argv: List<String>): Result<Invocation, CliError> {
                 }
 
                 // A group run without a subcommand: help for a person, but text is not data under --json.
-                is Invocation.ShowHelp -> if (json) {
+                is Invocation.ShowHelp -> if (json || !builtins.help) {
                     Result.Error(CliError.MissingSubcommand(invocation.qualifiedName))
                 } else {
                     Result.Success(
@@ -484,12 +527,12 @@ public fun Cli.parse(argv: Array<String>): Result<Invocation, CliError> = parseT
  * both forms report an unknown value identically. The root is `this`, handed straight to the invocation.
  */
 private fun Cli.routeBuiltin(
-    kind: Builtin,
+    kind: BuiltinKind,
     args: List<String>,
     qualifiedName: String,
 ): Result<Invocation, CliError> =
     when (kind) {
-        Builtin.Completion -> {
+        BuiltinKind.Completion -> {
             val raw = args.firstOrNull() ?: return Result.Error(CliError.MissingArgument(qualifiedName, "shell"))
             val resolved = when (val r = resolveBuiltinChoice("completion", raw, COMPLETION_SHELL_NAMES)) {
                 is Result.Error -> return r
@@ -510,7 +553,7 @@ private fun Cli.routeBuiltin(
             Result.Success(Invocation.ShowCompletion(this, shell))
         }
 
-        Builtin.Docs -> {
+        BuiltinKind.Docs -> {
             val raw = args.firstOrNull() ?: return Result.Error(CliError.MissingArgument(qualifiedName, "format"))
             val resolved = when (val r = resolveBuiltinChoice("docs", raw, DOC_FORMAT_NAMES)) {
                 is Result.Error -> return r
@@ -528,7 +571,7 @@ private fun Cli.routeBuiltin(
             if (args.size > 1) return Result.Error(CliError.TooManyArguments(qualifiedName, args.drop(1)))
             Result.Success(Invocation.ShowDocs(this, format))
         }
-        Builtin.Complete -> Result.Success(completeInvocation(args))
+        BuiltinKind.Complete -> Result.Success(completeInvocation(args))
     }
 
 /**

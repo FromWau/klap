@@ -47,7 +47,7 @@ public sealed interface ConversionError : IError {
      *     data class OutOfRange(val given: Int) : PortError
      * }
      *
-     * option("--port").convert { raw ->
+     * option(long = "port").convert { raw ->
      *     val n = raw.toIntOrNull()
      *         ?: return@convert Err(ConversionError.Domain(PortError.NotANumber(raw), "not a number"))
      *     if (n in 1..65535) Ok(n)

@@ -9,8 +9,8 @@ class OperandTerminatedOptionsTest {
 
     private fun sshLike() = cli("ssh") {
         optionsEndAtFirstOperand = true
-        val verbose = flag("--verbose", "-v")
-        val login = option("--login", "-l")
+        val verbose = flag(short = 'v', long = "verbose")
+        val login = option(short = 'l', long = "login")
         argument("destination")
         val command = argument("command").multiple()
         action<String>(human = { it }) {
@@ -45,7 +45,7 @@ class OperandTerminatedOptionsTest {
         // Only a cluster resolving in FULL is the ambiguous one. `-cvf` is a word that happens to contain
         // a global's letter, and refusing it would take every tar-shaped tail with it.
         val tree = cli("app") {
-            globalFlag("--verbose", "-v")
+            globalFlag(short = 'v', long = "verbose")
             command("run") {
                 optionsEndAtFirstOperand = true
                 val rest = argument("rest").multiple()
@@ -63,7 +63,7 @@ class OperandTerminatedOptionsTest {
     @Test
     fun `the switch is off by default so options permute`() {
         val permuting = cli("t") {
-            val v = flag("--verbose", "-v")
+            val v = flag(short = 'v', long = "verbose")
             val files = argument("file").multiple()
             action<String>(human = { it }) { Ok("v=${v()} files=${files()}") }
         }
@@ -82,8 +82,8 @@ class OperandTerminatedOptionsTest {
         // options) and cannot pass through whole (that would drop -s silently), so it is refused.
         val tree = cli("app") {
             optionsEndAtFirstOperand = true
-            val sort = globalOption("--sort", "-s")
-            val force = flag("--force", "-f")
+            val sort = globalOption(short = 's', long = "sort")
+            val force = flag(short = 'f', long = "force")
             val files = argument("file").multiple()
             action<String>(human = { it }) { Ok("sort=${sort()} force=${force()} files=${files()}") }
         }
@@ -96,8 +96,8 @@ class OperandTerminatedOptionsTest {
         // The neighbour of the refusal above, and the reason it can stay narrow: siftGlobals claims a
         // wholly-global cluster before this command ever sifts, so it never reaches that branch.
         val tree = cli("app") {
-            val sort = globalOption("--sort", "-s")
-            val verbose = globalFlag("--verbose", "-v")
+            val sort = globalOption(short = 's', long = "sort")
+            val verbose = globalFlag(short = 'v', long = "verbose")
             command("run") {
                 optionsEndAtFirstOperand = true
                 val files = argument("file").multiple()
@@ -111,8 +111,8 @@ class OperandTerminatedOptionsTest {
     fun `a mixed cluster after the separator stays a literal operand`() {
         val tree = cli("app") {
             optionsEndAtFirstOperand = true
-            val sort = globalOption("--sort", "-s")
-            flag("--force", "-f")
+            val sort = globalOption(short = 's', long = "sort")
+            flag(short = 'f', long = "force")
             val files = argument("file").multiple()
             action<String>(human = { it }) { Ok("sort=${sort()} files=${files()}") }
         }

@@ -3,6 +3,7 @@ package com.fromwau.klap.fixture.mkdir
 import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.TypedCli
+import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
 
@@ -20,8 +21,8 @@ import com.fromwau.klap.projection
 public fun mkdirCli(): TypedCli<MkdirInputs> = cliOf("mkdir") {
     // GNU mkdir takes any unambiguous prefix of a long option: `mkdir --par` is --parents.
     abbreviation = Abbreviation.Options
-    description = "Create the DIRECTORY(ies), if they do not already exist."
-    version = "9.11"
+    help = "Create the DIRECTORY(ies), if they do not already exist."
+    version = Version.Of("9.11")
     epilogue = "Report bugs to: bug-coreutils@gnu.org"
 
     example("mkdir -p a/b/c", "create every missing parent along the way")
@@ -30,16 +31,22 @@ public fun mkdirCli(): TypedCli<MkdirInputs> = cliOf("mkdir") {
 
     // GNU mkdir's -m is "as in chmod", so it also accepts SYMBOLIC modes (`u=rwx,go=rx`, `-w`).
     // The study brief scopes this to octal, so the validate below is octal-only.
-    val mode = option("--mode", "-m", help = "set file mode (as in chmod), not a=rwx - umask")
+    val mode = option(short = 'm', long = "mode", help = "set file mode (as in chmod), not a=rwx - umask")
         .validate("must be an octal mode, e.g. 755 or 0700") { it.matches(Regex("[0-7]{1,4}")) }
 
-    val parents = flag("--parents", "-p", help = "no error if existing, make parent directories as needed")
+    val parents = flag(short = 'p', long = "parents", help = "no error if existing, make parent directories as needed")
 
-    val verbose = flag("--verbose", "-v", help = "print a message for each created directory")
+    val verbose = flag(short = 'v', long = "verbose", help = "print a message for each created directory")
 
-    val selinux = flag("-Z", help = "set the SELinux security context of each directory to the default type")
+    val selinux = flag(
+        short = 'Z',
+        help = "set the SELinux security context of each directory to the default type",
+    )
 
-    val context = option("--context", help = "like -Z, or set the SELinux or SMACK security context to CTX")
+    val context = option(
+        long = "context",
+        help = "like -Z, or set the SELinux or SMACK security context to CTX",
+    )
         .optionalValue("default")
 
     val directories = argument("directory", "directory to create").file().multiple(min = 1)

@@ -4,9 +4,11 @@ import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
 import com.fromwau.kern.result.map
+import com.fromwau.klap.internal.render.Candidate
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -18,7 +20,7 @@ private fun app(): Cli = cli("todo") {
 }
 
 private fun appWithRequiredGlobal(): Cli = cli("app") {
-    val dsn = globalOption("--dsn").required()
+    val dsn = globalOption(long = "dsn").required()
     command("run") { action { Ok(dsn()) } }
 }
 
@@ -29,7 +31,7 @@ private fun greet(): Cli = cli("greet") {
 
 /** A single-command root that offers every rung of the built-in ladder at once. */
 private fun ladderRoot(): Cli = cli("greet") {
-    version = "1.0.0"
+    version = Version.Of("1.0.0")
     argument("name")
     action { Ok("") }
 }
@@ -174,24 +176,138 @@ class BuiltinsTest {
     }
 
     @Test
-    fun `a line naming two built-ins answers the higher rung in either order`() {
-        // The ladder docs/guide.md publishes: version, help-all, help, completion, docs. Every adjacent
-        // pair, written both ways round, since the claim is that argv position never picks the answer.
+    fun `a line naming two built-ins answers by bucket then by order`() {
+        // Owner, 2026-10-10: --version, --help and --help-all form the first bucket and --completion and --docs the
+        // second; the first bucket beats the second, and inside a bucket the line's first one answers, as GNU
+        // tools answer --help and --version. --help-all needs a subcommand to expand, and --completion as an option
+        // needs a root without one, so the first bucket is read on a dispatcher.
+        val dispatcher = cli("greet") {
+            version = Version.Of("1.0.0")
+            command("hello") { action { Ok("") } }
+        }
+        assertIs<Invocation.ShowVersion>(parseOf(dispatcher, "--version", "--help-all"))
+        assertTrue(assertIs<Invocation.ShowHelp>(parseOf(dispatcher, "--help-all", "--version")).recursive)
+        assertTrue(assertIs<Invocation.ShowHelp>(parseOf(dispatcher, "--help-all", "--help")).recursive)
+        assertFalse(assertIs<Invocation.ShowHelp>(parseOf(dispatcher, "--help", "--help-all")).recursive)
+        assertIs<Invocation.ShowHelp>(parseOf(dispatcher, "--help", "--version"))
+        assertIs<Invocation.ShowVersion>(parseOf(dispatcher, "--version", "--help"))
         val tree = ladderRoot()
-        assertIs<Invocation.ShowVersion>(parseOf(tree, "--version", "--help-all"))
-        assertIs<Invocation.ShowVersion>(parseOf(tree, "--help-all", "--version"))
-        assertTrue(assertIs<Invocation.ShowHelp>(parseOf(tree, "--help-all", "--help")).recursive)
-        assertTrue(assertIs<Invocation.ShowHelp>(parseOf(tree, "--help", "--help-all")).recursive)
         assertFalse(assertIs<Invocation.ShowHelp>(parseOf(tree, "--help", "--completion", "bash")).recursive)
         assertFalse(assertIs<Invocation.ShowHelp>(parseOf(tree, "--completion", "bash", "--help")).recursive)
         assertEquals(
             CompletionShell.BASH,
             assertIs<Invocation.ShowCompletion>(parseOf(tree, "--completion", "bash", "--docs", "man")).shell,
         )
-        assertEquals(
-            CompletionShell.BASH,
-            assertIs<Invocation.ShowCompletion>(parseOf(tree, "--docs", "man", "--completion", "bash")).shell,
-        )
+        assertIs<Invocation.ShowDocs>(parseOf(tree, "--docs", "man", "--completion", "bash"))
+    }
+
+    @Test
+    fun `a version short prints the version alone or in a cluster`() {
+        // `pacman -V` and `pacman -QV` print the banner; curl and ssh take -V too.
+        val tool = cli("pkg") {
+            version = Version.Of("7.1.0", short = 'V')
+            flag(short = 'Q', long = "query")
+            action { Ok("") }
+        }
+        assertIs<Invocation.ShowVersion>(parseOf(tool, "-V"))
+        assertIs<Invocation.ShowVersion>(parseOf(tool, "-QV"))
+        val help = RecordingTerminal().also { tool.run(arrayOf("--help"), it) }.out.toString()
+        assertTrue("-V, --version" in help, help)
+        // Without a version there is no --version, so nothing for a short to name: `Version.Off` holds no short.
+        assertIs<CliError.UnknownOption>(cli("pkg") { action { Ok("") } }.parse(listOf("-V")).assertError())
+    }
+
+    @Test
+    fun `a built-in is described in the words the tool gives it`() {
+        // GNU cp: "--help  display this help and exit", "--version  output version information and exit".
+        val tool = cli("cp") {
+            version = Version.Of("9.12", description = "output version information and exit")
+            builtins {
+                help = Help.Generate(description = "display this help and exit")
+            }
+            argument("file")
+            action { Ok("") }
+        }
+        val help = RecordingTerminal().also { tool.run(arrayOf("--help"), it) }.out.toString()
+        assertTrue("display this help and exit" in help && "output version information and exit" in help, help)
+        val offered = tool.completeCandidates(listOf("--"))
+        assertTrue(Candidate("--help", "display this help and exit") in offered, "$offered")
+        assertTrue(Candidate("--version", "output version information and exit") in offered, "$offered")
+    }
+
+    @Test
+    fun `a cli with no subcommand has no help-all`() {
+        // Nothing for it to expand, and real single-command tools refuse it (`dd --help-all`: "unrecognized option").
+        assertIs<CliError.UnknownOption>(ladderRoot().parse(listOf("--help-all")).assertError())
+        cli("greet") {
+            option(long = "help-all", help = "the tool's own")
+            action { Ok("") }
+        }
+    }
+
+    @Test
+    fun `help off removes --help and its short and frees both names`() {
+        val tree = cli("tool") {
+            builtins { help = Help.Off }
+            flag(short = 'h', long = "help", help = "the tool's own")
+            action { Ok("") }
+        }
+        assertIs<Invocation.Execute>(parseOf(tree, "--help"))
+        assertIs<Invocation.Execute>(parseOf(tree, "-h"))
+        val group = cli("tool") {
+            builtins { help = Help.Off }
+            command("sync") { action { Ok("") } }
+        }
+        assertIs<CliError.MissingSubcommand>(group.parse(emptyList()).assertError())
+        assertIs<CliError.UnknownOption>(group.parse(listOf("--help")).assertError())
+    }
+
+    @Test
+    fun `a custom help page is printed as written with its own short and words`() {
+        val tree = cli("tool") {
+            builtins { help = Help.Custom("usage: tool [-?] file", description = "show usage", short = '?') }
+            argument("file")
+            action { Ok("") }
+        }
+        for (argv in listOf(arrayOf("--help"), arrayOf("-?"))) {
+            val out = RecordingTerminal().also { tree.run(argv, it) }.out.toString()
+            assertEquals("usage: tool [-?] file", out.trim(), argv.toList().toString())
+        }
+        assertIs<CliError.UnknownOption>(tree.parse(listOf("-h")).assertError())
+        assertTrue(Candidate("--help", "show usage") in tree.completeCandidates(listOf("--h")))
+    }
+
+    @Test
+    fun `a version is printed by its own long short and text`() {
+        val tree = cli("pkg") {
+            version = Version.Of("7.1.0", long = "ver", short = 'V', description = "show it", text = "pkg v7.1.0 (banner)")
+            action { Ok("") }
+        }
+        for (argv in listOf(arrayOf("--ver"), arrayOf("-V"))) {
+            val out = RecordingTerminal().also { tree.run(argv, it) }.out.toString()
+            assertEquals("pkg v7.1.0 (banner)", out.trim(), argv.toList().toString())
+        }
+        assertIs<CliError.UnknownOption>(tree.parse(listOf("--version")).assertError())
+        assertEquals("7.1.0", tree.version)
+        assertTrue(Candidate("--ver", "show it") in tree.completeCandidates(listOf("--v")))
+    }
+
+    @Test
+    fun `a declined help-all is refused and frees its name even with subcommands`() {
+        // pacman, whose operations are commands, has no --help-all ("unrecognized option '--help-all'").
+        val tree = cli("pac") {
+            builtins { helpAll = Builtin.Off }
+            command("sync") { action { Ok("") } }
+        }
+        assertIs<CliError.UnknownOption>(tree.parse(listOf("--help-all")).assertError())
+        assertTrue("--help-all" !in tree.completeCandidates(listOf("--help")).map { it.value })
+        val help = RecordingTerminal().also { tree.run(arrayOf("--help"), it) }.out.toString()
+        assertTrue("--help-all" !in help, help)
+        cli("pac") {
+            builtins { helpAll = Builtin.Off }
+            globalFlag(long = "help-all", help = "the tool's own")
+            command("sync") { action { Ok("") } }
+        }
     }
 
     @Test
@@ -274,7 +390,7 @@ class BuiltinsTest {
         // A malformed rendering modifier is reported even when --version is present, matching
         // builtinInlineValueError's precedence over the version short-circuit.
         val tree = cli("app") {
-            version = "1.0"
+            version = Version.Of("1.0")
             command("go") { action { Ok("") } }
         }
 
@@ -296,7 +412,7 @@ class BuiltinsTest {
         // --version outranks every other token, so --json can never reach an action here; it still has to
         // decide the shape of what --version itself prints, or a caller piping the line gets prose.
         val tree = cli("todo") {
-            version = "1.0"
+            version = Version.Of("1.0")
             action { Ok("ran") }
         }
 
@@ -312,9 +428,9 @@ class BuiltinsTest {
     @Test
     fun `the version print ignores json when the tree declined the builtin`() {
         val tree = cli("todo") {
-            builtins { json = false }
-            version = "1.0"
-            val own = flag("--json", help = "the app's own")
+            builtins { json = Builtin.Off }
+            version = Version.Of("1.0")
+            val own = flag(long = "json", help = "the app's own")
             action { Ok("own=${own()}") }
         }
         val t = RecordingTerminal()
@@ -328,7 +444,7 @@ class BuiltinsTest {
         // colorMode() read the raw argv, saw "--color --json always", treated "--json" as color's would-be
         // value, found it flag-like, and silently fell back to AUTO instead of ALWAYS.
         val tree = cli("app") {
-            version = "1.0"
+            version = Version.Of("1.0")
             command("go") { action { Ok("") } }
         }
         val argv = listOf("--color", "--json", "always", "go")
@@ -417,7 +533,7 @@ class BuiltinsTest {
         val tree = cliOf("app") {
             dispatch(
                 command("sub") {
-                    val regexp = option("--regexp", "-e")
+                    val regexp = option(short = 'e', long = "regexp")
                     val files = argument("file").multiple(min = 0)
                     action { Ok("") }
                     projection { "e=${regexp()} files=${files()}" }
@@ -433,7 +549,7 @@ class BuiltinsTest {
         // The pre-strip that pulls globals out of argv runs AFTER the built-in strips, so `--json` used to
         // be gone by the time `--dsn` reached for its value and the subcommand token took its place.
         val tree = cliOf("app") {
-            val dsn = globalOption("--dsn")
+            val dsn = globalOption(long = "dsn")
             dispatch(
                 command("run") {
                     action { Ok("") }
@@ -449,7 +565,7 @@ class BuiltinsTest {
     fun `builtin outside a value slot still answers at every depth`() {
         val tree = cli("app") {
             command("sub") {
-                option("--regexp", "-e")
+                option(short = 'e', long = "regexp")
                 argument("file").multiple(min = 0)
                 action { Ok("") }
             }
@@ -479,7 +595,7 @@ class BuiltinsTest {
         val tree = cliOf("app") {
             dispatch(
                 command("sub") {
-                    val regexp = option("--regexp", "-e")
+                    val regexp = option(short = 'e', long = "regexp")
                     val files = argument("file").multiple(min = 0)
                     action { Ok("") }
                     projection { "e=${regexp()} files=${files()}" }
@@ -497,8 +613,8 @@ class BuiltinsTest {
         // so the arity rule must not start skipping one on its behalf.
         val tree = cli("ls") {
             // `--color` is klap's own name until the tree declines it, as BuiltinsOptOutTest does.
-            builtins { color = false }
-            option("--color").optionalValue("always")
+            builtins { color = Builtin.Off }
+            option(long = "color").optionalValue("always")
             argument("file").multiple(min = 0)
             action { Ok("") }
         }
@@ -604,14 +720,14 @@ class BuiltinsTest {
 }
 
 private fun grep(): Cli = cli("mygrep") {
-    val regexp = option("--regexp", "-e")
+    val regexp = option(short = 'e', long = "regexp")
     val files = argument("file").multiple(min = 0)
     action { Ok("e=${regexp()} files=${files()}") }
 }
 
 private fun grepWithFlag(): Cli = cli("mygrep") {
-    val invert = flag("--invert-match", "-v")
-    val regexp = option("--regexp", "-e")
+    val invert = flag(short = 'v', long = "invert-match")
+    val regexp = option(short = 'e', long = "regexp")
     val files = argument("file").multiple(min = 0)
     action { Ok("v=${invert()} e=${regexp()} files=${files()}") }
 }

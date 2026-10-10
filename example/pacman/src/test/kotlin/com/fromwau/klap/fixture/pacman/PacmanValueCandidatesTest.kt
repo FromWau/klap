@@ -1,7 +1,6 @@
 package com.fromwau.klap.fixture.pacman
 
 import com.fromwau.klap.testing.filesAfter
-import kotlin.test.Ignore
 import kotlin.test.Test
 
 /**
@@ -70,19 +69,7 @@ class PacmanValueCandidatesTest {
         at("V21 G68", "pacman -Q --docs |"),
         at("V21 G68", "pacman -Q --completion b|"),
     )
-}
 
-/**
- * Where a pacman value's candidates come from (V of the testing matrix) where klap offers something other than what
- * real pacman 7.1.0 would accept. Each test states what real pacman 7.1.0 does and is ignored with `TDD target: <what
- * must change>`; removing the annotation shows it failing for that reason, and no other test pins today's behaviour, so
- * a fix breaks nothing else.
- */
-class PacmanValueCandidatesTargetsTest {
-
-    private val pacman = pacmanCli().cli
-
-    @Ignore("TDD target: klap must match a choice value case-sensitively, as pacman's --color does")
     @Test
     fun `a color value in capitals is not offered`() =
         pacman.checkPacman(cells("value capitals", NO_OPERATION + ANY_OPERATION, CHOICE))

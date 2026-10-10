@@ -11,11 +11,14 @@ import com.fromwau.klap.builtinScan
 import com.fromwau.klap.internal.parse.ArgvScan
 import com.fromwau.klap.internal.parse.END_OF_OPTIONS
 import com.fromwau.klap.internal.parse.GlobalAccumulator
+import com.fromwau.klap.internal.parse.isVersionShort
 import com.fromwau.klap.internal.parse.NameMatch
 import com.fromwau.klap.internal.parse.Sifted
 import com.fromwau.klap.internal.parse.accumulator
 import com.fromwau.klap.internal.parse.activeArguments
 import com.fromwau.klap.internal.parse.completionValues
+import com.fromwau.klap.internal.parse.flagCommandsNamed
+import com.fromwau.klap.internal.parse.hoistCommands
 import com.fromwau.klap.internal.parse.isFlagLike
 import com.fromwau.klap.internal.parse.longMatchPool
 import com.fromwau.klap.internal.parse.numberRunAt
@@ -64,20 +67,35 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
     // Hold the cursor's own (maybe half-typed) word out of the strips below: stripping it would discard the
     // very context being completed.
     val current = words.getOrNull(cursor).orEmpty()
-    val head = words.take(cursor.coerceAtLeast(0))
+    val rawHead = words.take(cursor.coerceAtLeast(0))
+    val after = words.drop(cursor + 1)
     val typed = words.take(cursor + 1)
+
+    // A flag-spelled command the head has not named but the word under the cursor or a word after it does is the
+    // command the cursor completes for, as the parse would route the whole line: `pacman -Q<TAB>` and
+    // `pacman -i<TAB> -Q` complete -Q's letters. A line naming two, or one twice, is a line the parse refuses.
+    if (hoistCommands(rawHead + after).error != null) return emptyList()
+    val level = walkLine(rawHead).cmd
+    val inCurrent = flagCommandsNamed(level, listOf(current).filterNot { it.startsWith("--") })
+    if (inCurrent.size > 1) return emptyList()
+    val pending = inCurrent.singleOrNull() ?: flagCommandsNamed(level, after).firstOrNull()
+    val head = pending?.let { rawHead + it.flagSpellings.first() } ?: rawHead
+    // The word under the cursor as the command reads it: its own letter only routes, so it is left out.
+    val analysed = inCurrent.singleOrNull()?.let { current.withoutLettersOf(it) } ?: current
 
     val line = walkLine(head)
     val scan = line.scan
-    // Whether the RAW head's last word was already consumed as the previous option's value. Any branch that
+    // Where the word under the cursor stands among the walked tokens, which hoisting a command may have moved.
+    val cursorAt = line.tokenCount
+    // Whether the head's last word was already consumed as the previous option's value. Any branch that
     // reads a word as an option still WAITING for one has to ask this of that word first, or completion
     // offers a binding parse will not make (see [optionValueSlots]); the `prev` branch below asks it of the
     // token IT reads, which is not always this one.
-    val trailingIsConsumedValue = head.lastIndex in scan.valueSlots
+    val trailingIsConsumedValue = cursorAt - 1 in scan.valueSlots
 
     // Must run on the RAW head, before the strip in [walkLine] removes the very token the space form matches on.
     if (builtins.color && !trailingIsConsumedValue) {
-        colorValueCandidates(head, current, scan)?.let { return it }
+        colorValueCandidates(rawHead, current, scan, builtins.colorText)?.let { return it }
     }
 
     val cmd = line.cmd
@@ -87,6 +105,8 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
     // to `-e`, so `-e` is satisfied and the cursor is on an OPERAND, exactly as in `mygrep -e x <cur>`.
     // Nothing was dropped from the END of `cleaned`, so this token's argv index is the last one reported.
     val prev = segment.lastOrNull()?.takeUnless { line.lastKeptPosition in scan.valueSlots }
+    // After `--` every word is an operand, so nothing there names an option or carries an option's value.
+    val optionsEnded = END_OF_OPTIONS in segment
 
     // One segment walk: the flag-name branch reads which constraint members are already on the line, the
     // positional branch the positional count. Lazy for the value-completion branches, which need it only
@@ -106,8 +126,7 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
         if (walked != null) {
             cmd.sift(walked.segment, wholeAcc, walked.segmentPositions)
         } else {
-            val rest = words.drop(cursor + 1)
-            cmd.sift(segment + current + rest, wholeAcc, line.segmentPositions + (cursor..words.lastIndex))
+            cmd.sift(segment + analysed + after, wholeAcc, line.segmentPositions + (cursorAt..cursorAt + after.size))
         }
     }
 
@@ -149,20 +168,22 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
         } else {
             globals
         }
-        completionValues(cmd, bound, boundGlobals, wholeAcc.inferNames, skipOperand)
+        completionValues(cmd, bound, boundGlobals, wholeAcc.inferValues, skipOperand)
     }
 
     // An option value under the cursor: `prev` names a known value-taking option (a whole `--long`/`-s`, or
     // the trailing option char of a short cluster like `-vp`), so complete only that value.
     val valueOption =
-        prev?.takeIf { it.isFlagLike() }?.let { cmd.trailingValueOption(it, globalAcc) }
+        prev?.takeIf { !optionsEnded && it.isFlagLike() }?.let {
+            cmd.trailingValueOption(it, globalAcc, builtins.helpShort)
+        }
     if (valueOption != null) {
         return valueOption.candidatesFor(current, typed, valuesFor(valueOption))
     }
 
     // An ATTACHED option value: the name and its (partial) value share ONE word (`--opt=partial` or glued
     // `-opartial`). Complete the value, filtered by the partial after the `=`/short char, not the whole word.
-    val attached = cmd.attachedValueOption(current, globalAcc)
+    val attached = cmd.attachedValueOption(analysed, globalAcc, builtins.helpShort).takeUnless { optionsEnded }
     if (attached != null) {
         val (attachedOption, partial) = attached
         val values = attachedOption.candidatesFor(partial, typed, valuesFor(attachedOption, partial))
@@ -172,34 +193,59 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
     // A flag-shaped partial word (`-`, `--`, `-v`, `--verb`): offer this command's option/flag names plus
     // the globals and built-ins, so flag names complete like git/kubectl. Suppressed after `--`. Each
     // candidate carries the spec's own `help` as its description (blank -> bare value, per Candidate).
-    if (current.startsWith("-") && END_OF_OPTIONS !in segment) {
+    if (current.startsWith("-") && !optionsEnded) {
         val names = mutableListOf<Candidate>()
-        val ruledOut = cmd.membersRuledOutBy(sifted)
+        // A member typed after the cursor rules the others out as one before it does, and so does a member in a
+        // short cluster being continued (`-Q` in `-Q<TAB>`); a long name being typed is not on the line yet.
+        val afterPositions = line.segmentPositions + ((cursorAt + 1)..cursorAt + after.size)
+        val afterSifted = cmd.sift(segment + after, globalAcc, afterPositions)
+        val clusterSifted = analysed.takeIf { !it.startsWith("--") && it.length > 1 }
+            ?.let { cmd.sift(segment + it, globalAcc, line.segmentPositions + cursorAt) }
+        val ruledOut = cmd.membersRuledOutBy(afterSifted) + clusterSifted?.let(cmd::membersRuledOutBy).orEmpty()
         (cmd.options + cmd.flags + globalSpecs).filterNot { it.hidden || it in ruledOut }.forEach { spec ->
             val help = spec.help.takeIf { it.isNotBlank() }
             spec.longs.forEach { long -> names += Candidate("--$long", help) }
             spec.shorts.forEach { names += Candidate("-$it", help) }
             if (spec is FlagSpec && spec.negatable) {
-                spec.negativeLongs.forEach { names += Candidate("--$it", help) }
-                spec.negativeShorts.forEach { names += Candidate("-$it", help) }
+                val negativeHelp = spec.negativeHelp ?: help
+                spec.negativeLongs.forEach { names += Candidate("--$it", negativeHelp) }
+                spec.negativeShorts.forEach { names += Candidate("-$it", negativeHelp) }
             }
         }
-        // Wording comes from BuiltinOptionHelp and each gate matches Help.kt's own switch, the same source its
-        // "Global options" section renders, so --help and tab completion never disagree on what a built-in
-        // does or whether it exists. The app's own specs are appended above, so distinctBy below keeps THEIR
+        // A command spelled as a flag is offered where its parent's options are, until the line names one, and so
+        // are its own options, which bind before it as after it; a name two commands share is described by the
+        // first that declares it.
+        val pendingCommands = cmd.flagSubcommands.filterNot { it.hidden }
+        pendingCommands.forEach { sub ->
+            val help = sub.description.takeIf { it.isNotBlank() }
+            sub.flagSpellings.sortedBy { !it.startsWith("--") }.forEach { names += Candidate(it, help) }
+        }
+        pendingCommands.flatMap { it.options + it.flags }.filterNot { it.hidden }.forEach { spec ->
+            val help = spec.help.takeIf { it.isNotBlank() }
+            spec.longs.forEach { long -> names += Candidate("--$long", help) }
+            spec.shorts.forEach { names += Candidate("-$it", help) }
+        }
+        // Wording comes from the root's `builtins { }` texts and each gate matches Help.kt's own switch, the same
+        // source its "Global options" section renders, so --help and tab completion never disagree on what a
+        // built-in does or whether it exists. The app's own specs are appended above, so distinctBy below keeps THEIR
         // description when a freed name (`-h`, `--json`) has since been re-declared by the app.
-        if (builtins.helpShort) names += Candidate("-h", BuiltinOptionHelp.HELP)
-        names += Candidate("--help", BuiltinOptionHelp.HELP)
+        builtins.helpShort?.let { names += Candidate("-$it", builtins.helpText) }
+        if (builtins.help) names += Candidate("--help", builtins.helpText)
         // --help-all is only advertised where the command has visible subcommands to expand, mirroring
-        // Help.kt's own gate (`subcommands.any { !it.hidden }`) so the two never disagree on when it exists.
-        if (cmd.subcommands.any { !it.hidden }) names += Candidate("--help-all", "Show help for every subcommand")
-        if (builtins.json) names += Candidate("--json", BuiltinOptionHelp.JSON)
-        if (builtins.color) names += Candidate("--color", BuiltinOptionHelp.COLOR)
-        if (version != null) names += Candidate("--version", BuiltinOptionHelp.VERSION)
+        // Help.kt's own gate so the two never disagree on when it exists.
+        if (builtins.helpAll && cmd.subcommands.any { !it.hidden }) {
+            names += Candidate("--help-all", builtins.helpAllText)
+        }
+        if (builtins.json) names += Candidate("--json", builtins.jsonText)
+        if (builtins.color) names += Candidate("--color", builtins.colorText)
+        if (version != null) {
+            builtins.versionShort?.let { names += Candidate("-$it", builtins.versionText) }
+            names += Candidate("--${builtins.versionLong}", builtins.versionText)
+        }
         // A single-command root advertises these in --help's Global options, so offer the names here too.
         if (metaOptions) {
-            if (builtins.completion) names += Candidate("--completion", BuiltinOptionHelp.COMPLETION)
-            if (builtins.docs) names += Candidate("--docs", BuiltinOptionHelp.DOCS)
+            if (builtins.completion) names += Candidate("--completion", builtins.completionText)
+            if (builtins.docs) names += Candidate("--docs", builtins.docsText)
         }
         // A short cluster in progress (`-r`, `-rl`): guideline 5 bundles one-character options into a
         // single token, so offer each remaining short as a continuation of what has been typed, and only
@@ -207,10 +253,16 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
         // because a value-taking option ends the cluster by consuming the remainder of the token.
         val typedShorts = current.removePrefix("-")
         val inCluster = !current.startsWith("--") && typedShorts.isNotEmpty()
-        if (inCluster && cmd.firstNonFlagShort(typedShorts, globalAcc) < 0) {
+        if (inCluster && cmd.firstNonFlagShort(analysed.removePrefix("-"), globalAcc, builtins.helpShort) < 0) {
+            // A counted short means more each time (`-vv`), so it continues a cluster that already holds it.
+            val counted = cmd.flagLookup(globalAcc)
+                .filter { it.isCount }
+                .flatMap { it.shorts }
+                .mapNotNull { it.singleOrNull() }
+                .toSet()
             return names
                 .filter { it.value.length == 2 && !it.value.startsWith("--") }
-                .filterNot { it.value[1] in typedShorts }
+                .filterNot { it.value[1] in typedShorts && it.value[1] !in counted }
                 .map { Candidate(current + it.value[1], it.description) }
                 .distinctBy { it.value }
         }
@@ -237,7 +289,7 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
     // Each visible subcommand contributes its name AND its aliases, so `myapp l<TAB>` also offers `ls`; both
     // carry that command's own `help` as their description (blank -> bare value, per Candidate).
     val subcommands = if (positionalIndex == 0) {
-        cmd.subcommands
+        cmd.wordSubcommands
             .filterNot { it.hidden }
             .flatMap { sub ->
                 val help = sub.description.takeIf { it.isNotBlank() }
@@ -291,9 +343,12 @@ private class WalkedLine(
     val lastKeptPosition: Int?,
     /** The argv index of each [segment] token, so a global the command's sift finds in a cluster is ordered. */
     val segmentPositions: List<Int>,
+    /** How many tokens the line holds once its flag-spelled commands are hoisted: the index of the word after it. */
+    val tokenCount: Int,
 )
 
-private fun Cli.walkLine(line: List<String>): WalkedLine {
+private fun Cli.walkLine(typed: List<String>): WalkedLine {
+    val line = hoistCommands(typed).tokens
     val builtinPool = positionIndependentLongs()
     val scan = builtinScan(line, builtinPool)
     // Strip the position-independent modifiers exactly as parse() does before its own walk: --json first, so
@@ -311,7 +366,13 @@ private fun Cli.walkLine(line: List<String>): WalkedLine {
     val globalAcc = preStrip.sift.accumulator(globalSpecs, version, builtins, metaOptions, declaredLongs, abbreviation)
     // The walk drops only subcommand names from the front, so the segment is the tail of what it was handed.
     val segmentPositions = preStrip.positions.takeLast(segment.size)
-    return WalkedLine(scan, cmd, segment, globalAcc, preStrip.positions.lastOrNull(), segmentPositions)
+    return WalkedLine(scan, cmd, segment, globalAcc, preStrip.positions.lastOrNull(), segmentPositions, line.size)
+}
+
+/** This cluster without [command]'s letters, which route the line rather than name an input; `-` when none is left. */
+private fun String.withoutLettersOf(command: Command): String {
+    val letters = command.flagSpellings.filterNot { it.startsWith("--") }.map { it[1] }.toSet()
+    return "-" + drop(1).filterNot { it in letters }
 }
 
 /**
@@ -387,11 +448,16 @@ private fun Cli.walkTo(argv: List<String>): Pair<Command, List<String>> {
  * [ArgvScan.matched] rather than a string comparison, so an abbreviated `--col` binds here exactly when
  * the parser would bind it.
  */
-private fun colorValueCandidates(head: List<String>, current: String, scan: ArgvScan): List<Candidate>? {
+private fun colorValueCandidates(
+    head: List<String>,
+    current: String,
+    scan: ArgvScan,
+    description: String,
+): List<Candidate>? {
     if (head.lastOrNull()?.let(scan::matched) == "color") return colorModeCandidates(current)
     val eq = current.indexOf('=')
     if (eq >= 0 && scan.matched(current.take(eq)) == "color") {
-        return colorModeCandidates(current.substring(eq + 1)).asWholeWord(current.take(eq + 1), BuiltinOptionHelp.COLOR)
+        return colorModeCandidates(current.substring(eq + 1)).asWholeWord(current.take(eq + 1), description)
     }
     return null
 }
@@ -433,11 +499,10 @@ private fun ValueSpec.candidatesFor(
         }
         .orEmpty()
 
-    // ignoreCase because [resolveChoice] lowers both sides to match, so `--sort=SIZE` binds; a
-    // case-sensitive filter here would leave Tab dead on a spelling the parser accepts. The provider
-    // branch above stays case-sensitive: its candidates go through an arbitrary converter whose own
+    // In the case the parser matches in: with ignoreCase `--sort=SIZE` binds, so Tab must offer `size` there too.
+    // The provider branch above stays case-sensitive: its candidates go through an arbitrary converter whose own
     // matching klap does not know.
-    choices != null -> choices!!.filter { it.startsWith(current, ignoreCase = true) }.map { Candidate(it) }
+    choices != null -> choices!!.filter { it.startsWith(current, ignoreCase = choiceIgnoreCase) }.map { Candidate(it) }
     else -> emptyList()
 }
 
@@ -476,12 +541,16 @@ private fun Command.matchingValueOption(token: String, globalAcc: GlobalAccumula
  * peeling leading flag chars exactly like [sift]'s short-cluster walk. Globals are included since they are
  * position-independent. Null if [prev] is not such a token or if [prev] names an option with optional value.
  */
-private fun Command.trailingValueOption(prev: String, globalAcc: GlobalAccumulator): OptionSpec? {
+private fun Command.trailingValueOption(
+    prev: String,
+    globalAcc: GlobalAccumulator,
+    helpShort: Char?,
+): OptionSpec? {
     val resolved = matchingValueOption(prev, globalAcc) ?: run {
         // Short cluster only: a whole `--opt` is already resolved above, and `--`/`-` are not clusters.
         if (!prev.startsWith("-") || prev.startsWith("--")) return null
         val chars = prev.removePrefix("-")
-        val optIndex = firstNonFlagShort(chars, globalAcc)
+        val optIndex = firstNonFlagShort(chars, globalAcc, helpShort)
         // The option must be the cluster's LAST char: sift only lets a trailing bare option char take the
         // following token, since a glued value (`-vp8`) ends the option itself.
         if (optIndex < 0 || optIndex != chars.lastIndex) return null
@@ -494,12 +563,12 @@ private fun Command.trailingValueOption(prev: String, globalAcc: GlobalAccumulat
 }
 
 /**
- * The index of the first character of [chars] that is neither a flag nor part of a digit run the number
- * input claims, or -1 when every character is one. A narrower peel than [sift]'s own cluster walk, which
- * steps over klap's help short and a flag's negative shorts too: on those this stops early, so completion
- * offers nothing where the parse would still have reached an option — the safe direction of the two.
+ * The index of the first character of [chars] that is neither a flag, klap's help short (when [helpShort]),
+ * nor part of a digit run the number input claims, or -1 when every character is one. A narrower peel than
+ * [sift]'s own cluster walk, which steps over a flag's negative shorts too: on those this stops early, so
+ * completion offers nothing where the parse would still have reached an option, the safe direction of the two.
  */
-private fun Command.firstNonFlagShort(chars: String, globalAcc: GlobalAccumulator): Int {
+private fun Command.firstNonFlagShort(chars: String, globalAcc: GlobalAccumulator, helpShort: Char?): Int {
     val flagSpecs = flagLookup(globalAcc)
     var j = 0
     while (j < chars.length) {
@@ -508,17 +577,21 @@ private fun Command.firstNonFlagShort(chars: String, globalAcc: GlobalAccumulato
             j += run.length
             continue
         }
-        if (flagSpecs.byName("-${chars[j]}") == null) return j
+        val builtinShort = chars[j] == helpShort || globalAcc.isVersionShort(chars[j])
+        if (flagSpecs.byName("-${chars[j]}") == null && !builtinShort) {
+            return j
+        }
         j += 1
     }
     return -1
 }
 
 /**
- * This command's flags plus position-independent globals, for peeling leading flag chars off a short
- * cluster in [firstNonFlagShort].
+ * This command's flags plus position-independent globals, and the flags of a flag-spelled child the line may
+ * still name, for peeling leading flag chars off a short cluster in [firstNonFlagShort].
  */
-private fun Command.flagLookup(globalAcc: GlobalAccumulator): List<FlagSpec> = flags + globalAcc.flagSpecs
+private fun Command.flagLookup(globalAcc: GlobalAccumulator): List<FlagSpec> =
+    flags + globalAcc.flagSpecs + flagSubcommands.flatMap { it.flags }
 
 /**
  * The (option, partial-value) an ATTACHED word under the cursor names, if any: `--opt=partial` glues the
@@ -532,6 +605,7 @@ private fun Command.flagLookup(globalAcc: GlobalAccumulator): List<FlagSpec> = f
 private fun Command.attachedValueOption(
     current: String,
     globalAcc: GlobalAccumulator,
+    helpShort: Char?,
 ): Pair<OptionSpec, String>? {
     if (!current.isFlagLike()) return null
 
@@ -548,7 +622,7 @@ private fun Command.attachedValueOption(
 
     // Short cluster: peel leading flag chars; the first non-flag char is the option, the rest its glued value.
     val chars = current.removePrefix("-")
-    val optIndex = firstNonFlagShort(chars, globalAcc)
+    val optIndex = firstNonFlagShort(chars, globalAcc, helpShort)
     if (optIndex < 0) return null
 
     val partial = chars.substring(optIndex + 1)

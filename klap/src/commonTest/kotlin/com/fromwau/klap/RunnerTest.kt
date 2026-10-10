@@ -22,7 +22,7 @@ private object ThrowingToString {
 }
 
 private fun app(): Cli = cli("todo") {
-    version = "1.0.0"
+    version = Version.Of("1.0.0")
     command("ping") { action { Ok("pong") } }
     // A fail-only action can't infer T from Err (that would be Nothing); name it explicitly.
     command("fail") { action<String> { Err(CliError.Failure("fail", exitCode = 3)) } }
@@ -301,9 +301,9 @@ class RunnerTest {
         // flip the run into structured output.
         val seen = mutableListOf<Boolean>()
         val tree = cli("app") {
-            builtins { json = false }
+            builtins { json = Builtin.Off }
             command("go") {
-                option("--json", help = "post this JSON body")
+                option(long = "json", help = "post this JSON body")
                 action { seen += json; Ok("done") }
             }
         }

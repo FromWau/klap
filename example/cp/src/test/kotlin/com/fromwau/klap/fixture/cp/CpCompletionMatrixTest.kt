@@ -78,4 +78,8 @@ class CpCompletionMatrixTest {
     @Test
     fun `an attribute list in capitals has no candidates`() =
         check(cells("value capitals", CAPITALS).filter(ATTRIBUTE_CAPITALS))
+
+    @Test
+    fun `a choice value in capitals is not offered`() =
+        check(cells("value capitals", CAPITALS).filterNot(ATTRIBUTE_CAPITALS))
 }

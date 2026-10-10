@@ -18,14 +18,14 @@ import kotlin.test.assertTrue
 /** `-c`/`-x`/`-t` are exactly-one, `-z`/`-j` at-most-one, and `-f` is required: tar's shape, minus the work. */
 private fun tarTree(): Cli = cli("tar") {
     command("run") {
-        val create = flag("--create", "-c", help = "create a new archive")
-        val extract = flag("--extract", "-x", help = "extract files from an archive")
-        val list = flag("--list", "-t", help = "list the contents of an archive")
+        val create = flag(short = 'c', long = "create", help = "create a new archive")
+        val extract = flag(short = 'x', long = "extract", help = "extract files from an archive")
+        val list = flag(short = 't', long = "list", help = "list the contents of an archive")
         requireExactlyOne(create, extract, list)
-        val gzip = flag("--gzip", "-z", help = "filter through gzip")
-        val bzip2 = flag("--bzip2", "-j", help = "filter through bzip2")
+        val gzip = flag(short = 'z', long = "gzip", help = "filter through gzip")
+        val bzip2 = flag(short = 'j', long = "bzip2", help = "filter through bzip2")
         requireAtMostOne(gzip, bzip2)
-        val file = option("--file", "-f", help = "archive to operate on").required()
+        val file = option(short = 'f', long = "file", help = "archive to operate on").required()
         action { Ok("c=${create()} x=${extract()} t=${list()} z=${gzip()} j=${bzip2()} f=${file()}") }
     }
 }
@@ -135,10 +135,10 @@ class ConstraintOrderingTest {
     fun `the first declared constraint wins`() {
         val tree = cli("app") {
             command("go") {
-                val a = flag("--alpha", "-a")
-                val b = flag("--beta", "-b")
-                val c = flag("--gamma", "-c")
-                val d = flag("--delta", "-d")
+                val a = flag(short = 'a', long = "alpha")
+                val b = flag(short = 'b', long = "beta")
+                val c = flag(short = 'c', long = "gamma")
+                val d = flag(short = 'd', long = "delta")
                 requireExactlyOne(a, b)
                 requireExactlyOne(c, d)
                 action { Ok("") }
@@ -156,8 +156,8 @@ class ConstraintReadsSuppliedNessTest {
     /** `--format` always binds (it has a default), so only a sift can tell whether the user typed it. */
     private fun defaultedTree(): Cli = cli("app") {
         command("go") {
-            val format = option("--format", "-f").default("json")
-            val raw = flag("--raw", "-r")
+            val format = option(short = 'f', long = "format").default("json")
+            val raw = flag(short = 'r', long = "raw")
             requireExactlyOne(format, raw)
             action { Ok("format=${format()} raw=${raw()}") }
         }
@@ -196,8 +196,8 @@ class ConstraintReadsSuppliedNessTest {
         // `--no-fancy --plain` a conflict between an opt-out and an opt-in.
         val tree = cli("app") {
             command("go") {
-                val fancy = flag("--fancy", "-y").negatable()
-                val plain = flag("--plain", "-p")
+                val fancy = flag(short = 'y', long = "fancy").negatable()
+                val plain = flag(short = 'p', long = "plain")
                 requireExactlyOne(fancy, plain)
                 action { Ok("fancy=${fancy()} plain=${plain()}") }
             }
@@ -213,7 +213,7 @@ class ConstraintReadsSuppliedNessTest {
         val tree = cli("app") {
             command("go") {
                 val dest = argument("dest").optional()
-                val destOption = option("--target", "-T")
+                val destOption = option(short = 'T', long = "target")
                 requireAtMostOne(dest, destOption)
                 action { Ok("dest=${dest() ?: ""} target=${destOption() ?: ""}") }
             }
@@ -234,7 +234,7 @@ class ConstraintConstructionTest {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
-                    val a = flag("--alpha", "-a")
+                    val a = flag(short = 'a', long = "alpha")
                     requireExactlyOne(a)
                     action { Ok("") }
                 }
@@ -248,7 +248,7 @@ class ConstraintConstructionTest {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
-                    flag("--alpha", "-a")
+                    flag(short = 'a', long = "alpha")
                     requireAtMostOne()
                     action { Ok("") }
                 }
@@ -262,8 +262,8 @@ class ConstraintConstructionTest {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
-                    val a = flag("--alpha", "-a")
-                    val b = flag("--beta", "-b")
+                    val a = flag(short = 'a', long = "alpha")
+                    val b = flag(short = 'b', long = "beta")
                     requireExactlyOne(a, b, a)
                     action { Ok("") }
                 }
@@ -279,9 +279,9 @@ class ConstraintConstructionTest {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
-                    val port = option("--port", "-p")
+                    val port = option(short = 'p', long = "port")
                     val portInt = port.int()
-                    val host = option("--host", "-H")
+                    val host = option(short = 'H', long = "host")
                     requireExactlyOne(port, portInt, host)
                     action { Ok("") }
                 }
@@ -296,11 +296,11 @@ class ConstraintConstructionTest {
             cli("app") {
                 var foreign: Flag? = null
                 command("one") {
-                    foreign = flag("--alpha", "-a")
+                    foreign = flag(short = 'a', long = "alpha")
                     action { Ok("") }
                 }
                 command("two") {
-                    val b = flag("--beta", "-b")
+                    val b = flag(short = 'b', long = "beta")
                     requireExactlyOne(b, foreign!!)
                     action { Ok("") }
                 }
@@ -316,9 +316,9 @@ class ConstraintConstructionTest {
     fun `a global cannot join a constraint`() {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
-                val verbose = globalFlag("--verbose", "-v")
+                val verbose = globalFlag(short = 'v', long = "verbose")
                 command("go") {
-                    val b = flag("--beta", "-b")
+                    val b = flag(short = 'b', long = "beta")
                     requireExactlyOne(b, verbose)
                     action { Ok("") }
                 }
@@ -336,8 +336,8 @@ class ConstraintConstructionTest {
         val tree = cli("app") {
             command("go") {
                 group("Mode") {
-                    val a = flag("--alpha", "-a")
-                    val b = flag("--beta", "-b")
+                    val a = flag(short = 'a', long = "alpha")
+                    val b = flag(short = 'b', long = "beta")
                     requireExactlyOne(a, b)
                 }
                 action { Ok("ok") }
@@ -350,8 +350,8 @@ class ConstraintConstructionTest {
     @Test
     fun `a constraint on the roots own inputs works`() {
         val tree = cli("app") {
-            val a = flag("--alpha", "-a")
-            val b = flag("--beta", "-b")
+            val a = flag(short = 'a', long = "alpha")
+            val b = flag(short = 'b', long = "beta")
             requireExactlyOne(a, b)
             action { Ok("a=${a()} b=${b()}") }
         }
@@ -387,8 +387,8 @@ class ConstraintHelpTest {
     fun `a constrained option drops the contradictory optional word`() {
         val tree = cli("app") {
             command("go") {
-                val a = option("--alpha", "-a", help = "the alpha")
-                val b = option("--beta", "-b", help = "the beta")
+                val a = option(short = 'a', long = "alpha", help = "the alpha")
+                val b = option(short = 'b', long = "beta", help = "the beta")
                 requireAtMostOne(a, b)
                 action { Ok("") }
             }
@@ -402,8 +402,8 @@ class ConstraintHelpTest {
     fun `a shortless member is named by its long form`() {
         val tree = cli("app") {
             command("go") {
-                val a = flag("--alpha", help = "the alpha")
-                val b = flag("--beta", "-b", help = "the beta")
+                val a = flag(long = "alpha", help = "the alpha")
+                val b = flag(short = 'b', long = "beta", help = "the beta")
                 requireExactlyOne(a, b)
                 action { Ok("") }
             }
@@ -416,9 +416,9 @@ class ConstraintHelpTest {
     fun `an input in two sets carries both notes`() {
         val tree = cli("app") {
             command("go") {
-                val a = flag("--alpha", "-a", help = "the alpha")
-                val b = flag("--beta", "-b")
-                val c = flag("--gamma", "-c")
+                val a = flag(short = 'a', long = "alpha", help = "the alpha")
+                val b = flag(short = 'b', long = "beta")
+                val c = flag(short = 'c', long = "gamma")
                 requireExactlyOne(a, b)
                 requireAtMostOne(a, c)
                 action { Ok("") }
@@ -432,11 +432,11 @@ class ConstraintHelpTest {
     fun `an unconstrained input carries no note but keeps its own annotations`() {
         val tree = cli("app") {
             command("go") {
-                flag("--plain", "-p", help = "a plain flag")
-                flag("--loud", "-l", help = "a counted flag").count()
-                flag("--fancy", "-y", help = "a negatable flag").negatable()
-                option("--out", "-o", help = "an option")
-                option("--name", "-n", help = "a defaulted option").default("x")
+                flag(short = 'p', long = "plain", help = "a plain flag")
+                flag(short = 'l', long = "loud", help = "a counted flag").count()
+                flag(short = 'y', long = "fancy", help = "a negatable flag").negatable()
+                option(short = 'o', long = "out", help = "an option")
+                option(short = 'n', long = "name", help = "a defaulted option").default("x")
                 action { Ok("") }
             }
         }
@@ -476,8 +476,8 @@ class ConstraintUsageLineTest {
     fun `groups precede the positionals`() {
         val tree = cli("tar") {
             command("run") {
-                val create = flag("--create", "-c")
-                val extract = flag("--extract", "-x")
+                val create = flag(short = 'c', long = "create")
+                val extract = flag(short = 'x', long = "extract")
                 requireExactlyOne(create, extract)
                 argument("file").multiple()
                 action { Ok("") }
@@ -490,8 +490,8 @@ class ConstraintUsageLineTest {
     fun `a shortless member renders its long form`() {
         val tree = cli("tar") {
             command("run") {
-                val create = flag("--create")
-                val extract = flag("--extract", "-x")
+                val create = flag(long = "create")
+                val extract = flag(short = 'x', long = "extract")
                 requireExactlyOne(create, extract)
                 action { Ok("") }
             }
@@ -503,10 +503,10 @@ class ConstraintUsageLineTest {
     fun `an all hidden group renders nothing`() {
         val tree = cli("tar") {
             command("run") {
-                val create = flag("--create", "-c").hidden()
-                val extract = flag("--extract", "-x").hidden()
+                val create = flag(short = 'c', long = "create").hidden()
+                val extract = flag(short = 'x', long = "extract").hidden()
                 requireExactlyOne(create, extract)
-                flag("--verbose", "-v")
+                flag(short = 'v', long = "verbose")
                 action { Ok("") }
             }
         }
@@ -517,8 +517,8 @@ class ConstraintUsageLineTest {
     fun `a partly hidden group renders only its visible members`() {
         val tree = cli("tar") {
             command("run") {
-                val create = flag("--create", "-c")
-                val extract = flag("--extract", "-x").hidden()
+                val create = flag(short = 'c', long = "create")
+                val extract = flag(short = 'x', long = "extract").hidden()
                 requireExactlyOne(create, extract)
                 action { Ok("") }
             }
@@ -532,7 +532,7 @@ class ConstraintUsageLineTest {
         val tree = cli("app") {
             command("go") {
                 argument("name")
-                flag("--plain", "-p")
+                flag(short = 'p', long = "plain")
                 action { Ok("") }
             }
         }
@@ -543,14 +543,14 @@ class ConstraintUsageLineTest {
 /** tar's constrained shape plus an unrelated `-v`, so the planner's filtering has something to leave alone. */
 private fun tarCompletionTree(): Cli = cli("tar") {
     command("run") {
-        val create = flag("--create", "-c", help = "create a new archive")
-        val extract = flag("--extract", "-x", help = "extract files from an archive")
-        val list = flag("--list", "-t", help = "list the contents of an archive")
+        val create = flag(short = 'c', long = "create", help = "create a new archive")
+        val extract = flag(short = 'x', long = "extract", help = "extract files from an archive")
+        val list = flag(short = 't', long = "list", help = "list the contents of an archive")
         requireExactlyOne(create, extract, list)
-        val gzip = flag("--gzip", "-z", help = "filter through gzip")
-        val bzip2 = flag("--bzip2", "-j", help = "filter through bzip2")
+        val gzip = flag(short = 'z', long = "gzip", help = "filter through gzip")
+        val bzip2 = flag(short = 'j', long = "bzip2", help = "filter through bzip2")
         requireAtMostOne(gzip, bzip2)
-        flag("--verbose", "-v", help = "be loud")
+        flag(short = 'v', long = "verbose", help = "be loud")
         action { Ok("") }
     }
 }
@@ -619,8 +619,8 @@ class ConstraintCompletionTest {
         // choice) must leave its siblings on offer, exactly as it leaves the constraint unsatisfied.
         val tree = cli("app") {
             command("go") {
-                val fancy = flag("--fancy", "-y").negatable()
-                val plain = flag("--plain", "-p")
+                val fancy = flag(short = 'y', long = "fancy").negatable()
+                val plain = flag(short = 'p', long = "plain")
                 requireExactlyOne(fancy, plain)
                 action { Ok("") }
             }
@@ -632,8 +632,8 @@ class ConstraintCompletionTest {
     fun `a command with no constraints offers exactly what it did before`() {
         val tree = cli("app") {
             command("go") {
-                flag("--alpha", "-a")
-                flag("--beta", "-b")
+                flag(short = 'a', long = "alpha")
+                flag(short = 'b', long = "beta")
                 action { Ok("") }
             }
         }
@@ -647,8 +647,8 @@ class ConstraintCompletionTest {
 class LastWinsTest {
 
     private fun tree(): Cli = cli("rm") {
-        val interactive = flag("--interactive", "-i", help = "prompt before every removal")
-        val force = flag("--force", "-f", help = "never prompt")
+        val interactive = flag(short = 'i', long = "interactive", help = "prompt before every removal")
+        val force = flag(short = 'f', long = "force", help = "never prompt")
         lastWins(interactive, force)
         val files = argument("file").multiple(min = 0)
         action { Ok(if (force()) "force" else if (interactive()) "interactive" else "neither") }
@@ -691,8 +691,8 @@ class LastWinsTest {
         lateinit var force: Flag
         lateinit var interactive: Flag
         val tree = cli("rm") {
-            interactive = flag("--interactive", "-i")
-            force = flag("--force", "-f")
+            interactive = flag(short = 'i', long = "interactive")
+            force = flag(short = 'f', long = "force")
             lastWins(interactive, force)
             files = argument("file").multiple(min = 0)
             action { Ok("") }
@@ -716,7 +716,7 @@ class LastWinsTest {
     fun `a set of fewer than two flags fails at build`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("rm") {
-                val force = flag("--force", "-f")
+                val force = flag(short = 'f', long = "force")
                 lastWins(force)
                 action { Ok("") }
             }
@@ -728,8 +728,8 @@ class LastWinsTest {
     fun `a global flag cannot join a set`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("rm") {
-                val quiet = globalFlag("--quiet", "-q")
-                val force = flag("--force", "-f")
+                val quiet = globalFlag(short = 'q', long = "quiet")
+                val force = flag(short = 'f', long = "force")
                 lastWins(quiet, force)
                 action { Ok("") }
             }
@@ -740,8 +740,8 @@ class LastWinsTest {
     @Test
     fun `last wins resolves two options`() {
         fun tree() = cli("head") {
-            val lines = option("--lines", "-n")
-            val bytes = option("--bytes", "-c")
+            val lines = option(short = 'n', long = "lines")
+            val bytes = option(short = 'c', long = "bytes")
             lastWins(lines, bytes)
             argument("file")
             action<String>(human = { it }) { Ok("n=${lines()} c=${bytes()}") }
@@ -753,8 +753,8 @@ class LastWinsTest {
     @Test
     fun `a losing option falls back to its declared default`() {
         fun tree() = cli("t") {
-            val a = option("--alpha").default("A")
-            val b = option("--beta")
+            val a = option(long = "alpha").default("A")
+            val b = option(long = "beta")
             lastWins(a, b)
             action<String>(human = { it }) { Ok("a=${a()} b=${b()}") }
         }
@@ -766,8 +766,8 @@ class LastWinsTest {
     fun `last wins resolves a mixed flag and option set`() {
         // ls spells one setting two ways: `-S` is a flag, `--sort=WORD` an option, last one wins.
         fun tree() = cli("ls") {
-            val bySize = flag("--sort-size", "-S")
-            val sort = option("--sort")
+            val bySize = flag(short = 'S', long = "sort-size")
+            val sort = option(long = "sort")
             lastWins(bySize, sort)
             action<String>(human = { it }) { Ok("S=${bySize()} sort=${sort()}") }
         }
@@ -778,8 +778,8 @@ class LastWinsTest {
         // An option char takes the rest of its cluster, so the option is always the tail of a mixed
         // cluster and the flag ahead of it must lose despite being the earlier member of the set.
         fun clustered() = cli("ls") {
-            val bySize = flag("-S")
-            val sort = option("-s")
+            val bySize = flag(short = 'S')
+            val sort = option(short = 's')
             lastWins(bySize, sort)
             action<String>(human = { it }) { Ok("S=${bySize()} sort=${sort()}") }
         }
@@ -790,8 +790,8 @@ class LastWinsTest {
     @Test
     fun `a losing count flag resets to zero`() {
         fun tree() = cli("t") {
-            val v = flag("--verbose", "-v").count()
-            val q = flag("--quiet", "-q")
+            val v = flag(short = 'v', long = "verbose").count()
+            val q = flag(short = 'q', long = "quiet")
             lastWins(v, q)
             action<String>(human = { it }) { Ok("v=${v()} q=${q()}") }
         }
@@ -803,7 +803,7 @@ class LastWinsTest {
     fun `a positional cannot join a last wins set`() {
         val failure = assertFailsWith<IllegalArgumentException> {
             cli("t") {
-                val f = flag("--force")
+                val f = flag(long = "force")
                 val a = argument("file")
                 lastWins(f, a)
                 action<String>(human = { it }) { Ok("x") }
@@ -816,8 +816,8 @@ class LastWinsTest {
     fun `a required option cannot join a last wins set`() {
         val failure = assertFailsWith<IllegalArgumentException> {
             cli("t") {
-                val a = option("--alpha").required()
-                val b = option("--beta")
+                val a = option(long = "alpha").required()
+                val b = option(long = "beta")
                 lastWins(a, b)
                 action<String>(human = { it }) { Ok("a=${a()} b=${b()}") }
             }
@@ -829,8 +829,8 @@ class LastWinsTest {
     fun `a multiple option cannot join a last wins set`() {
         val failure = assertFailsWith<IllegalArgumentException> {
             cli("t") {
-                val a = option("--alpha").multiple()
-                val b = option("--beta")
+                val a = option(long = "alpha").multiple()
+                val b = option(long = "beta")
                 lastWins(a, b)
                 action<String>(human = { it }) { Ok("a=${a()} b=${b()}") }
             }
@@ -844,8 +844,8 @@ class LastWinsTest {
         // line; a check at the call site would pass here and leave the action reading a null.
         val failure = assertFailsWith<IllegalArgumentException> {
             cli("t") {
-                val a = option("--alpha")
-                val b = option("--beta")
+                val a = option(long = "alpha")
+                val b = option(long = "beta")
                 lastWins(a, b)
                 val required = a.required()
                 action<String>(human = { it }) { Ok("a=${required()} b=${b()}") }
@@ -863,8 +863,8 @@ class LastWinsTest {
         val failure = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("a") {
-                    alpha = option("--alpha")
-                    val beta = option("--beta")
+                    alpha = option(long = "alpha")
+                    val beta = option(long = "beta")
                     lastWins(alpha, beta)
                     action { Ok("") }
                 }
@@ -882,8 +882,8 @@ class LastWinsTest {
 class RequiredIfTest {
 
     private fun tree(): Cli = cli("app") {
-        val remote = flag("--remote", "-r", help = "operate against the remote")
-        val token = option("--token", help = "credential for the remote").requiredIf(remote)
+        val remote = flag(short = 'r', long = "remote", help = "operate against the remote")
+        val token = option(long = "token", help = "credential for the remote").requiredIf(remote)
         action { Ok(token() ?: "local") }
     }
 
@@ -915,8 +915,8 @@ class RequiredIfTest {
         // Same supplied-ness reading the constraint checks use: a default always binds, so reading the
         // BOUND value here would call the rule satisfied on every line.
         val tree = cli("app") {
-            val remote = flag("--remote")
-            val token = option("--token").default("anon").requiredIf(remote)
+            val remote = flag(long = "remote")
+            val token = option(long = "token").default("anon").requiredIf(remote)
             action { Ok(token()) }
         }
         assertEquals("anon\n", tree.out(listOf()))
@@ -931,8 +931,8 @@ class RequiredIfTest {
     fun `combining it with an unconditional required fails at build`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
-                val remote = flag("--remote")
-                option("--token").required().requiredIf(remote)
+                val remote = flag(long = "remote")
+                option(long = "token").required().requiredIf(remote)
                 action { Ok("") }
             }
         }
@@ -944,9 +944,9 @@ class RequiredIfTest {
         // The one cell where the accumulator reads polarity rather than a hit count: a global condition and
         // a negatable one at once. Both halves of that read are exercised here, since nothing else is.
         val tree = cli("app") {
-            val remote = globalFlag("--remote").negatable()
+            val remote = globalFlag(long = "remote").negatable()
             command("c") {
-                val token = option("--token").requiredIf(remote)
+                val token = option(long = "token").requiredIf(remote)
                 action { Ok(token() ?: "local") }
             }
         }
@@ -966,11 +966,11 @@ class RequiredIfTest {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("a") {
-                    otherFlag = flag("--verbose")
+                    otherFlag = flag(long = "verbose")
                     action { Ok("") }
                 }
                 command("b") {
-                    option("--token").requiredIf(otherFlag)
+                    option(long = "token").requiredIf(otherFlag)
                     action { Ok("") }
                 }
             }
@@ -986,9 +986,9 @@ class RequiredIfTest {
     @Test
     fun `a trigger declared as a global still builds and fires`() {
         val tree = cli("app") {
-            val remote = globalFlag("--remote")
+            val remote = globalFlag(long = "remote")
             command("push") {
-                val token = option("--token").requiredIf(remote)
+                val token = option(long = "token").requiredIf(remote)
                 action { Ok(token() ?: "local") }
             }
         }

@@ -14,9 +14,9 @@ import kotlin.test.assertTrue
 class LastOneWinsTest {
 
     private fun tree(): Cli = cli("app") {
-        val a = option("--alpha", "-a").int()
-        val b = option("--beta", "-b").int()
-        val c = option("--gamma", "-c").int()
+        val a = option(short = 'a', long = "alpha").int()
+        val b = option(short = 'b', long = "beta").int()
+        val c = option(short = 'c', long = "gamma").int()
         val ab = lastOneWins(a, b)
         lastWins(ab, c)
         action { Ok("ab=${ab()} c=${c()}") }
@@ -44,9 +44,9 @@ class LastOneWinsTest {
     @Test
     fun `a fold nested inside another fold reports its own most recent member`() {
         fun nested(): Cli = cli("app") {
-            val a = option("--alpha", "-a").int()
-            val b = option("--beta", "-b").int()
-            val c = option("--gamma", "-c").int()
+            val a = option(short = 'a', long = "alpha").int()
+            val b = option(short = 'b', long = "beta").int()
+            val c = option(short = 'c', long = "gamma").int()
             val inner = lastOneWins(a, b)
             val outer = lastOneWins(inner, c)
             action { Ok("outer=${outer()}") }
@@ -61,10 +61,10 @@ class LastOneWinsTest {
     @Test
     fun `a fold two levels down still stands where its member stands`() {
         fun nested(): Cli = cli("app") {
-            val a = option("--alpha", "-a").int()
-            val b = option("--beta", "-b").int()
-            val c = option("--gamma", "-c").int()
-            val d = option("--delta", "-d").int()
+            val a = option(short = 'a', long = "alpha").int()
+            val b = option(short = 'b', long = "beta").int()
+            val c = option(short = 'c', long = "gamma").int()
+            val d = option(short = 'd', long = "delta").int()
             val outer = lastOneWins(lastOneWins(lastOneWins(a, b), c), d)
             action { Ok("outer=${outer()}") }
         }
@@ -77,8 +77,8 @@ class LastOneWinsTest {
         // What a `a() ?: b()` read gets wrong: a lastWins loser binds absentValue(), which is its
         // .default() when it has one, so the null-coalescing read answers with the loser.
         val defaults = cli("app") {
-            val a = option("--alpha", "-a").int().default(10)
-            val b = option("--beta", "-b").int().default(20)
+            val a = option(short = 'a', long = "alpha").int().default(10)
+            val b = option(short = 'b', long = "beta").int().default(20)
             val ab = lastOneWins(a, b)
             action { Ok("ab=${ab()}") }
         }
@@ -101,7 +101,7 @@ class LastOneWinsTest {
     fun `a fold over one input fails to build`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
-                val a = option("--alpha", "-a").int()
+                val a = option(short = 'a', long = "alpha").int()
                 lastOneWins(a)
                 action { Ok("") }
             }
@@ -113,8 +113,8 @@ class LastOneWinsTest {
     fun `a required fold fails to build`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
-                val a = option("--alpha", "-a").int()
-                val b = option("--beta", "-b").int()
+                val a = option(short = 'a', long = "alpha").int()
+                val b = option(short = 'b', long = "beta").int()
                 lastOneWins(a, b).required()
                 action { Ok("") }
             }
@@ -126,8 +126,8 @@ class LastOneWinsTest {
     fun `a repeatable fold fails to build`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
-                val a = option("--alpha", "-a").int()
-                val b = option("--beta", "-b").int()
+                val a = option(short = 'a', long = "alpha").int()
+                val b = option(short = 'b', long = "beta").int()
                 lastOneWins(a, b).multiple()
                 action { Ok("") }
             }
@@ -143,10 +143,10 @@ class LastOneWinsTest {
     @Test
     fun `a long short cluster does not reorder a later token`() {
         val padded = cli("app") {
-            val a = option("--alpha", "-a").int()
-            val b = option("--beta", "-b").int()
-            val c = option("--gamma", "-c").int()
-            val pad = flag("--pad", "-p")
+            val a = option(short = 'a', long = "alpha").int()
+            val b = option(short = 'b', long = "beta").int()
+            val c = option(short = 'c', long = "gamma").int()
+            val pad = flag(short = 'p', long = "pad")
             val ab = lastOneWins(a, b)
             lastWins(ab, c)
             action { Ok("ab=${ab()} c=${c()} pad=${pad()}") }

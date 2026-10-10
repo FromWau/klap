@@ -32,7 +32,7 @@ public class ActionScope internal constructor(
      * ```
      *
      * Output mode belongs to the whole program, never to one command: every command renders JSON or none
-     * does. It is always `false` for a CLI that declined the built-in with `builtins { json = false }`.
+     * does. It is always `false` for a CLI that declined the built-in with `builtins { json = Builtin.Off }`.
      */
     public val json: Boolean = false,
 ) : ValueScope(), ColorScope {

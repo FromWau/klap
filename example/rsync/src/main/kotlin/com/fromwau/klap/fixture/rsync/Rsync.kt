@@ -7,8 +7,10 @@ import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.CountFlag
 import com.fromwau.klap.Flag
+import com.fromwau.klap.Help
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
+import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
 
@@ -36,8 +38,8 @@ import com.fromwau.klap.projection
 public fun rsyncCli(): TypedCli<RsyncInputs> = cliOf("rsync") {
     // rsync matches long options exactly: `--compr` and `--dele` both answer "unknown option" (verified).
     abbreviation = Abbreviation.None
-    description = "A fast, versatile, remote (and local) file-copying tool."
-    version = "3.4.4"
+    help = "A fast, versatile, remote (and local) file-copying tool."
+    version = Version.Of("3.4.4")
     epilogue = "The ':' usages connect via remote shell, while '::' & 'rsync://' usages connect to an " +
         "rsync daemon, and require SRC or DEST to start with a module name."
 
@@ -45,7 +47,7 @@ public fun rsyncCli(): TypedCli<RsyncInputs> = cliOf("rsync") {
     // line ("--help, -h (*)  show this help (* -h is help only on its own)", verified: `rsync -h` prints
     // help and exits 0, `rsync -vh src/ dst/` and `rsync -hh --dry-run src/ dst/` both run). Declining the
     // built-in short is what frees the character; the "on its own" half has no home and is a gap below.
-    builtins { helpShort = false }
+    builtins { help = Help.Generate(short = null) }
 
     example("rsync -avz src/ backup/", "the usual archive-mode local copy")
     example("rsync -e \"ssh -p 2222\" src/ host:/dst", "a whole remote-shell command as one value")
@@ -58,15 +60,19 @@ public fun rsyncCli(): TypedCli<RsyncInputs> = cliOf("rsync") {
     group("Output") {
         // Cumulative in real rsync (-vvv adds "send_file_list done" over -v, verified), so .count() is
         // the faithful shape, and it clusters: `-avz` binds all three.
-        verbose = flag("--verbose", "-v", help = "increase verbosity").count()
-        quiet = flag("--quiet", "-q", help = "suppress non-error messages")
+        verbose = flag(short = 'v', long = "verbose", help = "increase verbosity").count()
+        quiet = flag(short = 'q', long = "quiet", help = "suppress non-error messages")
 
         // KLAP-GAP: real rsync's generic --no-OPTION rule also accepts `--no-verbose`/`--no-human-readable`,
         // but `.count()` and `.negatable()` are mutually exclusive in klap, so the negative half is unreachable.
-        humanReadable = flag("--human-readable", "-h", help = "output numbers in a human-readable format").count()
+        humanReadable = flag(
+            short = 'h',
+            long = "human-readable",
+            help = "output numbers in a human-readable format",
+        ).count()
 
         // `--no-progress` IS accepted by real rsync (verified), so the pair is the faithful declaration.
-        progress = flag("--progress", help = "show progress during transfer").negatable(default = false)
+        progress = flag(long = "progress", help = "show progress during transfer").negatable(default = false)
     }
 
     val archive: Flag
@@ -75,21 +81,21 @@ public fun rsyncCli(): TypedCli<RsyncInputs> = cliOf("rsync") {
     val exclude: Opt<List<String>>
     val include: Opt<List<String>>
     group("Selection") {
-        archive = flag("--archive", "-a", help = "archive mode is -rlptgoD (no -A,-X,-U,-N,-H)")
-        recursive = flag("--recursive", "-r", help = "recurse into directories")
+        archive = flag(short = 'a', long = "archive", help = "archive mode is -rlptgoD (no -A,-X,-U,-N,-H)")
+        recursive = flag(short = 'r', long = "recursive", help = "recurse into directories")
 
         // Real rsync REJECTS `--no-delete` ("unknown option", verified) even though it accepts
         // `--no-partial` and `--no-progress`, so this one stays a plain flag rather than a negatable.
-        delete = flag("--delete", help = "delete extraneous files from dest dirs")
+        delete = flag(long = "delete", help = "delete extraneous files from dest dirs")
 
         // Both repeat in real rsync, so .multiple() is the faithful cardinality.
         //
         // KLAP-GAP: real rsync builds one ordered filter list interleaving `--exclude`/`--include`, but klap
         // binds them as two separate ordered lists — the relative order between the two is not recoverable.
-        exclude = option("--exclude", help = "exclude files matching PATTERN")
+        exclude = option(long = "exclude", help = "exclude files matching PATTERN")
             .multiple()
             .placeholder("PATTERN")
-        include = option("--include", help = "don't exclude files matching PATTERN")
+        include = option(long = "include", help = "don't exclude files matching PATTERN")
             .multiple()
             .placeholder("PATTERN")
     }
@@ -99,14 +105,14 @@ public fun rsyncCli(): TypedCli<RsyncInputs> = cliOf("rsync") {
     val partial: Flag
     val rsh: Opt<String?>
     group("Transfer") {
-        compress = flag("--compress", "-z", help = "compress file data during the transfer")
-        dryRun = flag("--dry-run", "-n", help = "perform a trial run with no changes made")
-        partial = flag("--partial", help = "keep partially transferred files").negatable(default = false)
+        compress = flag(short = 'z', long = "compress", help = "compress file data during the transfer")
+        dryRun = flag(short = 'n', long = "dry-run", help = "perform a trial run with no changes made")
+        partial = flag(long = "partial", help = "keep partially transferred files").negatable(default = false)
 
         // A whole command in one value. Nothing special is needed: klap takes the next token verbatim,
         // so `-e "ssh -p 2222"` arrives as one argv element and binds whole. Verified against real rsync,
         // which also accepts the attached-short form `-essh` and the in-cluster form `-ave ssh`.
-        rsh = option("--rsh", "-e", help = "specify the remote shell to use").placeholder("COMMAND")
+        rsh = option(short = 'e', long = "rsh", help = "specify the remote shell to use").placeholder("COMMAND")
     }
 
     val port: Opt<Int?>
@@ -115,14 +121,14 @@ public fun rsyncCli(): TypedCli<RsyncInputs> = cliOf("rsync") {
         // Deliberately NOT .range(1..65535): real rsync accepts `--port=99999` and `--port=-1` without
         // complaint (both verified exit 0) and rejects only a non-numeric value ("invalid numeric value").
         // A range here would reject lines real rsync accepts.
-        port = option("--port", help = "specify double-colon alternate port number")
+        port = option(long = "port", help = "specify double-colon alternate port number")
             .int()
             .placeholder("PORT")
 
         // RATE is a size, not an int: `100`, `2.5`, `1.5m`, `10K`, `1kb` and the empty string all parse,
         // while `bogus`, `1x`, `-1` and `+1` are all "is invalid" (each verified). `.convert { }` rather
         // than `.map { }` so the message is rsync's own wording instead of a derived one.
-        bwlimit = option("--bwlimit", help = "limit socket I/O bandwidth")
+        bwlimit = option(long = "bwlimit", help = "limit socket I/O bandwidth")
             .convert { raw ->
                 if (RATE.matches(raw)) Ok(raw) else Err(ConversionError.Domain(RateInvalid, "is invalid"))
             }

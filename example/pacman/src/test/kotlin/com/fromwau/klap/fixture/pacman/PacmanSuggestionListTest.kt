@@ -6,7 +6,6 @@ import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.acceptSuggestion
 import com.fromwau.klap.testing.filesAfter
 import com.fromwau.klap.testing.suggestionsFor
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -132,12 +131,18 @@ class PacmanSuggestionListTest {
 
     @Test
     fun `a name's description is the text its help row shows`() {
-        val page = parity.helpPage("--help", because = "pacman --help")
-        val flat = page.lines().joinToString(" ") { it.trim() }.replace(Regex(" +"), " ")
+        // With no operation on the line a name is described in the words of the first operation's page listing it,
+        // so that page is where its row stands.
         checkCells(INPUTS) { input ->
+            val op = Op.entries.first { it.entryFor(input.long) != null }
+            val page = parity.helpPage("-${op.short}", "--help", because = "pacman -${op.short} --help")
+            val flat = page.lines().joinToString(" ") { it.trim() }.replace(Regex(" +"), " ")
             val offered = pacman.suggestionsFor("pacman ${input.long}").first { it.value == input.long }
             val text = offered.description.orEmpty()
-            assertTrue(text.isNotEmpty() && text in flat, "E20 `pacman ${input.long}|`: \"$text\" is not on --help")
+            assertTrue(
+                text.isNotEmpty() && text in flat,
+                "E20 `pacman ${input.long}|`: \"$text\" is not on -${op.short} --help",
+            )
         }
     }
 
@@ -148,19 +153,17 @@ class PacmanSuggestionListTest {
             assertEquals(pacman.suggestionsFor(line), pacman.suggestionsFor(line), "E24 `$line|`")
         }
     }
-}
 
-/**
- * The suggestion list on a pacman line (G and E of the testing matrix) where klap offers something other than what real
- * pacman 7.1.0 would accept. Each test states what real pacman 7.1.0 does and is ignored with `TDD target: <what must
- * change>`; removing the annotation shows it failing for that reason, and no other test pins today's behaviour, so a
- * fix breaks nothing else.
- */
-class PacmanSuggestionListTargetsTest {
+    @Test
+    fun `help and version are described in pacman's own words`() = pacman.checkContext(
+        // `man pacman`: "-V, --version  Display version and exit." and "-h, --help  Display syntax for the given
+        // operation." The fixture words -V the same way.
+        at("G45 G6b", "pacman --vers|", Suggestion("--version", VERSION_SHORT_HELP)),
+        at("G45 G6b", "pacman -Q --vers|", Suggestion("--version", VERSION_SHORT_HELP)),
+        at("G45 G6b", "pacman --hel|", Suggestion("--help", HELP_TEXT)),
+        at("G45 G6b", "pacman -Q --hel|", Suggestion("--help", HELP_TEXT)),
+    )
 
-    private val pacman = pacmanCli().cli
-
-    @Ignore("TDD target: the fixture must decline --json and --docs, and klap must let it decline --completion")
     @Test
     fun `a built in pacman does not have is not offered`() = pacman.checkContext(
         // `pacman -Q --json`, `pacman -Q --completion bash`, `pacman -Q --docs man`: "unrecognized option" each.
@@ -169,18 +172,4 @@ class PacmanSuggestionListTargetsTest {
         at("G11 G67", "pacman -Q --comp|"),
         at("G11 G67", "pacman -Q --doc|"),
     )
-
-    @Ignore("TDD target: klap must let a fixture word its --help and --version as the real tool does")
-    @Test
-    fun `help and version are described in pacman's own words`() = pacman.checkContext(
-        // `man pacman`: "-V, --version  Display version and exit." and "-h, --help  Display syntax for the given
-        // operation." The fixture words -V the same way.
-        at("G45 G6b", "pacman --vers|", Suggestion("--version", VERSION_SHORT_HELP)),
-        at("G45 G6b", "pacman -Q --vers|", Suggestion("--version", VERSION_SHORT_HELP)),
-        at("G45 G6b", "pacman --hel|", Suggestion("--help", PACMAN_HELP_TEXT)),
-        at("G45 G6b", "pacman -Q --hel|", Suggestion("--help", PACMAN_HELP_TEXT)),
-    )
 }
-
-/** `man pacman` on `-h, --help`, in the fixture's lower-case style. */
-private const val PACMAN_HELP_TEXT = "display syntax for the given operation"

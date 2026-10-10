@@ -3,6 +3,7 @@ package com.fromwau.klap.fixture.rm
 import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.TypedCli
+import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
 
@@ -17,8 +18,8 @@ import com.fromwau.klap.projection
 public fun rmCli(): TypedCli<RmInputs> = cliOf("rm") {
     // GNU rm takes any unambiguous prefix of a long option or a choice value: `rm --recur d` is --recursive.
     abbreviation = Abbreviation.Options
-    description = "Remove (unlink) the FILE(s)"
-    version = "9.11"
+    help = "Remove (unlink) the FILE(s)"
+    version = Version.Of("9.11")
     epilogue = "By default, rm does not remove directories. Use --recursive (-r or -R) to remove each " +
             "listed directory too, along with all of its contents. To remove a file whose name starts " +
             "with a '-', for example '-foo', use 'rm -- -foo' or 'rm ./-foo'."
@@ -26,9 +27,9 @@ public fun rmCli(): TypedCli<RmInputs> = cliOf("rm") {
     example("rm -rf build", "remove a directory tree without prompting")
     example("rm -- -foo", "remove a file whose name starts with a dash")
 
-    val force = flag("--force", "-f", help = "ignore nonexistent files and arguments, never prompt")
+    val force = flag(short = 'f', long = "force", help = "ignore nonexistent files and arguments, never prompt")
 
-    val interactiveShort = flag("-i", help = "prompt before every removal")
+    val interactiveShort = flag(short = 'i', help = "prompt before every removal")
 
     // Real rm's `-i` never takes an attached value — only the long spelling does (verified: `rm -inever f`
     // fails "invalid option -- 'n'", while `rm -iv` and `rm -irf` both succeed, reading the rest of the
@@ -39,7 +40,7 @@ public fun rmCli(): TypedCli<RmInputs> = cliOf("rm") {
     // separate holders with no order between them, so the action below ORs them as the closest expressible
     // reading.
     val interactive = option(
-        "--interactive",
+        long = "interactive",
         help = "prompt according to WHEN: never, once (-I), or always (-i); without WHEN, prompt always",
     )
         .choice("never", "once", "always")
@@ -48,24 +49,27 @@ public fun rmCli(): TypedCli<RmInputs> = cliOf("rm") {
     // The invented long name `--interactive-once` is a fixture choice pinned by
     // RmParityTest's `known divergence from real rm`, not a klap limitation — real `-I` has no long form at all.
     val interactiveOnce = flag(
-        "--interactive-once", "-I",
+        short = 'I', long = "interactive-once",
         help = "prompt once before removing more than three files, or when removing recursively",
     )
 
-    val recursive = flag("--recursive", "-r", help = "remove directories and their contents recursively")
-    val recursiveUpper = flag("-R", help = "same as --recursive")
+    val recursive = flag(short = 'r', long = "recursive", help = "remove directories and their contents recursively")
+    val recursiveUpper = flag(short = 'R', help = "same as --recursive")
 
-    val dir = flag("--dir", "-d", help = "remove empty directories")
-    val verbose = flag("--verbose", "-v", help = "explain what is being done")
+    val dir = flag(short = 'd', long = "dir", help = "remove empty directories")
+    val verbose = flag(short = 'v', long = "verbose", help = "explain what is being done")
     val oneFileSystem = flag(
-        "--one-file-system",
+        long = "one-file-system",
         help = "when removing a hierarchy recursively, skip any directory on a different file system",
     )
 
     // KLAP-GAP: rm's `--preserve-root[=all]` plus `--no-preserve-root` needs BOTH `.negatable()` and
     // `.optionalValue()` on one holder, but the first lives on `Flag` and the second on `Opt<T>`.
     // Keeping `.negatable()` matches `--no-preserve-root` exactly and drops the `=all` spelling.
-    val preserveRoot = flag("--preserve-root", help = "do not remove '/' (default)").negatable(default = true)
+    val preserveRoot = flag(
+        long = "preserve-root",
+        help = "do not remove '/' (default)",
+    ).negatable(default = true)
 
     // `.requiredUnless(inputs.force)` drops the declared minimum of 1 to 0 exactly when -f fired, so bare
     // `rm` still fails to parse (real rm: "missing operand", exit 1; klap reports the same absence as a

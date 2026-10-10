@@ -27,9 +27,9 @@ class PosixConformanceTest {
 
     /** The shape every guideline below is exercised against: two flags, a value-taking option, operands. */
     private fun tree(): Cli = cli("util") {
-        val a = flag("--all", "-a")
-        val b = flag("--brief", "-b")
-        val c = option("--config", "-c")
+        val a = flag(short = 'a', long = "all")
+        val b = flag(short = 'b', long = "brief")
+        val c = option(short = 'c', long = "config")
         val files = argument("file").multiple(min = 0)
         action { Ok("a=${a()} b=${b()} c=${c()} files=${files()}") }
     }
@@ -44,11 +44,14 @@ class PosixConformanceTest {
 
     @Test
     fun `guideline 3 an option name is a single character`() {
-        // Enforced at construction: a multi-character short is rejected, naming the cluster it would read as.
-        val ex = assertFailsWith<IllegalArgumentException> {
-            cli("util") { flag("-ab"); action { Ok("") } }
+        // A short is declared as a Char, so a multi-character short cannot be written; two shorts are two
+        // characters, and `-ab` reads as the cluster of both.
+        val tree = cli("util") {
+            val a = flag(short = 'a')
+            val b = flag(short = 'b')
+            action { Ok("${a()} ${b()}") }
         }
-        assertTrue("cluster" in ex.message.orEmpty(), ex.message)
+        assertEquals("true true", RecordingTerminal().let { tree.run(arrayOf("-ab"), it); it.out.toString().trim() })
     }
 
     @Test
@@ -56,7 +59,7 @@ class PosixConformanceTest {
         // A digit IS alphanumeric, so `curl -4` conforms; it is only MULTI-digit that the guideline rules
         // out, and klap has no multi-character short at all.
         val tree = cli("util") {
-            val four = flag("-4")
+            val four = flag(short = '4')
             action { Ok(four().toString()) }
         }
         assertEquals("true", RecordingTerminal().let { tree.run(arrayOf("-4"), it); it.out.toString().trim() })
@@ -66,11 +69,14 @@ class PosixConformanceTest {
 
     @Test
     fun `guideline 4 every option carries its delimiter`() {
-        // Enforced at DECLARATION since the spelling model became explicit: a name without a dash cannot
-        // declare an option at all, so a klap tree has no way to offer a delimiter-less option.
-        assertFailsWith<IllegalArgumentException> {
-            cli("util") { flag("all"); action { Ok("") } }
+        // A long is declared without its dashes and typed after `--`, so the word alone is an operand: a klap
+        // tree has no way to offer a delimiter-less option.
+        val tree = cli("util") {
+            val all = flag(long = "all")
+            action { Ok(all().toString()) }
         }
+        assertEquals("true", RecordingTerminal().let { tree.run(arrayOf("--all"), it); it.out.toString().trim() })
+        tree.parse(listOf("all")).assertError<CliError.TooManyArguments>()
     }
 
     // --- Guideline 5: "One or more options without option-arguments, followed by at most one option that
@@ -115,8 +121,8 @@ class PosixConformanceTest {
         val optional = cli("ls") {
             // --color collides with klap's own built-in of the same name; free it the same way
             // BuiltinsOptOutTest does, so the option under test can use the name unchanged.
-            builtins { color = false }
-            val color = option("--color").optionalValue("always")
+            builtins { color = Builtin.Off }
+            val color = option(long = "color").optionalValue("always")
             val files = argument("file").multiple(min = 0)
             action { Ok("color=${color()} files=${files()}") }
         }
@@ -163,7 +169,7 @@ class PosixConformanceTest {
         // leaves the behaviour the guideline describes, where all options precede the operands.
         val strict = cli("t") {
             optionsEndAtFirstOperand = true
-            val a = flag("--all", "-a")
+            val a = flag(short = 'a', long = "all")
             val files = argument("file").multiple()
             action<String>(human = { it }) { Ok("a=${a()} files=${files()}") }
         }
@@ -206,7 +212,7 @@ class PosixConformanceTest {
     @Test
     fun `guideline 10 a builtin spelling in an option argument slot is that options value`() {
         fun tree() = cliOf("mygrep") {
-            val regexp = option("--regexp", "-e")
+            val regexp = option(short = 'e', long = "regexp")
             val files = argument("file").multiple()
             action { Ok("") }
             projection { regexp() to files() }
@@ -244,8 +250,8 @@ class PosixConformanceTest {
         // The guideline's own escape clause, which is exactly what `lastWins` declares — and it documents
         // itself, since every member's help row names the set and the usage line groups it.
         fun overriding() = cli("rm") {
-            val i = flag("--interactive", "-i")
-            val f = flag("--force", "-f")
+            val i = flag(short = 'i', long = "interactive")
+            val f = flag(short = 'f', long = "force")
             lastWins(i, f)
             action { Ok(if (f()) "force" else if (i()) "interactive" else "neither") }
         }
@@ -264,8 +270,8 @@ class PosixConformanceTest {
         // that takes an option-argument is one. The set documents itself, since every member's help row
         // names it.
         fun tree() = cli("head") {
-            val lines = option("--lines", "-n")
-            val bytes = option("--bytes", "-c")
+            val lines = option(short = 'n', long = "lines")
+            val bytes = option(short = 'c', long = "bytes")
             lastWins(lines, bytes)
             argument("file")
             action<String>(human = { it }) { Ok("n=${lines()} c=${bytes()}") }
@@ -342,8 +348,8 @@ class PosixConformanceTest {
         // Guideline 3 says alphanumeric; klap allows any single character, which curl needs for `-:`.
         // Sugar, and additive: it claims a character no conforming option name could have used.
         val tree = cli("util") {
-            val next = flag("-:")
-            val a = flag("-a")
+            val next = flag(short = ':')
+            val a = flag(short = 'a')
             action { Ok("next=${next()} a=${a()}") }
         }
         fun run(vararg argv: String) = RecordingTerminal().let { term ->
@@ -359,7 +365,7 @@ class PosixConformanceTest {
         // Multi-digit `-20` is outside guideline 3, so the number input is an extension. A DECLARED short
         // wins, so the conforming reading of `-2...` as an option cluster is never overridden by it.
         val tree = cli("head") {
-            val two = flag("-2")
+            val two = flag(short = '2')
             val lines = numberOption().int()
             action { Ok("two=${two()} lines=${lines()}") }
         }
@@ -371,8 +377,8 @@ class PosixConformanceTest {
         assertEquals("two=false lines=20", run("-20"))
         // ...and where the WHOLE token is a valid option group, guideline 14 puts the cluster first.
         val bothDeclared = cli("head") {
-            val two = flag("-2")
-            val zero = flag("-0")
+            val two = flag(short = '2')
+            val zero = flag(short = '0')
             val lines = numberOption().int()
             action { Ok("two=${two()} zero=${zero()} lines=${lines()}") }
         }
@@ -395,8 +401,8 @@ class PosixConformanceTest {
         // never mentioning `-P`, has no token for the extension to reach. The two trees below bind that
         // conforming line identically, which is the whole claim.
         fun tree(negatable: Boolean) = cli("cp") {
-            val plain = flag("--dereference", "-L")
-            val deref = if (negatable) plain.negatable("-P") else plain
+            val plain = flag(short = 'L', long = "dereference")
+            val deref = if (negatable) plain.negatable(short = 'P') else plain
             argument("file")
             action<String>(human = { it }) { Ok("deref=${deref()}") }
         }
@@ -416,9 +422,9 @@ class PosixConformanceTest {
         // abbreviation, which is the only place the rule can act.
         fun tree() = cli("util") {
             abbreviation = Abbreviation.Options
-            val a = flag("--all", "-a")
-            val b = flag("--brief", "-b")
-            val c = option("--config", "-c")
+            val a = flag(short = 'a', long = "all")
+            val b = flag(short = 'b', long = "brief")
+            val c = option(short = 'c', long = "config")
             val files = argument("file").multiple(min = 0)
             action { Ok("a=${a()} b=${b()} c=${c()} files=${files()}") }
         }

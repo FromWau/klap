@@ -97,19 +97,7 @@ class PacmanLineContextTest {
         // `pacman -Q --debug --check pacman` prints debug lines and checks.
         at("S46", "pacman -Q --debug --chec|", onQuery("--check")),
     )
-}
 
-/**
- * The words around the cursor on a pacman line (L and S of the testing matrix) where klap offers something other than
- * what real pacman 7.1.0 would accept. Each test states what real pacman 7.1.0 does and is ignored with `TDD target:
- * <what must change>`; removing the annotation shows it failing for that reason, and no other test pins today's
- * behaviour, so a fix breaks nothing else.
- */
-class PacmanLineContextTargetsTest {
-
-    private val pacman = pacmanCli().cli
-
-    @Ignore("TDD target: klap must not read a word after -- as an option or its value")
     @Test
     fun `an option spelled after the end of options is a target and takes no value`() = pacman.checkContext(
         // `pacman -Q -- --dbpath pacman`: "error: package '--dbpath' was not found"; `pacman -Q -- --color=al`:
@@ -123,10 +111,10 @@ class PacmanLineContextTargetsTest {
         at("L4c", "pacman -Q -- -b/tm|"),
     )
 
-    @Ignore("TDD target: klap must rule out set members by an exclusive member typed after the cursor")
     @Test
     fun `an operation after the cursor keeps every other operation out`() {
-        // `pacman -Qi -S pacman`, `pacman --que -T pacman`: "error: only one operation may be used at a time".
+        // `pacman -Qi -S pacman`, `pacman --que -T pacman`, `pacman -Q --syn`: "error: only one operation may be used
+        // at a time". `--sy` is no cell: pacman finds it ambiguous (`--sync`, `--sysroot`, `--sysupgrade`).
         checkCells(
             listOf(
                 Triple("L5", "pacman -| -S", Op.SYNC),
@@ -134,14 +122,24 @@ class PacmanLineContextTargetsTest {
                 Triple("L5", "pacman -| -Syu", Op.SYNC),
                 Triple("L5", "pacman -| -Q pkg", Op.QUERY),
                 Triple("L22", "pacman -| --que", Op.QUERY),
-                Triple("L22", "pacman --| --sy", Op.SYNC),
+                Triple("L22", "pacman --| --syn", Op.SYNC),
                 Triple("L22", "pacman --sy| --que", Op.QUERY),
-                Triple("L22", "pacman --que| --sy", Op.SYNC),
+                Triple("L22", "pacman --que| --syn", Op.SYNC),
             ),
         ) { (rows, typed, op) -> pacman.assertOffersNone(rows, typed, otherOperations(op)) }
     }
+}
 
-    @Ignore("TDD target: klap must not offer a requireExactlyOne member already given")
+/**
+ * The words around the cursor on a pacman line (L and S of the testing matrix) where klap offers something other than
+ * what real pacman 7.1.0 would accept. Each test states what real pacman 7.1.0 does and is ignored with `TDD target:
+ * <what must change>`; removing the annotation shows it failing for that reason, and no other test pins today's
+ * behaviour, so a fix breaks nothing else.
+ */
+class PacmanLineContextTargetsTest {
+    private val pacman = pacmanCli().cli
+
+    @Ignore("Will not do (todo 6): states a pacman quirk klap does not follow")
     @Test
     fun `an operation given before or after the cursor is not offered again`() {
         // `pacman -Q -Q pacman`, `pacman --query -Q pacman`, `pacman -Q --query pacman`: "error: only one operation

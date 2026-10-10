@@ -277,7 +277,6 @@ class RsyncParityTest {
             because = "real rsync: --color=never: unknown option",
             expected = NOTHING_BOUND.copy(paths = listOf("src/", "dst/")),
         )
-        parity.shortCircuits("--help-all", "src/", "dst/", because = "real rsync: --help-all: unknown option")
         parity.shortCircuits("--completion", "bash", "src/", because = "real rsync: --completion: unknown option")
         parity.shortCircuits("--docs", "markdown", "src/", because = "real rsync: --docs: unknown option")
         parity.shortCircuits("__complete", "src/", because = "real rsync: '__complete' is a path, not a node")
@@ -296,7 +295,7 @@ class RsyncParityTest {
         // GAP 2 — `-V`. Real rsync answers `-V` and `--version` alike, anywhere on the line (verified:
         // `rsync -V --dry-run src/ dst/` prints the version and exits 0). klap's `--version` built-in
         // arrives from `version = "3.4.4"` with no way to give it an extra spelling — `builtins { }`
-        // only switches a built-in off — and declaring a plain `flag("-V")` would bind a flag nobody
+        // only switches a built-in off — and declaring a plain `flag(short = 'V')` would bind a flag nobody
         // reads rather than short-circuit, so the honest record is that `-V` is unreachable here.
         parity.rejects("-V", "src/", "dst/", because = "real rsync: -V prints the version and exits 0")
 
@@ -324,5 +323,11 @@ class RsyncParityTest {
         for (heading in listOf("Output:", "Selection:", "Transfer:", "Connection:")) {
             assertTrue(heading in text, "expected `rsync --help` to contain a '$heading' section, in:\n$text")
         }
+    }
+
+    @Test
+    fun `--help-all is refused as the real rsync refuses it`() {
+        // klap has --help-all only where there are subcommands to expand.
+        parity.rejects("--help-all", "src/", "dst/", because = "real rsync: --help-all: unknown option")
     }
 }

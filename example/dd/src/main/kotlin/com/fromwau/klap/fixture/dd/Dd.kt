@@ -8,6 +8,7 @@ import com.fromwau.kern.result.mapError
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.TypedCli
+import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
 
@@ -27,8 +28,8 @@ import com.fromwau.klap.projection
 public fun ddCli(): TypedCli<DdInputs> = cliOf("dd") {
     // dd declares no long option of its own, but real dd still abbreviates klap's injected --help/--version.
     abbreviation = Abbreviation.Options
-    description = "Copy a file, converting and formatting according to the operands"
-    version = "9.11"
+    help = "Copy a file, converting and formatting according to the operands"
+    version = Version.Of("9.11")
 
     example("dd if=/dev/zero of=out.img bs=4M count=10 status=progress", "write a 40 MiB file, with progress")
     example("dd if=disk.img of=/dev/sdb bs=1M conv=fsync oflag=direct", "restore an image with direct I/O")

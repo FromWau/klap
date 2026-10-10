@@ -232,7 +232,6 @@ class FindParityTest {
         )
 
         parity.shortCircuits("-h", because = "real find: unknown predicate `-h'")
-        parity.shortCircuits("--help-all", because = "real find: unknown predicate `--help-all'")
         parity.shortCircuits("--completion", "bash", because = "real find: unknown predicate `--completion'")
         parity.shortCircuits("--docs", "markdown", because = "real find: unknown predicate `--docs'")
         // A starting point literally named `__complete` is unreachable: the hidden built-in wins the walk.
@@ -242,5 +241,11 @@ class FindParityTest {
         // ahead of any predicate check.
         parity.shortCircuits("--help", because = "real find: prints its own usage and exits 0")
         parity.shortCircuits("--version", "--zzz", because = "real find: prints its version and exits 0")
+    }
+
+    @Test
+    fun `--help-all is refused as the real find refuses it`() {
+        // klap has --help-all only where there are subcommands to expand.
+        parity.rejects("--help-all", because = "real find: unknown predicate `--help-all'")
     }
 }

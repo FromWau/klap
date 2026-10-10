@@ -128,6 +128,14 @@ private fun bindOptions(
             }
 
             else -> {
+                // The last occurrence binds, but every one is converted: GNU head refuses `head -n abc -n 5`
+                // and ls refuses `ls --width abc --width 80`.
+                if (policy != BindPolicy.Lenient) {
+                    for (earlier in raws.dropLast(1)) {
+                        val outcome = opt.convertOne(earlier, inferValues)
+                        if (outcome is Result.Error) return outcome
+                    }
+                }
                 val raw = raws.lastOrNull()
                 if (raw != null) {
                     when (val outcome = opt.convertOne(raw, inferValues)) {
@@ -348,8 +356,6 @@ private fun ValueSpec.convertOne(raw: String, inferValues: Boolean): Result<Any?
     val value = converted.getOrElse { cause ->
         return Result.Error(
             if (choices != null) {
-                // Choice-restricted matching is case-insensitive (.choice()/.enum()), so the "did you
-                // mean" suggestion ignores case too, rather than penalizing a near-miss for wrong case.
                 CliError.InvalidChoice(
                     name, raw, choices!!,
                     didYouMean(raw, choices!!),
@@ -379,7 +385,7 @@ private fun ValueSpec.convertOne(raw: String, inferValues: Boolean): Result<Any?
 
 /** [resolveChoice], reading this spec's own [ValueSpec.name] as the error's [CliError.AmbiguousValue.name]. */
 private fun ValueSpec.resolveChoice(raw: String, choices: List<String>): Result<String, CliError> =
-    resolveChoice(name, raw, choices)
+    resolveChoice(name, raw, choices, choiceIgnoreCase)
 
 /**
  * A [CliError.TooManyArguments] whose first extra token, when it near-matches a visible subcommand,
@@ -388,7 +394,7 @@ private fun ValueSpec.resolveChoice(raw: String, choices: List<String>): Result<
  * a stray positional for the action instead of being routed.
  */
 private fun Command.tooManyArguments(extras: List<String>, qualifiedName: String): CliError {
-    val commandNames = subcommands.filterNot { it.hidden }.flatMap { listOf(it.name) + it.aliases }
+    val commandNames = subcommands.filterNot { it.hidden }.flatMap { it.words }
     // A dash-led extra is never a mistyped subcommand: [requireValidName] forbids a leading '-' on every
     // command name and alias, so measuring one against them can only produce a wrong answer ('-rm' is one
     // edit from 'rm'). Such a token gets here past `--`, or past a `dashLed()` slot that already took one.
@@ -414,13 +420,13 @@ private fun List<Occurrence>.inArgvOrder(): List<String> =
  *
  * [globals] must be read off the accumulator `cmd.sift` filled while sifting [sifted], since that walk is what
  * records a global hiding in a mixed short cluster (`-fv`); the caller may leave an occurrence out of them.
- * [inferNames] is that accumulator's [GlobalAccumulator.inferNames].
+ * [inferValues] is that accumulator's [GlobalAccumulator.inferValues].
  */
 internal fun Cli.completionValues(
     cmd: Command,
     sifted: Sifted,
     globals: GlobalSift,
-    inferNames: Boolean,
+    inferValues: Boolean,
     skipOperand: Int? = null,
 ): Map<HolderSpec, Any?> {
     val sink = mutableMapOf<HolderSpec, Any?>()
@@ -433,17 +439,17 @@ internal fun Cli.completionValues(
         sifted.negations,
         sifted.options,
         sink,
-        inferNames,
+        inferValues,
         BindPolicy.Lenient,
     )
     cmd.bindPositionals(
         sifted.positionals,
         sink,
         sifted,
-        inferNames,
+        inferValues,
         BindPolicy.Lenient,
         skipOperand = skipOperand,
     )
-    bindGlobals(globalSpecs, globals, sink, inferNames, BindPolicy.Lenient)
+    bindGlobals(globalSpecs, globals, sink, inferValues, BindPolicy.Lenient)
     return sink
 }

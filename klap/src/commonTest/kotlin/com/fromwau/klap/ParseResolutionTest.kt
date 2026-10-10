@@ -8,7 +8,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 private fun tree(): Cli = cli("todo") {
-    version = "1.0.0"
+    version = Version.Of("1.0.0")
     command("ping") { action { Ok("") } }
     command("config") {
         command("get") { action { Ok("") } }
@@ -62,7 +62,7 @@ class ParseResolutionTest {
     fun `mistyped subcommand with flags reports subcommand not option`() {
         val app = cli("app") {
             command("temp") {
-                option("--from")
+                option(long = "from")
                 action { Ok("") }
             }
         }
@@ -103,7 +103,7 @@ class ParseResolutionTest {
     @Test
     fun `a local option of the parent stops the walk so its subcommand never routes`() {
         val app = cli("app") {
-            val workdir = option("--workdir")
+            val workdir = option(long = "workdir")
             command("build") { action { Ok("built") } }
             action { Ok("root ${workdir()}") }
         }

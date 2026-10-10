@@ -309,22 +309,10 @@ class PacmanCompletionTest {
         slot("K59 words after", "pacman -Q -h | pkg"),
         slot("K59 a name after", "pacman -Q --help --verb|", expected = setOf(name("--verbose", Op.QUERY))),
     )
-}
-
-/**
- * The slots and cursor columns of a pacman line (K and K7 of the testing matrix) where klap offers something other than
- * what real pacman 7.1.0 would accept. Each test states what real pacman 7.1.0 does and is ignored with `TDD target:
- * <what must change>`; removing the annotation shows it failing for that reason, and no other test pins today's
- * behaviour, so a fix breaks nothing else.
- */
-class PacmanCompletionTargetsTest {
-
-    private val pacman = pacmanCli().cli
 
     private val longKinds = listOf("long end", "long inside")
     private val letterKinds = listOf("short end", "cluster end", "cluster inside")
 
-    @Ignore("TDD target: scope names by operation, word them by its page, drop --json --completion --docs")
     @Test
     fun `a dash inside a word or before an operation offers what a bare dash under it offers`() = pacman.checkPacman(
         // Klap is handed `-` or `--` and the rest of the word stays; `pacman -Q -i` and `pacman -i -Q` alike read -Q.
@@ -343,7 +331,6 @@ class PacmanCompletionTargetsTest {
         slot("K3 set member after", "pacman --| -Q"),
     )
 
-    @Ignore("TDD target: klap must offer under an operation, wherever it stands on the line, only its page's longs")
     @Test
     fun `a long name typed in part completes to the longs of the operation's page`() = pacman.checkPacman(
         // `pacman -Q --dbonly`: "invalid option '--dbonly'"; `pacman -Q --regex`: "invalid option '--regex'"; in
@@ -353,7 +340,6 @@ class PacmanCompletionTargetsTest {
         slot("K2 constraint after", "pacman --sy| -Q"),
     )
 
-    @Ignore("TDD target: the fixture must decline --json --completion --docs, which pacman does not have")
     @Test
     fun `a built-in pacman does not have is not offered`() = pacman.checkPacman(
         // `pacman -Q --json`, `pacman -Q --completion bash`, `pacman -Q --docs man`: "unrecognized option"; `pacman
@@ -364,6 +350,108 @@ class PacmanCompletionTargetsTest {
         slot("K13g", "pacman -Q --doc|"),
         slot("K15a ambiguous", "pacman -Q --co|"),
     )
+
+    @Test
+    fun `the help short alone or in a cluster continues with the letters pacman reads after it`() = pacman.checkPacman(
+        // K13b, K7i: `pacman -Qhi` and `pacman -Qh -i` print the -Q page, `pacman -Qhz` is "invalid option -- 'z'",
+        // so pacman reads every letter after -h.
+        slot("K13b", "pacman -h|", expected = continuations("-h", null)),
+        slot("K13b", "pacman -Q -h|", expected = continuations("-h", Op.QUERY)),
+        slot("K13b words after", "pacman -Q -h| pkg", expected = continuations("-h", Op.QUERY)),
+        slot("K7i", "pacman -Qh|", expected = continuations("-Qh", Op.QUERY)),
+        slot("K7i words after", "pacman -Qh| pkg", expected = continuations("-Qh", Op.QUERY)),
+    )
+
+    @Test
+    fun `a cluster holding an operation offers no other operation`() {
+        // `pacman -QS pacman`: "error: only one operation may be used at a time". `pacman -Q -<TAB>` already
+        // leaves -S out; the cluster under the cursor must count the same way.
+        val offered = pacman.suggestionsFor("pacman -Q").map { it.value }
+        val others = listOf("-QS", "-QR", "-QU", "-QD", "-QF", "-QT")
+        assertTrue(others.none { it in offered }, "`pacman -Q|` offers another operation: $offered")
+    }
+
+    @Test
+    fun `an option of another operation is not offered`() {
+        // `pacman -Q --needed pacman`: "error: invalid option '--needed'".
+        assertEquals(emptyList<Suggestion>(), pacman.suggestionsFor("pacman -Q --ne"), "`pacman -Q --ne|`")
+    }
+
+    @Test
+    fun `a counted letter is offered again in its cluster`() {
+        // The pages: -Q -ii -kk -tt, -S -cc -dd -gg -ii -uu -yy, -R -dd -ss, -U -dd, -D -kk, -F -yy.
+        val cells = Op.entries.flatMap { op -> op.page.filter { op.counts(it) }.map { op to it } }
+        checkCells(cells) { (op, entry) ->
+            val cluster = "pacman -${op.short}${entry.short}"
+            val again = Suggestion("${cluster.drop(7)}${entry.short}", entry.help)
+            val offered = pacman.suggestionsFor(cluster)
+            assertTrue(again in offered, "${marked(cluster, cluster.length)} must offer $again: $offered")
+        }
+    }
+
+    @Test
+    fun `a dash offers the operation's page and nothing pacman refuses`() =
+        pacman.checkPacman(cells("dash", NO_OPERATION + ANY_OPERATION, NOTHING))
+
+    @Test
+    fun `a long of another operation completes to nothing`() =
+        pacman.checkPacman(longKinds.flatMap { cells(it, ANY_OPERATION, OFF_PAGE) })
+
+    @Test
+    fun `a long on the page is described in that page's words`() =
+        pacman.checkPacman(longKinds.flatMap { cells(it, ANY_OPERATION, OTHER_WORDING) })
+
+    @Test
+    fun `the operation already given is not offered again`() =
+        pacman.checkPacman(longKinds.flatMap { cells(it, ANY_OPERATION, SAME_OPERATION) })
+
+    @Test
+    fun `another operation's name as typed completes to this operation's options`() =
+        pacman.checkPacman(longKinds.flatMap { cells(it, ANY_OPERATION, SHARED_NAME) })
+
+    @Test
+    fun `a long name completes to what an operation after the cursor accepts`() = pacman.checkPacman(
+        cells(
+            "long before the operation", ANY_OPERATION, OFF_PAGE, OTHER_WORDING, SAME_OPERATION, SHARED_NAME,
+            OTHER_OPERATION,
+        ),
+    )
+
+    @Test
+    fun `a letter of another operation offers nothing after it`() =
+        pacman.checkPacman(letterKinds.flatMap { cells(it, ANY_OPERATION, OFF_PAGE) })
+
+    @Test
+    fun `a contested letter continues by its meaning on the operation's page`() =
+        pacman.checkPacman(letterKinds.flatMap { cells(it, ANY_OPERATION, CONTESTED) })
+
+    @Test
+    fun `a letter on the page continues with that page's letters`() =
+        pacman.checkPacman(
+            letterKinds.flatMap { cells(it, ANY_OPERATION, SAME_WORDING, OTHER_WORDING, VERSION_LETTER) },
+        )
+
+    @Test
+    fun `a letter of an operation continues with that operation's letters or with nothing`() =
+        pacman.checkPacman(letterKinds.flatMap { cells(it, NO_OPERATION + ANY_OPERATION, OPERATION) })
+
+    @Test
+    fun `an operation's own cluster continues with that operation's letters`() =
+        pacman.checkPacman(cells("operation cluster", ANY_OPERATION, OPERATION))
+
+    @Test
+    fun `a cluster continues with the letters of an operation after the cursor`() =
+        pacman.checkPacman(cells("operation cluster after the cursor", ANY_OPERATION, OPERATION))
+}
+
+/**
+ * The slots and cursor columns of a pacman line (K and K7 of the testing matrix) where klap offers something other than
+ * what real pacman 7.1.0 would accept. Each test states what real pacman 7.1.0 does and is ignored with `TDD target:
+ * <what must change>`; removing the annotation shows it failing for that reason, and no other test pins today's
+ * behaviour, so a fix breaks nothing else.
+ */
+class PacmanCompletionTargetsTest {
+    private val pacman = pacmanCli().cli
 
     @Ignore("TDD target: klap must continue an operation's cluster with its page letters, a counted one once more")
     @Test
@@ -377,18 +465,6 @@ class PacmanCompletionTargetsTest {
         slot("K7p words after", "pacman -Qii| pkg"),
         slot("K7p", "pacman -Syy|"),
         slot("K7q inside", "pacman -S|y"),
-    )
-
-    @Ignore("TDD target: klap must go on with a cluster after the help short, which takes no value")
-    @Test
-    fun `the help short alone or in a cluster continues with the letters pacman reads after it`() = pacman.checkPacman(
-        // K13b, K7i: `pacman -Qhi` and `pacman -Qh -i` print the -Q page, `pacman -Qhz` is "invalid option -- 'z'",
-        // so pacman reads every letter after -h.
-        slot("K13b", "pacman -h|", expected = continuations("-h", null)),
-        slot("K13b", "pacman -Q -h|", expected = continuations("-h", Op.QUERY)),
-        slot("K13b words after", "pacman -Q -h| pkg", expected = continuations("-h", Op.QUERY)),
-        slot("K7i", "pacman -Qh|", expected = continuations("-Qh", Op.QUERY)),
-        slot("K7i words after", "pacman -Qh| pkg", expected = continuations("-Qh", Op.QUERY)),
     )
 
     @Ignore("Will not do (todo 40): states a pacman quirk klap does not follow")
@@ -405,100 +481,4 @@ class PacmanCompletionTargetsTest {
         // `--` to -b and options did not end.
         slot("K41 a name after", "pacman -Q -b -- --verb|", expected = setOf(name("--verbose", Op.QUERY))),
     )
-
-    @Ignore("TDD target: klap must not continue a cluster with another member of an exclusive set the cluster holds")
-    @Test
-    fun `a cluster holding an operation offers no other operation`() {
-        // `pacman -QS pacman`: "error: only one operation may be used at a time". `pacman -Q -<TAB>` already
-        // leaves -S out; the cluster under the cursor must count the same way.
-        val offered = pacman.suggestionsFor("pacman -Q").map { it.value }
-        val others = listOf("-QS", "-QR", "-QU", "-QD", "-QF", "-QT")
-        assertTrue(others.none { it in offered }, "`pacman -Q|` offers another operation: $offered")
-    }
-
-    @Ignore("TDD target: klap must offer under an operation only the options that operation's page lists")
-    @Test
-    fun `an option of another operation is not offered`() {
-        // `pacman -Q --needed pacman`: "error: invalid option '--needed'".
-        assertEquals(emptyList<Suggestion>(), pacman.suggestionsFor("pacman -Q --ne"), "`pacman -Q --ne|`")
-    }
-
-    @Ignore("TDD target: klap must offer a counted letter again in its cluster where the operation's page counts it")
-    @Test
-    fun `a counted letter is offered again in its cluster`() {
-        // The pages: -Q -ii -kk -tt, -S -cc -dd -gg -ii -uu -yy, -R -dd -ss, -U -dd, -D -kk, -F -yy.
-        val cells = Op.entries.flatMap { op -> op.page.filter { op.counts(it) }.map { op to it } }
-        checkCells(cells) { (op, entry) ->
-            val cluster = "pacman -${op.short}${entry.short}"
-            val again = Suggestion("${cluster.drop(7)}${entry.short}", entry.help)
-            val offered = pacman.suggestionsFor(cluster)
-            assertTrue(again in offered, "${marked(cluster, cluster.length)} must offer $again: $offered")
-        }
-    }
-
-    @Ignore("TDD target: scope names by operation, word them by its page, drop --json --completion --docs")
-    @Test
-    fun `a dash offers the operation's page and nothing pacman refuses`() =
-        pacman.checkPacman(cells("dash", NO_OPERATION + ANY_OPERATION, NOTHING))
-
-    @Ignore("TDD target: klap must offer under an operation only the long names its page lists")
-    @Test
-    fun `a long of another operation completes to nothing`() =
-        pacman.checkPacman(longKinds.flatMap { cells(it, ANY_OPERATION, OFF_PAGE) })
-
-    @Ignore("TDD target: klap must describe an option by the page of the operation on the line")
-    @Test
-    fun `a long on the page is described in that page's words`() =
-        pacman.checkPacman(longKinds.flatMap { cells(it, ANY_OPERATION, OTHER_WORDING) })
-
-    @Ignore("TDD target: klap must not offer a requireExactlyOne member already given")
-    @Test
-    fun `the operation already given is not offered again`() =
-        pacman.checkPacman(longKinds.flatMap { cells(it, ANY_OPERATION, SAME_OPERATION) })
-
-    @Ignore("TDD target: klap must complete another operation's name to this operation's options only, in its words")
-    @Test
-    fun `another operation's name as typed completes to this operation's options`() =
-        pacman.checkPacman(longKinds.flatMap { cells(it, ANY_OPERATION, SHARED_NAME) })
-
-    @Ignore("TDD target: klap must read an operation typed after the cursor when it scopes the names it offers")
-    @Test
-    fun `a long name completes to what an operation after the cursor accepts`() = pacman.checkPacman(
-        cells(
-            "long before the operation", ANY_OPERATION, OFF_PAGE, OTHER_WORDING, SAME_OPERATION, SHARED_NAME,
-            OTHER_OPERATION,
-        ),
-    )
-
-    @Ignore("TDD target: klap must refuse a cluster letter the operation's page does not list")
-    @Test
-    fun `a letter of another operation offers nothing after it`() =
-        pacman.checkPacman(letterKinds.flatMap { cells(it, ANY_OPERATION, OFF_PAGE) })
-
-    @Ignore("TDD target: klap must resolve a letter by the operation's page")
-    @Test
-    fun `a contested letter continues by its meaning on the operation's page`() =
-        pacman.checkPacman(letterKinds.flatMap { cells(it, ANY_OPERATION, CONTESTED) })
-
-    @Ignore("TDD target: klap must continue a cluster with its operation's page letters only, in the page's words")
-    @Test
-    fun `a letter on the page continues with that page's letters`() =
-        pacman.checkPacman(
-            letterKinds.flatMap { cells(it, ANY_OPERATION, SAME_WORDING, OTHER_WORDING, VERSION_LETTER) },
-        )
-
-    @Ignore("TDD target: klap must continue a cluster holding an operation with that operation's letters only")
-    @Test
-    fun `a letter of an operation continues with that operation's letters or with nothing`() =
-        pacman.checkPacman(letterKinds.flatMap { cells(it, NO_OPERATION + ANY_OPERATION, OPERATION) })
-
-    @Ignore("TDD target: klap must continue an operation's own cluster with its page's letters only")
-    @Test
-    fun `an operation's own cluster continues with that operation's letters`() =
-        pacman.checkPacman(cells("operation cluster", ANY_OPERATION, OPERATION))
-
-    @Ignore("TDD target: klap must read an operation typed after the cursor when it continues a cluster")
-    @Test
-    fun `a cluster continues with the letters of an operation after the cursor`() =
-        pacman.checkPacman(cells("operation cluster after the cursor", ANY_OPERATION, OPERATION))
 }
