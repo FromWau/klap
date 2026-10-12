@@ -7,6 +7,7 @@ import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Command
 import com.fromwau.klap.ConversionError
+import com.fromwau.klap.OptionalValue
 import com.fromwau.klap.internal.render.reason
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.ConstraintArity
@@ -63,7 +64,7 @@ internal fun bindFlagsAndOptions(
     options: List<OptionSpec>,
     flagHits: Map<FlagSpec, Int>,
     negations: Map<FlagSpec, Boolean>,
-    optionValues: Map<OptionSpec, List<String>>,
+    optionValues: Map<OptionSpec, List<String?>>,
     sink: MutableMap<HolderSpec, Any?>,
     inferValues: Boolean,
     policy: BindPolicy = BindPolicy.Strict,
@@ -98,7 +99,7 @@ private fun bindFlags(
  */
 private fun bindOptions(
     options: List<OptionSpec>,
-    optionValues: Map<OptionSpec, List<String>>,
+    optionValues: Map<OptionSpec, List<String?>>,
     sink: MutableMap<HolderSpec, Any?>,
     inferValues: Boolean,
     policy: BindPolicy,
@@ -132,13 +133,12 @@ private fun bindOptions(
                 // and ls refuses `ls --width abc --width 80`.
                 if (policy != BindPolicy.Lenient) {
                     for (earlier in raws.dropLast(1)) {
-                        val outcome = opt.convertOne(earlier, inferValues)
+                        val outcome = opt.convertOccurrence(earlier, inferValues)
                         if (outcome is Result.Error) return outcome
                     }
                 }
-                val raw = raws.lastOrNull()
-                if (raw != null) {
-                    when (val outcome = opt.convertOne(raw, inferValues)) {
+                if (raws.isNotEmpty()) {
+                    when (val outcome = opt.convertOccurrence(raws.last(), inferValues)) {
                         // Lenient leaves it unbound: a wrong or half-typed value must not blank its siblings.
                         is Result.Error -> if (policy != BindPolicy.Lenient) return outcome
                         // A converter ERROR is handled above; only a converter that SUCCEEDS with null (e.g.
@@ -213,16 +213,25 @@ internal fun Command.bindPositionals(
     val overridden = lastWinsLosers(sifted)
     val args = activeArguments(sifted, overridden)
     // A slot whose absentWhen trigger fired is not in [args] at all, so the operands after it keep their
-    // own positions; binding it here rather than in the loop keeps the accessor total.
-    arguments.filterNot { it in args }.forEach { sink[it] = it.absentValue() }
+    // own positions; binding it here rather than in the loop keeps the accessor total. The gathering slot
+    // is not in [args] either once it took a word, and binds those words joined.
+    for (spec in arguments.filterNot { it in args }) {
+        val gather = spec.gather
+        if (gather == null || !spec.gathersOn(sifted) || removedByTrigger(spec, sifted, overridden)) {
+            sink[spec] = spec.absentValue()
+            continue
+        }
+        when (val outcome = spec.convertOne(sifted.gathered.joinToString(gather.separator), inferValues)) {
+            is Result.Error -> if (policy != BindPolicy.Lenient) return outcome
+            is Result.Success -> sink[spec] = outcome.value ?: (spec.cardinality as? Cardinality.Default)?.value
+        }
+    }
     var i = 0
     for ((index, spec) in args.withIndex()) {
         val isLast = index == args.lastIndex
         when (val c = spec.cardinality) {
             is Cardinality.Multiple -> {
-                // A relaxedWhen trigger drops the declared minimum to zero; the slot itself is untouched,
-                // so nothing else about the slice changes.
-                val min = if (spec.relaxedWhen?.let { supplied(it, sifted, overridden) } == true) 0 else c.min
+                val min = operandMin(spec, sifted, overridden)
                 // Everything left EXCEPT what the fixed slots after this one still need. They are all
                 // Required (BuilderValidation's rule), so the count is exact and `cp a b c` gives the
                 // variadic [a, b] and the destination c. With the variadic last this is `values.drop(i)`
@@ -232,7 +241,10 @@ internal fun Command.bindPositionals(
                 // Short of satisfying both, this slot keeps its minimum and lets the starved fixed slot
                 // report itself: `cp a` means "a is the source, the destination is missing", and blaming
                 // the variadic instead would answer `cp a` and bare `cp` with the same sentence.
-                val take = (left - fixedAfter).coerceAtLeast(0).coerceAtLeast(minOf(min, left))
+                val take = (left - fixedAfter)
+                    .coerceAtLeast(0)
+                    .coerceAtLeast(minOf(min, left))
+                    .coerceAtMost(operandCap(spec, sifted, overridden))
                 val slice = values
                     .subList(i, i + take)
                     .filterIndexed { offset, _ -> i + offset != skipOperand }
@@ -320,14 +332,27 @@ private fun ValueSpec.convertAll(raws: List<String>, inferValues: Boolean): Resu
  * (`.map { it.toIntOrNull() }` on bad input): `Opt<T?>.multiple()` narrows the accessor to a non-null
  * `List<T>`, leaving no slot to bind such a value into. The positional form keeps `List<T?>` and allows it.
  */
-private fun OptionSpec.convertOccurrences(raws: List<String>, inferValues: Boolean): Result<List<Any>, CliError> {
+private fun OptionSpec.convertOccurrences(raws: List<String?>, inferValues: Boolean): Result<List<Any>, CliError> {
     val converted = mutableListOf<Any>()
     for (raw in raws) {
-        val value = convertOne(raw, inferValues).getOrElse { return Result.Error(it) }
-            ?: return Result.Error(CliError.BadValue(name, raw, "conversion failed"))
+        val value = convertOccurrence(raw, inferValues).getOrElse { return Result.Error(it) }
+            ?: return Result.Error(CliError.BadValue(name, raw.orEmpty(), "conversion failed"))
         converted += value
     }
     return Result.Success(converted)
+}
+
+/**
+ * What one occurrence of this option binds: [raw] converted, wrapped as an [OptionalValue] for an option declared
+ * with `.optionalValue()`, where a null [raw] is its bare occurrence. A converter's null stays null, as absent.
+ */
+internal fun OptionSpec.convertOccurrence(raw: String?, inferValues: Boolean): Result<Any?, CliError> = when {
+    raw == null -> Result.Success(OptionalValue.Bare)
+    bareMarks -> when (val converted = convertOne(raw, inferValues)) {
+        is Result.Error -> converted
+        is Result.Success -> Result.Success(converted.value?.let { OptionalValue.Given(it) })
+    }
+    else -> convertOne(raw, inferValues)
 }
 
 /**
@@ -406,8 +431,31 @@ private fun Command.tooManyArguments(extras: List<String>, qualifiedName: String
     return CliError.TooManyArguments(qualifiedName, extras, needle?.let { didYouMean(it, commandNames) })
 }
 
+/**
+ * The first option value on the line, in line order, that its conversion or check refuses, read over a
+ * command's own [sifted] values and every global in [globals]. getopt's loop meets a value as it reads its
+ * option, so a bad one written ahead of `--help` refuses the line.
+ */
+internal fun firstBadValue(sifted: Sifted, globals: GlobalSift, inferValues: Boolean): Refusal? {
+    // A bare occurrence (a null value) has nothing to convert.
+    val local = sifted.options.flatMap { (spec, raws) ->
+        raws.zip(sifted.optionValuePositions[spec].orEmpty()) { raw, at -> raw?.let { Triple(spec, it, at) } }
+            .filterNotNull()
+    }
+    val global = globals.options.flatMap { (spec, occurrences) ->
+        occurrences.mapNotNull { occurrence ->
+            occurrence.position?.let { at -> occurrence.value?.let { Triple(spec, it, at) } }
+        }
+    }
+    return (local + global)
+        .sortedBy { it.third }
+        .firstNotNullOfOrNull { (spec, raw, at) ->
+            (spec.convertOne(raw, inferValues) as? Result.Error)?.let { Refusal(it.error, at) }
+        }
+}
+
 /** These occurrences' values in argv order; an unpositioned one (see [Occurrence]) comes last. */
-private fun List<Occurrence>.inArgvOrder(): List<String> =
+private fun List<Occurrence>.inArgvOrder(): List<String?> =
     sortedWith(compareBy(nullsLast()) { it.position }).map { it.value }
 
 /**
@@ -428,7 +476,7 @@ internal fun Cli.completionValues(
     globals: GlobalSift,
     inferValues: Boolean,
     skipOperand: Int? = null,
-): Map<HolderSpec, Any?> {
+): BoundLine {
     val sink = mutableMapOf<HolderSpec, Any?>()
     // Same order parse() binds in: the command's own inputs, then the globals the segment sift topped up.
     // Every Result is discarded: Lenient never errors, and it defers nothing.
@@ -451,5 +499,5 @@ internal fun Cli.completionValues(
         skipOperand = skipOperand,
     )
     bindGlobals(globalSpecs, globals, sink, inferValues, BindPolicy.Lenient)
-    return sink
+    return BoundLine(sink, lineOrder(sifted, globals, inferValues))
 }

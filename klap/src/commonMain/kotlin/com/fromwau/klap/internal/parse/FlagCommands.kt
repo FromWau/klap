@@ -9,6 +9,7 @@ import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.longs
 import com.fromwau.klap.internal.spec.shorts
 import com.fromwau.klap.resolveSubcommand
+import com.fromwau.klap.takesNextWord
 
 /**
  * The token a flag-spelled command stands as once [hoistCommands] has moved it, which the subcommand walk
@@ -66,9 +67,10 @@ internal fun Cli.hoistCommands(argv: List<String>): Hoisted {
         }
         val valued = scan.hits.firstOrNull { it.letter == null && '=' in tokens[it.token] }
         if (valued != null && error == null) error = CliError.FlagTakesNoValue(valued.command.token)
-        val own = scan.hits.filter { it.command === chosen && !chosen.holdsAsValue(tokens, it, globals) }
+        val parentOptions = level.options + globals.optionSpecs
+        val own = scan.hits.filter { it.command === chosen && !chosen.holdsAsValue(tokens, it, globals, parentOptions) }
         if (own.isEmpty()) break
-        if (own.size > 1 && error == null) error = CliError.Usage("'${chosen.token}' may be given only once")
+        if (own.size > 1 && error == null) error = CliError.RepeatedCommand(chosen.token)
         // From the end, so an index still to be edited is not shifted by an edit already made.
         for (hit in own.sortedWith(compareByDescending<Hit> { it.token }.thenByDescending { it.letter ?: -1 })) {
             val letter = hit.letter
@@ -130,10 +132,13 @@ private fun Command.scanLevel(
                 if (command != null) {
                     hits += Hit(command, i, null)
                 } else if ('=' !in token) {
-                    takesNext = long in VALUED_BUILTIN_LONGS ||
-                        valueOptions.any { long in it.longs && it.takesNextWord() }
+                    takesNext = valueOptions.any { long in it.longs && it.takesNextWord() } ||
+                        long != null && globals.offeredBuiltins().takesNextWord(long)
                 }
             }
+
+            // A word Alone refuses names no command and takes no value.
+            token.isFlagLike() && refusesCluster(token.drop(1), globals) -> Unit
 
             token.isFlagLike() -> {
                 val letters = token.drop(1)
@@ -162,9 +167,15 @@ private fun Command.scanLevel(
 /**
  * Whether the [hit] spelling of this command sits in the value of one of this command's own options: past its
  * value-taking letter in the same cluster (`-bQ`), or as the word after one (`--dbpath -Q`). Those are read once
- * the command is known, since a letter means what the command on the line gives it.
+ * the command is known, since a letter means what the command on the line gives it. [parentOptions] are the
+ * value-taking letters the parent's scan already read, which end a cluster before any of this command's can.
  */
-private fun Command.holdsAsValue(tokens: List<String>, hit: Hit, globals: GlobalAccumulator): Boolean {
+private fun Command.holdsAsValue(
+    tokens: List<String>,
+    hit: Hit,
+    globals: GlobalAccumulator,
+    parentOptions: List<OptionSpec>,
+): Boolean {
     val own = options
     val letter = hit.letter
     if (letter != null) {
@@ -179,15 +190,15 @@ private fun Command.holdsAsValue(tokens: List<String>, hit: Hit, globals: Global
         return own.any { long in it.longs && it.takesNextWord() }
     }
     if (!previous.isFlagLike()) return false
-    val last = previous.last().toString()
-    return own.any { last in it.shorts && it.takesNextWord() }
+    // The first value-taking letter takes the rest of its word, so only one ending the word takes the next.
+    val letters = previous.drop(1)
+    val first = letters.indexOfFirst { ch -> (own + parentOptions).any { ch.toString() in it.shorts } }
+    if (first != letters.lastIndex) return false
+    return own.any { letters[first].toString() in it.shorts && it.takesNextWord() }
 }
 
-/** klap's own options that take the next word as their value. */
-private val VALUED_BUILTIN_LONGS = setOf("color", "completion", "docs")
-
 /** Whether this option, given in full with no value attached, takes the next word as its value. */
-private fun OptionSpec.takesNextWord(): Boolean = !isNumber && bareValue == null
+private fun OptionSpec.takesNextWord(): Boolean = !valueAttachedOnly
 
 /**
  * The flag-spelled children of [level] that [tokens] name, once per naming and in that order, read as

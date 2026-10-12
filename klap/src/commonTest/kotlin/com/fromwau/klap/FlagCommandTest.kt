@@ -1,9 +1,8 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.assertError
-import com.fromwau.klap.internal.render.completeCandidates
+import com.fromwau.kern.result.assertSuccess
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -21,6 +20,7 @@ class FlagCommandTest {
     private lateinit var dbPath: Opt<String?>
 
     private val pac = cli("pac") {
+        builtins { help = Help.ByCommand(short = 'h') }
         version = Version.Of("1.0", short = 'V')
         abbreviation = Abbreviation.LongOptions
         verbose = globalFlag(short = 'v', long = "verbose", help = "be verbose")
@@ -46,13 +46,7 @@ class FlagCommandTest {
         }
     }
 
-    private fun bound(vararg argv: String): String = pac.bound(*argv)
-
-    private fun Cli.bound(vararg argv: String): String {
-        val terminal = RecordingTerminal()
-        run(arrayOf(*argv), terminal)
-        return terminal.out.toString().trim()
-    }
+    private fun bound(vararg argv: String): String = pac.bindText(*argv)
 
     private fun Cli.out(vararg argv: String): String {
         val terminal = RecordingTerminal()
@@ -62,7 +56,15 @@ class FlagCommandTest {
 
     private fun offered(vararg words: String): List<String> = pac.offered(*words)
 
-    private fun Cli.offered(vararg words: String): List<String> = completeCandidates(words.toList()).map { it.value }
+    @Test
+    fun `a flag-spelled family abbreviates against one table`() {
+        // pacman's operations are options of one getopt_long table, so `pacman -Q --no` is ambiguous among every
+        // `--no...` pacman has, a long of -S's included, and a long of another operation is named as resolved.
+        val ambiguous = pac.parse(listOf("-Q", "--c")).assertError<CliError.AmbiguousOption>()
+        assertTrue("--changelog" in ambiguous.candidates && "--cascade" in ambiguous.candidates, "$ambiguous")
+        assertEquals("--cascade", pac.parse(listOf("-Q", "--cas")).assertError<CliError.UnknownOption>().token)
+        assertEquals("Q info=0 c=true v=false b=null []", bound("-Q", "--ch"))
+    }
 
     @Test
     fun `a flag-spelled command is reached by its short and its long and never by its word`() {
@@ -70,13 +72,13 @@ class FlagCommandTest {
         assertEquals("Q info=0 c=false v=false b=null [pacman]", bound("--query", "pacman"))
         assertEquals("Q info=0 c=false v=false b=null [pacman]", bound("--que", "pacman"))
         pac.parse(listOf("query", "pacman")).assertError<CliError.UnknownSubcommand>()
-        pac.parse(listOf("--query=x")).assertError<CliError>()
+        assertEquals(CliError.FlagTakesNoValue("--query"), pac.parse(listOf("--query=x")).assertError())
     }
 
     @Test
     fun `a line naming no flag-spelled command asks for one`() {
         pac.parse(listOf("pacman")).assertError<CliError.UnknownSubcommand>()
-        assertIs<Invocation.ShowHelp>((pac.parse(emptyList()) as Result.Success).value)
+        assertIs<Invocation.ShowHelp>(pac.parse(emptyList()).assertSuccess())
     }
 
     @Test
@@ -128,8 +130,14 @@ class FlagCommandTest {
         pac.parse(listOf("-Q", "-S")).assertError<CliError.MutuallyExclusive>()
         pac.parse(listOf("--query", "--sync")).assertError<CliError.MutuallyExclusive>()
         // pacman refuses one operation named twice the same way: "only one operation may be used at a time".
-        pac.parse(listOf("-QQ")).assertError<CliError.Usage>()
-        pac.parse(listOf("-Q", "--query")).assertError<CliError.Usage>()
+        val repeated = pac.parse(listOf("-QQ")).assertError<CliError.RepeatedCommand>()
+        assertEquals(CliError.RepeatedCommand("--query"), repeated)
+        pac.parse(listOf("-Q", "--query")).assertError<CliError.RepeatedCommand>()
+        val err = RecordingTerminal().also { pac.run(arrayOf("-QQ"), it) }.err.toString()
+        assertTrue("'--query' may be given only once" in err, err)
+        val json = RecordingTerminal().also { pac.run(arrayOf("--json", "-QQ"), it) }
+        val text = json.out.toString() + json.err.toString()
+        assertTrue("\"type\":\"RepeatedCommand\"" in text && "\"command\":\"--query\"" in text, text)
         assertEquals(emptyList(), offered("-Q", "-Q"))
         assertEquals(emptyList(), offered("-QS"), "nothing continues a cluster naming two commands")
         assertTrue(offered("-Q", "-").none { it in listOf("-S", "-R", "--sync", "--remove") })
@@ -144,10 +152,10 @@ class FlagCommandTest {
 
     @Test
     fun `K7af the help and version shorts beside the command letter`() {
-        val help = (pac.parse(listOf("-Qh")) as Result.Success).value
+        val help = pac.parse(listOf("-Qh")).assertSuccess()
         assertEquals("pac --query", assertIs<Invocation.ShowHelp>(help).qualifiedName)
-        assertIs<Invocation.ShowHelp>((pac.parse(listOf("-hQ")) as Result.Success).value)
-        assertIs<Invocation.ShowVersion>((pac.parse(listOf("-QV")) as Result.Success).value)
+        assertIs<Invocation.ShowHelp>(pac.parse(listOf("-hQ")).assertSuccess())
+        assertIs<Invocation.ShowVersion>(pac.parse(listOf("-QV")).assertSuccess())
     }
 
     @Test
@@ -163,11 +171,40 @@ class FlagCommandTest {
                 }
             }
         }
-        assertEquals("v=true i=true x", tool.bound("-Q", "list", "-vi", "x"))
-        assertEquals("v=true i=true x", tool.bound("-Q", "list", "-iv", "x"))
-        assertEquals("v=true i=true x", tool.bound("list", "-Q", "-vi", "x"))
+        assertEquals("v=true i=true x", tool.bindText("-Q", "list", "-vi", "x"))
+        assertEquals("v=true i=true x", tool.bindText("-Q", "list", "-iv", "x"))
+        assertEquals("v=true i=true x", tool.bindText("list", "-Q", "-vi", "x"))
         assertTrue("-vi" in tool.offered("-Q", "list", "-v"), "the subcommand's letter continues the global's cluster")
         assertTrue("list" in tool.offered("-Q", ""), "the flag-spelled command's word subcommand is offered")
+    }
+
+    @Test
+    fun `the word before the command holds the command as a value only when a value-taking letter ends it`() {
+        // getopt -o b:r:Q reads `-br -Q pkg` as -b with the value r, then -Q.
+        val tool = cli("tool") {
+            command(short = 'Q', long = "query") {
+                val dbPath = option(short = 'b', long = "dbpath")
+                val root = option(short = 'r', long = "root")
+                val packages = argument("package").multiple()
+                action { Ok("Q b=${dbPath()} r=${root()} ${packages()}") }
+            }
+        }
+        assertEquals("Q b=r r=null [pkg]", tool.bindText("-br", "-Q", "pkg"))
+        assertEquals("Q b=r r=null [pkg]", tool.bindText("-Q", "-br", "pkg"))
+    }
+
+    @Test
+    fun `a declared flag spelled like a declined built-in takes no word from the command after it`() {
+        val tool = cli("tool") {
+            builtins { color = Builtin.Off }
+            val color = globalFlag(long = "color")
+            command(short = 'Q', long = "query") {
+                val packages = argument("package").multiple()
+                action { Ok("Q color=${color()} ${packages()}") }
+            }
+        }
+        assertEquals("Q color=true [pkg]", tool.bindText("--color", "-Q", "pkg"))
+        assertEquals("Q color=true [pkg]", tool.bindText("-Q", "--color", "pkg"))
     }
 
     @Test
@@ -185,7 +222,8 @@ class FlagCommandTest {
         assertTrue("  -Q, --query" in help, help)
         assertTrue("\n  query " !in help, help)
         assertTrue("usage: pac --query" in pac.out("-Q", "--help"))
-        assertTrue("usage: pac --sync" in pac.out("--help-all"))
+        // The tree names it the same way; pacman has no --help-all, so the docs are where this tree is rendered.
+        assertTrue("usage: pac --sync" in pac.renderMarkdownDocs(), pac.renderMarkdownDocs())
     }
 
     @Test
@@ -208,6 +246,14 @@ class FlagCommandTest {
             cli("t") {
                 command(short = 'Q', long = "query") { action { Ok("") } }
                 command(short = 'Q', long = "quit") { action { Ok("") } }
+            }
+        }
+        assertFailsWith<IllegalArgumentException>("the command's own negative short is a spelling too") {
+            cli("t") {
+                command(short = 'Q', long = "query") {
+                    flag(long = "quiet").negatable(short = 'Q')
+                    action { Ok("") }
+                }
             }
         }
     }

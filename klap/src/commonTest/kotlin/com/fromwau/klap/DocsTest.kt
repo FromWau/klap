@@ -54,7 +54,7 @@ class DocsTest {
             .renderManPage()
             .lines()
             .let { it[it.indexOf(".SH NAME") + 1] }
-        // The POSIX NAME section stays one line: the embedded newline is collapsed to a space.
+        // The man page NAME section stays one line: the embedded newline is collapsed to a space.
         assertEquals("tool \\- line one line two", nameLine)
     }
 

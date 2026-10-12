@@ -6,8 +6,10 @@ import com.fromwau.kern.result.Result
 import com.fromwau.klap.internal.builder.BuilderImpl
 import com.fromwau.klap.internal.builder.validateGlobalDigitShorts
 import com.fromwau.klap.internal.builder.validateReservedNames
-import com.fromwau.klap.internal.spec.requireValidSpelling
+import com.fromwau.klap.internal.render.BuiltinOptionHelp
 import com.fromwau.klap.internal.spec.BuiltinKind
+import com.fromwau.klap.internal.spec.requireValidSpelling
+import com.fromwau.klap.internal.spec.spellings
 
 /** DSL receiver for the root CLI: a [CommandBuilder] plus root-only settings. */
 @KlapDsl
@@ -20,6 +22,20 @@ public abstract class CliBuilder internal constructor() : CommandBuilder() {
 
     /** How far klap resolves a partially typed name; see [Abbreviation]. */
     public abstract var abbreviation: Abbreviation
+
+    /**
+     * What an option or flag given a second time does across the CLI: [RepeatedOptions.LastWins], the
+     * default, takes the last as `ls --sort=size --sort=time` does, and [RepeatedOptions.Refuse] refuses the
+     * line. An input's own `.repeated()` overrides it, and a `.multiple()` option or `.count()` flag collects
+     * its occurrences under either.
+     */
+    public abstract var repeatedOptions: RepeatedOptions
+
+    /**
+     * Whether a one-dash word may hold several shorts: [ShortOptions.Clustered], the default, reads `-la` as
+     * `-l -a` as getopt does, and [ShortOptions.Alone] reads each short only as a word of its own, as `find -L -P`.
+     */
+    public abstract var shortOptions: ShortOptions
 
     /**
      * A position-independent option shared by every subcommand: recognized before, between, or
@@ -240,7 +256,14 @@ private fun <T> build(name: String, block: CliBuilder.() -> T): Pair<Cli, T> {
     val base = builder.build()
     val declared = builder.builtBuiltins()
     val builtins = declared.copy(helpAll = declared.helpAll && base.subcommands.any { !it.hidden })
-    (builder.version as? Version.Of)?.let { requireValidSpelling("version", "--${it.long}") }
+    (builder.version as? Version.Of)?.let { version ->
+        require(version.long != null || version.short != null) {
+            "cli '$name': Version.Of needs a long or a short to be printed by"
+        }
+        spellings(listOfNotNull(version.short), listOfNotNull(version.long))
+            .forEach { requireValidSpelling("version", it) }
+    }
+    builtins.helpShort?.let { requireValidSpelling("help", "-$it") }
     // Deferred to here, unlike every other well-formedness rule: which names a built-in reserves depends on
     // `builtins { }`, and a subcommand's own build() ran back when its `command(...)` was declared, possibly
     // before that block was reached. Walking the finished tree makes the rule independent of that order.
@@ -249,13 +272,11 @@ private fun <T> build(name: String, block: CliBuilder.() -> T): Pair<Cli, T> {
     // the finished tree holds both.
     validateGlobalDigitShorts(base, builder.builtGlobals())
 
-    // __complete is unconditional: it is hidden plumbing for `.completeWith` providers, reachable through
-    // the public renderCompletion() escape hatch even when the `completion` built-in itself is declined.
     val injected = buildList {
-        add(completeCommand())
+        if (builtins.completion) add(completeCommand())
         if (base.action == null) {
-            if (builtins.completion) add(completionCommand())
-            if (builtins.docs) add(docsCommand())
+            if (builtins.completion) add(completionCommand(builtins.completionText))
+            if (builtins.docs) add(docsCommand(builtins.docsText))
         }
     }
 
@@ -271,6 +292,8 @@ private fun <T> build(name: String, block: CliBuilder.() -> T): Pair<Cli, T> {
         display = base.display,
         builtins = builtins,
         abbreviation = builder.abbreviation,
+        repeatedOptions = builder.repeatedOptions,
+        shortOptions = builder.shortOptions,
         optionsEndAtFirstOperand = base.optionsEndAtFirstOperand,
         validations = base.validations,
     ) to handles
@@ -281,9 +304,10 @@ private fun <T> build(name: String, block: CliBuilder.() -> T): Pair<Cli, T> {
  * docs, and completion can list it, but the parser routes it to [Cli.renderCompletion] (see `routeBuiltin`)
  * rather than executing it, so the node needs no reference to the root it renders.
  */
-private fun completionCommand(): Command = builtin("completion", BuiltinKind.Completion) {
-    help = "Print a shell completion script (bash|zsh|fish|powershell)"
-    // .enum surfaces the shell choices in help/docs; the parser does the actual parsing (via CompletionShell.fromOrNull).
+private fun completionCommand(description: String): Command = builtin("completion", BuiltinKind.Completion) {
+    // klap's own words name the shells here, which the option form lists as its value instead.
+    help = if (description == BuiltinOptionHelp.COMPLETION) "$description (bash|zsh|fish|powershell)" else description
+    // .enum surfaces the shell choices in help/docs; the parser reads the value through CompletionShell.fromOrNull.
     argument("shell", help = "Shell to generate the script for").enum<CompletionShell>()
 }
 
@@ -299,8 +323,8 @@ private fun completeCommand(): Command = builtin("__complete", BuiltinKind.Compl
 }
 
 /** The built-in `docs <format>` subcommand; the parser routes it to [Cli.renderDocs] (see [completionCommand]). */
-private fun docsCommand(): Command = builtin("docs", BuiltinKind.Docs) {
-    help = "Print generated documentation (markdown|man)"
+private fun docsCommand(description: String): Command = builtin("docs", BuiltinKind.Docs) {
+    help = if (description == BuiltinOptionHelp.DOCS) "$description (markdown|man)" else description
     argument("format", help = "Doc format to generate").enum<DocFormat>()
 }
 

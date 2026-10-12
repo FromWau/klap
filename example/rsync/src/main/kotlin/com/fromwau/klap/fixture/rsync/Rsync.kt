@@ -7,7 +7,6 @@ import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.CountFlag
 import com.fromwau.klap.Flag
-import com.fromwau.klap.Help
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.Version
@@ -39,15 +38,14 @@ public fun rsyncCli(): TypedCli<RsyncInputs> = cliOf("rsync") {
     // rsync matches long options exactly: `--compr` and `--dele` both answer "unknown option" (verified).
     abbreviation = Abbreviation.None
     help = "A fast, versatile, remote (and local) file-copying tool."
-    version = Version.Of("3.4.4")
+    version = Version.Of("3.5.1", long = "version", short = 'V', text = RSYNC_VERSION_TEXT)
     epilogue = "The ':' usages connect via remote shell, while '::' & 'rsync://' usages connect to an " +
         "rsync daemon, and require SRC or DEST to start with a module name."
 
     // Real rsync spells human-readable `-h` and reaches help by `-h` only when it is the WHOLE command
     // line ("--help, -h (*)  show this help (* -h is help only on its own)", verified: `rsync -h` prints
-    // help and exits 0, `rsync -vh src/ dst/` and `rsync -hh --dry-run src/ dst/` both run). Declining the
-    // built-in short is what frees the character; the "on its own" half has no home and is a gap below.
-    builtins { help = Help.Generate(short = null) }
+    // help and exits 0, `rsync -vh src/ dst/` and `rsync -hh --dry-run src/ dst/` both run). klap's --help
+    // has no short, so the character is rsync's; the "on its own" half has no home and is a gap below.
 
     example("rsync -avz src/ backup/", "the usual archive-mode local copy")
     example("rsync -e \"ssh -p 2222\" src/ host:/dst", "a whole remote-shell command as one value")
@@ -245,3 +243,29 @@ public val NOTHING_BOUND: RsyncInputs = RsyncInputs(
 
 /** `--bwlimit` was given something that is not an rsync size. */
 private data object RateInvalid : IError
+
+/**
+ * What `rsync --version` prints for rsync 3.5.1, the version installed when it was pinned
+ * (2026-10-10).
+ */
+internal val RSYNC_VERSION_TEXT: String = """rsync  version 3.5.1-g04355d27  protocol version 33
+Copyright (C) 1996-2026 by Andrew Tridgell, Wayne Davison, and others.
+Web site: https://rsync.samba.org/
+Capabilities:
+    64-bit files, 64-bit inums, 64-bit timestamps, 64-bit long ints,
+    socketpairs, symlinks, symtimes, hardlinks, hardlink-specials,
+    hardlink-symlinks, IPv6, atimes, batchfiles, inplace, append, ACLs,
+    ACL-at, ACL-libacl-at, xattrs, optional secluded-args, iconv, prealloc,
+    stop-at, no crtimes, IDN
+Optimizations:
+    SIMD-roll, no asm-roll, openssl-crypto, no asm-MD5
+Checksum list:
+    xxh128 xxh3 xxh64 (xxhash) md5 md4 sha1 none
+Compress list:
+    zstd lz4 zlibx zlib none
+Daemon auth list:
+    sha512 sha256 sha1 md5 md4
+
+rsync comes with ABSOLUTELY NO WARRANTY.  This is free software, and you
+are welcome to redistribute it under certain conditions.  See the GNU
+General Public Licence for details."""

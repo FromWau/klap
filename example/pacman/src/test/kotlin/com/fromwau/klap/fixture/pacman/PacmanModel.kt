@@ -559,7 +559,6 @@ internal data class ParseCell(
     val argv: List<String>,
     val expected: PacmanInputs?,
     val because: String,
-    val differs: String? = null,
 )
 
 /** Asserts [cell]: its line binds the expected record, or is refused where that is null. */
@@ -567,7 +566,7 @@ internal fun ParitySuite<PacmanInputs>.check(cell: ParseCell) {
     val argv = cell.argv.toTypedArray()
     val expected = cell.expected
     if (expected == null) {
-        rejects(argv = argv, because = cell.because, differs = cell.differs)
+        rejects(argv = argv, because = cell.because)
     } else {
         binds(argv = argv, expected = expected)
     }
@@ -708,8 +707,7 @@ internal fun cell(
     argv: List<String>,
     expected: PacmanInputs?,
     because: String,
-    differs: String? = null,
-): ParseCell = ParseCell(argv, expected, because, differs)
+): ParseCell = ParseCell(argv, expected, because)
 
 /** P9a cells: the line binds the record in each [cells] entry, or is refused where the entry holds null. */
 internal fun ParitySuite<PacmanInputs>.checkAll(cells: List<ParseCell>) = checkCells(cells) { check(it) }

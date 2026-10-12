@@ -47,7 +47,7 @@ class HelpTest {
         assertTrue(help.startsWith("usage: add <text>"), help)
         assertTrue("the task text" in help, help)
         assertTrue("-d, --done" in help, help)
-        assertTrue("-h, --help" in help, help)
+        assertTrue("      --help" in help, help)
     }
 
     @Test
@@ -58,7 +58,7 @@ class HelpTest {
             action { Ok("") }
         }
         val help = cmd.helpText()
-        assertTrue("-h, --help" in help, help)
+        assertTrue("      --help" in help, help)
         assertTrue("--json" in help, help)
         assertTrue("--version" in help, help)
     }
@@ -70,7 +70,7 @@ class HelpTest {
             action { Ok("") }
         }
         val help = cmd.helpText()
-        assertTrue("-h, --help" in help, help)
+        assertTrue("      --help" in help, help)
         assertTrue("--version" !in help, help)
     }
 
@@ -138,6 +138,20 @@ class HelpTest {
         assertTrue("--completion <bash|zsh|fish|powershell>" in help, help)
         assertTrue("--docs <markdown|man>" in help, help)
         assertFalse("Commands:" in help, help)
+    }
+
+    @Test
+    fun `a subcommand page of a root with its own action lists the meta options under Global options`() {
+        // `app sub --completion bash` parses, so sub's page lists --completion and --docs where it lists --help.
+        val cmd = cli("app") {
+            action { Ok("") }
+            command("sub") { action { Ok("") } }
+        }
+        val term = RecordingTerminal()
+        assertEquals(0, cmd.run(arrayOf("sub", "--help"), term))
+        val globals = term.out.toString().substringAfter("Global options:")
+        assertTrue("--completion <bash|zsh|fish|powershell>" in globals, globals)
+        assertTrue("--docs <markdown|man>" in globals, globals)
     }
 
     @Test
@@ -243,7 +257,7 @@ class HelpTest {
         cmd.run(arrayOf("--help"), term)
         val help = term.out.toString()
         assertTrue("Global options:" in help, help)
-        assertTrue("--color <${COLOR_MODE_NAMES.joinToString("|")}>" in help, help)
+        assertTrue("--color[=<${COLOR_MODE_NAMES.joinToString("|")}>]" in help, help)
         assertTrue(BuiltinOptionHelp.COLOR in help, help)
         assertTrue(help.indexOf("--json") < help.indexOf("--color"), help)
     }
@@ -425,7 +439,7 @@ class HelpTest {
         // At a narrow terminal the aligned description column can't fit, so the description stacks
         // under the signature and wraps to the full width instead of overflowing. Uses a subcommand so
         // no injected completion/docs rows (root-only, unbreakable tokens) intrude. The width here must
-        // still fit the unconditional `--color <auto|always|never>` global row's signature (an
+        // still fit the unconditional `--color[=<auto|always|never>]` global row's signature (an
         // unbreakable token, like a URL, that the wrapper never splits), while staying narrow enough to
         // exercise the stacking path rather than the aligned two-column layout.
         val long = "a long description that must wrap across several lines at this narrow width"
@@ -501,7 +515,7 @@ class HelpTest {
     @Test
     fun `simple command default help layout`() {
         // Regression guard on the exact PLAIN layout: args/options in the default block, and the
-        // position-independent built-ins (-h/--help, --json) under a trailing `Global options` block.
+        // position-independent built-ins (--help, --json) under a trailing `Global options` block.
         // Uses a subcommand so no injected `completion` row (root-only) perturbs the default block.
         val root = cli("app") {
             command("add") {
@@ -515,12 +529,12 @@ class HelpTest {
         val expected = buildString {
             append("usage: app add <text> [options]\n\n")
             append("Add a task\n\n")
-            append("  <text>                           the task text (required)\n")
-            append("  -d, --done                       mark it done\n\n")
+            append("  <text>                             the task text (required)\n")
+            append("  -d, --done                         mark it done\n\n")
             append("Global options:\n")
-            append("  -h, --help                       Show this help\n")
-            append("      --json                       Output as JSON\n")
-            append("      --color <auto|always|never>  Colorize output: auto, always, or never")
+            append("      --help                         Show this help\n")
+            append("      --json                         Output as JSON\n")
+            append("      --color[=<auto|always|never>]  Colorize output: auto, always, or never (bare: always)")
         }
         assertEquals(expected, add.helpText("app add"))
     }
@@ -528,6 +542,7 @@ class HelpTest {
     @Test
     fun `help all renders every descendant help recursively`() {
         val tree = cli("app") {
+            builtins { help = Help.ByTree() }
             command("build") {
                 help = "build things"
                 option(short = 't', long = "target", help = "what to build").choice("debug", "release")
@@ -559,6 +574,7 @@ class HelpTest {
     @Test
     fun `help all scopes to the subtree it is invoked on`() {
         val tree = cli("app") {
+            builtins { help = Help.ByTree() }
             command("build") {
                 help = "build things"
                 option(short = 't', long = "target", help = "what to build").choice("debug", "release")
@@ -584,6 +600,7 @@ class HelpTest {
     @Test
     fun `help all row advertised for dispatcher not leaf`() {
         val tree = cli("app") {
+            builtins { help = Help.ByTree() }
             command("build") { help = "build things"; action { Ok("") } }
         }
         val root = RecordingTerminal()
@@ -599,6 +616,7 @@ class HelpTest {
     fun `help all is a reserved flag name`() {
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
+                builtins { help = Help.ByTree() }
                 command("go") {
                     flag(long = "help-all")
                     action { Ok("") }
@@ -686,39 +704,12 @@ class HelpTest {
     }
 
     @Test
-    fun `command help overload sets subcommand description`() {
+    fun `a command's help is its row's description`() {
         val cmd = cli("app") {
             command("build") { help = "compile the project"; action { Ok("") } }
         }
         val help = cmd.helpText()
         assertTrue("compile the project" in help, help)
-    }
-
-    @Test
-    fun `command help overload is overridden by explicit description in block`() {
-        // The block runs after `help` seeds the description, so an explicit assignment wins.
-        val cmd = cli("app") {
-            command("build") {
-                help = "compile the project"
-                help = "build it now"
-                action { Ok("") }
-            }
-        }
-        val help = cmd.helpText()
-        assertTrue("build it now" in help, help)
-        assertTrue("compile the project" !in help, help)
-    }
-
-    @Test
-    fun `command without help overload still sets description from block`() {
-        val cmd = cli("app") {
-            command("x") {
-                help = "still works"
-                action { Ok("") }
-            }
-        }
-        val help = cmd.helpText()
-        assertTrue("still works" in help, help)
     }
 
     @Test
@@ -831,7 +822,7 @@ class RequiredOptionUsageTest {
         val cmd = cli("tar") {
             val create = flag(short = 'c', long = "create")
             val extract = flag(short = 'x', long = "extract")
-            requireExactlyOne(create, extract)
+            exactlyOne(create, extract)
             option(short = 'f', long = "file").required()
             argument("path").multiple(min = 0)
             action { Ok("") }
@@ -845,7 +836,7 @@ class RequiredOptionUsageTest {
         val cmd = cli("app") {
             val a = option(long = "alpha").required()
             val b = option(long = "beta").required()
-            requireExactlyOne(a, b)
+            exactlyOne(a, b)
             action { Ok("") }
         }
         assertEquals("usage: app (--alpha|--beta) [options]", cmd.usageLine())
@@ -904,6 +895,41 @@ class OptionalValueHelpTest {
             action { Ok("") }
         }
         assertTrue("-S, --gpg-sign[=<keyid>]" in cmd.helpText(), cmd.helpText())
+    }
+
+    @Test
+    fun `a short-only spelling glues the optional value without an equals sign`() {
+        // getopt reads `-S=abc` as the value `=abc`, so the attached form of a short is `-Sabc`, as sed's `-i[SUFFIX]`.
+        val cmd = cli("git") {
+            option(short = 'S', help = "sign it").placeholder("keyid").optionalValue("default")
+            action { Ok("") }
+        }
+        assertTrue("-S[<keyid>]" in cmd.helpText(), cmd.helpText())
+        val required = cli("app") {
+            option(short = 'm').placeholder("M").optionalValue("fast").required()
+            action { Ok("") }
+        }
+        assertEquals("usage: app -m[<M>] [options]", required.usageLine())
+    }
+
+    @Test
+    fun `the color builtin is shown as an optional value option is`() {
+        // ls --help shows `--color[=WHEN]`; klap's built-in takes the signature a declared `.optionalValue()` gets.
+        val builtin = cli("ls") { action { Ok("") } }.helpText()
+        val declared = cli("ls") {
+            option(long = "colour", help = "colorize").choice("auto", "always", "never").optionalValue("always")
+            action { Ok("") }
+        }.helpText()
+        fun row(help: String, long: String) = help
+            .lines()
+            .single { it.trim().startsWith(long) }
+            .trim()
+            .split(Regex(" {2,}"))
+        assertEquals("--colour[=<auto|always|never>]", row(declared, "--colour").first())
+        assertEquals(
+            listOf("--color[=<auto|always|never>]", "Colorize output: auto, always, or never (bare: always)"),
+            row(builtin, "--color"),
+        )
     }
 
     @Test

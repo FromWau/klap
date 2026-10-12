@@ -1,7 +1,6 @@
 package com.fromwau.klap.fixture.pacman
 
 import com.fromwau.klap.fixture.ParitySuite
-import com.fromwau.klap.fixture.wireSuggestions
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.acceptSuggestion
 import com.fromwau.klap.testing.filesAfter
@@ -117,16 +116,10 @@ class PacmanSuggestionListTest {
     }
 
     @Test
-    fun `the wire gives the shell the same suggestions as the test API`() {
-        val lines = listOf(
-            "pacman -Q --col=|", "pacman -Q --dbpath |", "pacman -Q --cachedir=|", "pacman -Q --chec|",
-            "pacman -Q --debug=|", "pacman --qu|ery", "pacman -Q --conf| pkg",
-        )
-        checkCells(lines) { typed ->
-            val line = typed.replace("|", "")
-            val cursor = typed.indexOf('|')
-            assertEquals(pacman.suggestionsFor(line, cursor), pacman.wireSuggestions(line, cursor), "E19 `$typed`")
-        }
+    fun `a completion script's call reaches pacman as its own words`() {
+        // pacman declines klap's completion, so there is no __complete for a script to call.
+        val because = "real pacman: unrecognized option '--cursor'"
+        parity.rejects("__complete", "--cursor", "1", "--", "-", because = because)
     }
 
     @Test

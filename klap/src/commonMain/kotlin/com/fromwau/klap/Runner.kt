@@ -4,6 +4,7 @@ import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.fold
 import com.fromwau.kern.terminal.Terminal
 import com.fromwau.kern.terminal.defaultTerminal
+import com.fromwau.klap.internal.parse.builtinScan
 import com.fromwau.klap.internal.platform.platformExit
 import com.fromwau.klap.internal.render.Candidate
 import com.fromwau.klap.internal.render.HelpStyle
@@ -68,15 +69,14 @@ private inline fun Cli.runCore(
     execute: (Invocation.Execute) -> Int,
 ): Int {
     val argList = argv.toList()
-    // The tree's own built-in pool and value slots, read once and shared by both reads below, so an
+    // The parse's own reading of each token and the value slots, read once and shared by both reads below, so an
     // abbreviated --json or --col resolves here — and a built-in in an option's value slot stays out of
     // reach here — exactly as in parse().
-    val builtinPool = positionIndependentLongs()
-    val scan = builtinScan(argList, builtinPool)
+    val scan = builtinScan(argList)
     val json = builtins.json && scan.names("json")
-    // --color=always/never beats the whole env ladder below; auto (absent/bare/invalid) defers to the
-    // terminal's own reading, unchanged. A bad/missing --color value is reported by parse() itself, not here.
-    val mode = argList.colorMode(builtins, builtinPool, scan.valueSlots, abbreviation)
+    // --color, bare or =always/never, beats the whole env ladder below; auto (absent/invalid) defers to the
+    // terminal's own reading, unchanged. A bad --color value is reported by parse() itself, not here.
+    val mode = argList.colorMode(builtins, abbreviation, scan)
     val effectiveColor = when (mode) {
         ColorMode.ALWAYS -> true
         ColorMode.NEVER -> false
@@ -124,9 +124,25 @@ private inline fun Invocation.render(
     is Invocation.ShowHelp -> {
         val text = when {
             builtins.helpPage != null && !json -> builtins.helpPage
-            json -> command.helpJsonText(qualifiedName, globalSpecs, rootVersioned, builtins, recursive)
-            recursive -> command.helpTextAll(qualifiedName, globalSpecs, style, rootVersioned, builtins)
-            else -> command.helpText(qualifiedName, globalSpecs, style, rootVersioned, builtins)
+            json -> command.helpJsonText(
+                qualifiedName,
+                globalSpecs,
+                rootVersioned,
+                rootMetaOptions,
+                builtins,
+                recursive,
+            )
+
+            recursive -> command.helpTextAll(
+                qualifiedName,
+                globalSpecs,
+                style,
+                rootVersioned,
+                rootMetaOptions,
+                builtins,
+            )
+
+            else -> command.helpText(qualifiedName, globalSpecs, style, rootVersioned, rootMetaOptions, builtins)
         }
         terminal.outputLine(text)
     }

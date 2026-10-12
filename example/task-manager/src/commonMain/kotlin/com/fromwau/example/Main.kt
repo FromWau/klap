@@ -60,7 +60,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
     )
     example("klapExample list --status pending", "see what is left to do")
     // Both lines below cluster several short flags behind one dash, ending in the one that takes a
-    // value (POSIX guideline 5): -D and -p bundle on add, -r/-l/-n on list.
+    // value, as getopt groups them: -D and -p bundle on add, -r/-l/-n on list.
     example("klapExample add \"Ship it\" -Dp high", "clustered shorts: mark done, then set priority")
     example("klapExample list -rln 5", "clustered shorts: newest first, long form, five of them")
 
@@ -155,7 +155,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
         // Both spellings carry the range independently: the fold picks a winner, it does not share a
         // converter chain, so dropping it from either would let that spelling through unchecked.
         val directLimit = numberOption(help = "same as -n NUM").int().range(1..100)
-        val limit = lastOneWins(namedLimit, directLimit)
+        val limit = lastOf(namedLimit, directLimit)
         val reverse = flag(short = 'r', long = "reverse", help = "newest first")
         // Display-only, unlike --reverse: it never changes which tasks are chosen or their order,
         // only how much of each one the human renderer shows, so it is read in that renderer alongside

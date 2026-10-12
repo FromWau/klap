@@ -3,8 +3,6 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
-import com.fromwau.kern.result.map
-import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -35,9 +33,6 @@ private fun Invocation.Execute.run() {
 private inline fun <reified F : CliError> Cli.parseError(vararg argv: String): F =
     parse(argv.toList()).assertError<F>()
 
-private fun Cli.candidates(vararg words: String): List<String> =
-    completeCandidates(words.toList()).map { it.value }
-
 class BuiltinsOptOutTest {
 
     // --- default: a CLI that never calls builtins { } offers all of them ---
@@ -50,9 +45,9 @@ class BuiltinsOptOutTest {
 
         // 3. advertised
         val help = tree.helpOutput()
-        assertTrue("-h, --help" in help, help)
+        assertTrue("      --help" in help, help)
         assertTrue("--json" in help, help)
-        assertTrue("--color <auto|always|never>" in help, help)
+        assertTrue("--color[=<auto|always|never>]" in help, help)
 
         // 4. injected
         assertNotNull(tree.subcommand("completion"))
@@ -64,14 +59,12 @@ class BuiltinsOptOutTest {
                 cli("app") { command("go") { option(long = listOf(reserved)); action { Ok("") } } }
             }
         }
-        assertFailsWith<IllegalArgumentException> {
-            cli("app") { command("go") { flag(short = 'h', long = "human"); action { Ok("") } } }
-        }
 
-        // 2. every one still parsed as a built-in
+        // 2. every one still parsed as a built-in, --help with no short
         assertTrue(tree.execute("--json", "go").globals.json)
         assertEquals(ColorMode.NEVER, listOf("--color=never", "go").colorMode())
-        assertIs<Invocation.ShowHelp>(tree.parse(listOf("-h")).assertSuccess())
+        assertIs<Invocation.ShowHelp>(tree.parse(listOf("--help")).assertSuccess())
+        assertEquals("-h", tree.parse(listOf("-h")).assertError<CliError.UnknownOption>().token)
         assertIs<Invocation.ShowCompletion>(
             tree.parse(listOf("completion", "bash")).assertSuccess(),
         )
@@ -136,7 +129,10 @@ class BuiltinsOptOutTest {
     @Test
     fun `disabled json is not advertised`() {
         val tree = cli("app") {
-            builtins { json = Builtin.Off }
+            builtins {
+                json = Builtin.Off
+                help = Help.ByTree()
+            }
             command("go") { action { Ok("") } }
         }
 
@@ -145,7 +141,7 @@ class BuiltinsOptOutTest {
         // Both doc renderers assemble from the same helpSections(), so they follow --help automatically.
         assertFalse("--json" in tree.renderMarkdownDocs(), tree.renderMarkdownDocs())
         assertFalse("""\-\-json""" in tree.renderManPage(), tree.renderManPage())
-        assertFalse("--json" in tree.candidates("--"))
+        assertFalse("--json" in tree.offered("--"))
         // The did-you-mean set drops it too, so a typo is never pointed at a flag this tree does not have.
         assertEquals(CliError.UnknownOption("--jsonn", null), tree.parseError<CliError.UnknownOption>("go", "--jsonn"))
     }
@@ -182,7 +178,7 @@ class BuiltinsOptOutTest {
 
         assertFalse("--color" in tree.helpOutput(), tree.helpOutput())
         assertFalse("--color" in tree.renderMarkdownDocs(), tree.renderMarkdownDocs())
-        assertFalse("--color" in tree.candidates("--"))
+        assertFalse("--color" in tree.offered("--"))
     }
 
     // --- completion ---
@@ -222,7 +218,7 @@ class BuiltinsOptOutTest {
         )
         assertFalse("--completion" in tree.helpOutput(), tree.helpOutput())
         assertFalse("--completion" in tree.renderMarkdownDocs(), tree.renderMarkdownDocs())
-        assertFalse("--completion" in tree.candidates("--"))
+        assertFalse("--completion" in tree.offered("--"))
     }
 
     @Test
@@ -236,7 +232,33 @@ class BuiltinsOptOutTest {
         assertNotNull(tree.subcommand("docs"))
         tree.parse(listOf("completion", "bash")).assertError<CliError.UnknownSubcommand>()
         assertFalse("completion" in tree.helpOutput(), tree.helpOutput())
-        assertFalse("completion" in tree.candidates(""))
+        assertFalse("completion" in tree.offered(""))
+    }
+
+    @Test
+    fun `disabled completion makes a first __complete the tool's own operand`() {
+        // `head __complete f` reads __complete as a file: "cannot open '__complete' for reading".
+        val tree = cli("head") {
+            builtins { completion = Builtin.Off }
+            val files = argument("file").multiple(min = 0)
+            action<String>(human = { it }) { Ok("files=${files()}") }
+        }
+
+        assertNull(tree.subcommand("__complete"))
+        assertEquals("files=[__complete, f]", tree.bindText("__complete", "f"))
+        assertEquals("files=[__complete, --, x]", tree.bindText("--", "__complete", "--", "x"))
+        assertEquals(listOf("--help"), tree.offered("--h"))
+    }
+
+    @Test
+    fun `disabled completion frees __complete for a subcommand`() {
+        val tree = cli("app") {
+            builtins { completion = Builtin.Off }
+            command("__complete") { action<String>(human = { it }) { Ok("mine") } }
+        }
+
+        assertEquals("mine", tree.bindText("__complete"))
+        assertTrue("__complete" in tree.offered(""))
     }
 
     // --- docs ---
@@ -272,7 +294,7 @@ class BuiltinsOptOutTest {
         assertEquals(CliError.UnknownOption("--docs", null), tree.parseError<CliError.UnknownOption>("--docs", "man"))
         assertFalse("--docs" in tree.helpOutput(), tree.helpOutput())
         assertFalse("--docs" in tree.renderMarkdownDocs(), tree.renderMarkdownDocs())
-        assertFalse("--docs" in tree.candidates("--"))
+        assertFalse("--docs" in tree.offered("--"))
     }
 
     @Test
@@ -286,17 +308,17 @@ class BuiltinsOptOutTest {
         assertNotNull(tree.subcommand("completion"))
         tree.parse(listOf("docs", "man")).assertError<CliError.UnknownSubcommand>()
         assertFalse("docs" in tree.helpOutput(), tree.helpOutput())
-        assertFalse("docs" in tree.candidates(""))
+        assertFalse("docs" in tree.offered(""))
     }
 
-    // --- helpShort ---
+    // --- help, its short declined ---
 
     @Test
     fun `disabled help short frees dash h for the app`() {
-        // `chmod -h` is the short of --no-dereference, unreachable while klap reserves -h tree-wide.
+        // `chmod -h` is the short of --no-dereference, reachable only while --help has no short.
         var seen: Boolean? = null
         val chmod = cli("chmod") {
-            builtins { help = Help.Generate(short = null) }
+            builtins { help = Help.ByCommand(short = null) }
             val noDereference = flag(
                 short = 'h',
                 long = "no-dereference",
@@ -316,7 +338,7 @@ class BuiltinsOptOutTest {
     @Test
     fun `disabled help short leaves long help intact and unadvertises the short`() {
         val tree = cli("app") {
-            builtins { help = Help.Generate(short = null) }
+            builtins { help = Help.ByCommand(short = null) }
             command("go") { action { Ok("") } }
         }
 
@@ -328,8 +350,8 @@ class BuiltinsOptOutTest {
         val help = tree.helpOutput()
         assertFalse("-h, --help" in help, help)
         assertTrue("--help" in help, help)
-        assertFalse("-h" in tree.candidates("-"))
-        assertTrue("--help" in tree.candidates("-"))
+        assertFalse("-h" in tree.offered("-"))
+        assertTrue("--help" in tree.offered("-"))
     }
 
     // --- cross-cutting ---
@@ -362,7 +384,7 @@ class BuiltinsOptOutTest {
                 color = Builtin.Off
                 completion = Builtin.Off
                 docs = Builtin.Off
-                help = Help.Generate(short = null)
+                help = Help.ByCommand(short = null)
             }
             option(long = "json")
             option(long = "color")
@@ -380,8 +402,7 @@ class BuiltinsOptOutTest {
 
         assertNull(tree.subcommand("completion"))
         assertNull(tree.subcommand("docs"))
-        // __complete stays: hidden plumbing for .completeWith providers, not part of the declinable surface.
-        assertNotNull(tree.subcommand("__complete"))
+        assertNull(tree.subcommand("__complete"))
     }
 
     @Test
@@ -393,8 +414,8 @@ class BuiltinsOptOutTest {
         }
 
         val help = tree.helpOutput()
-        assertTrue("-h, --help" in help, help)
-        assertTrue("--color <auto|always|never>" in help, help)
+        assertTrue("      --help" in help, help)
+        assertTrue("--color[=<auto|always|never>]" in help, help)
         assertTrue("--version" in help, help)
         assertNotNull(tree.subcommand("completion"))
         assertNotNull(tree.subcommand("docs"))
@@ -411,10 +432,10 @@ class BuiltinsOptOutTest {
                         color = Builtin.Off
                         completion = Builtin.Off
                         docs = Builtin.Off
-                        help = Help.Generate(short = null)
+                        help = Help.ByTree(short = null)
                     }
                     option(long = listOf(reserved))
-                    // --help-all is reserved only where a subcommand gives it something to expand.
+                    // Help.ByTree reserves --help-all only where a subcommand gives it something to expand.
                     command("sub") { action { Ok("") } }
                     action { Ok("") }
                 }

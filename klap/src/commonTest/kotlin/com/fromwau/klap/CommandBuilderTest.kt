@@ -383,10 +383,23 @@ class ReservedNameTest {
     fun `option with reserved short h fails at build`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
+                builtins { help = Help.ByCommand(short = 'h') }
                 option(short = 'h', long = "thing")
                 action { Ok("") }
             }
         }
+    }
+
+    @Test
+    fun `an option on the version short is refused naming --version`() {
+        val error = assertFailsWith<IllegalArgumentException> {
+            cli("x") {
+                version = Version.Of("1.0", long = "version", short = 'V')
+                option(short = 'V', long = "thing")
+                action { Ok("") }
+            }
+        }
+        assertEquals("command 'x': option/flag short '-V' is reserved by the built-in --version", error.message)
     }
 
     @Test
@@ -748,66 +761,10 @@ class CommandNameValidationTest {
 class InputNameValidationTest {
 
     @Test
-    fun `option with empty long name fails at construction`() {
-        // A blank long name renders a broken '-z, -- <value>' help row and is ambiguous with the
-        // '--' end-of-options sentinel ('--=hello' would bind as the value).
-        assertFailsWith<IllegalArgumentException> {
-            cli("x") {
-                option(short = 'z', long = "")
-                action { Ok("") }
-            }
-        }
-    }
-
-    @Test
-    fun `option with blank long name fails at construction`() {
-        assertFailsWith<IllegalArgumentException> {
-            cli("x") {
-                option(long = "   ")
-                action { Ok("") }
-            }
-        }
-    }
-
-    @Test
-    fun `option with a dash written in its long name fails at construction`() {
-        // A long is typed after `--`, so a dash of its own would make the typed token `---bad`.
-        assertFailsWith<IllegalArgumentException> {
-            cli("x") {
-                option(long = "-bad")
-                action { Ok("") }
-            }
-        }
-    }
-
-    @Test
-    fun `flag with empty long name fails at construction`() {
-        assertFailsWith<IllegalArgumentException> {
-            cli("x") {
-                flag(long = "")
-                action { Ok("") }
-            }
-        }
-    }
-
-    @Test
     fun `argument with empty name fails at construction`() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
                 argument("")
-                action { Ok("") }
-            }
-        }
-    }
-
-    @Test
-    fun `flag name with control char fails at construction`() {
-        // requireValidName rejects control chars (code in 0..0x1F or 0x7F) as a disjunct separate from
-        // isWhitespace(); 0x01 is a control char but not whitespace, so this exercises that branch
-        // specifically rather than the whitespace check already covered above.
-        assertFailsWith<IllegalArgumentException> {
-            cli("x") {
-                flag(long = "na${Char(1)}me")
                 action { Ok("") }
             }
         }

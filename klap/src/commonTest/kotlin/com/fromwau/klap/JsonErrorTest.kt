@@ -22,12 +22,15 @@ class JsonErrorTest {
 
     @Test
     fun `an unknown option is its fields`() {
-        val (code, err) = stderr("--verbos", "--json") {
+        val (code, err) = stderr("--verbsoe", "--json") {
             flag(long = "verbose")
             action { Ok("") }
         }
         assertEquals(2, code)
-        assertEquals("""{"error":{"type":"UnknownOption","token":"--verbos","suggestion":"--verbose"},"code":2}""" + "\n", err)
+        assertEquals(
+            """{"error":{"type":"UnknownOption","token":"--verbsoe","suggestion":"--verbose"},"code":2}""" + "\n",
+            err,
+        )
     }
 
     @Test

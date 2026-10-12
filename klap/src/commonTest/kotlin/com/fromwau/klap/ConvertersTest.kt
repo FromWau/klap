@@ -4,10 +4,12 @@ import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import com.fromwau.klap.internal.spec.ArgumentSpec
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.HolderSpec
 import com.fromwau.klap.internal.spec.OptionSpec
+import com.fromwau.klap.internal.spec.ValueSpec
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -343,6 +345,45 @@ class ConvertersTest : ConverterScope() {
         assertEquals(Result.Error(ConversionError.NotALong), spec.convert("1.5"))
     }
 
+    /** `.int()` and `.long()` on an operand and on an option, each with its error and the value it reads [n] as. */
+    private fun integerSpecs(): List<Triple<ValueSpec, ConversionError, (Int) -> Any>> = listOf(
+        Triple(Arg<String>(argSpec()).int().spec, ConversionError.NotAnInteger) { n -> n },
+        Triple(Arg<String>(argSpec()).long().spec, ConversionError.NotALong) { n -> n.toLong() },
+        Triple(optSpec().also { Opt<String?>(it).int() }, ConversionError.NotAnInteger) { n -> n },
+        Triple(optSpec().also { Opt<String?>(it).long() }, ConversionError.NotALong) { n -> n.toLong() },
+    )
+
+    @Test
+    fun `an integer takes leading blanks and a plus sign as strtol does`() {
+        // `head -n ' 2'`, `head -n $'\t2'`, `head -n $'\n2'`, `head -n +2`, `ls -w ' 80'` and `nice -n ' -0'` run.
+        val read = mapOf(" 2" to 2, "\t2" to 2, "\n\u000B\u000C\r2" to 2, "+2" to 2, " +2" to 2, " -0" to 0, "-7" to -7)
+        for ((spec, _, typed) in integerSpecs()) {
+            read.forEach { (raw, n) -> assertEquals(Result.Success(typed(n)), spec.convert(raw), "`$raw`") }
+        }
+    }
+
+    @Test
+    fun `an integer refuses a trailing blank and a sign with no digits after it`() {
+        // `head -n '2 '`, `head -n ' '`, `head -n +` and `head -n '+ 2'`: "invalid number of lines"; `ls -w '80 '`:
+        // "invalid line width".
+        for ((spec, error, _) in integerSpecs()) {
+            listOf("2 ", "2\n", " ", "", "+", "-", "+ 2", " 2 ").forEach { raw ->
+                assertEquals(Result.Error(error), spec.convert(raw), "`$raw`")
+            }
+        }
+    }
+
+    @Test
+    fun `an integer reads ASCII decimal digits only`() {
+        // `head -n ١`, `head -n １２`, `ls -w ١` and `nice -n ١` are refused; a no-break space is no blank to strtol
+        // (`head -n $' 2'` is refused).
+        for ((spec, error, _) in integerSpecs()) {
+            listOf("١٢", "１２", "१२", "1٢", " 2").forEach { raw ->
+                assertEquals(Result.Error(error), spec.convert(raw), "`$raw`")
+            }
+        }
+    }
+
     @Test
     fun `arg double converts to double and rejects non number`() {
         val spec = argSpec()
@@ -456,6 +497,23 @@ class ConvertersTest : ConverterScope() {
         val spec = argSpec()
         Arg<String>(spec).int().range(1..10)
         assertEquals("1..10", spec.valueHint)
+    }
+
+    @Test
+    fun `a stepped range names its step in the hint and the refusal`() {
+        val spec = optSpec()
+        Opt<String?>(spec).int().range(1..9 step 3)
+        assertEquals("1..7 step 3", spec.valueHint)
+        assertEquals(null, spec.validate?.invoke(4))
+        assertEquals("must be in 1..7 step 3", spec.validate?.invoke(2))
+    }
+
+    @Test
+    fun `a descending range reads from its low end`() {
+        val spec = argSpec()
+        Arg<String>(spec).int().range(10 downTo 1)
+        assertEquals("1..10", spec.valueHint)
+        assertEquals("must be in 1..10", spec.validate?.invoke(11))
     }
 
     // --- Converter composition: chained String-input converters must compose, not overwrite ---
@@ -601,8 +659,8 @@ class ConvertersTest : ConverterScope() {
             val lines = option(short = 'n', long = "lines").int()
             action { Ok("${lines()}") }
         }
-        assertTrue(tool.parse(listOf("-n", "abc", "-n", "5")) is Result.Error)
-        assertTrue(tool.parse(listOf("-n", "3", "-n", "5")) is Result.Success)
+        assertEquals("abc", tool.parse(listOf("-n", "abc", "-n", "5")).assertError<CliError.BadValue>().value)
+        tool.parse(listOf("-n", "3", "-n", "5")).assertSuccess()
     }
 
     @Test

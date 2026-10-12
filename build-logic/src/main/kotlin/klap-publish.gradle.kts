@@ -41,8 +41,8 @@ publishing {
         pom {
             name = "klap"
             description = "A reflection-free Kotlin Multiplatform command-line framework: a builder DSL " +
-                    "for commands and subcommands, typed and validated arguments, generated help, " +
-                    "shell completion, and typed Result errors."
+                "for commands and subcommands, typed and validated arguments, generated help, " +
+                "shell completion, and typed Result errors."
             url = repoUrl
             licenses {
                 license {

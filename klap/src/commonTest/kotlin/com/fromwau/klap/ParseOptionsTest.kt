@@ -104,7 +104,7 @@ class ParseOptionsTest {
 
     @Test
     fun `end of options routes flag shaped token to positional on group`() {
-        // POSIX: after `--`, a flag-shaped token is an unconditional positional, so a group reports it
+        // After `--`, a flag-shaped token is an unconditional positional, so a group reports it
         // as an unknown subcommand rather than swallowing it as help.
         val app = cli("app") {
             command("grp") {
@@ -216,19 +216,6 @@ class OptionValueAndChoiceTest {
     }
 
     @Test
-    fun `end of options is not consumed as option value`() {
-        val tree = cli("net") {
-            command("dial") {
-                val host = option(long = "host")
-                action { Ok(host() ?: "") }
-            }
-        }
-        // `--host --` must not bind host="--"; the -- is the terminator, so host has no value.
-        val err = tree.parse(listOf("dial", "--host", "--")).assertError<CliError.MissingOptionValue>()
-        assertEquals(CliError.MissingOptionValue("--host"), err)
-    }
-
-    @Test
     fun `a declared flag after a value taking option is still that options value`() {
         val tree = cli("net") {
             command("dial") {
@@ -280,11 +267,11 @@ class ShortClusterErrorTest {
     }
 
     @Test
-    fun `short cluster stray dash reports the whole token not a fabricated double dash`() {
-        // -f-y: f is a flag, then a stray '-' that names no option; the offender must be the whole
-        // original token, never the phantom "--" that "-$ch" would produce for ch = '-'.
+    fun `short cluster stray dash reports the letter in its cluster`() {
+        // -f-y: f is a flag, then a stray '-' that names no option, named alone with its cluster as getopt_long
+        // names it: `ls -a-` is "invalid option -- '-'".
         val err = clusterTree().parse(listOf("run", "-f-y")).assertError<CliError.UnknownOption>()
-        assertEquals(CliError.UnknownOption("-f-y"), err)
+        assertEquals(CliError.UnknownOption("--", cluster = "-f-y"), err)
     }
 
     @Test
@@ -764,6 +751,7 @@ class MixedShortClusterTest {
     @Test
     fun `a cluster carrying the help short asks for help at the command the walk reached`() {
         val tree = cli("app") {
+            builtins { help = Help.ByCommand(short = 'h') }
             globalFlag(short = 'v', long = "verbose")
             command("build") { action { Ok("") } }
         }
@@ -930,8 +918,9 @@ class GlobalBindPolicyTest {
         }
         val longErr = tree.parse(listOf("plan", "--workspace")).assertError<CliError.MissingOptionValue>()
         assertEquals(CliError.MissingOptionValue("--workspace"), longErr)
+        // The short's letter, as getopt_long names it: `ls -I` is "option requires an argument -- 'I'".
         val shortErr = tree.parse(listOf("plan", "-w")).assertError<CliError.MissingOptionValue>()
-        assertEquals(CliError.MissingOptionValue("--workspace"), shortErr)
+        assertEquals(CliError.MissingOptionValue("-w"), shortErr)
     }
 }
 
@@ -1131,13 +1120,16 @@ class BuiltinInlineValueTest {
             argument("a")
             action { Ok("") }
         }
+        // Named whole, as getopt_long names a long that resolved to nothing: `ls --zeta=1` is "unrecognized option
+        // '--zeta=1'".
         val err = tree.parse(listOf("--version=x")).assertError<CliError.UnknownOption>()
-        assertEquals(CliError.UnknownOption("--version"), err)
+        assertEquals(CliError.UnknownOption("--version=x"), err)
     }
 
     @Test
     fun `help short form given an inline value takes no value`() {
         val tree = cli("x") {
+            builtins { help = Help.ByCommand(short = 'h') }
             argument("a")
             action { Ok("") }
         }
@@ -1204,7 +1196,7 @@ class DefaultSubstitutionTest {
     @Test
     fun `end of options makes a builtin looking token a positional not a takes no value error`() {
         // A built-in-looking token AFTER the `--` end-of-options marker is an unconditional positional
-        // (same POSIX rule as `end of options routes flag shaped token to positional on group` above), so it must
+        // (same rule as `end of options routes flag shaped token to positional on group` above), so it must
         // never be misread as --help's takes-no-value form, nor trigger help.
         val tree = cli("x") {
             val a = argument("a")
@@ -1598,13 +1590,6 @@ class DashLedOptionValueTest {
     }
 
     @Test
-    fun `end of options still terminates rather than binding as a value`() {
-        // `--` is structural, not a value: `app --message -- x` must not bind "--" as the message.
-        val err = messageTree().parse(listOf("--message", "--")).assertError<CliError.MissingOptionValue>()
-        assertEquals(CliError.MissingOptionValue("--message"), err)
-    }
-
-    @Test
     fun `an unknown option after a value taking one is swallowed as its value`() {
         // The accepted cost of the rule, pinned so it is a decision rather than a surprise: klap cannot
         // tell a mistyped option from a dash-led value, and every tool that accepts `-m -x` pays this.
@@ -1747,7 +1732,7 @@ class DigitShortTest {
 
     @Test
     fun `a negative number operand is written after the end of options marker`() {
-        // The escape, and the reason error-by-default costs little: `--` is how every POSIX tool says
+        // The escape, and the reason error-by-default costs little: `--` is how every getopt tool says
         // "operand", and an option VALUE needs no escape at all.
         val tree = cli("app") {
             val n = argument("n").int()
@@ -1881,8 +1866,8 @@ class OptionalValueTest {
 
     @Test
     fun `the space form leaves the next token as an operand`() {
-        // The rule guideline 7 exists for: an optional-value option cannot tell its value from the next
-        // operand, so it never takes one. GNU does the same, and `ls --color src` colours `src`'s listing.
+        // An optional-value option cannot tell its value from the next operand, so it never takes one, as
+        // getopt_long's optional argument does, and `ls --color src` colours `src`'s listing.
         assertEquals("color=always files=[src]\n", run("--color", "src"))
     }
 

@@ -19,7 +19,7 @@ public fun rmCli(): TypedCli<RmInputs> = cliOf("rm") {
     // GNU rm takes any unambiguous prefix of a long option or a choice value: `rm --recur d` is --recursive.
     abbreviation = Abbreviation.Options
     help = "Remove (unlink) the FILE(s)"
-    version = Version.Of("9.11")
+    version = Version.Of("9.12", text = RM_VERSION_TEXT)
     epilogue = "By default, rm does not remove directories. Use --recursive (-r or -R) to remove each " +
             "listed directory too, along with all of its contents. To remove a file whose name starts " +
             "with a '-', for example '-foo', use 'rm -- -foo' or 'rm ./-foo'."
@@ -71,7 +71,7 @@ public fun rmCli(): TypedCli<RmInputs> = cliOf("rm") {
         help = "do not remove '/' (default)",
     ).negatable(default = true)
 
-    // `.requiredUnless(inputs.force)` drops the declared minimum of 1 to 0 exactly when -f fired, so bare
+    // `.optionalWhen(inputs.force)` drops the declared minimum of 1 to 0 exactly when -f fired, so bare
     // `rm` still fails to parse (real rm: "missing operand", exit 1; klap reports the same absence as a
     // usage error at exit 2 instead, see RmParityTest) while `rm -f` parses an empty list and reaches the
     // action. `--help` and completion see the real conditional rule too, not an unconditionally optional
@@ -79,7 +79,7 @@ public fun rmCli(): TypedCli<RmInputs> = cliOf("rm") {
     //
     // KLAP-GAP: rm's operands are arbitrary filenames, so a file named `__complete` is unreachable as the
     // first operand — the hidden `__complete` subcommand claims it first; `rm -- <name>` is the escape.
-    val files = argument("file", "the files to remove").file().multiple(min = 1).requiredUnless(force)
+    val files = argument("file", "the files to remove").file().multiple(min = 1).optionalWhen(force)
 
     action<String>(human = { it }) {
         val paths = files()
@@ -156,3 +156,16 @@ public val NOTHING_BOUND: RmInputs = RmInputs(
     preserveRoot = true,
     files = emptyList(),
 )
+
+/**
+ * What `rm --version` prints for GNU coreutils 9.12, the version installed when it was pinned
+ * (2026-10-10).
+ */
+internal val RM_VERSION_TEXT: String = """rm (GNU coreutils) 9.12
+Copyright (C) 2026 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Written by Paul Rubin, David MacKenzie, Richard M. Stallman,
+and Jim Meyering."""

@@ -3,19 +3,16 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
-import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /*
- * Reproductions of the review findings, each asserting the behaviour klap's own docs or POSIX promise
+ * Reproductions of the review findings, each asserting the behaviour klap's own docs or getopt promise
  * and each guarding the defect it was written red against.
  */
 
 private enum class Shade { DARK, LIGHT }
-
-private fun Cli.completionsFor(vararg words: String): List<String> = completeCandidates(words.toList()).map { it.value }
 
 class GlobalOptionArgvOrderTest {
 
@@ -48,14 +45,14 @@ class GlobalOptionArgvOrderTest {
     }
 }
 
-class RequiredIfTriggerReachTest {
+class RequiredWhenTriggerReachTest {
 
     @Test
     fun `a global flag triggers the requirement it advertises`() {
         val tree = cli("app") {
             val verbose = globalFlag(long = "verbose")
             command("c") {
-                val token = option(long = "token").requiredIf(verbose)
+                val token = option(long = "token").requiredWhen(verbose)
                 action { Ok("token=${token()}") }
             }
         }
@@ -68,7 +65,7 @@ class RequiredIfTriggerReachTest {
         val tree = cli("app") {
             command("c") {
                 val remote = flag(short = 'r', long = "remote").negatable()
-                val token = option(long = "token").requiredIf(remote)
+                val token = option(long = "token").requiredWhen(remote)
                 action { Ok("token=${token()}") }
             }
         }
@@ -154,7 +151,7 @@ class LastWinsCompletionTest {
                 action { Ok("") }
             }
         }
-        val candidates = tree.completionsFor("go", "-i", "-")
+        val candidates = tree.offered("go", "-i", "-")
         assertTrue("--force" in candidates, "expected --force among $candidates")
     }
 }
@@ -170,7 +167,7 @@ class VariadicThenFixedCompletionTest {
                 action { Ok("") }
             }
         }
-        assertEquals(listOf(COMPLETE_FILES), tree.completionsFor("go", "f1", "f2", ""))
+        assertEquals(listOf(COMPLETE_FILES), tree.offered("go", "f1", "f2", ""))
     }
 
     private fun cpShape(): Cli = cli("cp") {
@@ -184,13 +181,13 @@ class VariadicThenFixedCompletionTest {
     @Test
     fun `operands past the slot count resolve the way the bind would`() {
         // The bind hands a line's last operand to the trailing fixed slot, so the cursor's word is dest.
-        assertEquals(listOf("D1", "D2"), cpShape().completionsFor("go", "a", "b", ""))
+        assertEquals(listOf("D1", "D2"), cpShape().offered("go", "a", "b", ""))
     }
 
     @Test
     fun `the first operand still fills the variadics minimum`() {
         // dest cannot claim the only operand while source still owes one, since that line does not parse.
-        assertEquals(listOf("S1", "S2"), cpShape().completionsFor("go", ""))
+        assertEquals(listOf("S1", "S2"), cpShape().offered("go", ""))
     }
 }
 
@@ -206,7 +203,7 @@ class AbbreviatedOptionCompletionTest {
                 action { Ok("") }
             }
         }
-        assertEquals(listOf("name", "size"), tree.completionsFor("go", "--sor", ""))
+        assertEquals(listOf("name", "size"), tree.offered("go", "--sor", ""))
     }
 }
 
@@ -214,11 +211,9 @@ class MetaOptionErrorTextTest {
 
     @Test
     fun `a meta option missing its value names the dashed spelling`() {
-        val tree = cli("app") {
-            command("c") { action { Ok("") } }
-        }
+        val tree = cli("app") { action { Ok("") } }
         val t = RecordingTerminal()
-        tree.run(arrayOf("--color"), t)
-        assertEquals("error: option --color requires a value\n", t.err.toString())
+        tree.run(arrayOf("--docs"), t)
+        assertEquals("error: option --docs requires a value\n", t.err.toString())
     }
 }

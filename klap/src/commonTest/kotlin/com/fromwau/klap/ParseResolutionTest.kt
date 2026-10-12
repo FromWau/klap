@@ -8,6 +8,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 private fun tree(): Cli = cli("todo") {
+    builtins { help = Help.ByCommand(short = 'h') }
     version = Version.Of("1.0.0")
     command("ping") { action { Ok("") } }
     command("config") {

@@ -20,37 +20,38 @@ except pulse's row, which points at its module rather than a single file.
 
 | You want                                                                                                    | Look at                                                         | The construct                       |
 |-------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------|-------------------------------------|
-| Mutually exclusive operation modes, exactly one required (`tar -c` vs `-x` vs `-t`)                         | [`tar`](tar/)                                                   | `requireExactlyOne`                 |
+| Mutually exclusive operation modes, exactly one required (`tar -c` vs `-x` vs `-t`)                         | [`tar`](tar/)                                                   | `exactlyOne`                        |
 | Operations spelled as flags, each with its own options (`pacman -S` vs `-R` vs `-Q`)                        | [`pacman`](pacman/)                                             | `command(short, long)`              |
-| Two options that conflict but are both optional (`tar -z` vs `-j`)                                          | [`tar`](tar/)                                                   | `requireAtMostOne`                  |
+| Two options that conflict but are both optional (`tar -z` vs `-j`)                                          | [`tar`](tar/)                                                   | `atMostOne`                         |
 | A flag repeated to raise a level (`-v`, `-vv`, `-vvv`)                                                      | [`pacman`](pacman/), [`ssh`](ssh/), [`curl`](curl/)             | `.count()`                          |
 | A cluster whose last character takes a value (`tar -cvf out.tar`)                                           | [`tar`](tar/)                                                   | short clustering                    |
 | An option with an explicit "off" spelling (`git --no-pager`)                                                | [`git`](git/), [`chmod`](chmod/), [`rm`](rm/)                   | `.negatable()`                      |
 | The later of two conflicting flags winning (`head -q -v`)                                                   | [`cp`](cp/), [`head`](head/), [`ls`](ls/), [`find`](find/)      | `lastWins`                          |
 | Passing a trailing command through untouched (`ssh host ls -la`)                                            | [`ssh`](ssh/)                                                   | `optionsEndAtFirstOperand`          |
 | An operand that disappears when an option supplies it (`cp -t DIR`)                                         | [`cp`](cp/), [`mv`](mv/), [`chmod`](chmod/)                     | `.absentWhen()`                     |
-| An input required only when another is absent                                                               | [`rm`](rm/)                                                     | `.requiredUnless()`                 |
+| An input required only when another is absent                                                               | [`rm`](rm/)                                                     | `.optionalWhen()`                   |
 | An option whose value may be omitted (`ls --color` vs `--color=never`)                                      | [`cp`](cp/), [`git`](git/), [`ls`](ls/), [`mv`](mv/)            | `.optionalValue()`                  |
+| A short whose value must be glued (`find -O3`, where `-O 3` is refused)                                     | [`find`](find/)                                                 | `.gluedValue()`                     |
 | Bare `key=value` operands, no dashes anywhere (`dd if=x bs=4M`)                                             | [`dd`](dd/)                                                     | operand-only surfaces               |
 | The obsolete digit-short form (`head -20`)                                                                  | [`head`](head/), [`git`](git/), [`task-manager`](task-manager/) | `numberOption`                      |
-| Two spellings of one quantity read off one handle (`head -5` / `head -n 5`)                                 | [`head`](head/), [`git`](git/), [`task-manager`](task-manager/) | `lastOneWins`                       |
-| A single-dash token that should bind as an operand, not an option (`chmod -w f`)                            | [`chmod`](chmod/)                                               | `.dashLed()`                        |
+| Two spellings of one quantity read off one handle (`head -5` / `head -n 5`)                                 | [`head`](head/), [`git`](git/), [`task-manager`](task-manager/) | `lastOf`                            |
+| Single-dash words that bind as one operand, not as options (`chmod -w -x f`)                                | [`chmod`](chmod/)                                               | `.dashLed(gather) { }`              |
 | A subcommand tree with aliases (`git add` / `git stage`)                                                    | [`git`](git/)                                                   | `command { }`, `aliases`            |
 | Help split into sections on a wide flat tool                                                                | [`curl`](curl/), [`ls`](ls/)                                    | `group { }`                         |
 | A value restricted to a fixed set (`--sort=WORD`)                                                           | [`cp`](cp/), [`ls`](ls/), [`git`](git/)                         | `.choice()`                         |
-| A value parsed into your own enum                                                                           | [`task-manager`](task-manager/)                                 | `.enum<E>()`                        |
-| A number with bounds (`--max-time`, `-p PORT`)                                                              | [`find`](find/), [`ssh`](ssh/), [`curl`](curl/)                 | `.int()`, `.range()`                |
+| A value parsed into your own enum                                                                           | [`mv`](mv/), [`task-manager`](task-manager/)                    | `.enum<E>()`                        |
+| A number with bounds (`--max-time`, `-p PORT`)                                                              | [`ssh`](ssh/), [`curl`](curl/)                                  | `.int()`, `.range()`                |
 | Rejecting a malformed value with your own message                                                           | [`head`](head/), [`mkdir`](mkdir/), [`git`](git/)               | `.validate()`                       |
 | Rejecting a value only wrong because of another input (`--due` in the past unless `--done`)                 | [`task-manager`](task-manager/)                                 | `validateInputs { }`                |
 | An input kept out of `--help`                                                                               | [`git`](git/), [`task-manager`](task-manager/)                  | `hidden`                            |
-| Taking `-h` back from klap so it can mean something else                                                    | [`ls`](ls/)                                                     | `builtins { }`                      |
+| `-h` as the help, as `git -h` and `pacman -h` are                                                           | [`git`](git/), [`pacman`](pacman/)                              | `Help.ByCommand(short = 'h')`       |
 | Tab completion that reads your CLI's own parsed inputs                                                      | [`task-manager`](task-manager/), [`chmod`](chmod/), [`dd`](dd/) | `completeWith { }`                  |
 | An option that may appear many times (`curl -H a -H b`)                                                     | [`git`](git/), [`ssh`](ssh/), [`curl`](curl/)                   | `.multiple()`                       |
 | An action that suspends, with real cancellation reaching it from the caller's scope (`pulse watch`, Ctrl-C) | [`pulse`](pulse/)                                               | `actionSuspending`, `runSuspending` |
 
 Every row above was checked against a real call, not a mention in a comment. One construct klap offers
 has **no example here yet**, so read the guide for it:
-[`requiredIf`](../docs/guide.md#cross-input-constraints) (required only when another input is present).
+[`requiredWhen`](../docs/guide.md#cross-input-constraints) (required only when another input is present).
 
 ## The tool fixtures
 
@@ -91,8 +92,32 @@ implementation of it.
 **`binds` compares the whole record**, and that is the point rather than a detail. `NOTHING_BOUND` is the
 fixture's no-arguments baseline, so a case names only what its line supplies and every other field is
 pinned to its default by omission. That is what catches the inputs a line affects *indirectly*: `cp`'s
-`-dbuHpZ` sets `dereferenceArgs` through `lastWins` without naming it, and `pacman`'s `-Syyu` implies
+`-dbuHpZ` sets `backup` and `update` without naming either, and `pacman`'s `-Syyu` implies
 `sync`. Assertions written field by field only ever test the fields someone remembered to name.
+
+### Fixture progress
+
+A fixture is done when its tests cover the [testing matrix](../.claude/skills/fixture-parity/references/testing-matrix.md)
+with expectations taken from the installed tool, and every target among them passes. A target is a test the fixture
+or klap fails today, kept under `@Ignore("TDD target: ...")` and filed in [`todo.md`](../todo.md).
+
+| tool   | tested against       | fixture progress                                                                           |
+|--------|----------------------|--------------------------------------------------------------------------------------------|
+| pacman | pacman 7.1.0         | done: 171 tests, every target passes; 3 kept as records of pacman quirks (todo 36, 61)     |
+| cp     | GNU coreutils 9.12   | done: 179 tests, every target passes; 1 kept as a record (todo 89)                         |
+| chmod  | GNU coreutils 9.12   | done: 103 tests, every target passes                                                       |
+| curl   | curl 8.22.0          | not yet done                                                                               |
+| dd     | GNU coreutils 9.12   | not yet done                                                                               |
+| find   | GNU findutils 4.11.0 | done: 201 tests, every target passes; 9 kept as records (F1, todo 48a, 67, 72, 75)         |
+| git    | git 2.56.0           | not yet done                                                                               |
+| head   | GNU coreutils 9.12   | not yet done                                                                               |
+| ls     | GNU coreutils 9.12   | not yet done                                                                               |
+| mkdir  | GNU coreutils 9.12   | not yet done                                                                               |
+| mv     | GNU coreutils 9.12   | done: 174 tests, every target passes; 1 kept as a record (todo 89)                         |
+| rm     | GNU coreutils 9.12   | not yet done                                                                               |
+| rsync  | rsync 3.5.1          | not yet done                                                                               |
+| ssh    | OpenSSH 10.6p1       | not yet done                                                                               |
+| tar    | GNU tar 1.35         | not yet done                                                                               |
 
 ### How a fixture is shaped
 
@@ -121,10 +146,12 @@ own `projection { }` and the root combines them with `dispatch(...)`, giving a s
 variants a caller matches exhaustively. `remote` both acts and nests, so its own block ends in
 `dispatch(remoteAdd, remoteRemove, projection { ... })`.
 
-Every fixture is measured against the real tool, at a version pinned in its `version =` line: GNU
-coreutils 9.11, git 2.55.0, curl 8.21.0, pacman 7.1.0, rsync 3.4.4, GNU tar 1.35. Two stand apart. `ssh`
-declares no version at all, matching real ssh, which answers `-V` and has no `--version`. `find` carries
-`0.0-study`, since it transliterates find's expression grammar rather than reproducing it. Where klap
+Every fixture is measured against the real tool. Its `version =` line prints, word for word, what that tool's
+`--version` printed when it was pinned (2026-10-10), and a `<Tool>VersionTest` holds the text: GNU coreutils 9.12,
+GNU findutils 4.11.0, git 2.56.0, curl 8.22.0, OpenSSH 10.6p1, pacman 7.1.0, rsync 3.5.1, GNU tar 1.35. Older
+evidence comments name the release they were run against (coreutils 9.11, git 2.55.0, curl 8.21.0, rsync 3.4.4).
+`ssh` answers `-V` and has no `--version`, as `Version.Of("10.6p1", short = 'V')` declares. `find` transliterates find's
+expression grammar rather than reproducing it, but prints the installed find's version all the same. Where klap
 cannot reproduce something, the file says so in a `KLAP-GAP` comment rather than quietly working around
 it, so a gap stays visible.
 
@@ -144,11 +171,11 @@ The tools, and why each is in the suite:
 | [`find`](find/)          | an expression language rather than an option list, and where that stops fitting                                                                            |
 | [`ssh`](ssh/)            | a wrapper: everything after the destination belongs to the remote command                                                                                  |
 | [`curl`](curl/)          | a wide flat tool whose help needs sections, repeatable headers                                                                                             |
-| [`tar`](tar/)            | value-taking clusters (`-cvf out.tar`), and both exclusivity shapes side by side: `requireExactlyOne` for `-c`/`-x`/`-t`, `requireAtMostOne` for `-z`/`-j` |
+| [`tar`](tar/)            | value-taking clusters (`-cvf out.tar`), and both exclusivity shapes side by side: `exactlyOne` for `-c`/`-x`/`-t`, `atMostOne` for `-z`/`-j`               |
 | [`dd`](dd/)              | no flags and no options at all, only bare `key=value` operands                                                                                             |
 | [`cp`](cp/), [`mv`](mv/) | three synopsis forms, and an operand that moves into an option                                                                                             |
-| [`chmod`](chmod/)        | a mode operand that looks like an option, opted in with `dashLed()` (`chmod -w notes.txt`)                                                                 |
-| [`rm`](rm/)              | negatable interactivity flags, an input required unless another is present                                                                                 |
+| [`chmod`](chmod/)        | a mode operand that looks like an option, gathered with `dashLed(gather) { }` (`chmod -w -x notes.txt`)                                                    |
+| [`rm`](rm/)              | negatable interactivity flags, an operand optional when another input is present                                                                           |
 | [`ls`](ls/)              | many small format/sort flags that override one another                                                                                                     |
 | [`head`](head/)          | the obsolete `head -20` digit short, dash-led values (`-n -5`)                                                                                             |
 | [`mkdir`](mkdir/)        | the small end: a validated option and one variadic operand                                                                                                 |
@@ -156,23 +183,26 @@ The tools, and why each is in the suite:
 
 ### What each fixture declares about `abbreviation`
 
-`Abbreviation` (see the [guide](../docs/guide.md#abbreviation)) is root-only and defaults to `None`, so a
-fixture that wants to reproduce a real tool's abbreviation behaviour states so explicitly:
+`Abbreviation` (see the [guide](../docs/guide.md#abbreviation)) is root-only and defaults to `LongOptions`,
+getopt_long's rule. Every fixture but one states its mode explicitly, so the tool's abbreviation behaviour is
+visible in its file:
 
 | Mode                                          | Fixtures                                                                                                                                                                                                                                                                                                                                                     |
 |-----------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `Abbreviation.Options`                        | `chmod`, `cp`, `dd`, `git`, `head`, `ls`, `mkdir`, `mv`, `pacman`, `rm`, `tar` — eleven, including **all eight coreutils stubs**, which go through `getopt_long` without exception, plus `git`, whose subcommands' options abbreviate the same way — though its top-level ones do not, since real git refuses abbreviation there and the switch is root-only |
-| `Abbreviation.None` (declared, not inherited) | `curl`, `rsync` — both match long options exactly, and both say so rather than inheriting the default silently                                                                                                                                                                                                                                               |
+| `Abbreviation.Options`                        | `chmod`, `cp`, `dd`, `git`, `head`, `ls`, `mkdir`, `mv`, `rm`, `tar` — ten, including **all eight coreutils stubs**, which go through `getopt_long` without exception, plus `git`, whose subcommands' options abbreviate the same way — though its top-level ones do not, since real git refuses abbreviation there and the switch is root-only              |
+| `Abbreviation.LongOptions` (declared)         | `pacman`: a long option abbreviates but a value only in full, so `pacman --quer` is `--query` and `pacman -Q --color=al` is refused                                                                                                                                                                                                                          |
+| `Abbreviation.None` (declared, not inherited) | `curl`, `find`, `rsync` — each matches long options exactly, and each says so rather than inheriting the default silently                                                                                                                                                                                                                                    |
 | `Abbreviation.All`                            | `task-manager`, the showcase                                                                                                                                                                                                                                                                                                                                 |
-| left on the ambient default                   | `ssh`, `find`                                                                                                                                                                                                                                                                                                                                                |
+| left on the ambient default                   | `ssh`                                                                                                                                                                                                                                                                                                                                                        |
 
-The last row is exempt for two different reasons, not one:
+The last row is exempt because **`ssh`** has no long options at all — `ssh --help` itself answers `unknown
+option -- -` — so abbreviation would be a no-op on the real tool. The fixture's `--port`, `--login` and the rest
+are klap's own invented spellings for readability, not surface `ssh` has to abbreviate.
 
-- **`ssh`** has no long options at all — `ssh --help` itself answers `unknown option -- -` — so abbreviation
-  would be a no-op on the real tool. The fixture's `--port`, `--login` and the rest are klap's own invented
-  spellings for readability, not surface `ssh` has to abbreviate.
-- **`find`** is unverified: the machine this suite was built on runs `bfs`, not GNU findutils, so real GNU
-  find's abbreviation behaviour was never checked. Left on the default rather than guessed at.
+A long abbreviates against the longs of the command it is typed at, its globals and klap's built-ins, as each GNU
+tool hands getopt_long its own table: `git branch --f` weighs only `git branch`'s options, never a sibling's.
+pacman's operations are flag-spelled commands, which share one table with the root as pacman's are options of one
+getopt_long table, so `pacman -Q --no` stays ambiguous among every `--no...` pacman has.
 
 ## The task-manager showcase
 
@@ -194,7 +224,7 @@ The JSON store is not a klap concern, but it is worth a look if you are copying 
 load-modify-save runs under a lock, so two invocations sharing one `--file` cannot silently drop each
 other's writes.
 
-It is also where to look for **clustered short options**, the most recognisable thing about a POSIX CLI:
+It is also where to look for **clustered short options**, the most recognisable thing about a GNU-style CLI:
 
 ```bash
 klapExample list -rl                 # a pure boolean cluster: --reverse --long

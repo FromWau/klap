@@ -36,6 +36,25 @@ class AbbreviationModeTest {
     }
 
     @Test
+    fun `an empty long name is unknown under none and ambiguous when longs infer`() {
+        // `ls --=x` on coreutils 9.12: "option '--=x' is ambiguous; possibilities: ...", every long ls has.
+        assertEquals(
+            "--=x",
+            tree(Abbreviation.None).parse(listOf("--=x", "f")).assertError<CliError.UnknownOption>().token,
+        )
+        for (mode in listOf(Abbreviation.LongOptions, Abbreviation.Options, Abbreviation.All)) {
+            assertEquals(
+                CliError.AmbiguousOption(
+                    "--=x",
+                    listOf("--recursive", "--reference", "--help", "--json", "--color", "--completion", "--docs"),
+                ),
+                tree(mode).parse(listOf("--=x", "f")).assertError<CliError.AmbiguousOption>(),
+                mode.name,
+            )
+        }
+    }
+
+    @Test
     fun `long options infers a long option prefix`() {
         for (mode in listOf(Abbreviation.LongOptions, Abbreviation.Options, Abbreviation.All)) {
             assertEquals("r=true ref=null", tree(mode).bindText("--recu", "f"), mode.name)
@@ -50,6 +69,7 @@ class AbbreviationModeTest {
     @Test
     fun `none keeps the short and the full builtin spellings`() {
         val strict = cli("t") {
+            builtins { help = Help.ByCommand(short = 'h') }
             abbreviation = Abbreviation.None
             version = Version.Of("1.0")
             action<String>(human = { it }) { Ok("ran") }
@@ -92,7 +112,7 @@ class AbbreviationModeTest {
     private fun head(mode: Abbreviation) = cli("head") {
         abbreviation = mode
         val named = option(short = 'n', long = "lines")
-        val lines = lastOneWins(named, numberOption())
+        val lines = lastOf(named, numberOption())
         argument("file").multiple()
         action<String>(human = { it }) { Ok("n=${lines()}") }
     }
@@ -260,14 +280,14 @@ class AbbreviationModeTest {
             abbreviation = Abbreviation.Options
             action<String>(human = { it }) { Ok("ran") }
         }
-        tree.parse(listOf("--color", "al")).assertSuccess()
-        tree.parse(listOf("--color", "a")).assertError<CliError.AmbiguousValue>()
+        tree.parse(listOf("--color=al")).assertSuccess()
+        tree.parse(listOf("--color=a")).assertError<CliError.AmbiguousValue>()
         val longOnly = cli("t") {
             abbreviation = Abbreviation.LongOptions
             action<String>(human = { it }) { Ok("ran") }
         }
-        longOnly.parse(listOf("--col", "always")).assertSuccess()
-        longOnly.parse(listOf("--color", "al")).assertError<CliError>()
+        longOnly.parse(listOf("--col=always")).assertSuccess()
+        longOnly.parse(listOf("--color=al")).assertError<CliError.InvalidChoice>()
     }
 
     @Test

@@ -3,10 +3,8 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.assertError
-import com.fromwau.kern.result.assertSuccess
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
@@ -290,18 +288,6 @@ class ArgvOrderInvarianceTest {
             },
         ) { "config=${config()} verbose=${verbose()} node=${node()}" }
         assertEquals("Execute(drain json=false config=prod.toml verbose=true node=n1)", baseline)
-    }
-
-    // The one place order decides on purpose (owner, 2026-10-10): GNU coreutils answers whichever of --help and
-    // --version came first (`ls --help --version` prints the usage, `ls --version --help` the version).
-    @Test
-    fun `--help and --version answer whichever the line gives first`() {
-        val app = cli("app") {
-            version = Version.Of("1.0.0")
-            action { Ok("") }
-        }
-        assertTrue(app.parse(listOf("--help", "--version")).assertSuccess() is Invocation.ShowHelp)
-        assertTrue(app.parse(listOf("--version", "--help")).assertSuccess() is Invocation.ShowVersion)
     }
 
     // GUIDE: "--version does honour it, printing {name, version} instead of the plain line", and --json is

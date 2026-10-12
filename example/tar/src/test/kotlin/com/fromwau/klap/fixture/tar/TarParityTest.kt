@@ -67,7 +67,7 @@ class TarParityTest {
     }
 
     /**
-     * The two exclusivity rules, enforced by `requireExactlyOne`/`requireAtMostOne` at parse time. The
+     * The two exclusivity rules, enforced by `exactlyOne`/`atMostOne` at parse time. The
      * mode conflict outranks the missing `--file` a later bind would raise, which is GNU tar's order too.
      */
     @Test

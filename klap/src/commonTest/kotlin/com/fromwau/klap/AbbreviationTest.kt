@@ -43,7 +43,14 @@ class AbbreviationTest {
     @Test
     fun `an unmatched spelling is none`() {
         assertEquals(NameMatch.None, resolveLong("nope", pool, infer = true))
-        assertEquals(NameMatch.None, resolveLong("", pool, infer = true))
+    }
+
+    @Test
+    fun `an empty name is a prefix of every long`() {
+        // getopt -o '' -l beta: -- --=x gives " --beta 'x'"; `ls --=x` is ambiguous among all of ls's longs.
+        assertEquals(NameMatch.Prefix("beta"), resolveLong("", listOf("beta"), infer = true))
+        assertEquals(NameMatch.Ambiguous(pool), resolveLong("", pool, infer = true))
+        assertEquals(NameMatch.None, resolveLong("", pool, infer = false))
     }
 
     @Test
@@ -108,20 +115,23 @@ class AbbreviationTest {
     }
 
     @Test
-    fun `the injected help all answers to its full spelling only`() {
+    fun `help all takes no part in the prefixes of help`() {
         val tree = cli("t") {
             abbreviation = Abbreviation.Options
+            builtins { help = Help.ByTree() }
             command("build") { action<String>(human = { it }) { Ok("built") } }
         }
-        // --help-all is klap's, not the author's, so it takes no part in prefix resolution: letting it claim
-        // the space it shares with --help would cost every CLI in the world its `--h`.
-        for (typed in listOf("--h", "--he", "--hel")) {
+        // getopt -o '' -l help,help-all -- --he calls --he ambiguous; klap keeps `--h` to `--help` for --help,
+        // which every CLI offers, and leaves --help-all the prefixes only it has.
+        for (typed in listOf("--h", "--he", "--hel", "--help")) {
             val shown = tree.parse(listOf(typed)).assertSuccess()
             assertFalse(assertIs<Invocation.ShowHelp>(shown).recursive, typed)
         }
-        // Spelled out, it still reaches the recursive form.
-        val all = tree.parse(listOf("--help-all")).assertSuccess()
-        assertTrue(assertIs<Invocation.ShowHelp>(all).recursive)
+        // getopt -o '' -l help,help-all -- --help- gives " --help-all".
+        for (typed in listOf("--help-", "--help-a", "--help-al", "--help-all")) {
+            val all = tree.parse(listOf(typed)).assertSuccess()
+            assertTrue(assertIs<Invocation.ShowHelp>(all).recursive, typed)
+        }
     }
 
     @Test
@@ -241,22 +251,43 @@ class AbbreviationTest {
     }
 
     @Test
-    fun `an abbreviation the pre strip declined is never unknown at the command`() {
+    fun `a builtin abbreviates at a command whose sibling declares a long it shares`() {
         val tree = cli("app") {
             abbreviation = Abbreviation.Options
             command("fetch") {
                 val collate = option(long = "collate")
                 action<String>(human = { it }) { Ok("collate=${collate()}") }
             }
+            command("build") {
+                val files = argument("file").multiple(min = 0)
+                action<String>(human = { it }) { Ok("files=${files()}") }
+            }
+        }
+        // build's table holds no --collate: getopt -o '' -l color:: -- --col never gives " --color '' -- 'never'".
+        assertEquals("files=[never]", tree.bindText("build", "--col", "never"))
+        // getopt -o '' -l collate:,color:: -- --col x: "option '--col' is ambiguous; possibilities: '--collate'
+        // '--color'"
+        assertEquals(
+            CliError.AmbiguousOption("--col", listOf("--collate", "--color")),
+            tree.parse(listOf("fetch", "--col", "x")).assertError<CliError.AmbiguousOption>(),
+        )
+        assertEquals("collate=x", tree.bindText("fetch", "--colla", "x"))
+    }
+
+    @Test
+    fun `a builtin abbreviated at a command paints as the parse reads it`() {
+        val tree = cli("app") {
+            abbreviation = Abbreviation.Options
+            command("fetch") {
+                option(long = "collate")
+                action<String>(human = { it }) { Ok("fetched") }
+            }
             command("build") { action<String>(human = { it }) { Ok("built") } }
         }
-        // --color is stripped before the walk, so `--col` is declined there against the tree's --collate.
-        // `build` declares no --collate itself, and must still report what the pre-strip saw rather than
-        // claiming a token klap has just refused to resolve does not exist.
-        val expected = CliError.AmbiguousOption("--col", listOf("--collate", "--color"))
-        assertEquals(expected, tree.parse(listOf("build", "--col")).assertError<CliError.AmbiguousOption>())
-        assertEquals(expected, tree.parse(listOf("fetch", "--col")).assertError<CliError.AmbiguousOption>())
-        assertEquals("collate=x", tree.bindText("fetch", "--colla", "x"))
+        // RecordingTerminal reports no ANSI, so an escape in build's help means the run read `--col` as --color.
+        val painted = RecordingTerminal()
+        tree.run(listOf("build", "--col", "--help"), painted)
+        assertTrue(Char(27) in painted.out.toString(), painted.out.toString())
     }
 
     private fun addListDispatcher() = cli("app") {
@@ -276,12 +307,43 @@ class AbbreviationTest {
         }
     }
 
+    private fun siblings() = cli("t") {
+        abbreviation = Abbreviation.LongOptions
+        version = Version.Of("1.0")
+        command("a") {
+            val verbatim = flag(long = "verbatim")
+            action<String>(human = { it }) { Ok("verbatim=${verbatim()}") }
+        }
+        command("b") {
+            val verbose = flag(long = "verbose")
+            action<String>(human = { it }) { Ok("verbose=${verbose()}") }
+        }
+        command("c") { action<String>(human = { it }) { Ok("c") } }
+    }
+
+    @Test
+    fun `an abbreviation resolves against its own command's longs and not a sibling's`() {
+        // A GNU tool calls getopt_long with the reached command's table: getopt -o '' -l verbose -- --verb.
+        assertEquals("verbose=true", siblings().bindText("b", "--verb"))
+        assertEquals("verbatim=true", siblings().bindText("a", "--verb"))
+    }
+
+    @Test
+    fun `a sibling's long never declines a builtin abbreviation`() {
+        // getopt -o '' -l version,help -- --ver gives " --version": c declares nothing that shares the prefix.
+        assertIs<Invocation.ShowVersion>(siblings().parse(listOf("c", "--ver")).assertSuccess())
+        assertIs<Invocation.ShowVersion>(siblings().parse(listOf("--ver")).assertSuccess())
+        // At b it reaches both, as head's does: getopt -o '' -l verbose,version -- --ver.
+        assertEquals(
+            CliError.AmbiguousOption("--ver", listOf("--verbose", "--version")),
+            siblings().parse(listOf("b", "--ver")).assertError<CliError.AmbiguousOption>(),
+        )
+    }
+
     @Test
     fun `an ambiguous prefix neither sibling declares is unknown there`() {
         val tree = addListDispatcher()
-        // --limit/--long belong to `list` alone; unlike the pinned pre-strip case above, `add` reaches
-        // NEITHER spelling, so there is no remaining possibility left to report and the honest answer is
-        // that `--l` names nothing this command could ever bind.
+        // --limit/--long belong to `list` alone, so at `add`, whose table holds neither, `--l` names nothing.
         val err = tree.parse(listOf("add", "x", "--l")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("--l", null), err)
     }
@@ -295,12 +357,10 @@ class AbbreviationTest {
     }
 
     @Test
-    fun `exactly one reachable candidate keeps the full unfiltered list`() {
+    fun `a prefix reaching one long of this command binds it`() {
         val tree = addListDispatcher()
-        // `show` declares only --limit, so --long is unreachable there; the pinned decision above still
-        // reports the full, unfiltered list rather than silently collapsing to the one survivor.
-        val err = tree.parse(listOf("show", "--l")).assertError<CliError.AmbiguousOption>()
-        assertEquals(CliError.AmbiguousOption("--l", listOf("--limit", "--long")), err)
+        // `show` declares only --limit: getopt -o '' -l limit: -- --l x gives " --limit 'x' --".
+        assertEquals("limit=x", tree.bindText("show", "--l", "x"))
     }
 
     @Test
@@ -341,12 +401,11 @@ class AbbreviationTest {
             CliError.AmbiguousOption("--col", listOf("--collate", "--color")),
             tree.parse(listOf("sub", "--col", "never")).assertError<CliError.AmbiguousOption>(),
         )
-        // Ahead of the subcommand the walk stops at the group, which binds nothing either way. It still
-        // reports the ambiguity rather than an unknown option: the tree declares `--collate` somewhere, so
-        // saying no such option exists would contradict the pre-strip that just declined to resolve it.
+        // Ahead of the subcommand only the root's table applies, where --col is --color and `never` an operand,
+        // getopt -o '' -l color:: -- --col never sub gives " --color '' -- 'never' 'sub'".
         assertEquals(
-            CliError.AmbiguousOption("--col", listOf("--collate", "--color")),
-            tree.parse(listOf("--col", "never", "sub")).assertError<CliError.AmbiguousOption>(),
+            "never",
+            tree.parse(listOf("--col", "never", "sub")).assertError<CliError.UnknownSubcommand>().token,
         )
         assertEquals("collate=never files=[f]", tree.bindText("sub", "--colla", "never", "f"))
     }

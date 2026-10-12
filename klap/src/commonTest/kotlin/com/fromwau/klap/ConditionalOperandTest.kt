@@ -43,7 +43,7 @@ class ConditionalOperandTest {
 
     private fun rmLike() = cli("rm") {
         val force = flag(short = 'f', long = "force")
-        val files = argument("file").multiple(min = 1).requiredUnless(force)
+        val files = argument("file").multiple(min = 1).optionalWhen(force)
         action<String>(human = { it }) { Ok("files=${files()}") }
     }
 
@@ -70,7 +70,7 @@ class ConditionalOperandTest {
     fun `the usage line and the argument row both say when the slot disappears`() {
         val lines = chmodLike().helpLines()
         assertEquals("usage: chmod [<mode>] <file>... [options]", lines.first())
-        assertEquals("[<mode>]  (absent with --reference)", lines.rowMentioning("mode"))
+        assertEquals("[<mode>]  (absent when --reference)", lines.rowMentioning("mode"))
     }
 
     @Test
@@ -90,7 +90,7 @@ class ConditionalOperandTest {
         // `[file...]` is real rm's own synopsis (`rm [OPTION]... [FILE]...`), so the relaxed minimum has to
         // reach the usage line for the two to agree.
         assertEquals("usage: rm [file...] [options]", lines.first())
-        assertEquals("<file>  (optional with --force; repeatable, min 1)", lines.rowMentioning("file"))
+        assertEquals("<file>  (optional when --force; repeatable, min 1)", lines.rowMentioning("file"))
     }
 
     @Test
@@ -112,11 +112,11 @@ class ConditionalOperandTest {
         val e = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 val force = flag(short = 'f', long = "force")
-                val out = argument("out").requiredUnless(force)
+                val out = argument("out").optionalWhen(force)
                 action<String>(human = { it }) { Ok("out=${out()}") }
             }
         }
-        assertTrue(".requiredUnless(--force) on a slot that is not .multiple()" in e.message.orEmpty(), e.message)
+        assertTrue(".optionalWhen(--force) on a slot that is not .multiple()" in e.message.orEmpty(), e.message)
     }
 
     private fun cpLike() = cli("cp") {
@@ -146,7 +146,7 @@ class ConditionalOperandTest {
         val force = flag(short = 'f', long = "force")
         val interactive = flag(short = 'i', long = "interactive")
         lastWins(force, interactive)
-        val files = argument("file").multiple(min = 1).requiredUnless(force)
+        val files = argument("file").multiple(min = 1).optionalWhen(force)
         action<String>(human = { it }) { Ok("force=${force()} files=${files()}") }
     }
 
@@ -187,7 +187,7 @@ class ConditionalOperandTest {
             cli("app") {
                 val force = globalFlag(short = 'f', long = "force")
                 command("go") {
-                    argument("file").multiple(min = 1).requiredUnless(force)
+                    argument("file").multiple(min = 1).optionalWhen(force)
                     action { Ok("") }
                 }
             }

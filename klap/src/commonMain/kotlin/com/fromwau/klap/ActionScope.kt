@@ -1,6 +1,7 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.terminal.Style
+import com.fromwau.klap.internal.parse.Line
 import com.fromwau.klap.internal.spec.HolderSpec
 
 /**
@@ -35,12 +36,13 @@ public class ActionScope internal constructor(
      * does. It is always `false` for a CLI that declined the built-in with `builtins { json = Builtin.Off }`.
      */
     public val json: Boolean = false,
+    override val line: Line = Line.EMPTY,
 ) : ValueScope(), ColorScope {
     override fun Style.invoke(block: () -> String): String = render(block(), colorEnabled)
     override fun Style.invoke(text: String): String = render(text, colorEnabled)
 
     /** Rebuilds this scope carrying the same bound values but the resolved color switch from run(). */
-    internal fun withColorEnabled(enabled: Boolean): ActionScope = ActionScope(values, enabled, json)
+    internal fun withColorEnabled(enabled: Boolean): ActionScope = ActionScope(values, enabled, json, line)
 
     override fun unbound(spec: HolderSpec): Nothing =
         error(

@@ -19,16 +19,11 @@ import com.fromwau.klap.internal.spec.requireValidName
 import com.fromwau.klap.internal.spec.shorts
 import com.fromwau.klap.internal.spec.token
 
-/**
- * Long names silently consumed by klap's pre-strip/help injection at every command level, for a root whose
- * [builtins] resolved this way. `help`/`version` are always injected — `builtins { }` cannot decline them —
- * so they are reserved unconditionally, `help-all` wherever the tree has a subcommand for it to expand; the
- * rest free their name when declined.
- */
+/** Long names klap's own built-ins answer to at every command level; a declined built-in frees its name. */
 private fun reservedLongNames(builtins: Builtins): Set<String> = buildSet {
     if (builtins.help) add("help")
     if (builtins.helpAll) add("help-all")
-    add(builtins.versionLong)
+    builtins.versionLong?.let(::add)
     if (builtins.json) add("json")
     if (builtins.completion) add("completion")
     if (builtins.docs) add("docs")
@@ -75,7 +70,8 @@ internal fun validatePositionals(name: String, specs: List<HolderSpec>) {
     require(
         positionals.none {
             val cardinality = it.cardinality
-            it.hidden && (cardinality == Cardinality.Required || (cardinality is Cardinality.Multiple && cardinality.min >= 1))
+            it.hidden &&
+                (cardinality == Cardinality.Required || (cardinality is Cardinality.Multiple && cardinality.min >= 1))
         }
     ) {
         "command '$name': a mandatory positional cannot be hidden (the user must supply an argument they cannot see)"
@@ -122,20 +118,20 @@ internal fun validateLastWinsMembers(name: String, constraints: List<InputConstr
 }
 
 /**
- * The two cardinalities a `lastOneWins` fold can never satisfy, both because the fold's own [OptionSpec]
+ * The two cardinalities a `lastOf` fold can never satisfy, both because the fold's own [OptionSpec]
  * never gets a raw occurrence (only its members do). `.required()` makes `bindFlagsAndOptions` take the
  * missing-required branch on every line, even one that supplied a member, and name the fold's synthetic
  * label, which nothing on the command line spells. `.multiple()` leaves `resolveFolds` writing
  * [com.fromwau.klap.internal.parse.absentValue] — null — into an accessor whose own type is a non-null
  * `List`, and the NPE lands inside user code.
  *
- * Checked over the finished spec list rather than inside `lastOneWins(...)`: both mutate the shared spec and
- * may legally run after the `lastOneWins(...)` line, so a check at the call site would pass or fail on
+ * Checked over the finished spec list rather than inside `lastOf(...)`: both mutate the shared spec and
+ * may legally run after the `lastOf(...)` line, so a check at the call site would pass or fail on
  * declaration order alone. Same reasoning as [validateLastWinsMembers].
  */
 internal fun validateFoldCardinality(name: String, specs: List<HolderSpec>) {
     for (spec in specs.filterIsInstance<OptionSpec>().filter { it.folds.isNotEmpty() }) {
-        val fold = "lastOneWins(${spec.folds.joinToString(", ") { it.constraintToken() }})"
+        val fold = "lastOf(${spec.folds.joinToString(", ") { it.constraintToken() }})"
         require(spec.cardinality != Cardinality.Required) {
             "command '$name': $fold cannot be .required(); the fold itself is never written, so require " +
                 "one of its members instead"
@@ -150,9 +146,9 @@ internal fun validateFoldCardinality(name: String, specs: List<HolderSpec>) {
 /**
  * Two rules over a conditional operand, both checkable only once the spec list is finished.
  *
- * The trigger must be one of this command's own inputs, and `.absentWhen()`/`.requiredUnless()` write it
+ * The trigger must be one of this command's own inputs, and `.absentWhen()`/`.optionalWhen()` write it
  * straight onto the shared [ArgumentSpec] from inside [com.fromwau.klap.ConverterScope], which never sees
- * that list (unlike [com.fromwau.klap.CommandBuilder.numberOption] or the `requireExactlyOne`/`lastWins`
+ * that list (unlike [com.fromwau.klap.CommandBuilder.numberOption] or the `exactlyOne`/`lastWins`
  * family, both implemented on [BuilderImpl] itself, where the list lives).
  *
  * Each also pairs with exactly one cardinality, and `.multiple()` mutates the shared spec and may legally
@@ -172,15 +168,25 @@ internal fun validateConditionalOperandTriggers(name: String, specs: List<Holder
                     "which is not declared on '$name'; a trigger must be one of this command's own inputs"
             }
         }
-        spec.relaxedWhen?.let { trigger ->
+        for ((trigger, n) in spec.capsWhen) {
+            require(spec.cardinality is Cardinality.Multiple) {
+                "command '$name': argument '${spec.name}' declares .atMostWhen(${trigger.constraintToken()}, $n) " +
+                    "on a slot that is not .multiple(); only a variadic takes more than one operand to cap"
+            }
+            require(specs.any { it === trigger }) {
+                "command '$name': argument '${spec.name}' declares .atMostWhen(${trigger.constraintToken()}, $n), " +
+                    "which is not declared on '$name'; a trigger must be one of this command's own inputs"
+            }
+        }
+        spec.optionalWhen?.let { trigger ->
             require(spec.cardinality is Cardinality.Multiple) {
                 "command '$name': argument '${spec.name}' declares " +
-                    ".requiredUnless(${trigger.constraintToken()}) on a slot that is not .multiple(); the " +
+                    ".optionalWhen(${trigger.constraintToken()}) on a slot that is not .multiple(); the " +
                     "call drops a declared minimum to zero, and only a variadic has one, so the slot would " +
                     "stay mandatory. Use .absentWhen(${trigger.constraintToken()}) to remove the slot instead"
             }
             require(specs.any { it === trigger }) {
-                "command '$name': argument '${spec.name}' declares .requiredUnless(${trigger.constraintToken()}), " +
+                "command '$name': argument '${spec.name}' declares .optionalWhen(${trigger.constraintToken()}), " +
                     "which is not declared on '$name'; a trigger must be one of this command's own inputs"
             }
         }
@@ -188,14 +194,48 @@ internal fun validateConditionalOperandTriggers(name: String, specs: List<Holder
 }
 
 /**
- * A `.requiredIf(flag)` trigger must be one of this command's own inputs or a global: the parse-time check
+ * A `dashLed(gather) { }` slot joins every word it takes into one value, so a command has one such slot and
+ * it is not `.multiple()`. Checked over the finished specs, since `.multiple()` may come after it.
+ */
+internal fun validateGatheringSlot(name: String, specs: List<HolderSpec>) {
+    val gathering = specs.filterIsInstance<ArgumentSpec>().filter { it.gather != null }
+    require(gathering.size <= 1) {
+        "command '$name': arguments ${gathering.joinToString { "'${it.name}'" }} each declare dashLed(gather); " +
+            "a dash word can gather into one slot only"
+    }
+    gathering.singleOrNull()?.let { spec ->
+        require(spec.cardinality !is Cardinality.Multiple) {
+            "command '$name': argument '${spec.name}' combines dashLed(gather) with .multiple(); the gathered " +
+                "words are joined into one value"
+        }
+    }
+}
+
+/**
+ * `.repeated()` sets what a second occurrence does, and a `.multiple()` option or a `.count()` flag takes every
+ * occurrence instead, so the two together say nothing coherent. Checked over the finished specs, since either
+ * call may come first.
+ */
+internal fun validateRepeatedPolicies(name: String, specs: List<HolderSpec>) {
+    for (spec in specs.filterIsInstance<NamedSpec>().filter { it.repeated != null }) {
+        val collects = (spec is OptionSpec && spec.cardinality is Cardinality.Multiple) ||
+            (spec is FlagSpec && spec.isCount)
+        require(!collects) {
+            "command '$name': '${spec.token()}' declares .repeated() but collects every occurrence through " +
+                ".multiple() or .count(), which no repeat policy applies to"
+        }
+    }
+}
+
+/**
+ * A `.requiredWhen(flag)` trigger must be one of this command's own inputs or a global: the parse-time check
  * reads only those, so a flag from an unrelated command could never fire the rule `--help` advertises.
  */
-internal fun validateRequiredIfTriggers(name: String, specs: List<HolderSpec>, globalSpecs: List<NamedSpec>) {
+internal fun validateRequiredWhenTriggers(name: String, specs: List<HolderSpec>, globalSpecs: List<NamedSpec>) {
     for (spec in specs.filterIsInstance<OptionSpec>()) {
         val trigger = spec.requiredWhen ?: continue
         require(specs.any { it === trigger } || globalSpecs.any { it === trigger }) {
-            "command '$name': option '${spec.token()}' declares .requiredIf(${trigger.token()}), which is " +
+            "command '$name': option '${spec.token()}' declares .requiredWhen(${trigger.token()}), which is " +
                 "not declared on '$name' or as a global; a trigger must be one of this command's own " +
                 "inputs or a global"
         }
@@ -213,6 +253,7 @@ internal fun revalidateAgainstLaterMutation(command: Command) {
     validateLastWinsMembers(command.name, command.constraints)
     validateFoldCardinality(command.name, command.specs)
     validateConditionalOperandTriggers(command.name, command.specs)
+    validateGatheringSlot(command.name, command.specs)
     command.subcommands.forEach(::revalidateAgainstLaterMutation)
 }
 
@@ -261,11 +302,16 @@ internal fun validateSubcommands(name: String, subs: List<Command>) {
     subs.forEach { requireUnreservedSectionTitle(name, "subcommand '${it.name}'", it.section) }
 }
 
+/** Every token this input answers to, a negatable flag's negative spellings included. */
+private val NamedSpec.allSpellings: List<String>
+    get() = if (this is FlagSpec) names + negationTokens else names
+
 /**
  * A flag-spelled command is found by its spelling anywhere among its parent's options, so that spelling must
  * name nothing else there: not one of the parent's own inputs, not a global, not a sibling's, and not one of the
  * command's own inputs, whose spelling the parent would take first. It has no word to alias.
  */
+
 internal fun validateFlagSpelledCommands(
     name: String,
     specs: List<HolderSpec>,
@@ -274,9 +320,7 @@ internal fun validateFlagSpelledCommands(
 ) {
     val flagSubs = subs.filter { it.isFlagSpelled }
     if (flagSubs.isEmpty()) return
-    val taken = (specs.filterIsInstance<NamedSpec>() + globalSpecs).flatMap { spec ->
-        spec.names + if (spec is FlagSpec) spec.negationTokens else emptyList()
-    }.toSet()
+    val taken = (specs.filterIsInstance<NamedSpec>() + globalSpecs).flatMap { it.allSpellings }.toSet()
     val duplicate = flagSubs.flatMap { it.flagSpellings }.firstDuplicate()
     require(duplicate == null) { "command '$name': two commands are spelled '$duplicate'" }
     for (sub in flagSubs) {
@@ -287,7 +331,7 @@ internal fun validateFlagSpelledCommands(
             require(spelling !in taken) {
                 "command '$name': command '${sub.token}' is spelled '$spelling', which an option or global already uses"
             }
-            require(sub.namedInputs.none { spelling in it.names }) {
+            require(sub.namedInputs.none { spelling in it.allSpellings }) {
                 "command '${sub.token}': one of its own inputs is spelled '$spelling', the command's own spelling"
             }
         }
@@ -403,8 +447,7 @@ internal fun validateNegationCollisions(name: String, specs: List<HolderSpec>) {
     val declaredNames = specs.filterIsInstance<NamedSpec>().flatMap { it.names }.toSet()
     val negatedNamesSeen = mutableSetOf<String>()
     for (spec in specs.filterIsInstance<FlagSpec>().filter { it.negatable }) {
-        val negations = spec.negationTokens
-        for (negation in negations) {
+        for (negation in spec.negationTokens) {
             require(negation !in declaredNames) {
                 "command '$name': flag '${spec.token()}' negation '$negation' collides with a declared option/flag name"
             }
@@ -457,10 +500,10 @@ internal fun validateGlobalCollisions(
                 }
             }
             if (spec is FlagSpec && spec.negatable) {
-                val negations = spec.negationTokens
-                for (negation in negations) {
+                for (negation in spec.negationTokens) {
                     require(negation !in globalEffectiveNameSet) {
-                        "command '$cmdName': flag '${spec.token()}' negation '$negation' collides with a global's name or a global's negation"
+                        "command '$cmdName': flag '${spec.token()}' negation '$negation' collides with a " +
+                            "global's name or a global's negation"
                     }
                 }
             }
@@ -501,6 +544,9 @@ internal fun validateReservedNames(
     val reservedLong = reservedLongNames(builtins)
     val reservedShort = reservedShortNames(builtins)
 
+    fun ownerOf(short: String): String =
+        if (short == builtins.helpShort?.toString()) "--help" else builtins.versionLong?.let { "--$it" } ?: "version"
+
     fun check(commandName: String, specs: List<HolderSpec>, globals: List<NamedSpec>) {
         for (spec in specs.filterIsInstance<NamedSpec>() + globals) {
             for (long in spec.longs) {
@@ -510,18 +556,20 @@ internal fun validateReservedNames(
             }
             for (short in spec.shorts) {
                 require(short !in reservedShort) {
-                    "command '$commandName': option/flag short '-$short' is reserved by the built-in --help"
+                    "command '$commandName': option/flag short '-$short' is reserved by the built-in ${ownerOf(short)}"
                 }
             }
             if (spec is FlagSpec) {
                 for (long in spec.negativeLongs) {
                     require(long !in reservedLong) {
-                        "command '$commandName': flag '${spec.token()}' negation '--$long' uses a name reserved by a klap built-in"
+                        "command '$commandName': flag '${spec.token()}' negation '--$long' uses a name reserved by " +
+                            "a klap built-in"
                     }
                 }
                 for (short in spec.negativeShorts) {
                     require(short !in reservedShort) {
-                        "command '$commandName': flag '${spec.token()}' negation short '-$short' is reserved by the built-in --help"
+                        "command '$commandName': flag '${spec.token()}' negation short '-$short' is reserved by " +
+                            "the built-in ${ownerOf(short)}"
                     }
                 }
             }

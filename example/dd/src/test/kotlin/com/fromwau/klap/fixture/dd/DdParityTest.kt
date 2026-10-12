@@ -73,6 +73,7 @@ class DdParityTest {
     @Test
     fun `rejects what real dd rejects`() {
         parity.rejects("--zzz", because = "real dd: unrecognized option '--zzz'")
+        parity.rejects("-h", "if=x", because = "real dd: invalid option -- 'h'")
         parity.rejects("bogus=1", because = "real dd: unrecognized operand 'bogus=1'")
         parity.rejects("count", because = "real dd: unrecognized operand 'count'")
         parity.rejects("=", because = "real dd: unrecognized operand '='")
@@ -110,7 +111,6 @@ class DdParityTest {
             because = "real dd: unrecognized option '--color=never'",
             expected = NOTHING_BOUND.copy(operands = listOf(DdOperand("if", "x"))),
         )
-        parity.shortCircuits("-h", "if=x", because = "real dd: invalid option -- 'h'")
         parity.shortCircuits("--completion", "bash", because = "real dd: unrecognized option '--completion'")
         parity.shortCircuits("--docs", "markdown", because = "real dd: unrecognized option '--docs'")
         parity.shortCircuits("__complete", "if=", because = "real dd: unrecognized operand '__complete'")
@@ -118,7 +118,7 @@ class DdParityTest {
 
     @Test
     fun `--help-all is refused as the real dd refuses it`() {
-        // klap has --help-all only where there are subcommands to expand.
+        // klap offers --help-all only under Help.ByTree, and only beside a subcommand.
         parity.rejects("--help-all", "if=x", because = "real dd: unrecognized option '--help-all'")
     }
 }

@@ -2,8 +2,10 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 
 class OperandTerminatedOptionsTest {
 
@@ -92,6 +94,19 @@ class OperandTerminatedOptionsTest {
     }
 
     @Test
+    fun `a cluster after the first operand whose global letter is a local option's value is an operand`() {
+        // getopt with POSIXLY_CORRECT reads `x -fv` as the operands x and -fv; past -f no letter is a global.
+        val tree = cli("app") {
+            optionsEndAtFirstOperand = true
+            val verbose = globalFlag(short = 'v', long = "verbose")
+            val file = option(short = 'f', long = "file")
+            val files = argument("file").multiple()
+            action<String>(human = { it }) { Ok("v=${verbose()} f=${file()} files=${files()}") }
+        }
+        assertEquals("v=false f=null files=[x, -fv]", tree.bindText("x", "-fv"))
+    }
+
+    @Test
     fun `a cluster of only global shorts after the first operand still binds`() {
         // The neighbour of the refusal above, and the reason it can stay narrow: siftGlobals claims a
         // wholly-global cluster before this command ever sifts, so it never reaches that branch.
@@ -105,6 +120,39 @@ class OperandTerminatedOptionsTest {
             }
         }
         assertEquals("sort=x verbose=true files=[f1]", tree.bindText("run", "f1", "-vs", "x"))
+    }
+
+    private fun withHelp() = cli("app") {
+        builtins { help = Help.ByCommand(short = 'h') }
+        optionsEndAtFirstOperand = true
+        version = Version.Of("1.0", short = 'V')
+        globalFlag(short = 'v', long = "verbose")
+        flag(short = 'a', long = "all")
+        argument("file").multiple()
+        action<String>(human = { it }) { Ok("ran") }
+    }
+
+    @Test
+    fun `the help short in a cluster with a local short after the first operand is refused`() {
+        for (cluster in listOf("-ah", "-ha")) {
+            val err = withHelp().parse(listOf("x", cluster)).assertError<CliError.MixedClusterAfterOperands>()
+            assertEquals(CliError.MixedClusterAfterOperands(cluster, "-h"), err)
+        }
+        // The refused cluster comes first on the line, so a later -h does not answer.
+        withHelp().parse(listOf("x", "-ah", "-h")).assertError<CliError.MixedClusterAfterOperands>()
+        // The version short is klap's too, and reaches as far.
+        assertEquals(
+            CliError.MixedClusterAfterOperands("-aV", "-V"),
+            withHelp().parse(listOf("x", "-aV")).assertError<CliError.MixedClusterAfterOperands>(),
+        )
+        assertIs<Invocation.ShowVersion>(withHelp().parse(listOf("x", "-V")).assertSuccess())
+    }
+
+    @Test
+    fun `the help short reaches past the first operand alone or among globals`() {
+        assertIs<Invocation.ShowHelp>(withHelp().parse(listOf("x", "-h")).assertSuccess())
+        assertIs<Invocation.ShowHelp>(withHelp().parse(listOf("x", "-vh")).assertSuccess())
+        assertIs<Invocation.ShowHelp>(withHelp().parse(listOf("-h", "x", "-ah")).assertSuccess())
     }
 
     @Test

@@ -14,14 +14,14 @@ class NumberOptionWalksTest {
     private fun tree(): Cli = cli("head") {
         val lines = option(short = 'n', long = "lines")
         val direct = numberOption()
-        val count = lastOneWins(lines, direct)
+        val count = lastOf(lines, direct)
         val files = argument("file").multiple(min = 0)
         action { Ok("count=${count()} files=${files()}") }
     }
 
     @Test
     fun `a run does not open the next token to a built in`() {
-        // Guideline 6 gives the token after `-n` to `-n` whatever it is spelled, and the built-in scans run
+        // getopt gives the token after `-n` to `-n` whatever it is spelled, and the built-in scans run
         // before any bind, so they read the arity walk's value slots. A run that stops that walk leaves
         // `--help` looking position-independent again, and the line prints help instead of binding.
         assertEquals("count=--help files=[f]", tree().bindText("-5n", "--help", "f"))

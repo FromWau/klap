@@ -13,7 +13,7 @@ import kotlin.test.assertIs
  * head gives them in a set with that handle, plus a flag to write around the digits and the operands a
  * misread `-NUM` would silently empty.
  *
- * The fold is `lastOneWins`, not `named() ?: direct()`: a loser binds `absentValue()`, which is its
+ * The fold is `lastOf`, not `named() ?: direct()`: a loser binds `absentValue()`, which is its
  * `.default()` when it has one, so the `?:` reading answers with the loser the moment either spelling
  * gains a default.
  */
@@ -21,7 +21,7 @@ private fun headTree(): Cli = cli("head") {
     val named = option(short = 'n', long = "lines").int()
     val direct = numberOption().int()
     val bytes = option(short = 'c', long = "bytes").int()
-    val lines = lastOneWins(named, direct)
+    val lines = lastOf(named, direct)
     lastWins(lines, bytes)
     val quiet = flag(short = 'q', long = "quiet")
     val verbose = flag(short = 'v', long = "verbose")
@@ -103,8 +103,9 @@ class NumberOptionTest {
 
     @Test
     fun `a run every character of which is declared is that cluster`() {
-        // POSIX guideline 14, scoped to the run: `-4` is fully covered by the declared short, `-45` is
-        // not, and `-45` with both declared is again. `ping -4` is why this cannot simply be refused.
+        // A token that reads as a group of options is one, as getopt reads it, scoped to the run: `-4` is fully covered
+        // by the declared short, `-45` is not, and `-45` with both declared is again. `ping -4` is why this cannot
+        // simply be refused.
         val one = cli("app") {
             val n = numberOption().int()
             val four = flag(short = '4')
@@ -168,7 +169,7 @@ class NumberOptionTest {
 
     @Test
     fun `where the number sits in the command is not constrained`() {
-        // klap does not adopt head's leading-only rule: a dash-led token is an option under guideline 14,
+        // klap does not adopt head's leading-only rule: a dash-led token is an option, as getopt reads it,
         // and a CLI declaring a number option has told its users so. `--` and `./` remain the escapes.
         assertEquals(
             "lines=2 bytes=null quiet=true verbose=false files=[f]",
@@ -332,6 +333,7 @@ class NumberOptionTest {
         // not a help request today. Once a run resolves it must be one, or the help ladder and the bind
         // disagree about the same cluster.
         val tree = cli("app") {
+            builtins { help = Help.ByCommand(short = 'h') }
             val n = numberOption().int()
             action { Ok("n=${n()}") }
         }

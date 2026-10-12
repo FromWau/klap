@@ -56,6 +56,7 @@ class GuideSnippetsTest {
     @Test
     fun `the guides strict help suggestion is real`() {
         val strict = cli("tasks") {
+            abbreviation = Abbreviation.None
             action<String>(human = { it }) { Ok("ran") }
         }
         assertEquals(

@@ -1,7 +1,6 @@
 package com.fromwau.klap.fixture.pacman
 
 import com.fromwau.klap.testing.Suggestion
-import kotlin.test.Ignore
 import kotlin.test.Test
 
 /**
@@ -49,8 +48,8 @@ class PacmanLineContextTest {
 
     @Test
     fun `the rest of the word under the cursor is not sent`() = pacman.checkContext(
-        at("L26 E7", "pacman --qu|ery", plain("--query"), plain("--quiet"), take = "--query"),
-        at("L26 E7", "pacman -Q --conf|irm", onQuery("--config"), onQuery("--confirm"), take = "--confirm"),
+        at("L26", "pacman --qu|ery", plain("--query"), plain("--quiet")),
+        at("L26", "pacman -Q --conf|irm", onQuery("--config"), onQuery("--confirm")),
     )
 
     @Test
@@ -128,18 +127,7 @@ class PacmanLineContextTest {
             ),
         ) { (rows, typed, op) -> pacman.assertOffersNone(rows, typed, otherOperations(op)) }
     }
-}
 
-/**
- * The words around the cursor on a pacman line (L and S of the testing matrix) where klap offers something other than
- * what real pacman 7.1.0 would accept. Each test states what real pacman 7.1.0 does and is ignored with `TDD target:
- * <what must change>`; removing the annotation shows it failing for that reason, and no other test pins today's
- * behaviour, so a fix breaks nothing else.
- */
-class PacmanLineContextTargetsTest {
-    private val pacman = pacmanCli().cli
-
-    @Ignore("Will not do (todo 6): states a pacman quirk klap does not follow")
     @Test
     fun `an operation given before or after the cursor is not offered again`() {
         // `pacman -Q -Q pacman`, `pacman --query -Q pacman`, `pacman -Q --query pacman`: "error: only one operation
@@ -158,7 +146,6 @@ class PacmanLineContextTargetsTest {
         ) { (rows, typed) -> pacman.assertOffersNone(rows, typed, again) }
     }
 
-    @Ignore("Will not do (todo 33): states a pacman quirk klap does not follow")
     @Test
     fun `an end of options taken as a value leaves the options open`() = pacman.checkContext(
         // `pacman -Q --arch -- --check pacman` prints "pacman: 426 total files, 0 missing files": getopt took

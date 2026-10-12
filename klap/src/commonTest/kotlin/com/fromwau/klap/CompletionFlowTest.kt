@@ -61,7 +61,6 @@ class CompletionFlowTest {
             listOf(
                 Suggestion("-rb", "the backend to remove through"),
                 Suggestion("-rf", "ignore nonexistent files"),
-                Suggestion("-rh", "Show this help"),
             ),
             taken = "rm -rb",
         )
@@ -156,11 +155,15 @@ class CompletionFlowTest {
     @Test
     fun `tab takes the one suggestion or puts in what several share`() {
         assertEquals("tool check --raw", tool.tab("tool check --ra"))
+        assertEquals("tool check --rawx a.toml", tool.tab("tool check --rax a.toml", cursor = 15))
         assertEquals("tool check --toml=1.", tool.tab("tool check --toml="))
         // Several that share nothing past what is typed leave the line as it is, for the shell to list them.
         assertEquals("tool ", tool.tab("tool "))
         assertEquals("rm -r", rm.tab("rm -r"))
+        // A file directive is the shell's to complete, and nothing offered leaves nothing to put in.
         assertEquals("tool get --file=fi", tool.tab("tool get --file=fi"))
+        assertEquals("tool get --file ", tool.tab("tool get --file "))
+        assertEquals("tool get .ow", tool.tab("tool get .ow"))
     }
 
     @Test
