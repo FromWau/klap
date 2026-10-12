@@ -12,8 +12,9 @@ import kotlinx.serialization.json.jsonPrimitive
 /** Under `--json`, `--help` prints the help as data: each input's fields instead of its text row. */
 class HelpJsonTest {
 
-    private fun tool(): Cli = cli("tool") {
+    private fun tool(builtinHelp: Help = Help.ByCommand()): Cli = cli("tool") {
         help = "a tool"
+        builtins { this.help = builtinHelp }
         version = Version.Of("1.0")
         command("get") {
             help = "print a key"
@@ -25,9 +26,9 @@ class HelpJsonTest {
         }
     }
 
-    private fun stdout(vararg args: String): Pair<Int, String> {
+    private fun stdout(vararg args: String, tool: Cli = tool()): Pair<Int, String> {
         val t = RecordingTerminal()
-        val code = tool().run(arrayOf(*args), t)
+        val code = tool.run(arrayOf(*args), t)
         return code to t.out.toString()
     }
 
@@ -41,7 +42,7 @@ class HelpJsonTest {
                 """"options":[{"names":["-r","--raw"],"help":"print it raw"},""" +
                 """{"names":["--mode"],"help":"how to read it","value":"fast|slow","default":"fast",""" +
                 """"choices":["fast","slow"]}],"commands":[],""" +
-                """"globalOptions":[{"names":["-h","--help"],"help":"Show this help"},""" +
+                """"globalOptions":[{"names":["--help"],"help":"Show this help"},""" +
                 """{"names":["--json"],"help":"Output as JSON"},""" +
                 """{"names":["--color"],"help":"Colorize output: auto, always, or never",""" +
                 """"value":"auto|always|never",""" +
@@ -53,7 +54,7 @@ class HelpJsonTest {
 
     @Test
     fun `the root's help under json lists its subcommands and --help-all`() {
-        val help = Json.parseToJsonElement(stdout("--help", "--json").second).jsonObject
+        val help = Json.parseToJsonElement(stdout("--help", "--json", tool = tool(Help.ByTree())).second).jsonObject
         assertEquals(
             listOf("get", "completion", "docs"),
             help.getValue("commands").jsonArray.map { it.jsonObject.getValue("name").jsonPrimitive.content },
@@ -63,7 +64,7 @@ class HelpJsonTest {
 
     @Test
     fun `--help-all under json prints every command's help as an array`() {
-        val all = Json.parseToJsonElement(stdout("--help-all", "--json").second).jsonArray
+        val all = Json.parseToJsonElement(stdout("--help-all", "--json", tool = tool(Help.ByTree())).second).jsonArray
         assertEquals(
             listOf("tool", "tool get", "tool completion", "tool docs"),
             all.map { it.jsonObject.getValue("command").jsonPrimitive.content },
@@ -88,7 +89,7 @@ class HelpJsonTest {
             command("rm") {
                 help = "remove files"
                 val force = flag(short = 'f', long = "force", help = "ignore missing files")
-                argument("file", "what to remove").multiple(min = 1).requiredUnless(force)
+                argument("file", "what to remove").multiple(min = 1).optionalWhen(force)
                 action { Ok("") }
             }
         }

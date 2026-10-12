@@ -35,7 +35,7 @@ import com.fromwau.klap.projection
  * ```
  *
  * The shape no coreutil in this suite has: the operation is a CHARACTER INSIDE the option cluster, and the
- * remaining characters are modifiers whose meaning is scoped to it — `-Syu` is sync + refresh + sysupgrade,
+ * remaining characters are modifiers whose meaning is scoped to it: `-Syu` is sync + refresh + sysupgrade,
  * `-Rns` is remove + nosave + recursive, `-Qi` is query + info. Each operation is a flag-spelled command with
  * its own page's options, so klap reads a cluster the same way.
  */
@@ -45,23 +45,24 @@ public fun pacmanCli(): TypedCli<PacmanInputs> = cliOf("pacman") {
     abbreviation = Abbreviation.LongOptions
     help = "Package manager utility"
     // `man pacman`: "-V, --version  Display version and exit"; `pacman -V` and `pacman -QV` print the banner.
-    version = Version.Of("7.1.0", short = 'V', description = "display version and exit")
+    version = Version.Of(
+        "7.1.0",
+        long = "version",
+        short = 'V',
+        description = "display version and exit",
+        text = PACMAN_VERSION_TEXT,
+    )
     epilogue = "A target is usually a package name, file name, URL, or a search string."
 
-    // pacman documents its own `--color <when>`, and klap's built-in claims that name — it would be
-    // rejected by validateReservedNames and, worse, parse() would strip both the flag and its value before
-    // pacman saw them. Declining the built-in hands the name back. The two happen to take the same three
-    // values, which is exactly why the collision would have gone unnoticed. pacman has no --json, --docs or
-    // --completion either ("unrecognized option"), so those are declined too.
+    // pacman's own `--color <when>` needs the name klap's built-in would claim, and pacman has no --json, --docs or
+    // --completion ("unrecognized option"). Nor has it --help-all, which Help.ByCommand does not offer.
     builtins {
         color = Builtin.Off
         json = Builtin.Off
         docs = Builtin.Off
         completion = Builtin.Off
-        // pacman has no --help-all either; klap would offer it now that the operations are commands.
-        helpAll = Builtin.Off
         // `man pacman`: "-h, --help  Display syntax for the given operation".
-        help = Help.Generate(description = "display syntax for the given operation")
+        help = Help.ByCommand(description = "display syntax for the given operation", short = 'h')
     }
 
     example("pacman -Syu", "refresh the databases and upgrade every out-of-date package")
@@ -694,3 +695,16 @@ private val QUERY_CONFLICTS = listOf(
     "--file" to "--search",
     "--search" to "--unrequired", "--search" to "--upgrades",
 )
+
+/**
+ * What `pacman --version` prints for pacman 7.1.0, the version installed when it was pinned
+ * (2026-10-10).
+ */
+internal val PACMAN_VERSION_TEXT: String = """
+ .--.                  Pacman v7.1.0 - libalpm v16.0.1
+/ _.-' .-.  .-.  .-.   Copyright (C) 2006-2025 Pacman Development Team
+\  '-. '-'  '-'  '-'   Copyright (C) 2002-2006 Judd Vinet
+ '--'
+                       This program may be freely redistributed under
+                       the terms of the GNU General Public License.
+"""

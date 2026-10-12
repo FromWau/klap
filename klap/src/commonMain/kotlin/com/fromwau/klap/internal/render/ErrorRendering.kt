@@ -91,6 +91,8 @@ internal fun CliError.message(): String = when (this) {
 
     is CliError.ExactlyOneRequired -> "exactly one of ${inputs.joinToString(", ")} is required"
     is CliError.MutuallyExclusive -> "${inputs.andJoined()} are mutually exclusive"
+    is CliError.RepeatedCommand -> "'$command' may be given only once"
+    is CliError.RepeatedOption -> "'$option' may be given only once"
 
     is CliError.Usage -> detail
     is CliError.Failure -> detail

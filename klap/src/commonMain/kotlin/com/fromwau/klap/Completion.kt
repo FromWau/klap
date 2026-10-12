@@ -1,6 +1,8 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.terminal.red
+import com.fromwau.klap.internal.parse.BoundLine
+import com.fromwau.klap.internal.parse.Line
 import com.fromwau.klap.internal.render.Candidate
 import com.fromwau.klap.internal.spec.HolderSpec
 
@@ -59,10 +61,12 @@ public class CompletionScope internal constructor(
     public val words: List<String>,
     // Lazy: a Tab press whose slot has no provider must never run a user converter or validator. NONE, not
     // the default SYNCHRONIZED — one completion resolves on one thread, so the lock would only cost.
-    private val resolved: Lazy<Map<HolderSpec, Any?>>,
+    private val resolved: Lazy<BoundLine>,
 ) : ValueScope() {
 
-    override val values: Map<HolderSpec, Any?> get() = resolved.value
+    override val values: Map<HolderSpec, Any?> get() = resolved.value.values
+
+    override val line: Line get() = resolved.value.line
 
     // Not exceptional here, unlike in an action: an input the line has not reached yet is the expected
     // case, and the provider seam turns this into "no candidates". The message exists for the debugger
@@ -128,6 +132,11 @@ internal const val COMPLETE_FILES = " klap:files:"
 // Every shell delegates the whole decision to `program __complete --cursor <k> -- <words>` and prints the
 // returned lines LITERALLY (never re-eval'd, so a candidate like `$(...)` or a backtick can't execute on
 // Tab). A lone COMPLETE_FILES line maps to that shell's native file completion; the rest go out verbatim.
+/**
+ * The Tab completion script for [shell], which asks this CLI for its candidates through the hidden `__complete`
+ * command on each Tab. Under `builtins { completion = Builtin.Off }` the CLI has no `__complete`, so the script has
+ * nothing to call: its `__complete` line reaches your tool as ordinary words.
+ */
 public fun Cli.renderCompletion(shell: CompletionShell): String = when (shell) {
     CompletionShell.BASH -> renderBash()
     CompletionShell.ZSH -> renderZsh()

@@ -106,10 +106,6 @@ class CurlParityTest {
 
     @Test
     fun `known divergence from real curl`() {
-        // `--version` is always injected and `builtins { }` cannot decline it, so no short can be
-        // attached to it; real curl prints its version banner for `-V`.
-        parity.rejects("-V", because = "klap gap: --version has no short form, NOT real-curl behaviour")
-
         // `-X PURGE` is deliberately absent: real curl takes any method token, and the restriction to eight
         // verbs is this fixture's own study brief, not a klap limit.
 
@@ -169,8 +165,8 @@ class CurlParityTest {
         parity.rejects("--loc", "https://example.com", because = "real curl: option --loc: is unknown")
         parity.rejects("--sil", "https://example.com", because = "real curl: option --sil: is unknown")
 
-        // curl's own help takes a category, and `--help` is the one built-in `builtins { }` cannot decline,
-        // so klap answers the whole line with its own help and drops the subject.
+        // curl's own help takes a category, and klap's `--help` takes none, so klap answers the whole line with its
+        // own help and drops the subject.
         parity.shortCircuits("--help", "all", because = "real curl: --help all lists the 'all' category")
         parity.shortCircuits("--docs", "markdown", because = "real curl: option --docs: is unknown")
         parity.shortCircuits("--completion", "bash", because = "real curl: option --completion: is unknown")
@@ -179,7 +175,7 @@ class CurlParityTest {
 
     @Test
     fun `--help-all is refused as the real curl refuses it`() {
-        // klap has --help-all only where there are subcommands to expand.
+        // klap offers --help-all only under Help.ByTree, and only beside a subcommand.
         parity.rejects("--help-all", "https://example.com", because = "real curl: option --help-all: is unknown")
     }
 }

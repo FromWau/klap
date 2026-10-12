@@ -3,7 +3,7 @@ package com.fromwau.klap
 import com.fromwau.kern.result.IError
 import kotlinx.serialization.json.JsonElement
 
-/** POSIX convention: a command-line usage error exits 2. */
+/** A command-line usage error exits 2, as `ls --bogus` and `grep --bogus` do. */
 public const val USAGE_ERROR_EXIT: Int = 2
 
 /**
@@ -14,10 +14,10 @@ public const val USAGE_ERROR_EXIT: Int = 2
  * The token that failed is not repeated here, since [CliError.BadValue.value] already carries it.
  */
 public sealed interface ConversionError : IError {
-    /** `.int()` was given something `toIntOrNull` rejects. */
+    /** `.int()` was given something that is no decimal `Int`, as GNU tools read one (see `.int()`). */
     public data object NotAnInteger : ConversionError
 
-    /** `.long()` was given something `toLongOrNull` rejects, including an integer past `Long`'s range. */
+    /** `.long()` was given something that is no decimal `Long`, including an integer past `Long`'s range. */
     public data object NotALong : ConversionError
 
     /** `.double()` was given something `toDoubleOrNull` rejects. */
@@ -188,7 +188,7 @@ public sealed interface CliError : IError {
     public data class TooFewOccurrences(val option: String, val min: Int, val actual: Int) : CliError
 
     /**
-     * No member of a [CommandBuilder.requireExactlyOne] set was supplied. [inputs] is the whole set in
+     * No member of a [CommandBuilder.exactlyOne] set was supplied. [inputs] is the whole set in
      * declaration order, each entry in its own `--option` or `<operand>` form, since a set can mix both.
      */
     public data class ExactlyOneRequired(val inputs: List<String>) : CliError
@@ -198,6 +198,19 @@ public sealed interface CliError : IError {
      * in declaration order, prefixed the same way [ExactlyOneRequired.inputs] is.
      */
     public data class MutuallyExclusive(val inputs: List<String>) : CliError
+
+    /**
+     * A command spelled as a flag was named more than once on the line, as `pacman -QQ` or `pacman -Q --query`.
+     * [command] is its primary spelling (`--query`).
+     */
+    public data class RepeatedCommand(val command: String) : CliError
+
+    /**
+     * An option that refuses a repeat was given a second time, as `cp -t d -t e a` is ("multiple target
+     * directories specified"); see [RepeatedOptions.Refuse]. [option] is its primary spelling
+     * (`--target-directory`).
+     */
+    public data class RepeatedOption(val option: String) : CliError
 
     /**
      * A usage error your command detected itself, for a rule klap cannot express as a constraint. It exits

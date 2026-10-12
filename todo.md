@@ -7,7 +7,6 @@ test that states it, and closing it means that test passes.
 
 ## Defects
 
-
 ## Found by reading, not reproduced
 
 Found by the matrix-extension agents on 2026-10-09 from klap's source (at `ca1bb61`), each with the matrix rows that
@@ -45,7 +44,8 @@ or a fixture section with its failing test, a refuted one is ticked here with th
     `--width abc --width 80` binds 80; real `head`, `ls` and `dd` refuse the line. Rows P72, X55.
   - `.int()` accepts non-ASCII digits (`"١٢"`, `"１２"` give 12) and `.double()` accepts `" 1"`, `"1.5f"`,
     `"0x1p3"` and reads `1e400` as Infinity: `toIntOrNull` and `toDoubleOrNull` on the JVM, run on Kotlin 2.4.21,
-    not yet through klap. Rows X14, X24, X25.
+    not yet through klap. Rows X14, X24, X25. The `.int()`/`.long()` half (X14) is closed 2026-10-11 by item 72:
+    ASCII decimal digits only, leading blanks taken as strtol does; `.double()` stays open.
   - `TypedCli.parse` throws, with no `CliError`, when a projection reads another command's input or uses `!!` on
     an `.absentWhen()` slot. Rows P10 to P19.
   - A built-in klap adds that the tool lacks binds the same record as the line without it (`cp --json a b`);
@@ -58,7 +58,7 @@ or a fixture section with its failing test, a refuted one is ticked here with th
 
 ## Fixture parity targets
 
-Each item is a failing test in an example's `*TargetsTest.kt`, written by the `fixture-parity-tests` skill from
+Each item is a failing test in an example's `*TargetsTest.kt`, written by the `fixture-parity` skill from
 the real binary's behaviour; it carries `@Ignore("TDD target: ...")` until fixed. An agent taking an item removes
 the annotation, runs the test to see it fail for the stated reason, and changes the fixture or klap until it
 passes. If the test itself turns out wrong (it does not state what the real binary does), the agent does not bend
@@ -75,83 +75,83 @@ rather than as targets). Order to take them in:
 4. Fixture work, klap has what it needs: 39, 42, 43 and the decimal half of 38 are done 2026-10-10 on
    `fix/example-pacman`.
 
-### pacman (QA pass 2026-10-09, pacman 7.1.0, checked at `6f3bdce` plus working tree)
+### pacman
 
-All 38 targets (22 projection, 16 completion) were confirmed to fail with their `@Ignore` removed, rechecked after
-the rework that dropped the tests' model of klap (item 14). Evidence is in each test's comment; the
-`--help` pages the tests read are copied into `PacmanModel.kt`.
+Closed 2026-10-10: every pacman target from the two QA passes (2026-10-09 and the matrix slices of 2026-10-10)
+passes, and their items are in **Done**. pacman 7.1.0 has 170 tests; the 2 still ignored state pacman quirks klap
+does not follow (items 36 and 40, under **Will not do**).
 
-### pacman, the matrix slices (QA pass 2026-10-10, pacman 7.1.0, checked at `2c89351` plus working tree)
+### cp (matrix pass 2026-10-10, GNU coreutils 9.12)
 
-Three agents wrote the cells of the testing matrix the first pass lacked, one slice each (P and X; K and K7; V, L,
-S, G and E). Since 2026-10-10 the pacman tests sit in one file per matrix file, so each item names the class its
-tests are in now. All 29 targets (16, 7 and 6) were confirmed to fail with their `@Ignore` removed. The klap core
-ones reproduced from item 28 and 30 are items 1 and 32 to 35; the rest are below.
+Six agents, one per matrix file, rewrote cp's tests against real cp 9.12 (`cp --help`, and real runs in a throwaway
+directory): `CpCompletionTest` (K), `CpValueCandidatesTest` (V), `CpLineContextTest` (L, S), `CpSuggestionListTest`
+(G, E), `CpProjectionTest` (P), `CpConverterTest` (X), each with its `*TargetsTest` class. They replace
+`CpParityTest`, `CpTargetsTest`, `CpProjectionMatrixTest`, `CpCompletionMatrixTest` and `CpCompletionTargetsTest`.
+186 tests: 142 pass, 43 targets and 1 will-not-do record (40). After the TDD pass of 2026-10-11 and folding the
+passing targets into the suites: 174 tests, 166 pass, 6 targets wait on klap API (items 21 and 57), 1 record (40).
+After the API pass (21a, 21b, 57a, 63): 177 tests, 176 pass, 1 record (40); cp's matrix pass is closed. Every target was seen to fail on its assertion
+with its `@Ignore` removed. A target named below as "Projection: x" is test `x` in `CpProjectionTargetsTest`.
 
-### cp (QA pass 2026-10-09, GNU coreutils 9.12)
+### find (matrix pass 2026-10-11, GNU findutils 4.11.0)
 
-The 27 targets in `example/cp/src/test/.../cp/CpTargetsTest.kt` (15) and `CpCompletionTargetsTest.kt` (12)
-were confirmed to fail with their `@Ignore` removed; evidence is in each test's comment.
+Six agents, one per matrix file, wrote find's tests against `/usr/bin/find` (the shell's `find` here is a bfs
+wrapper), reading real find through the fixture's respelling (decisions F1, F1a, F1b in the matrix
+`decisions.md`): `FindCompletionTest` (K), `FindValueCandidatesTest` (V), `FindLineContextTest` (L, S),
+`FindSuggestionListTest` (G, E), `FindProjectionTest` (P), `FindConverterTest` (X), each with its `*TargetsTest`
+class. They replace `FindParityTest` and `FindExpressionSplitTest`; `FindVersionTest` stays. 212 tests: 129 pass,
+76 targets and 7 will-not-do records (F1: the single-dash spelling, the expression grammar and order, `-exec ... ;`,
+the raw tail after `--`; F1a: the `=` form; 40: `__complete`, twice). Every one of the 83 was seen to fail with its
+`@Ignore` removed. After the TDD pass of 2026-10-11 (items 65 to 75 done, `ShortOptions` and GNU number rules in klap):
+210 tests, 192 pass, 5 targets wait on item 76, 13 will-not-do records. Each of the 5 was seen to fail with its `@Ignore`
+removed. After item 76 (2026-10-12): 211 tests, 198 pass, 13 records; the deslop pass of 2026-10-12 added `a lone dash is a
+starting point the action walks`: 212 tests, 199 pass; find's matrix pass is closed. Several tables state the same gap from their own axis; an item names each test that states it,
+as `Class: test`, the class without its `Find` prefix and `TargetsTest` suffix.
 
-- [ ] **16. `-r` is a short of `--recursive`.** `CpTargetsTest` `-r is a short of --recursive`. `cp --help`:
-  `-R, -r, --recursive`; the fixture's separate `--recursive-r` also makes `--rec` ambiguous. Fixture.
-- [ ] **17. `-u` is `--update` without a value, and the later of the two wins.** `CpTargetsTest`
-  `-u is --update without a value and the later of the two wins`. `cp --update=none -u src dst` replaced the older
-  `dst`; `cp -u --update=none` left it. Fixture.
-- [ ] **18. A bare or empty `--backup` keeps the control already chosen.** `CpTargetsTest`
-  `a bare or empty --backup keeps the backup control already chosen`. `cp --backup=numbered --backup src dst` made
-  `dst.~1~`. Fixture, or klap's `.optionalValue()`.
-- [ ] **19. `--preserve` and `--context` take a value only when attached.** `CpTargetsTest` `--preserve and
-  --context take their value only when attached`; completion counterpart `--preserve and --context leave a spaced
-  word to the operands`. `cp --help`: `--preserve[=ATTR_LIST]`, `--context[=CTX]`. Fixture.
-- [ ] **20. An attribute list holds cp's attribute names, and repeated lists add up.** `CpTargetsTest` `an
-  attribute list holds only cp's attribute names or their unique prefixes`, `a repeated attribute list adds to the
-  earlier one`; completion `an attribute list completes cp's attribute names after each comma`. `cp
-  --preserve=bogus` is refused, `--preserve=m` reads as `mode`. Fixture.
-- [ ] **21. The target-directory forms are exclusive and `-T` takes exactly two operands.** `CpTargetsTest` `a
-  second target directory is refused`, `-T takes exactly a source and a destination`, `-t and -T are refused
-  together`; completion `-T leaves no room for a third operand` and the `-t`/`-T` exclusion. `cp -t a -t b x`:
-  "multiple target directories specified"; `cp -T a b c`: "extra operand". Fixture, plus klap core for the
-  completion of a full `-T` line.
-- [ ] **25. Help and completion describe cp's inputs in cp's words.** `CpTargetsTest` `the help page lists cp's
-  options and nothing cp refuses`, `--version names coreutils 9 dot 12`; completion `a long name is described in
-  cp's words`, `an attached choice is described by cp's help`, `--no-dereference is described as never following
-  links`, `--help and --version are described in cp's words`, and the cluster test. `cp --help`, verbatim. Fixture
-  for the help texts and the version; klap core for a negation's own help (`.negatable()` takes none) and for the
-  wording of `--help` and `--version` (fixed in `render/Help.kt`).
+### chmod (matrix pass 2026-10-12, GNU coreutils 9.12)
+
+The QA pass of 2026-10-12 replaced `ChmodParityTest` with one file per matrix table: `ChmodCompletionTest` (K, K7),
+`ChmodValueCandidatesTest` (V), `ChmodLineContextTest` (L, S), `ChmodSuggestionListTest` (G, E), `ChmodProjectionTest`
+(P), `ChmodConverterTest` (X), each with its `*TargetsTest` class; `ChmodVersionTest` stays. 103 tests: 77 pass, 26
+targets; every target was seen to fail with its `@Ignore` removed, and nothing else failed. Evidence from
+`/usr/bin/chmod` 9.12 in a throwaway directory, spot-checked by the main session. An item names each target as `Class:
+test`, the class without its `Chmod` prefix and `TargetsTest` suffix. After the TDD pass of 2026-10-12 (items 95 to 102,
+95a's help short, `.dashLed(gather)`, `completion = Builtin.Off` freeing `__complete`): 103 tests, every one passes, no
+record; chmod's matrix pass is closed.
+
+### mv (matrix pass 2026-10-12, GNU coreutils 9.12)
+
+The QA pass of 2026-10-12 replaced `MvParityTest` with one file per matrix table: `MvCompletionTest` (K, K7),
+`MvValueCandidatesTest` (V), `MvLineContextTest` (L, S), `MvSuggestionListTest` (G, E), `MvProjectionTest` (P),
+`MvConverterTest` (X), each with its `*TargetsTest` class; `MvVersionTest` stays. 171 tests: 139 pass, 32 targets; every
+target was seen to fail with its `@Ignore` removed, and nothing else failed. No klap core gap: every target is fixture
+work with API klap has. Evidence from `/usr/bin/mv` 9.12 in a throwaway directory, spot-checked by the main session. An
+item names each target as `Class: test`, the class without its `Mv` prefix and `TargetsTest` suffix. After the TDD pass of 2026-10-12 (items 103 to 110, `Update` and `BackupControl` enums, the environment seam): 174 tests, 173 pass, 1 kept as a record (todo 89); mv's matrix pass is closed.
+
+### git and curl (later)
+
+- [ ] **93. Git.kt's header claims every subcommand matches git's `-h`.** Found building item 92. `Git.kt:23` says the
+  covered subcommands were "all verified against git 2.55.0's own `-h` output"; at 2.56.0 `git log -h` lists none of
+  `-n`, `-p` or `--oneline`, so the claim is false for log. Open: drop the claim, or name what each subcommand was
+  checked against. Fixture comment.
+- [ ] **94. curl's `-d` help differs from curl 8.22.0.** Found building item 92. Every option and short matches
+  `curl --help all` at 8.22.0, but the fixture's `-d` says "HTTP POST data" where 8.22.0 says "Post data", so
+  `Curl.kt:16` still says 8.21.0. Open: change the help to 8.22.0's and renumber. Fixture.
 
 ## Candidate work
 
-- [ ] **52. A pacman completion target expects fewer repeats than pacman takes.** `PacmanCompletionTest`
-  `a cluster continues from the cursor with its operation's page letters` (still ignored) expects `pacman -Qii<TAB>`
-  to stop offering `-i` ("a counted one once more"), but `pacman -Qiii pacman` exits 0 (pacman 7.1.0, run
-  2026-10-10), and item 13 decided that a counted letter is offered again. klap offers `-Qiii`. The test needs fixing,
-  not klap: once the model allows a counted letter any number of times, the target should pass.
-- [ ] **53. pacman's operations are commands now: other modelling notes.** Found while moving it (2026-10-10):
-  `builtins { helpAll = false }` was added so pacman can decline `--help-all`, which a tree with subcommands offers
-  (item 49 folds it into `helpAll = Builtin.Off`); a line naming no operation is refused by a root
-  `validateInputs` ("no operation specified"); `pacman -QQ` is refused as pacman refuses it.
-- [ ] **50. A negation describes itself.** Decided by the owner 2026-10-10 (50 A): `.negatable(..., help = "...")`
-  gives the negative half its own words, its own `--help` row and its own description in Tab. pacman declares
-  `--noconfirm` with `--confirm` as its negation, which orders the two as pacman does (the later wins), and its record
-  holds one `noConfirm`, pacman's `config->noconfirm`. Closes cp's `a negation spelling carries its own help` too.
-- [ ] **49. One value per built-in instead of switches and texts.** Proposed by the owner 2026-10-10, being decided
-  one by one. Today `builtins { }` holds 7 switches (`json`, `color`, `completion`, `docs`, `helpShort`, `helpAll`,
-  `versionShort`) and 7 texts, which can disagree (`json = false` beside a `jsonText`).
-  - 49a: help takes three cases: `Help.Generate` (the page klap generates, the default), `Help.Custom("...")`, whose
-    text is the page `--help` prints, and `Help.Off`. Turning help off undoes the rule that `--help` always exists.
-  - 49b: the `--help` row words (today's `helpText`) and the `-h` short are parameters of the two cases that keep
-    `--help`: `Help.Generate(description = ..., short = 'h')`, `Help.Custom(page, description = ..., short = 'h')`,
-    klap's words and `-h` by default. Nothing stays a separate switch or text.
-  - 49c: `Version` takes the same three cases (`Generate` prints `<name> <version>`, `Custom` a text of the tool's own,
-    such as pacman's banner, `Off`), with `description` and `short` on the first two. `helpAll`, `json`, `color`,
-    `completion` and `docs` take `Builtin.On(description = ...)`, the default, or `Builtin.Off`: they only report
-    the tree, so there is nothing to replace. `Version.Off` is the one way to drop `--version`; the root's `version`
-    string stays (the `--json` envelope and the docs read it), and a `version` built-in on without one is refused.
-  - 49d (owner, 2026-10-10, A; replaces 49c's `Version`): `version` on the root takes `Version.Off`, the default, or
-    `Version.Of(number, long = "version", short: Char? = null, description = null, text = null)`, one value that both
-    turns `--version` on and holds the number, its spellings, its row words and, as `text`, a line of the tool's own to
-    print in place of `<name> <number>` (pacman's banner). Nothing about the version stays in `builtins { }`.
+- [ ] **111. A closed set of values is `.enum`, and `.choice` is the escape hatch.** Owner, 2026-10-12: "we always
+  prefer .enum and not .choice(). that is an escape hatch." Fixture main sources still call `.choice(` (a grep, comments
+  not told apart): ls 4, cp 3, git 3, curl 2, dd, find, pacman and rm 1 each; mv's two go with item 109. The guide's
+  converter table (`docs/guide.md:327-328`) lists `.choice` beside `.enum` as a peer. Each fixture's next pass moves its
+  closed sets to enums (cp's `--update` and resolved backup as mv's 109); the guide says when `.choice` is the right
+  hatch (a set not known until runtime, a spelling an enum cannot carry). Fixtures and docs.
+
+- [ ] **113. The help JSON keys `absentWith` and `optionalWith` still say "with".** After 112d the help text reads
+  "absent when" and "optional when", and the calls are `absentWhen` and `optionalWhen`, but `--help --json` emits
+  `absentWith` and `optionalWith` (`internal/render/HelpJson.kt:43-44`, `docs/guide.md:1505`, pinned in
+  `HelpJsonTest`). A key is a published format, so the 112 rename left them. Owner call: rename them to
+  `absentWhen` and `optionalWhen` (pre-1.0, as 112e), or keep them. klap core.
+
 - [ ] **24. Opt-in converter modules for types klap core does not convert to.**
   Agreed with the owner 2026-10-09: klap core keeps converting only to plain types; a fixture or app that wants
   a richer type opts into a module by dependency. `klap-io` (kotlinx-io) adds `.path()` on `Opt<String?>` and
@@ -189,6 +189,17 @@ were confirmed to fail with their `@Ignore` removed; evidence is in each test's 
 
 ## Owner calls
 
+- [ ] **64. Open points from the cp API pass (2026-10-11).** Each is a small call on what was built for 21, 57 and 63:
+  - `Flag.repeated(...)` exists beside the option form, so a `Refuse` app can let one flag repeat; 21a named options
+    only. Keep or drop.
+  - `Occurrence.input` is typed `Any`, so `when (occurrence.input) { archive -> ... }` needs no `else`; typed
+    `Input`, every `when` needs `else -> Unit`. `Occurrence.value` is `Any?`, so a caller casts.
+  - JSON help does not show `.multiple(max)` or `.atMostWhen` caps; adding them changes the help JSON schema.
+  - klap writes an optional value's placeholder as `--backup[=<CONTROL>]`; cp's help writes `--backup[=CONTROL]`.
+  - Done 2026-10-12 by item 105: mv's `mv -T a b c` is refused through `.atMostWhen(noTargetDirectory, 1)`.
+  - Completion after an ambiguous long (item 60) does not cover one carrying `=x`, or one earlier than the word
+    before the cursor.
+
 ## Release
 
 - [ ] **3. Merge `completion-whole-word` into `master` and publish klap.**
@@ -198,18 +209,16 @@ were confirmed to fail with their `@Ignore` removed; evidence is in each test's 
 
 ## Will not do
 
+- **82. GNU's `-W foo` extension.** GNU audit 2026-10-12, owner A: glibc reads `-W alpha` as `--alpha` only for a tool
+  whose short spec holds `W;` (`getopt -o 'W;' -l alpha,beta: -- -W alpha -Wbeta=1` gives ` --alpha --beta '1'`); no
+  tool klap models uses it (`ls`, `cp`, `head`, `sort -W foo`: "invalid option -- 'W'", tar's `-W` is `--verify`),
+  and klap reads an undeclared `-W` as getopt does without `W;`.
+- **Reading an option from the environment (owner, 2026-10-11).** klap parses a command line and reads no
+  environment variable. A fixture whose tool reads one fakes it: `cpCli(environment = ...)` takes the map a test
+  hands it (item 62).
+
 Decided against, with the reason, so they are not proposed again.
 
-- **6. The operation given twice is refused.** pacman refuses `-Q -Q` and `-QQ` as two operations, an artefact of how it
-  records the operation; a repeated flag is harmless in a normal CLI. Owner's decision 2026-10-10. The test stays as a
-  record of pacman's behaviour: `PacmanProjectionTargetsTest` `the operation given twice is refused`, ignored as will
-  not do.
-- **33. A `--` that an option takes as its value ends options.** getopt gives a `--` to an option that wants a value
-  (`pacman -Qv --dbpath --`), but nobody types it, and `docs/guide.md:209` keeps `--` the end of options as a deliberate
-  trade-off. Owner's decision 2026-10-10. The tests stay as a record, ignored as will not do:
-  `PacmanCompletionTargetsTest` `names go on after a -- that was an option's value`, `PacmanLineContextTargetsTest` `an
-  end of options taken as a value leaves the options open`, `PacmanProjectionTargetsTest` `a value word that is exactly
-  the end of options is the value`.
 - **36. Help, version and a refusal rank as pacman ranks them.** pacman's help always wins, even in a cluster (`pacman
   -hV` and `pacman -Vh` both print the usage), and an unknown option or two operations beat both. GNU tools answer
   whichever of `--help` and `--version` comes first (`ls --help --version` prints the usage, `ls --version --help` the
@@ -218,12 +227,21 @@ Decided against, with the reason, so they are not proposed again.
   line naming two built-ins answers by bucket then by order`, `ArgvOrderInvarianceTest` `--help and --version answer
   whichever the line gives first`). pacman's order stays a quirk klap does not follow; the tests stay as a record:
   `PacmanProjectionTargetsTest` `help outranks version in either order`, `an unknown option refuses the line beside
-  version`, `two operations are refused beside help`.
-- **40. A first word `__complete` is an ordinary target.** klap reserves the first word `__complete` for its completion
+  version`; `two operations are refused beside help` passes since 2026-10-10, as two flag-spelled commands are a parse
+  error (item 47), which outranks help.
+  - 36b (owner, 2026-10-10, A; reversed 2026-10-11): a bad option refused the line wherever it stood, as grep and
+    pacman do. Reversed for GNU coreutils' line order, item 61: `cp --help --bogus` prints the usage, `cp --bogus
+    --help` is "unrecognized option". grep and pacman refusing both orders become quirks klap does not follow.
+    `PacmanProjectionTest` `an unknown option refuses the line beside version` passes; `help outranks version in
+    either order` stays ignored as pacman's quirk. GNU findutils and coreutils answer by line order instead
+    (`find --version --zzz` and `ls --version --bogus` print the version), so `FindParityTest` `version answers ahead
+    of a later unknown predicate` is ignored as will not do.
+- **40. A first word `__complete` is an ordinary target.** Reversed for a CLI with `completion = Builtin.Off` by item 102. klap reserves the first word `__complete` for its completion
   protocol (`docs/guide.md:833`), as other CLI frameworks reserve theirs; a target with that name is not worth a second
-  protocol. Owner's decision 2026-10-10. The tests stay as a record, ignored as will not do:
-  `PacmanProjectionTargetsTest` `__complete as the first word is a target`, `PacmanCompletionTargetsTest` `a first
-  target named __complete is an ordinary target`.
+  protocol. Owner's decision 2026-10-10. The test stays as a record, ignored as will not do:
+  `PacmanProjectionTargetsTest` `__complete as the first word is a target`. Its completion half, `a first target
+  named __complete is an ordinary target`, passes since 2026-10-10: Tab no longer treats a first `__complete` apart
+  once the operations are commands.
 
 - **klap sorts or ranks suggestions.** Tried on 2026-10-09 with kern's `fuzzyRank` (natural order, fuzzy ranking
   for providers that match on their own) and reverted the same day, owner's decision. The shells sort a
@@ -237,6 +255,774 @@ Decided against, with the reason, so they are not proposed again.
 
 ## Done
 
+- [x] **112. The rule declarations follow one naming grammar.** Owner, 2026-10-12: A, file it and decide the names one
+  at a time. Today (`CommandBuilder.kt:182-207`, `Converters.kt:379-411`, `Converters.kt:633`):
+  - `lastWins(a, b)` declares an override rule and returns Unit; `lastOneWins(a, b)` folds spellings into a new
+    `Opt<T>` handle. One word apart, different jobs; the KDoc needs both in one example to tell them apart.
+  - The set rules mix grammars: `requireExactlyOne`, `requireAtMostOne`, then `lastWins` with no verb.
+  - The per-input conditions mix suffixes: `absentWhen`, `atMostWhen`, `requiredUnless` (Arg only), `requiredIf`
+    (Opt only, takes only a `Flag`, rendered in help as "(required when --remote)").
+  Decided as sketched (112a to 112e below): `exactlyOne`, `atMostOne`, `lastWins`, `lastOf(named, direct)` for the
+  fold; every condition ends in `When`: `absentWhen`, `atMostWhen`, `optionalWhen` (was `requiredUnless`),
+  `requiredWhen` (was `requiredIf`). `validateInputs` keeps its name. Uses in fixture main sources: lastWins 14,
+  requireAtMostOne 10, lastOneWins 3, requireExactlyOne 3, absentWhen 4, atMostWhen 2, requiredUnless 2, requiredIf 0;
+  klap's own tests and `docs/` use them too. To decide per name: the new name, and whether the old one goes at once
+  (pre-1.0) or stays deprecated for a release. klap core, then fixtures and docs.
+  - **112a, Owner, 2026-10-12:** A. The fold `lastOneWins(named, direct)` becomes `lastOf(named, direct)`: the name
+    says it returns a value, so it no longer reads as a twin of the rule `lastWins`, which keeps its name.
+  - **112b, Owner, 2026-10-12:** A. `requireExactlyOne` becomes `exactlyOne` and `requireAtMostOne` becomes
+    `atMostOne`, so the three set rules read alike (`exactlyOne`, `atMostOne`, `lastWins`) and match their help
+    annotations. Accepted with the overlap noted: `atMostOne` counts inputs given, `Arg.atMostWhen` counts operand
+    values.
+  - **112c, Owner, 2026-10-12:** A. `Arg.requiredUnless(input)` becomes `Arg.optionalWhen(input)` and
+    `Opt.requiredIf(flag)` becomes `Opt.requiredWhen(flag)`, so every condition ends in `When` (`absentWhen`,
+    `atMostWhen`, `optionalWhen`, `requiredWhen`). Names only: `requiredWhen` still takes only a `Flag`.
+  - **112d, Owner, 2026-10-12:** A. Every condition's help hint says "when", as the calls do: "(absent when
+    --reference)", "(optional when --force; ...)", "(at most 1 when --no-target-directory; ...)", "(required when
+    --remote)" unchanged. Strings at `Help.kt:182-185`; pinned in `ConditionalOperandTest.kt:73, 93` and
+    `OperandCapTest.kt:102, 104`; `docs/guide.md:507, 512`.
+  - **112e, Owner, 2026-10-12:** A. The old names go at once, no deprecated aliases (klap is pre-1.0, has no
+    `@Deprecated` anywhere, and kotoml calls none of them): one klap change renames the API, the help strings, klap's
+    tests, every fixture and task-manager, and `docs/guide.md`. Decided.
+  Done 2026-10-12: `CommandBuilder.lastOf(vararg Opt<T>): Opt<T>`, `exactlyOne(vararg Input)`, `atMostOne(vararg
+  Input)`, `Arg<T>.optionalWhen(input: Input)` and `Opt<T>.requiredWhen(flag: Flag)` replace the old names, which are
+  gone. Help hints read "absent when", "optional when", "at most N when". Error messages name the new calls; the
+  internal `ArgumentSpec.relaxedWhen` is `optionalWhen`, and the test classes follow (`LastOfTest`, `ExactlyOneTest`,
+  `AtMostOneTest`, `RequiredWhenTest`). Every fixture, task-manager, `docs/guide.md`, `example/README.md` and the
+  fixture-parity skill's references moved. 3743 tests, 14 skipped, 0 failed, the count before the rename. The help
+  JSON keys `absentWith` and `optionalWith` keep "with" (item 113).
+- [x] **103a. Does klap turn on `--json`, `--color`, `--completion` and `--docs` by default?** Every fixture turns all
+  four off (`Cp.kt:45`, `Chmod.kt:89`, `Find.kt:258`, `Pacman.kt:60`), and mv would be the fifth; no GNU tool has any of
+  them (`mv --json a b`: "unrecognized option '--json'"). kotoml's app relies on json and completion and turns only
+  color off (`Main.kt:182`). klap core default, decided before 103.
+  - **Owner, 2026-10-12:** A. The four built-ins stay on by default: they are klap's features, not parsing rules,
+    and a new app keeps completion with nothing to write. A GNU-shaped fixture turns them off in `builtins { }`.
+  Done 2026-10-12: decision only; klap keeps the four built-ins on, and the walkthrough reference records it.
+- [x] **103. mv has none of klap's built-ins, and `__complete` is a file name.** `mv --json a b`, `--color`,
+  `--completion bash`, `--docs`: "unrecognized option"; `mv --d a b` renames (it is `--debug`), and util-linux getopt
+  with mv's table reads `--c` and `--co` as `--context`; `mv __complete a`: "cannot stat '__complete'". The fixture keeps
+  all four built-ins, so `--c` and `--d` are ambiguous. Targets: Completion: `klap's built-ins mv lacks are not offered`;
+  ValueCandidates: `a built in mv does not have takes no attached value`; SuggestionList: `a dash offers mv's names in
+  mv's words and nothing else`, `a built-in mv does not have is not offered`, `the built-ins come last and are only
+  mv's`, `a completion script's call reaches mv as its own words`; Projection: `an option mv does not have is refused`,
+  `--c and --d abbreviate --context and --debug`, `__complete is a source file name`, `the help page lists mv's options
+  and nothing mv refuses`. Fixture (`builtins { }`, item 102).
+  - **Owner, 2026-10-12:** A. `mvCli()` turns off json, color, completion and docs in `builtins { }`, as cp;
+    `__complete` is a source file name (item 102).
+  Done 2026-10-12: `mvCli()` turns json, color, completion and docs off and gives `--help` mv's description; `--c`
+  and `--d` resolve to `--context` and `--debug`, and `__complete` is a source file name. Its 10 targets pass.
+- [x] **104. Help and completion describe mv's inputs in mv's words.** `mv --help`, verbatim: `--debug` "explain how a
+  file is copied.  Implies -v", `-n` "(deprecated) silently skip existing files.  See also --update", `-u` "equivalent
+  to --update[=older].  See below", and `--update`, `-Z`, `--help`, `--version`. The fixture's header also says 9.11.
+  Targets: Completion: `a name is described in mv's words wherever the cursor sits`; SuggestionList: `a long name is
+  described in mv's words`, `a cluster continues with mv's letters in mv's words`; ValueCandidates: `an attached update
+  mode is described by mv's help`, `an optional value completes attached in mv's words`. Fixture (as cp's item 25).
+  - **Owner, 2026-10-12:** A. Every help text is `mv --help`'s verbatim, `--update` with its `UPDATE={all,none,none-
+    fail,older(default)}` line as `Cp.kt:130`, `--help`/`--version` with mv's descriptions, and the KDoc header says
+    9.12.
+  Done 2026-10-12: every help text is `mv --help`'s, `--update` with its `UPDATE={...}` line,
+  `Version.Of(description =)` and `Help.ByCommand(description =)` carry mv's words, and the header says 9.12. Its 5
+  targets pass.
+- [x] **105. `-t` with `-T`, and a third operand under `-T`, are refused by declared rules.** `mv -t d -T a`: "cannot
+  combine --target-directory (-t) and --no-target-directory (-T)"; `mv -T a b c`: "extra operand 'c'". The fixture
+  refuses both in its action only, so the line parses and Tab offers them. Targets: Completion: `-t and -T leave each
+  other out`, `-T leaves no room for a third operand`; LineContext: `-t and -T leave each other out wherever the line
+  names one`, `-T leaves no operand slot once a source and a destination are on the line`; Projection: `-t and -T are
+  refused together`, `-T takes exactly a source and a destination`. Fixture (`requireAtMostOne`, `.atMostWhen`, the
+  last point of item 64).
+  - **Owner, 2026-10-12:** A. `requireAtMostOne(targetDirectory, noTargetDirectory)` and
+    `sources.atMostWhen(noTargetDirectory, 1)`, as `Cp.kt:234` and `Cp.kt:250`; the two action checks and the KLAP-GAP
+    comment go; closes item 64's last point.
+  Done 2026-10-12: `requireAtMostOne(targetDirectory, noTargetDirectory)` and `sources.atMostWhen(noTargetDirectory,
+  1)`; both action checks are gone, and item 64's last point is closed by it. Its 6 targets pass.
+- [x] **106. mv's backup reads as cp's.** With `b.~1~` present: `mv --backup a b`, `-b` and `--backup=` make `b.~2~`;
+  `--backup=simple --backup` makes `b~`; `--backup=t` makes `b.~1~`, `nil` `b~`, `off` none; `--backup=none -b` and
+  `-b --backup=none` make none; `mv --backup=bogus --backup=never a b` exits 0; `mv -S .x a b` makes `b.x`. The fixture
+  keeps `-b` and `--backup` apart, refuses an empty control, binds an alias as typed, checks each control as it is met,
+  and `-S` asks for no backup. Targets: Projection: `-b and a bare --backup are one setting`, `a bare --backup after a
+  value keeps the value`, `an empty backup control means the default one`, `a backup control alias binds what its
+  control binds`, `a bad backup control ahead of help still shows help`, `a suffix asks for a backup`; Converter: `an
+  invalid earlier --backup is never read`. Fixture (cp's item 18 built `resolveBackup` privately in `Cp.kt`).
+  - **Owner, 2026-10-12:** A. `Mv.kt` gets its own copy of cp's backup code: `--backup` free text
+    (`.optionalValue().multiple()`, `completeWith` the control names), read after the options through `resolveBackup`
+    and `argmatch`; `-b`, a bare `--backup` and `-S` ask for a backup; `MvInputs` holds `backup: String?` (the
+    control's first name, null for no backup) and `suffix: String?`, and `backupSimple` goes. Its record type is item 109's
+    `BackupControl` enum.
+  Done 2026-10-12: `--backup` is free text (`.placeholder("CONTROL").optionalValue().multiple()`, completed from the
+  control names), read after the options by `Mv.kt`'s own `resolveBackup` and `argmatch`; `-b` (`backupDefault`), a
+  bare `--backup` and `-S` ask for a backup; `MvInputs.backup: BackupControl` and `suffix`, `backupSimple` gone. Its
+  7 targets pass. The record cannot tell `--backup=none` from no backup; both are `None`.
+- [x] **107. `-u` is `--update` without a value, the later wins, and `--debug` implies `-v`.** With `b` older: `mv
+  --update=none -u a b` replaced `b`, `mv -u --update=none a b` kept it; `mv --help`: `--debug` "Implies -v". Targets:
+  Projection: `-u is --update without a value and the later of the two wins`, `--debug implies -v`. Fixture (cp's item
+  17).
+  - **Owner, 2026-10-12:** A. `lastWins(update, updateOlder)` as `Cp.kt:137`, `MvInputs` holds one `update: String?`
+    (`-u` binds `older` when it is the later) and `updateOlder` goes; the projection sets `verbose = verbose() ||
+    debug()` and keeps `debug`.
+  Done 2026-10-12: `lastWins(update, updateOlder)`, `MvInputs.update: Update`, `updateOlder` gone; the projection
+  sets `verbose = verbose() || debug()`. Both targets pass.
+- [x] **108. A backup beside `-n`, `--update=none`, `none-fail` or `--exchange` is refused.** `mv -n -b a b`,
+  `--update=none -b`, `-b --exchange`, `-S .x -n`: "cannot combine --backup with --exchange, -n, or
+  --update=none-fail"; `mv -n -i -b a b` is accepted (the later `-i` holds). Target: Projection: `options mv cannot
+  combine are refused`. Fixture (`validateInputs`, as cp's item 58; Tab does not see it, item 89).
+  - **Owner, 2026-10-12:** A. A `validateInputs` refuses when the line asks for a backup (`-b`, any `--backup`
+    including `=none`, `-S`) and the later of `-i`/`-f`/`-n` is `-n`, `update` resolves to `none` or `none-fail`, or
+    `--exchange` is given (real mv: `--backup=none -n` is refused, `-n -i -b` and `--update=none -u -b` are accepted).
+    One record, as cp's: `@Ignore("Will not do (todo 89): ...")` pinning that `mv -n --b<Tab>` offers `--backup`.
+  Done 2026-10-12: a `validateInputs` refuses a requested backup (any control, `=none` too) beside a final `-n`, an
+  update of `None` or `NoneFail`, or `--exchange`, with `CliError.Usage`. Its target passes; the record
+  `LineContext: --backup is not offered beside -n` keeps `@Ignore("Will not do (todo 89): ...")`.
+- [x] **109. The help page shows `--backup[=CONTROL]` and `--update[=UPDATE]`.** `mv --help`, verbatim. The fixture's
+  page lists the choices as the placeholder and a "bare:" hint. Target: Projection: `--backup and --update show an
+  optional value and no bare one` (it asserts klap's `[=<CONTROL>]`, item 64). Fixture.
+  - **Owner, 2026-10-12:** A (revised: prefer an enum to `.choice`). `enum class Update(val cli: String) { All, None,
+    NoneFail, Older }` read with `.enum<Update>(spelling = { it.cli }).placeholder("UPDATE").optionalValue()`, a bare
+    `--update` mapped to `Older` in the projection, no `--update` `All`; `resolveBackup` returns `enum class
+    BackupControl { None, Numbered, Existing, Simple }`, `None` when nothing asks for a backup. `MvInputs` holds
+    `update: Update` and `backup: BackupControl`, no null for either; this changes 106's record. Unverified: that
+    `.enum` then `.optionalValue()` builds; check it first and stop if not.
+  Done 2026-10-12: `enum class Update(val cli: String)` read by `.enum<Update>(spelling = { it.cli
+  }).placeholder("UPDATE").optionalValue()` (it builds; a bare `--update` is `Older`, none on the line `All`), and
+  `enum class BackupControl { None, Numbered, Existing, Simple }`. Help shows `--backup[=<CONTROL>]` and
+  `--update[=<UPDATE>]` with no bare hint. Its target passes; `a line without --update binds what --update=all
+  binds` restates the old test, from `mv --help`.
+- [x] **110. A backup takes its control and suffix from the environment.** `mv --help`: "The version control method may
+  be selected via the --backup option or through the VERSION_CONTROL environment variable"; the suffix through
+  `SIMPLE_BACKUP_SUFFIX`. No test: it needs an `mvCli(environment)` seam, as cp's item 62, so a test would not compile
+  today. Not run against real mv. Fixture.
+  - **Owner, 2026-10-12:** A. `mvCli(environment: Map<String, String> = emptyMap())`, a fake environment the test
+    hands in (klap is CLI only and reads none), passed to 106's `resolveBackup`. New tests first, from the main
+    session's runs: with `b` existing, `VERSION_CONTROL=numbered` makes `-b` and `-S .x` numbered, `--backup=simple`
+    beats it, no backup reads nothing (`bogus` is accepted then), `bogus` with `-b` is refused;
+    `SIMPLE_BACKUP_SUFFIX=.env` gives `b.env`, `-S` beats it, an empty one is ignored.
+  Done 2026-10-12: `mvCli(environment: Map<String, String> = emptyMap())` feeds `resolveBackup` and `resolveSuffix`;
+  tests written first from `env VAR=value mv` runs: Projection `a backup without its own control or suffix takes
+  them from the environment` (10 cells) and `the backup environment changes nothing where mv makes no backup or
+  names its control` (7 cells).
+- [x] **102. `__complete` as chmod's first word.** `chmod __complete f`: "invalid mode: '__complete'"; klap reserves
+  the word (item 40, kept). Targets: Completion: `the word after __complete is a file`; Projection: `__complete as the
+  first word is the mode`. Follows item 40.
+  - **Owner, 2026-10-12:** A, as one switch: `builtins { completion = Builtin.Off }` removes both the `--completion`
+    built-in and the hidden `__complete` command, so a first `__complete` is the tool's own word. Default on, so a
+    real app keeps Tab; with it off a generated script has nothing to call (said in the KDoc, including for a script
+    rendered with `Cli.renderCompletion`). Fixture completion is tested through `suggestionsFor`, which calls
+    `completeCandidates` directly (`testing/Completion.kt:36`), so nothing tested is lost. This reverses item 40 for
+    a CLI that turns completion off: cp, find and pacman already do, chmod will (95), and their 6 records (cp 1,
+    find 2, pacman 1, chmod 2) become passing tests. klap core.
+  Done 2026-10-12: `completion = Builtin.Off` drops `__complete` (BuiltinsOptOutTest); cp, find (2), pacman and chmod
+  (2) `__complete` tests pass; the wire tests of cp, find, pacman and chmod became `a completion script's call reaches
+  <tool> as its own words`, refused as each real tool refuses `--cursor`.
+- [x] **101. Tab does not offer `--reference` after a dash-led mode.** `chmod -w --reference=f f`: "cannot combine mode
+  and --reference options"; parse refuses it, Tab offers it. Target: LineContext: `--reference is not offered after a
+  dash-led mode`. klap core or fixture rule.
+  - **Owner, 2026-10-12:** A. With 99's gathering a dash-led mode word counts as the mode even beside `--reference`,
+    and the fixture declares `requireAtMostOne(mode, reference)`, so parse and Tab refuse the pair from one rule.
+    `chmod 755 --reference=f g` stays accepted (755 is a file: "cannot access '755'"), as `absentWhen` gives today.
+    If the builder refuses the rule on an `absentWhen` argument, the TDD agent reports it instead of another shape.
+    Fixture, on 99.
+  Done 2026-10-12: `requireAtMostOne(mode, reference)`; klap counts a slot its `absentWhen` trigger removed toward no
+  rule and a gathered word toward one, and Tab still offers the trigger beside an operand it would make a file;
+  LineContext `--reference is not offered after a dash-led mode` passes, `chmod 755 --reference=f g` stays accepted.
+- [x] **100. A dash word with a letter getopt refuses is no mode.** `chmod -z f`: "invalid option -- 'z'"; klap's
+  `.dashLed()` admits any word it cannot resolve as the operand, so Tab after `chmod -z ` offers files where chmod
+  still wants MODE (parse refuses both, a `differs` note). Target: Completion: `the word after an unknown letter is
+  the MODE operand`. klap core.
+  - **Owner, 2026-10-12:** A, decided with 99: a word the predicate refuses (`-z`) is an unknown option again, so the
+    slot after it is still MODE. 99 and 100 together make 4 targets pass.
+  Done 2026-10-12: with the predicate, `-z` is an unknown option again; Completion `the word after an unknown letter is
+  the MODE operand` passes.
+- [x] **99. Every dash-led mode word, wherever it stands, adds to the one mode.** `chmod -w -x f` gives 444,
+  `chmod -w -755 f` gives 000, `chmod u+x -w f` gives 444 and "cannot access 'u+x'": chmod collects each dash-led mode
+  word before getopt and reads every other operand as a file. `.dashLed()` takes one word, in the mode's own slot.
+  Targets: Projection: `every dash-led mode word on the line adds to the one mode`, `a dash-led mode after an operand
+  is still the mode`; LineContext: `a dash-led mode after the cursor turns the slot into a file`. klap core.
+  - **Owner, 2026-10-12:** A, with 100. klap: `.dashLed(gather = ",") { word -> ... }`, opt-in beside today's
+    `.dashLed()` (head unchanged). A single-dash word the tree cannot resolve and the predicate accepts is a mode
+    word wherever it stands before `--`; every one is joined with the separator into the one value; once one is
+    given the slot takes no plain operand, so every operand is a file. Evidence (f at 644): `-w -x f` and `-w f -x`
+    give 444; `-w u+x f` gives 444 and "cannot access 'u+x'"; `-Rw d` is "invalid mode: '-Rw'" (a whole word, not a
+    cluster); `-w -- -x f` "cannot access '-x'"; `-- -w f` gives 444. `info coreutils 'chmod invocation'` calls it a
+    convenience next to `chmod -- -w file`. chmod declares its predicate over `r w x X s t u g o a 0-7 + = ,`.
+    klap core, public API; the fixture follows.
+  Done 2026-10-12: `fun <T> Arg<T>.dashLed(gather: String, accepts: (word: String) -> Boolean): Arg<T>`
+  (DashLedGatherTest, 13 tests); the builder refuses a second gathering slot in a command and a gathering `.multiple()`
+  slot; chmod's mode gathers over `r w x X s t u g o a 0-7 + = ,`; all three targets pass.
+- [x] **98. The mode converter reads chmod's octal forms.** `chmod 00755 f` and `000000755 f` give 755 (`17755` is
+  invalid); `chmod u+x,=755 f` gives 755 (`u+x,755` is invalid). Targets: Converter: `an octal mode with leading
+  zeros binds its bits`, `an operator with octal digits is a clause of a symbolic mode`. Fixture.
+  - **Owner, 2026-10-12:** A. Any number of leading zeros, refused past 07777 (`17777`: "invalid mode"); an operator
+    with octal digits (`=755`, `+0755`) is a clause in a comma list, bare digits there (`u+x,755`) stay invalid.
+    Fixture converter.
+  Done 2026-10-12: octal `[-+=]?[0-7]+` up to 07777, an operator with octal digits a clause in a list; both targets
+  pass, plus cells for `=00755`, `-00755`, `u+x,+0755`, `+7,u+x`, `=755,=644`, `077777`, `u+x,=17777`.
+- [x] **97. `--dereference` under `-R` follows chmod's rule.** `chmod -R --dereference -P u+x d`: "-R --dereference
+  requires either -H or -L" (with a later `-L` accepted); and `-R` alone does not follow a link inside the tree while
+  `-R --dereference` does, so an absent `--dereference` is not true. Targets: Projection: `-R --dereference refuses -P
+  as the final traversal`, `-R alone and -R --dereference bind apart`. Fixture (a rule, and the record's field).
+  - **Owner, 2026-10-12:** A (null as a third state is a sentinel, so named states instead). The record holds
+    `enum class Dereference { Default, Follow, NoFollow }`: `Default` when neither spelling is given (chmod follows a
+    link it is given and, under `-R`, none). The fixture declares `--dereference` and `-h`/`--no-dereference` as two
+    flags with `lastWins`, as chmod's help lists them, and the projection maps them; a rule refuses `-R
+    --dereference` when the final traversal flag is `-P`. This replaces 95's `.negatable(short = 'h')`. Fixture.
+  Done 2026-10-12: `enum class Dereference { Default, Follow, NoFollow }` from `--dereference` and
+  `-h`/`--no-dereference` under `lastWins`; the `-P` refusal is a `CliError.Failure` (chmod exits 1 with no "Try 'chmod
+  --help'" line); both targets pass.
+- [x] **96. `-c` and `-v` set one verbosity; the later wins.** `chmod -v -c 644 f` prints nothing, `chmod -c -v 644 f`
+  prints "mode of 'f' retained as 0644". Target: Projection: `the later of -c and -v holds`. Fixture
+  (`lastWins(changes, verbose)`).
+  - **Owner, 2026-10-12:** A. `lastWins(changes, verbose)`. Fixture.
+  Done 2026-10-12: `lastWins(changes, verbose)`; Projection `the later of -c and -v holds` passes.
+- [x] **95. The fixture has chmod's names, in chmod's words.** `chmod --help`: "-h, --no-dereference", `-H`, `-L`, `-P`
+  with no long, "-f, --silent, --quiet", and no `--json`, `--color`, `--completion` or `--docs` (each "unrecognized
+  option"); so `chmod --c` is `--changes` and `--d` is `--dereference`. The fixture keeps klap's help short `-h`,
+  invents `--traverse-*` longs, declares `--quiet` as its own flag, keeps klap's built-ins, and words several helps
+  its own way. Targets: Completion: `a long name is described in chmod's help words`, `a cluster continues with the
+  letters chmod accepts after it in chmod's words`, `-h is offered as --no-dereference`, `names chmod does not have
+  are not offered`; SuggestionList: `a dash offers chmod's names in chmod's words and nothing else`, `a built-in is
+  described in chmod's words`, `both longs of -f carry one description`, `the built-ins come last and are only
+  chmod's`, `the help page describes every input in chmod's words`; Projection: `--quiet binds what --silent binds`,
+  `-h is the short of --no-dereference`, `-H -L and -P have no long names`, `an option chmod does not have is
+  refused`, `--c and --d abbreviate --changes and --dereference`. Fixture (`Help.ByCommand(short = null)`,
+  `.negatable(short = 'h')`, `Builtin.Off`, one flag with two longs).
+  - **Owner, 2026-10-12:** A. `-h` is `--no-dereference`'s short once 95a frees it (declared as item 97 says); `-H`, `-L`, `-P` shorts
+    only; `--quiet` a second long of `-f`; `--json`, `--color`, `--completion`, `--docs` declined (`Builtin.Off`, as
+    cp); every description in `chmod --help`'s words, `--help` and `--version` among them. Fixture.
+  - **95a, Owner 2026-10-12:** A. klap's `--help` has no short by default: every `Help` variant defaults to
+    `short = null`, as GNU's `--help` has none (`cp -h`, `mv -h`, `rm -h`, `mkdir -h`, `head -h`: "invalid option --
+    'h'"; `chmod -h` is `--no-dereference`, `ls -h` `--human-readable`). A tool whose `-h` is help opts in with
+    `short = 'h'`. This changes item 80's default. Every fixture without `short = null` is checked against its real
+    tool (opts in where `-h` is help, loses it otherwise); klap tests that use `-h` as help declare it; guide
+    restated. klap core.
+  Done 2026-10-12: `-f` is `--silent`/`--quiet` on one flag, `-H`/`-L`/`-P` shorts only,
+  `--json`/`--color`/`--completion`/`--docs` off, every description `chmod --help`'s; 14 targets pass.
+- [x] **92. Four small fixture fixes.** Review 2026-10-12 (R9). **Owner, 2026-10-12:** A. (1) `GitParityTest.kt:207-209`
+  rejects `-v` "because the --version built-in has no short", but `Version.Of` has a short now; restate it with
+  `Git.kt:85`'s reason (a `Version.Of` short is reserved in every command, and `git add -v`/`git remote -v` are
+  --verbose). (2) `Git.kt` says git 2.55.0 (header and nine "verified against" comments) while it pins 2.56.0, the
+  installed one; `Curl.kt:16` says 8.21.0 while it pins 8.22.0: re-verify each comment against the installed tool,
+  then write its version. (3) `example/README.md:95` cites `cp -dbuHpZ` setting backup and update, and no test binds
+  that line: add a cp `binds` test against real cp 9.12. (4) `SshParityTest` `known divergence from real ssh` opens
+  with two cells that match real ssh (options end at the destination): move them to a parity-named test and name
+  the rest for the divergences they pin (`--json` stripped from the tail, `--` forwarded). Tests and comments.
+  Done 2026-10-12: (1) restated; (2) every git claim re-run on 2.56.0 and renumbered, except Git.kt:23 (item 93);
+  Curl.kt:16 left at 8.21.0 (item 94); (3) CpProjectionTest `a cluster of short-only flags binds the backup and update
+  it implies`; (4) split into `options end at the destination as real ssh reads them`, `--json is stripped from the
+  remote command`, `a -- after the destination is forwarded to the remote command`.
+- [x] **91. The wrapper jar matches the Gradle it names.** Review 2026-10-12 (R8). **Owner, 2026-10-12:** A.
+  `gradle-wrapper.properties` names 9.8.1 but `gradle-wrapper.jar` (sha256 238e777f...) is the jar of Gradle 9.8.0's
+  dist (9.8.1's is 3b8a2577...); `./gradlew --offline wrapper --gradle-version 9.8.1` writes the matching one. Left
+  as is, by the same decision: `klap-publish` keeps klap's POM inline (its one user is `klap/build.gradle.kts`, and a
+  parameter would have one caller), and the repository URL stays written in each of the three settings blocks and
+  the publish block (each settings script is evaluated alone, so sharing it needs more machinery than the four
+  lines). Build.
+  Done 2026-10-12: the jar's sha256 is 3b8a2577..., the one in Gradle 9.8.1's dist; gradlew, gradlew.bat and the
+  properties unchanged.
+- [x] **90. The matrix notes match the code again.** Review 2026-10-12 (R7). **Owner, 2026-10-12:** A. Every stale
+  note and row in `.claude/skills/fixture-parity/references/matrix/` rewritten against the current code, each
+  checked first: K7p, K7q and K7i cite `ShortClusterCompletionTest` and `CompletionLineRulesTest`, which do not exist
+  (the tests are in `CompletionTest.kt:68`, `:80`, `:1727`); K7i, G24 and G64 name `helpShort`, and K13b and K61
+  `Help.Generate(short = null)`, both removed (now `Help.ByCommand(short = null)`); K13c, G65 and G70 state
+  `--help-all` on every command with subcommands, which since item 80 only `Help.ByTree` offers; X55, X64, L3 to L5
+  and G13 re-checked against code and tools. The F1a note's `FindValueCandidatesTargetsTest` exists and stays. Docs
+  only.
+  Done 2026-10-12: every stale note in the six matrix files rewritten after a check; line numbers replaced by function
+  and branch names. Correction: `ShortClusterCompletionTest` and `CompletionLineRulesTest` exist, as classes inside
+  `CompletionTest.kt`; only files by those names do not.
+- [x] **89. cp's completion model says only what it keeps.** Review 2026-10-12 (R6). **Owner, 2026-10-12:** A. The
+  header of `CpCompletionModel.kt:10-14` claims nothing cp refuses is offered, but `refused()` keeps only the rules
+  by name (a second `-t`, `-t` with `-T`, `-l` with `-s`). cp 9.12 also refuses `-n -b`, `-b --update=none` or
+  `none-fail` ("--backup is mutually exclusive with -n or --update=none-fail") and `--reflink=always` with a
+  `--sparse` other than auto ("--reflink can be used only with --sparse=auto"); `Cp.kt:264-280` writes them as
+  `validateInputs` lambdas, which Tab does not run (`Completion.kt:136`). The header names the rules it keeps, and one
+  cp record (Will not do) pins `cp -n --b<Tab>` offering `--backup`: Tab prunes only by declared rules, and Enter
+  still gets cp's error. No klap change. Tests.
+  Done 2026-10-12: the header names what the model keeps and what only cp's validators refuse; record
+  CpLineContextTargetsTest `--backup is not offered beside -n` (seen failing for that reason). cp 179 tests, 2 records.
+- [x] **88. The fixtures stop re-deriving `acceptSuggestion` and `tab`.** Review 2026-10-12 (R5). **Owner,
+  2026-10-12:** A. cp (`CpLineContextSupport.kt:76`, `tabbed` at :110), find (`FindCompletionSupport.kt:361`) and
+  pacman (`PacmanCompletionModel.kt:225`) rebuild the accepted line and the common-prefix rule and compare them with
+  klap's helpers, so those checks fail only when a copy drifts. The helpers are pinned once in klap's
+  `CompletionFlowTest` with literal lines (one suggestion, a shared prefix, nothing shared, a file directive, the
+  cursor inside a word; add whichever is missing); the three copies and their assertions go; matrix rows E2 and E3
+  say klap's test covers them, and the cells keep their offered sets. Tests.
+  Done 2026-10-12: the copies in cp, find and pacman are gone; CompletionFlowTest gained the cursor inside a word, a
+  spaced file directive and nothing offered; matrix E2, E3 and the skill's brief say klap's test covers them.
+- [x] **87. Test code and tests that repeat each other go to one home.** Review 2026-10-12 (R4). **Owner,
+  2026-10-12:** A. (1) One `Cli.offered`/`Cli.offeredAt`, with `bindText` and `helpText`, in a shared test file beside
+  `TestTerminal.kt`, replacing the private copies in about 12 klap test files. (2) One home per rule: item 61's line
+  order in `GnuConformanceTest` (drop the two `ArgvOrderInvarianceTest` duplicates, keep `-V`, `--color`, cluster and
+  repeat shapes), `--` as a value in one test, long-name validation in `AuthorTest`. (3) find: the item 75 records
+  merged across Completion and LineContext, the `-D`/`-O` tests duplicated in Projection and Converter given one home,
+  the three tests the generated cells subsume dropped, `UNPINNED` removed so every description is compared. Test only;
+  counts in todo and the example README restated. Tests.
+  Done 2026-10-12: `TestCli.kt` holds `offered`, `offeredAt`, `bindText`, `helpText` (13 private copies gone); item
+  61's order only in GnuConformanceTest, `--` as a value only there, long-name validation in AuthorTest (option and
+  flag); find: item 75 records two in FindCompletionTargetsTest, `-D`/`-O` home FindConverterTest (`-O` twice binds the
+  later level, per `find -D opt`), three subsumed tests dropped, `UNPINNED` gone. find 201 tests, 11 records.
+- [x] **86. One home each for the operand minimum and for which built-ins take a value.** Review 2026-10-12 (R3).
+  The relaxed minimum is decided in `internal/parse/Bind.kt:225` and again in `internal/render/Completion.kt:488`;
+  which built-in longs take the next word is named in `FlagCommands.kt:200` (`VALUED_BUILTIN_LONGS`), `ArgvScan.kt:254`
+  and `Parser.kt:61` `builtinLongs`, with the same gates. **Owner, 2026-10-12:** A. An internal `Command.operandMin`
+  beside `operandCap`, read by bind and completion; one internal table of the built-in longs (name, gate, takes the
+  next word) read by `builtinLongs`, `ArityWalk` and `FlagCommands`. No behaviour change: every test stays as it is.
+  klap core.
+  Done 2026-10-12: `Command.operandMin` beside `operandCap`, read by bind and the planner; one `builtinLongTable`
+  (name, takes the next word, gated) read by `builtinLongs`, `ArityWalk.builtinClaim` and FlagCommands;
+  `VALUED_BUILTIN_LONGS` gone. No test changed.
+- [x] **85. Completion walks to the command the line names, past `--help`, as parsing does.** Review 2026-10-12
+  (R2). `g --help build` is build's help (`routesTransparently`), but `g --help build --‸` offers the root's names
+  (probe 2026-10-12: `[--help, --json, --color]`, where `g build --‸` adds `--fast`). **Owner, 2026-10-12:** A.
+  Completion's `walkTo` steps over the same words through the one `routesTransparently`. klap core.
+  Done 2026-10-12: completion's `walkTo` steps over what `routesTransparently` lets through, with parse's
+  `globalFlagShorts`; `g --help build --` offers what `g build --` does. CompletionTest.
+- [x] **84. Every page lists the built-ins that work there.** Review 2026-10-12 (R1). On a root with its own action
+  and subcommands, `app sub --completion bash` parses and `app sub --‸` offers `--completion` and `--docs`, but `app
+  sub --help` lists only `--help`, `--json`, `--color` (the `node is Cli && node.metaOptions` gate in
+  `internal/render/Help.kt` `builtinOptions`; probe 2026-10-12). **Owner, 2026-10-12:** A. List them under Global
+  options on every page where they work, and read completion's built-in list from the same place, so help and Tab
+  cannot drift. klap core.
+  Done 2026-10-12: `builtinOptions` takes the root's `rootMetaOptions`, so every page below a root with its own action
+  lists `--completion` and `--docs` (text, JSON, man, markdown); completion reads its built-in names from
+  `builtinOptions`. HelpTest, CompletionTest.
+- [x] **83. An error names a spelling as GNU does.** GNU audit 2026-10-12 (C4). klap names the word as typed, cut at
+  `=`; getopt_long names the resolved long when one resolved (`--al=x`: "option '--alpha' doesn't allow an argument";
+  `ls --blo`: "option '--block-size' requires an argument"), the whole word as typed when none did (`--bet=2`: "option
+  '--bet=2' is ambiguous"; `--zeta=1`: "unrecognized option '--zeta=1'"), and the letter alone in a cluster (`-a-`
+  binds `-a`, then "invalid option -- '-'"). **Owner, 2026-10-12:** A. The same three rules, in klap's own phrasing,
+  for the `CliError` fields as well (so `--json` shows them); restate the tests that pin today's spellings. klap core.
+  Done 2026-10-12: a resolved long is named by its full spelling, an unresolved word whole, a cluster's bad letter alone (`-a-` is UnknownOption("--", cluster = "-a-")); GnuConformanceTest, and GluedValueTest, ParseOptionsTest, CompletionTest restated. `-a=x` stays FlagTakesNoValue("-a") (getopt binds `-a`, then refuses `=`): a different kind, left.
+- [x] **81. An empty long name is an abbreviation, as getopt_long reads it.** GNU audit 2026-10-12. `getopt -o ''
+  -l beta: -- --=x y` gives ` --beta 'x'`; with several longs it is ambiguous (`ls --=x`, `cp --=`: "option '--=x' is
+  ambiguous; possibilities: ..."); klap refuses `--=x` as UnknownOption("--"). **Owner, 2026-10-12:** A. Under
+  `Abbreviation.LongOptions` and up the empty name resolves when the pool holds one long and is ambiguous otherwise;
+  under `None` it is unknown; the error quotes the whole word `--=x`. Tests: the 2 empty-name targets in
+  `GetoptOracleTest`. klap core.
+  Done 2026-10-12: `resolveLong` treats the empty name as a prefix of every long; both GetoptOracleTest targets pass (the first with the built-ins off, as getopt's table has none).
+- [x] **80. One `help` setting says what `--help` covers; `helpAll` goes.** GNU audit 2026-10-12 (C2, P2), from the
+  owner's draft. The GNU Coding Standards name `--help` and `--version` and no `--help-all`; git's `<cmd> --help` is
+  one command and `git help -a` the list. **Owner, 2026-10-12:** A. `sealed interface Help`: `ByCommand(description,
+  short = 'h')` (the default, GNU: `--help` is this command, no `--help-all`), `ByTree(description, short = 'h',
+  allDescription)` (adds `--help-all`, the tree from where it is typed), `All(description, short = 'h')` (`--help`
+  is the tree from here, no `--help-all`), `Custom(page, description, short = 'h')` (its page for `--help`, no
+  `--help-all`), `Off`. `BuiltinsBuilder.helpAll` and `Help.Generate` go. On a CLI with no subcommand the three print
+  one page. C2: under `ByTree` the exact-only carve-out narrows to what it protects, so `--h` to `--help` mean `--help`
+  and `--help-` to `--help-al` reach `--help-all` (`getopt -o '' -l help,help-all -- --help-` gives ` --help-all`);
+  elsewhere there is no `--help-all` and `--he` is `--help`, as in coreutils. Restate the tests, guide and fixtures
+  (pacman's `helpAll = Builtin.Off`). klap core, public API.
+  Done 2026-10-12: `Help.ByCommand` (default), `ByTree`, `All`, `Custom`, `Off` in `Builtins.kt`; `helpAll` and `Help.Generate` gone; under `All` a bare group prints the tree too, and `Custom` keeps `--help --json` as the generated data. `HelpSettingTest` (19). The carve-out is `YIELDING_LONGS = mapOf("help-all" to "help")`: `--help-` reaches `--help-all`. Tests that pinned `--help-all` set `Help.ByTree()`; git's fixture refuses `--help-all` as real git does; pacman drops `helpAll = Builtin.Off`. Matrix notes K13b, K13c, K61, G65, G70 are stale (owner's files).
+- [x] **79. The help short counts as a global letter in a mixed cluster after the first operand.** GNU audit
+  2026-10-12. Under `optionsEndAtFirstOperand`, `t x -av` with a declared global `-v` is `MixedClusterAfterOperands`
+  (`docs/guide.md:2213`), but `t x -ah` and `t x -ha` show help. **Owner, 2026-10-12:** A. Refuse them as
+  `MixedClusterAfterOperands`, as the guide states; `t x -h` still shows help (the built-ins' reach). Test:
+  `GetoptOracleTest` `a cluster mixing the help short with a local one after the first operand is refused`. klap
+  core.
+  Done 2026-10-12: `mixedGlobalShort` counts the help and version shorts as global letters; `x -ah`, `x -ha`, `x -aV` are `MixedClusterAfterOperands`, `x -h` and `x -vh` still answer. The GetoptOracleTest target passes; OperandTerminatedOptionsTest.
+  **Owner, 2026-10-12 (79a):** A, every built-in letter counts as a global letter, so `x -aV` is refused like `x -ah`.
+- [x] **78. The built-in `--color` is GNU's `--color[=WHEN]`.** GNU audit 2026-10-12 (C1). klap's built-in takes a
+  required value but never a word that starts with a dash (`--color --invert` is MissingOptionValue), which is neither
+  getopt kind (`getopt -o '' -l color:,invert -- --color --invert f` gives ` --color '--invert'`). ls, grep and diff
+  declare `--color[=WHEN]` ("The WHEN argument defaults to 'always'", `ls --help`); `ls --color always` lists the
+  file `always`, `ls --color=bogus` is "invalid argument". **Owner, 2026-10-12:** A. `--color` is an optional value,
+  bare meaning `always`, `--color=WHEN` setting it, a spaced word an operand; `--completion <shell>` and `--docs
+  <format>` keep a required value and take the next word as getopt does, so `--completion --x` is an invalid shell.
+  Help shows `--color[=WHEN]`'s klap form. Restate the tests, guide and fixtures that pin `--color always` spaced. klap
+  core.
+  Done 2026-10-12: a bare `--color` means always and the next word is an operand; `--completion` and `--docs` take the next word whatever it is; help shows `--color[=<auto|always|never>]`; completion offers values only after `--color=`. BuiltinsTest, HelpTest; color tests across klap restated with `ls --color always` evidence.
+- [x] **77. An abbreviation resolves against the current command's own longs.** GNU audit 2026-10-12 (C3). klap
+  resolves an abbreviated long against every long in the tree (`longMatchPool`, `internal/parse/Parser.kt:472`), so
+  `t b --verb` is ambiguous between b's `--verbose` and its sibling a's `--verbatim` (probe, 2026-10-12); a GNU tool
+  calls getopt_long with that command's table (`getopt -o '' -l verbose -- --verb` gives ` --verbose --`).
+  **Owner, 2026-10-12:** A. Resolve against the current command's own longs, the globals and the built-ins; keep the
+  invariant `longMatchPool`'s KDoc names (the pre-walk scans for `--help` and the like must not resolve what the
+  walk calls ambiguous, or the reverse); report if it cannot hold. klap core.
+  Done 2026-10-12: `longMatchPool` is the command's own longs, negations, flag-spelled children, globals and built-ins; the tree-wide pool and its helpers are gone, and the scans before the walk resolve each word against the pool of the command in scope where it stands (`ArityWalk` routes as the walk does), so parse, run and completion agree. A command and its flag-spelled children share one table (`Cli.sharedLongs`), as pacman's one getopt table reads (`pacman -Q --no` ambiguous). AbbreviationTest and FlagCommandTest.
+  **Owner, 2026-10-12 (77a):** A, the shared table for a flag-spelled family stays.
+- [x] **76. Completion follows what the line refuses after an optional value and beside `requireAtMostOne`.**
+  Internal klap work left by the find TDD pass of 2026-10-11, no public API. (a) An `.optionalValue()` short offers
+  its candidates glued on `-O‸` (`-O0` to `-O3`), as `find -O3` is its only form; today `-O` itself is offered. (b)
+  Nothing is offered after a bare optional-value short whose bare form the fixture refuses (`find -O ‸`, refused by
+  find: "must be immediately followed by a decimal integer"); completion cannot see a `validateInputs` refusal today,
+  so this may need the refusal stated declaratively (owner call if so). (c) `requireAtMostOne(operand, files0From)`
+  closes the operand slot in completion as it does in parsing (`find --files0-from x ‸` offers files; real find:
+  "file operands cannot be combined with -files0-from"). Tests: Completion: `-O completes to its glued levels`, `a
+  dash offers every name find accepts there`, `--files0-from leaves no room for a starting point`; ValueCandidates:
+  `a bare -O offers its levels glued`, `-O takes no value in the next word`. klap core.
+  (a) and (c) done 2026-10-11 in `internal/render/Completion.kt` (`GluedOptionalValueCompletionTest`, 9 tests;
+  `ConstraintCompletionTest`, 4 more): an optional-value short offers its candidates glued (`-O‸`, `-‸`, `-vO‸`),
+  and a `requireAtMostOne(operand, option)` closes the operand slot; 4 of the 5 find targets pass. (b) has no internal
+  route: running `validateInputs` during completion broke 28 pacman tests (its root refuses every line without an
+  operation), and a validation judges a finished line a later word can cure.
+  **Owner, 2026-10-11:** (b) A: a new opt-in `.gluedValue()` on an option: the value is glued to the short or
+  attached to the long with `=`, and the bare form is refused as `MissingOptionValue`; completion offers nothing
+  after a bare one. Not a getopt form (getopt has required `O:`, which takes `-O 3`, and optional `O::`, which
+  takes a bare `-O`); find's own parser (`find -O`: "must be immediately followed by a decimal integer", where getopt
+  tools say "option requires an argument"), so the KDoc says so. GNU defaults stay; find opts in and drops its
+  `validateInputs` and the `OptionalValue` wrapper on `-O`.
+  Done 2026-10-12: `ConverterScope`'s `Opt<T>.gluedValue(): Opt<T>` (`Converters.kt`), `OptionSpec.gluedValue`
+  and `valueAttachedOnly` (optional or glued, never the next word) read by `ArgvScan`, `FlagCommands`,
+  `refusesCluster` and completion; a bare one is `MissingOptionValue`; help shows `-O<LEVEL>` and
+  `-O, --optimise=<LEVEL>`; combining it with `optionalValue` fails at build time. `GluedValueTest` (27). find's `-O`
+  uses it and drops its `validateInputs`; `FindInputs.optimise` stays the last level (`Int?`), since find uses the
+  last `-O`. Both (b) targets pass: find has no target left, 211 tests, 198 pass, 13 records.
+- [x] **65. find has none of klap's built-ins but `--help` and `--version`, described in find's words.** `find -h`,
+  `find --json .`, `find --color .`, `find --completion bash`, `find --docs`: each "unknown predicate"; `find --help`
+  says "display this help and exit" and "output version information and exit". Tests: Completion: `a klap built-in
+  find lacks is not offered`, `--help and --version are described in find's words`; SuggestionList: `a built-in find
+  does not have is not offered`, `help and version are described in find's words`, `a value after a built-in find
+  lacks is none of klap's`; Projection: `an option klap adds that find does not have is refused`; ValueCandidates: `a
+  built in --color claims no word so the next one is a starting point`; LineContext: `--color before the cursor is an
+  unknown predicate that takes no value`. Fixture: `builtins { }`, `Help.Generate(description, short = null)`,
+  `Version.Of(description)`.
+  **Owner, 2026-10-11:** A, as written, the shape of `Cp.kt`'s `builtins { }`; the fixture loses `--completion`,
+  Tab through `__complete` stays.
+  Done 2026-10-11: `builtins { }` and `Version.Of(description)` as in `Cp.kt`; all 8 targets pass.
+- [x] **66. find matches every predicate whole (F1b).** `find . -maxdep 1`, `find --he`: "unknown predicate". Tests:
+  Completion: `an abbreviated predicate is an unknown word`; LineContext: `an abbreviated predicate is unknown and
+  takes no value`; SuggestionList: `an abbreviated long is an unknown option`; ValueCandidates: `an abbreviated
+  predicate is an unknown option whose next word is a starting point`; Projection: `a prefix of a predicate is
+  refused as find refuses it`, `a prefix of help or version is refused`. Fixture: `abbreviation = Abbreviation.None`.
+  **Owner, 2026-10-11:** A, as written.
+  Done 2026-10-11: `abbreviation = Abbreviation.None`; all 6 targets pass.
+- [x] **67. The fixture declares find's names and only those.** It invents `--physical`, `--logical`,
+  `--follow-args`, `--debug`, `--optimise` (`find . -logical`: unknown predicate); it spells `-ignore_readdir_race`
+  with dashes; its `--mount` help talks about klap; it lacks the predicates find has (amin, anewer, cmin, cnewer,
+  daystart, execdir, false, fls, follow, fprint, fprint0, fstype, gid, ilname, inum, ipath, iregex, iwholename, lname,
+  newerXY, noignore_readdir_race, nowarn, ok, okdir, samefile, true, uid, used, warn, wholename, xtype; each exits 0
+  in a throwaway directory). Tests: Completion: `a long the fixture invents is not offered`, `--mount is described
+  without a note on the fixture's source`, `--ignore_readdir_race is spelled as find spells it`, `a predicate find has
+  that the fixture lacks completes by name`, `a dash offers every name find accepts there`; SuggestionList: `a long
+  find does not have is not offered`, `ignore_readdir_race is spelled as find spells it`, `every predicate find has is
+  offered` (dropped by item 87), `a long name completes to every long of find it starts across the gaps`, `a dash offers find's names and
+  nothing else`, `the mount description speaks of the filesystem not of klap` (dropped by item 87); ValueCandidates: `the long spellings
+  of -D and -O are unknown options`; Projection: `--ignore_readdir_race is spelled with underscores`, `a predicate find
+  has binds`. Fixture. Open: whether a klap long name may hold `_`, and how `-fprintf FILE FORMAT` (two words) and
+  the one-letter `-d` are respelled.
+  **Owner, 2026-10-11:** A. Declare every predicate that runs here, `--d` and the 12 `-newerXY` forms of a, c, m
+  and t included, each as one long; `-P -L -H -D -O` shorts only; `long = "ignore_readdir_race"` (klap takes `_`);
+  `--mount` in the man page's words. `-fprintf FILE FORMAT` takes two words, so it is a will-not-do record beside
+  `-exec`; `-context` and the birth-time forms are left out, since this system refuses them.
+  Done 2026-10-11: shorts only for `-P -L -H -D -O`, `ignore_readdir_race`, `--mount` as this man page words it ("Ignore files on other devices", it calls it no synonym), every predicate that runs here with its own `FindInputs` field; `-fprintf` is a will-not-do record. All targets pass but `a dash offers every name find accepts there`, whose `-O` cells wait on item 76.
+- [x] **68. `-regextype` takes find's 13 types, in find's order.** `find . -regextype help` lists
+  findutils-default, awk, ed, egrep, emacs, gnu-awk, grep, posix-awk, posix-basic, posix-egrep, posix-extended,
+  posix-minimal-basic, sed; the fixture has 6. Tests: Completion: `--regextype completes every regex type find
+  accepts`; SuggestionList: `a regex type is any of find's in find's order`; ValueCandidates: `the regex type offers
+  every type find takes in every form`; Converter: `--regextype binds every name find has`. Fixture.
+  **Owner, 2026-10-11:** A, the 13 in find's order.
+  Done 2026-10-11: the 13 types in find's order; all 4 targets pass.
+- [x] **69. `-O` takes its level glued, any decimal up to 65535.** `find -O9 .` exits 0; `find -O65536 .`: "too
+  high"; `find -O 3 .` and `find -O .`: "must be immediately followed by a decimal integer"; `-O+1` refused.
+  Completion offers the documented `-O0` to `-O3`. Tests: Completion: `-O completes to its glued levels`;
+  ValueCandidates: `a bare -O offers its levels glued`; Projection: `-O takes any decimal level`; Converter: `-O binds a
+  level above 3 up to 65535`, `-O refuses a plus sign and non-ASCII digits`. Fixture; refusing the spaced `-O 3` is
+  pinned loose in `FindProjectionTest` until klap can declare a glued-only value (see 74).
+  **Owner, 2026-10-11:** A. `-O` is `.optionalValue()` (item 63): GNU's optional argument is glued-only, so `-O 3`
+  reads `3` as a starting point and the bare `-O` is refused; ASCII digits 0 to 65535; `completeWith` offers the
+  documented `-O0` to `-O3`. If completion does not offer an optional value glued on `-O‸`, that is internal klap
+  work.
+  Done 2026-10-11 for binding: `-O` is `.optionalValue()` with ASCII digits 0 to 65535, a bare `-O` refused; `-O4`, `-O9`, `-O65535` bind, `-O 3` and `-O+1` are refused. The completion half (`-O0` to `-O3` on `-O‸`, nothing after a bare `-O`) is item 76.
+- [x] **70. `-D` takes find's debug keys in the next word, adds up, and `-D help` lists them.** `find -D help`
+  lists exec, opt, rates, search, stat, time, tree, all, help and exits 0; `find -D tree -D search .` traces both;
+  `find -D '' .`: "Empty argument to the -D option"; `find -Dtree .`: unknown predicate. Tests: Completion: `-D
+  completes find's debug options in the next word`; ValueCandidates: `the debug option offers the keys find takes`;
+  Projection: `-D accumulates every list it is given`, `-D refuses an empty list`, `-D help short-circuits as help
+  does`; Converter: `-D refuses a list with no key`, `-D given twice keeps the keys of both`, `-D help prints the debug
+  keys instead of searching`. Fixture, except `-D help`, which needs a way for a value to answer as `--help` does
+  (owner call); glued `-Dtree` is pinned loose like `-O 3`.
+  **Owner, 2026-10-11:** A. `-D` completes the 9 keys (one more after each comma), refuses an empty list, and is
+  `.multiple()`, flattened. `-D help` binds `debug = [help]` and the action prints the key list, as find's own code
+  does; the two short-circuit tests (Projection: `-D help short-circuits as help does`, Converter: `-D help prints the
+  debug keys instead of searching`) are restated as binds. Glued `-Dtree` stays pinned loose (item 74).
+  Done 2026-10-11: keys offered one more after each comma, an empty list refused, `.multiple()` flattened, `-D help` binds `[help]` and the action prints find's key list; the two short-circuit tests are restated as binds. Glued `-Dtree` is refused through item 74.
+- [x] **71. `-type` takes find's letters, each once.** `-type f,d` runs; `-type f,f`: "Duplicate file type";
+  `-type D`: "not supported because Solaris doors are not supported on the platform". Tests: Completion: `--type
+  completes find's type letters`; ValueCandidates: `the file type offers the letters find takes`; Converter: `--type
+  refuses a letter given twice`, `--type refuses the door letter on this platform`. Fixture (a `completeWith`
+  provider and the validation).
+  **Owner, 2026-10-11:** A. Letters `b c d p f l s`, each once; `D` refused as this system's find refuses it.
+  Done 2026-10-11: letters `bcdpfls`, each once, `D` refused, the same rule for `--xtype`; all 4 targets pass.
+- [x] **72. find's value grammars, as findutils parses them.** Counts take leading blanks (`-size ' 1'`), refuse a
+  minus after the comparison (`-size +-1`), non-ASCII digits, and reach 2^64-1; time predicates read a strtod real
+  (`-mtime 1.5`, `1e1`, `0x1`, `inf`); depths refuse `+1`; `-perm` refuses a mode find cannot compile (`8`, `+644`);
+  `-regex '['` and `-printf '%'` are refused while parsing; an empty `-user`, `-group`, `-newer`, `-files0-from` is
+  refused. Tests: every target in Converter but the `-O`, `-D`, `--type` and `--regextype` ones; Projection: `an
+  empty file user or group name is refused`. Fixture (`findSize`, `findCount`, `findPerm` and the declarations).
+  **Owner, 2026-10-11:** A, after asking which rules are GNU-wide. klap's `.int()` and `.long()` take GNU's number
+  rules by default (leading blanks and `+` accepted, trailing blanks refused, ASCII decimal digits only; evidence
+  `head -n ' 2'`, `head -n +2`, `ls -w ' 80'` run, `head -n '2 '`, `head -n ١`, `ls -w ١` refused), closing the
+  X14 half of item 30 and adding X15; tests that pin the old reading are restated with GNU evidence. find opts into
+  its own: depths refuse a sign, the time predicates read a strtod real (`FindCount.value` a `Double`), `-size` and
+  `-links` a `ULong`, no sign after the comparison, `-perm` as find checks it (`-perm +644` refused, though `mkdir
+  -m +644` runs), `-printf` refuses a trailing `%`, and an empty `-user`, `-group`, `-newer`, `-files0-from` is
+  refused. `-regex '['` is a will-not-do record: Kotlin has no findutils regex engine.
+  Done 2026-10-11: klap's `.int()` and `.long()` take GNU's number rules (`gnuDecimal` in `Converters.kt`, `ConvertersTest`), no other test pinned the old reading; find's own: depths ASCII digits only with no sign or blank, the time predicates a strtod `Double`, `-size`/`-links`/`-inum`/`-uid`/`-gid` a `ULong`, `-perm` as gnulib's `mode_compile` (about 50 modes checked), `-printf` as find scans for a trailing `%`, an empty reference file or name refused. `-regex '['` is a will-not-do record. `.double()` is unchanged (item 30's X24/X25 half stays open).
+- [x] **73. A test given twice applies both.** `find . -type f -type d` matches nothing; `-printf x -printf y`
+  prints both. Test: Projection: `a test given twice applies both`. Fixture (`.multiple()` on each test).
+  **Owner, 2026-10-11:** A. The 12 tests (type, size, mtime, mmin, ctime, atime, links, perm, newer, user, group,
+  printf) take `.multiple()` and their `FindInputs` fields become lists; the global options keep last-wins, as find
+  does.
+  Done 2026-10-11: the 12 tests, and every new one, are `.multiple()`; the target passes.
+- [x] **74. find's switches `-P -L -H -D -O` never cluster.** `find -LP .`, `find -LD tree .`: unknown predicate;
+  `find -L -P .` runs. Tests: Completion: `-P -L -H and -D are offered alone`, `a cluster of find's letters is one
+  unknown word`; SuggestionList: `a short of find does not cluster`; ValueCandidates: `a cluster find refuses leaves
+  the next word to the starting points`. klap: a short that does not cluster is new API (owner call); the loose
+  clusters are pinned in `FindProjectionTest` until then.
+  **Owner, 2026-10-11:** A. New CLI-wide setting beside `abbreviation`: `shortOptions = ShortOptions.Alone` (default
+  `ShortOptions.Clustered`, as getopt). Alone: each short is its own word, no clusters, a required value is the next
+  word; an optional value stays glued (getopt's only form), so `-O3` (item 69) keeps working. Names proposed in the
+  walkthrough and accepted with it. The loose `-LP`, `-PL`, `-LL`, `-Dtree` cells become refusals.
+  Done 2026-10-11: `public enum class ShortOptions { Clustered, Alone }` (`ShortOptions.kt`) and `CliBuilder.shortOptions`, root-only, one rule `Command.refusesCluster` in `internal/parse/Parser.kt` consulted wherever a cluster is walked (sift, globals, `ArgvScan`, flag commands, completion); `ShortOptionsTest` (14), a guide section beside Abbreviation. find sets `ShortOptions.Alone`; the 4 targets pass and `-LP`, `-PL`, `-LL`, `-Dtree` are refused.
+- [x] **75. Order: the switches come before the first starting point, the starting points before the first
+  predicate, and `-files0-from` replaces them.** `find . -L`: unknown predicate; `find -name a .`: "paths must
+  precede expression"; `find . -files0-from a`: "extra operand". Tests: Completion: `find's own options end at the
+  first starting point`, `a starting point after a predicate is not offered`, `--files0-from leaves no room for a
+  starting point`; LineContext: `the pre-path switches are not offered after a starting point or a predicate`, `no
+  starting point is offered after a predicate`; Projection: `--files0-from refuses a starting point beside it`. The
+  `-files0-from` half is fixture work (`requireAtMostOne`); the order half needs klap API or belongs to F1's order
+  record (owner call).
+  **Owner, 2026-10-11:** A. `requireAtMostOne(operand, files0From)` for the `-files0-from` half; the 4 order
+  targets (Completion: `find's own options end at the first starting point`, `a starting point after a predicate is
+  not offered`; LineContext: both) fold into the F1 record `find's expression grammar and its order are read as find
+  reads them`, since `optionsEndAtFirstOperand` would end the predicates too and a position API would serve find alone.
+  Done 2026-10-11: `requireAtMostOne(operand, files0From)`, the projection target passes; the 4 order targets are will-not-do records (F1, 75). Completion still offers starting points beside `--files0-from`: item 76.
+- [x] **21. The target-directory forms are exclusive, `-t` is given once, and `-T` takes exactly two operands.**
+  Projection: `a second target directory is refused`, `-T takes exactly a source and a destination`, `-t and -T are
+  refused together`; Completion: `-t and -T leave each other out and -t is not offered twice`, `-T leaves no room
+  for a third operand`; LineContext: `-t and -T leave each other out wherever the line names one`, `a second target
+  directory is not offered before or after the cursor`, `-T leaves no operand slot once a source and a destination
+  are on the line`. `cp -t d -t d a`: "multiple target directories specified"; `cp -T a b c`: "extra operand". The
+  exclusion is fixture only (a `requireAtMostOne` makes the LineContext cells pass); refusing a second `-t` needs
+  klap to let an option refuse a repeat, and capping the operands under `-T` needs a declarative maximum. Fixture
+  plus klap core.
+  - 21a (owner, 2026-10-11, A; revised the same day, A): a CLI-wide `repeatedOptions = RepeatedOptions.LastWins |
+    Refuse` on the `cli { }` builder, beside `abbreviation`, defaults to GNU's `LastWins` (`cp -S .x -S .y`, `ls
+    --sort=size --sort=time`, `head -n 1 -n 2` take the last); `Refuse` makes a second occurrence
+    `CliError.RepeatedOption`, rendered as `RepeatedCommand` is. A per-option `.repeated(RepeatedOptions.Refuse)`
+    overrides it for a tool that mixes the two, as cp does: `cp -t d -t e a`, `mv -t d -t e a`, `install -t d -t e
+    a`: "multiple target directories specified". `.multiple()` options collect and are outside the policy.
+    Completion leaves out an option the policy refuses once it is given. Replaces the first answer's `.once()`.
+  - 21b (owner, 2026-10-11, A): `.multiple(min, max = Int.MAX_VALUE)` caps a variadic, unbounded by default as GNU's
+    operand lists are, and `.atMostWhen(input, n)` caps it while an input is given, beside `absentWhen`. Parse
+    refuses an operand past the cap (`CliError.TooManyArguments`) and completion offers no operand slot once it is
+    reached. `cp -T a b c`: "extra operand 'c'"; `cp -T a b2` and `cp a c d` copy. klap core, then cp declares
+    `sources.multiple(min = 1).atMostWhen(noTargetDirectory, 1)`.
+  - 2026-10-11: the fixture half is done: `requireAtMostOne(-t, -T)`, a validation refusing a second `-t` and `-T`
+    past two operands (Projection's three targets and LineContext's exclusion pass). Open: 21a and 21b in klap, then
+    Completion `-T leaves no room for a third operand`, `-t and -T leave each other out and -t is not offered twice`
+    (also an excluded option's attached value or cluster: `cp -T --target-directory=‸`, `cp -t d -vT‸`), LineContext
+    `a second target directory is not offered before or after the cursor`, `-T leaves no operand slot once a source
+    and a destination are on the line`. `cp -t a -t b --help` is refused by cp and shows help in the fixture until
+    `.once()` makes the repeat a parse error.
+  **Verdict 2026-10-11:** done (klap core and fixture). 21a: `RepeatedOptions { LastWins, Refuse }` as
+  `repeatedOptions` on `cli { }`, `.repeated(...)` on an option or flag, `CliError.RepeatedOption`
+  ("'--target-directory' may be given only once"), placed in line order so `cp -t a -t b --help` is refused and `cp
+  --help -t a -t b` shows help; `RepeatedOptionsTest`. 21b: `Arg.multiple(min, max)` and `Arg.atMostWhen(input, n)`,
+  so `cp -T a b c` refuses `c`, and completion offers no operand once the slots are full, counting words after the
+  cursor; `OperandCapTest`. Completion also leaves out an option the line excludes, in its attached value and in a
+  cluster (`ConstraintCompletionTest`). cp declares `-t` with `.repeated(Refuse)` and caps its sources; mv's `-t`
+  refuses a repeat (`MvParityTest`).
+- [x] **57. A line without a link option, and the shorthands, bind as cp reads them.** Projection: `a line without a
+  link option binds apart from -P`, `a shorthand and a later link or preserve option bind as their order reads`,
+  `the later of --preserve and --no-preserve decides an attribute`. `cp lnk out` copies the file and `cp -R lnk out`
+  the link, so no link option is a third state; `cp -d -L lnk o1` gave a file and `cp -L -d lnk o2` a link; with a
+  mode 600 file, `-p --no-preserve=mode` gave 644 and the reverse 600. Fixture.
+  - 2026-10-11: `a line without a link option binds apart from -P` passes (`-L`, `-P`, `-H` are three flags under
+    `lastWins`, so no link option is its own state). Open, needing klap API (owner decision): a fixture reading the
+    order of two inputs that both keep their own effect, for `a shorthand and a later link or preserve option bind
+    as their order reads` and `the later of --preserve and --no-preserve decides an attribute`.
+  - 57a (owner, 2026-10-11, A): one generic primitive, `inOrder(vararg inputs)` in the projection, gives the
+    occurrences of those inputs in line order with their values, and the fixture replays them as cp's getopt loop
+    assigns its settings. Real cp 9.12: `cp -d -L lnk out` gives a regular file, `cp -L -d lnk out` a link, `cp -a -L`
+    a file; `cp -p --no-preserve=mode` gives mode 644, `cp --no-preserve=mode -p` 600, `cp --preserve=mode
+    --no-preserve=mode` 644. klap core, then cp replays `-a`, `-d`, `-p`, `-L`, `-P`, `-H`, `--preserve` and
+    `--no-preserve`.
+  **Verdict 2026-10-11:** done (klap core and fixture). `inOrder(vararg inputs)` on `ValueScope` gives each
+  occurrence (`Occurrence(input, value)`) in line order (`InOrderTest`); cp replays `-a`, `-d`, `-p`, `-L`, `-P`,
+  `-H`, `--preserve` and `--no-preserve` as its loop assigns them, so `cp -d -L` and `cp -L -d` bind apart and the
+  later of `--preserve` and `--no-preserve` decides an attribute.
+- [x] **63. An optional value whose bare form names no value (owner, 2026-10-11, E1 A).** `optionalValue()` with no
+  argument binds `OptionalValue.Bare` when the option is given bare and `OptionalValue.Given(value)` when a value is
+  attached, and help shows no `bare:` hint; `optionalValue(whenBare)` stays for a bare form that means a value
+  (`ls --color` is `--color=always`, `cp --update` is `older`, `cp --reflink` is `always`). cp's bare `--backup`
+  ("the control from `VERSION_CONTROL`, else `existing`") and bare `--context` ("like `-Z`") name no value, so the
+  fixture binds the marker strings `$VERSION_CONTROL` and `-Z` today: `cp --help` in the fixture shows `(bare:
+  $VERSION_CONTROL)`, which real cp's `--backup[=CONTROL]` row does not, and `cp --context=-Z a b` reads as bare.
+  klap core, then cp drops both markers (`Cp.kt` `BACKUP_BARE`, `CONTEXT_BARE`).
+  **Verdict 2026-10-11:** done (klap core and fixture). `Opt<T?>.optionalValue(): Opt<OptionalValue<T>?>` binds
+  `OptionalValue.Bare` or `OptionalValue.Given(value)`, composes with converters before it and `.multiple()` after
+  it, and help shows no bare hint (`BareOptionalValueTest`); cp's `--backup` and `--context` use it, the two markers
+  are gone, and `cp --context=-Z a b` binds the context `-Z`.
+
+- [x] **16. `-r` is a short of `--recursive`.** Projection: `-r is a short of --recursive`; SuggestionList: `a long
+  name completes to cp's names only`, `a dash offers cp's names in cp's words and nothing else`. `cp --help`: `-R,
+  -r, --recursive`; `cp --recursive-r a b`: "unrecognized option". The help-page half is Projection: `the help page
+  lists cp's options and nothing cp refuses`. Fixture.
+  **Verdict 2026-10-11:** done (fixture). `--recursive` takes `-R` and `-r`; `--recursive-r` is gone, so `--rec`
+  resolves and the help page lists cp's names only.
+- [x] **17. `-u` is `--update` without a value, and the later of the two wins.** Projection: `-u is --update without
+  a value and the later of the two wins`. With `b` older than `a`, `cp --update=none -u a b` replaced `b`; `cp -u
+  --update=none a b` left it. Fixture.
+  **Verdict 2026-10-11:** done (fixture). `-u` and `--update` are one setting under `lastWins`; `-u` binds `update =
+  older` when it is the later.
+- [x] **18. `--backup`: a bare one keeps the control already chosen, an empty one means the default, and only the
+  last is read.** Projection: `a bare --backup keeps the control already chosen and an empty one means what -b
+  means`, `-b and a bare --backup are one setting`, `a backup control alias binds what its control binds`;
+  Converter: `an invalid earlier --backup is never read`. With `b.~1~` present, `cp --backup=simple --backup a b`
+  made `b~` and `cp --backup=simple --backup= a b` made `b.~2~`; `cp --backup=bogus --backup=never a b` exits 0;
+  `--backup=t` makes `b.~1~`, `nil` makes `b~`. (Corrected 2026-10-10: an empty `--backup=` does not keep the
+  earlier control.) Fixture, or klap's `.optionalValue()` for the bare form.
+  **Verdict 2026-10-11:** done (fixture). `--backup` is free text read after the options: the last control that names
+  one wins, else the environment's `VERSION_CONTROL`, else `existing`, matched as gnulib's argmatch does (unique
+  prefixes, aliases bound by the first name); `-b`, a bare `--backup` and `-S` all ask for a backup.
+- [x] **19. `--preserve` and `--context` take a value only when attached.** Projection: `--preserve and --context
+  take their value only when attached`; ValueCandidates: `--preserve and --context leave a spaced word to the
+  operands`, `a bare --preserve or --context leaves the next option to take the cursor word`. `cp --help`:
+  `--preserve[=ATTR_LIST]`, `--context[=CTX]`; `cp --preserve mode a b`: "target 'b': Not a directory". Fixture.
+  **Verdict 2026-10-11:** done (fixture). `--preserve` and `--context` take an optional value; bare, `--preserve` is
+  `mode,ownership,timestamps` and `--context` is `-Z`.
+- [x] **20. An attribute list holds cp's attribute names, and repeated lists add up.** Converter: `an attribute list
+  refuses a name cp does not have`, `an attribute list reads a unique prefix as the name it abbreviates`, `a
+  repeated attribute list adds to the earlier one`, `an invalid earlier attribute list refuses the line`;
+  ValueCandidates: `an attribute list completes cp's attribute names after each comma`. `cp --preserve=bogus` is
+  refused, `--preserve=m` reads as `mode`, `--preserve=mode --preserve=timestamps` keeps both. Fixture.
+  **Verdict 2026-10-11:** done (fixture). The attribute-list converter refuses a name cp lacks and reads a unique
+  prefix as its name; lists are `.multiple()` and add up; completion offers the names after each comma.
+- [x] **25. Help and completion describe cp's inputs in cp's words.** SuggestionList: `a long name is described in
+  cp's words`, `--no-dereference is described as never following links`, `--help and --version are described in
+  cp's words`, `a cluster continues with cp's letters in cp's words`; Completion: `a long name is described in cp's
+  words wherever the cursor sits in it`; ValueCandidates: `an attached choice is described by cp's help`, `an
+  attached choice keeps cp's help through prefixes and abbreviations`; LineContext: `an override partner around the
+  cursor is described in cp's words`. `cp --help`, verbatim. klap 0.6.0 has what it needs (`negatable(help =)`,
+  `Help.Generate(description =)`, `Version.Of(description =)`), so this is fixture work. The version text is done:
+  `CpVersionTest`.
+  **Verdict 2026-10-11:** done (fixture). Every help text is `cp --help`'s, `-P` has its own, and
+  `--help`/`--version` carry cp's descriptions.
+- [x] **58. The option pairs cp refuses before it copies are refused.** Projection: `options cp cannot combine are
+  refused`. `cp -l -s a o`: "cannot make both hard and symbolic links"; `-n -b`: "--backup is mutually exclusive
+  with -n or --update=none-fail"; `--reflink --sparse=never`: "--reflink can be used only with --sparse=auto".
+  Fixture (`requireAtMostOne` for `-l`/`-s`, validation for the value-dependent pairs).
+  **Verdict 2026-10-11:** done (fixture). `requireAtMostOne(link, symbolicLink)` and validations refuse a backup with
+  `-n` or `--update=none[-fail]`, and `--reflink=always` with a `--sparse` other than `auto`.
+- [x] **62. A backup without its own control or suffix takes them from the environment.** Projection: `a backup
+  without its own control or suffix takes them from the environment` (10 of its 13 cells fail; the passing
+  neighbour `the backup environment changes nothing where cp makes no backup or names its control` stays green).
+  Real cp 9.12 with `b` existing: under `VERSION_CONTROL=numbered`, `cp -b`, `--backup`, `--backup=` and `-S .x`
+  make `b.~1~` and `--backup=simple` makes `b~`; `VERSION_CONTROL=n` is ambiguous and `bogus` invalid, refused
+  only when cp backs up; `SIMPLE_BACKUP_SUFFIX=.env cp -b a b` makes `b.env`, `-S` beats it, and a suffix with a
+  slash or an empty one falls back to `~`. `cpCli(environment)` is the seam, unused so far. Fixture.
+  **Verdict 2026-10-11:** done (fixture). `cpCli(environment)` resolves `VERSION_CONTROL` and `SIMPLE_BACKUP_SUFFIX`
+  only when a backup is made; an empty suffix or one holding a slash is ignored.
+- [x] **59. Completion stops a short cluster at a negative short.** cp: Completion `a negative short continues a
+  cluster as any flag does`. `suggestionsFor("cp -P")` gives `[-P]` and `cp -Pv` gives `[]`; real `cp -Pv a c1`
+  copies. `firstNonFlagShort` (`internal/render/Completion.kt`) looks letters up through the flags' own shorts,
+  which hold no negative short. klap core.
+  **Verdict 2026-10-11:** done (klap core). `firstNonFlagShort` steps over a flag's negative shorts as over its plain
+  ones; `ShortClusterCompletionTest` `a negative short continues a cluster as any flag does`.
+- [x] **60. Completion offers the operand slot after an ambiguous long.** cp: Completion `nothing completes after an
+  ambiguous long`, ValueCandidates `an ambiguous abbreviation leaves the next word without candidates`.
+  `suggestionsFor("cp --re ")` gives the file directive; `cp --re a b`: "option '--re' is ambiguous". Decision K34
+  says nothing; `matchingValueOption` returns null on `NameMatch.Ambiguous` and the positional branch answers.
+  klap core.
+  **Verdict 2026-10-11:** done (klap core). After an ambiguous long the planner offers nothing, through one
+  `resolvedLong` helper; an unknown long still leaves the next word an operand (K47); `AmbiguousLongCompletionTest`.
+  Not covered yet: an ambiguous long carrying `=x`, or one earlier than the word before the cursor.
+- [x] **61. The first of `--help`, `--version` and a bad option or value decides, in line order (owner,
+  2026-10-11).** GNU coreutils answers `--help` and `--version` inside getopt's loop, so whatever the line gives
+  first wins; klap follows it, reversing 36b and extending 36a. Real cp 9.12, run word by word:
+  `cp --help --bogus` and `cp --help --sparse=bogus` print the usage, `cp --version --bogus` the banner (exit 0);
+  `cp --bogus --help` is "unrecognized option" and `cp --sparse=bogus --help` "invalid argument 'bogus' for
+  '--sparse'" (exit 1). `ls` and `mkdir` read `--bogus` the same way; grep refuses both orders. klap today answers
+  help ahead of a bad value in either order and refuses a bad option in either order.
+  - Targets: `ArgvOrderInvarianceTest` `--help or --version written before a bad option answers`, `a bad value
+    written before --help refuses the line` (its passing neighbours `a bad option written before --help or
+    --version refuses the line`, `--help written before a bad value answers` must stay green); cp
+    `CpProjectionTargetsTest` `help or version written before an unknown option answers`, `a bad choice written
+    before help refuses the line`; find `FindParityTest` `version answers ahead of a later unknown predicate`.
+  - Also changes: pacman refuses both orders, so `PacmanProjectionTest` `an unknown option on the line refuses it
+    even beside help` (its `--help --bogus` cell) and `an unknown option refuses the line beside version` become
+    will-not-do records; `BuiltinsTest` `unknown option with help errors identically to without help` keeps its
+    `--zzz --help` order. The guide's "Which built-in answers" paragraph ("An option the tree declares nowhere
+    refuses the line ahead of both buckets, wherever it stands ... A bad *value* does not") and the comment over
+    `versionFirst` in `Parser.kt` state the old rule. A `prio` command (36b note above) is untouched.
+  - Layer: klap core (`Parser.kt`: the built-in answer and the walk's first error compare positions).
+  **Verdict 2026-10-11:** done (klap core). `parseTokens` compares the earliest refusal (an unknown or ambiguous
+  option, a value given to a flag, a value failing its conversion or check, a bad `--color`) with the answering
+  built-in's token, and the earlier wins; operands, required inputs and `validateInputs` never refuse help.
+  `GnuConformanceTest` `the first of --help and a bad option or value decides`, `operands are checked after the
+  options so they never refuse --help`; the guide states it. pacman refuses both orders, so its tests became
+  will-not-do records (`an unknown option refuses the line beside help or version`, `help outranks a bad value
+  written before it`).
+
+- [x] **56. GNU getopt_long is klap's standard, not the POSIX guidelines.** Decided by the owner 2026-10-10 (56 A),
+  with 33a (a `--` in an option's value slot is that value, as getopt reads it: `ls --sort --` is "invalid argument
+  '--' for '--sort'", `grep -e -- -v` searches for `--` and still reads `-v`). The guide's "POSIX conformance" becomes
+  "GNU conformance", `PosixConformanceTest` becomes `GnuConformanceTest`, each rule shown by a real tool, and KDoc that
+  cites a POSIX guideline states the GNU rule. Item 33 moves from will not do to done with it.
+  - 56b (owner, A): the default abbreviation is `Abbreviation.LongOptions`, getopt_long's own rule: long names
+    abbreviate (`mkdir --par d`, `ls --s` "is ambiguous"), values do not; coreutils' value matching
+    (`ls --colo=al`) stays `Options`, opted into.
+  **Verdict 2026-10-10:** done. The guide's "GNU conformance" section and the README list getopt_long's rules, each
+  with a real tool's line; `GnuConformanceTest` (24 tests) replaces `PosixConformanceTest`; every KDoc and test
+  comment that cited a POSIX guideline states the getopt rule. The default abbreviation is `LongOptions` (56b).
+- [x] **33. A `--` that an option takes as its value is that value.** Filed as will not do on 2026-10-10.
+  **Verdict 2026-10-10 (owner, 33a):** reversed with item 56: as getopt reads it, the word after a value-taking option
+  is its value even when it is `--` (`ls --sort --`, `grep -e -- -v`), and the options go on after it; only a `--`
+  where an option would stand ends them. The pacman tests `a value word that is exactly the end of options is the
+  value`, `names go on after a -- that was an option's value` and `an end of options taken as a value leaves the
+  options open` pass.
+- [x] **55. A typed error for one command named twice.** **Verdict 2026-10-10 (owner, A):** `CliError.RepeatedCommand(
+  command)`, rendered "'--query' may be given only once" and in JSON as `{"type":"RepeatedCommand","command":"--query"}`,
+  replaces the `CliError.Usage` sentence klap used for `pacman -QQ`; `Usage` stays the app's own. `FlagCommandTest`
+  `K7ad two commands of one parent on a line are refused` pins both forms.
+- [x] **6. The operation given twice is refused.** pacman refuses `-Q -Q` and `-QQ` ("only one operation may be used
+  at a time"). Filed as will not do on 2026-10-10, as a repeated flag is harmless in a normal CLI.
+  **Verdict 2026-10-10 (owner):** reversed: an operation is a flag-spelled command now (item 47), and naming one command
+  twice is refused as pacman refuses it. `PacmanProjectionTest` `the operation given twice is refused` and
+  `PacmanLineContextTest` `an operation given before or after the cursor is not offered again` pass.
+- [x] **52. A pacman completion target expects fewer repeats than pacman takes.** `PacmanCompletionTest`
+  `a cluster continues from the cursor with its operation's page letters` (still ignored) expects `pacman -Qii<TAB>`
+  to stop offering `-i` ("a counted one once more"), but `pacman -Qiii pacman` exits 0 (pacman 7.1.0, run
+  2026-10-10), and item 13 decided that a counted letter is offered again. klap offers `-Qiii`. The test needs fixing,
+  not klap: once the model allows a counted letter any number of times, the target should pass.
+  **Verdict 2026-10-10:** the model was wrong, as filed: it now lets a counted letter repeat any number of times, as
+  pacman does, and the target passes in `PacmanCompletionTest`.
+- [x] **53. pacman's operations are commands now: other modelling notes.** Found while moving it (2026-10-10):
+  `builtins { helpAll = false }` was added so pacman can decline `--help-all`, which a tree with subcommands offers
+  (item 49 folds it into `helpAll = Builtin.Off`); a line naming no operation is refused by a root
+  `validateInputs` ("no operation specified"); `pacman -QQ` is refused as pacman refuses it.
+  **Verdict 2026-10-10:** recorded, nothing open: `helpAll = false` became `helpAll = Builtin.Off` with item 49.
+- [x] **50. A negation describes itself.** Decided by the owner 2026-10-10 (50 A): `.negatable(..., help = "...")`
+  gives the negative half its own words, its own `--help` row and its own description in Tab. pacman declares
+  `--noconfirm` with `--confirm` as its negation, which orders the two as pacman does (the later wins), and its record
+  holds one `noConfirm`, pacman's `config->noconfirm`. Closes cp's `a negation spelling carries its own help` too.
+  **Verdict 2026-10-10:** done in klap 0.6.0 (`NegationSpellingTest` `a negation with its own help has a row and a
+  description of its own`); pacman declares `--noconfirm` with `--confirm` as its negation.
+- [x] **49. One value per built-in instead of switches and texts.** Proposed by the owner 2026-10-10, being decided
+  one by one. Today `builtins { }` holds 7 switches (`json`, `color`, `completion`, `docs`, `helpShort`, `helpAll`,
+  `versionShort`) and 7 texts, which can disagree (`json = false` beside a `jsonText`).
+  - 49a: help takes three cases: `Help.Generate` (the page klap generates, the default), `Help.Custom("...")`, whose
+    text is the page `--help` prints, and `Help.Off`. Turning help off undoes the rule that `--help` always exists.
+  - 49b: the `--help` row words (today's `helpText`) and the `-h` short are parameters of the two cases that keep
+    `--help`: `Help.Generate(description = ..., short = 'h')`, `Help.Custom(page, description = ..., short = 'h')`,
+    klap's words and `-h` by default. Nothing stays a separate switch or text.
+  - 49c: `Version` takes the same three cases (`Generate` prints `<name> <version>`, `Custom` a text of the tool's own,
+    such as pacman's banner, `Off`), with `description` and `short` on the first two. `helpAll`, `json`, `color`,
+    `completion` and `docs` take `Builtin.On(description = ...)`, the default, or `Builtin.Off`: they only report
+    the tree, so there is nothing to replace. `Version.Off` is the one way to drop `--version`; the root's `version`
+    string stays (the `--json` envelope and the docs read it), and a `version` built-in on without one is refused.
+  - 49d (owner, 2026-10-10, A; replaces 49c's `Version`): `version` on the root takes `Version.Off`, the default, or
+    `Version.Of(number, long = "version", short: Char? = null, description = null, text = null)`, one value that both
+    turns `--version` on and holds the number, its spellings, its row words and, as `text`, a line of the tool's own to
+    print in place of `<name> <number>` (pacman's banner). Nothing about the version stays in `builtins { }`.
+  **Verdict 2026-10-10:** done in klap 0.6.0 as 49a to 49d decided: `builtins { }` takes `help: Help` (`Generate`,
+  `Custom`, `Off`) and `Builtin.On`/`Builtin.Off` for `helpAll`, `json`, `color`, `completion` and `docs`; the root's
+  `version` is `Version.Off` or `Version.Of(...)`, whose spellings read as a flag's (`short = 'V'` alone is `-V`
+  only, item 54). The internal `Builtin` enum became `BuiltinKind`. `BuiltinsTest` pins `Help.Off`, `Help.Custom`
+  and `Version.Of`'s long, short and text.
+- [x] **54. `Version.Of` cannot go without a long.** ssh's version switch is `-V` alone (`ssh --version`: "unknown
+  option -- -"), but `Version.Of` always gives `--version` a long, so the fixture accepts it.
+  `SshParityTest` `--version is refused as ssh refuses it`, ignored as a target.
+  **Verdict 2026-10-10 (owner):** `Version.Of(number, short = 'V')` is the short alone, as a flag's spellings read
+  (48e); `long` and `short` together give both. ssh declares it, and the test passes.
 - [x] **4. An option belongs to the operations whose page lists it.** `PacmanProjectionTargetsTest`
   `a long of another operation is refused under -Q` (and `-S`, `-R`, `-U`, `-D`, `-F`, `-T`: 7 tests) and
   `a letter of another operation is refused under ...` (7 tests). `pacman -Q --needed pacman` gives "error:

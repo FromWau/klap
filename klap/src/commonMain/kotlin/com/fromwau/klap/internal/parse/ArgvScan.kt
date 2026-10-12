@@ -8,8 +8,12 @@ import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Command
 import com.fromwau.klap.SubcommandMatch
+import com.fromwau.klap.builtinLongTable
 import com.fromwau.klap.internal.spec.OptionSpec
+import com.fromwau.klap.internal.spec.shorts
 import com.fromwau.klap.resolveSubcommand
+import com.fromwau.klap.routesTransparently
+import com.fromwau.klap.takesNextWord
 
 /**
  * argv as the position-independent built-in scans see it: the [tokens] still in play, the index each one
@@ -21,19 +25,20 @@ import com.fromwau.klap.resolveSubcommand
  * however it is spelled. A strip returns a NEW view whose positions still index the original argv, so the
  * rule survives however many strips have already run over the line.
  *
- * [pool] is the long surface a spelling resolves against, which is the tree-wide one before the subcommand
- * walk and the reached command's own after it. [infer] is the root's own mode reduced to the one question a
- * scan asks — may a long spelling resolve by prefix here.
+ * [pools] gives, for an original argv index, the long surface a spelling there resolves against: the pool of
+ * the command in scope at that token ([builtinScan]), which is the one that command's own sift resolves against
+ * too. [infer] is the root's own mode reduced to the one question a scan asks: may a long spelling resolve by
+ * prefix here.
  */
 internal class ArgvScan(
-    private val pool: List<String>,
+    private val pools: (position: Int) -> List<String>,
     val infer: Boolean,
     val valueSlots: Set<Int>,
     val tokens: List<String>,
     val positions: List<Int> = tokens.indices.toList(),
 ) {
     /** Where the options end: the marker's index, or the whole list when the line carries none. */
-    private val headSize: Int = tokens.indexOf(END_OF_OPTIONS).let { if (it < 0) tokens.size else it }
+    private val headSize: Int = tokens.endOfOptions(positions, valueSlots).let { if (it < 0) tokens.size else it }
 
     private fun isOpen(i: Int): Boolean = i < headSize && positions[i] !in valueSlots
 
@@ -43,39 +48,49 @@ internal class ArgvScan(
     /** The tokens a scan may act on, in argv order. */
     val openTokens: List<String> get() = open.map { tokens[it] }
 
-    /** The [pool] entry [token] names, exactly or as an unambiguous abbreviation; null when it names none. */
-    fun matched(token: String): String? = matchedLong(token, pool, infer)
+    /** The long pool a spelling at the original argv [position] resolves against. */
+    fun poolAt(position: Int): List<String> = pools(position)
+
+    /** The pool entry the token at [i] names, exactly or as an unambiguous abbreviation; null when it names none. */
+    fun matched(i: Int): String? = matched(tokens[i], positions[i])
+
+    /** The pool entry [token] names were it standing at the original argv [position]. */
+    fun matched(token: String, position: Int): String? = matchedLong(token, pools(position), infer)
 
     /**
      * Whether a bare (valueless) token names the built-in [long]. The `=value` shape is deliberately not a
      * match: every built-in this answers for is boolean, and its `--<name>=value` form is reported before
      * any of these scans run.
      */
-    fun names(long: String): Boolean = open.any { '=' !in tokens[it] && matched(tokens[it]) == long }
+    fun names(long: String): Boolean = firstNaming(long) != null
 
     /** Where the first token a scan may act on that passes [test] stands, for ordering two built-ins; null if none. */
     fun firstOpen(test: (String) -> Boolean): Int? = open.firstOrNull { test(tokens[it]) }
 
     /** Where the first bare token naming one of [longs] stands; see [firstOpen]. */
-    fun firstNaming(vararg longs: String): Int? = firstOpen { '=' !in it && matched(it) in longs }
+    fun firstNaming(vararg longs: String): Int? = open.firstOrNull { '=' !in tokens[it] && matched(it) in longs }
+
+    /** Where the first `--<name>=value` token naming one of [longs] stands. */
+    fun firstAttached(longs: Collection<String>): Int? = open.firstOrNull { '=' in tokens[it] && matched(it) in longs }
+
+    /** Where the first token naming [long] stands, bare or with `=value`. */
+    fun firstSpelling(long: String): Int? = open.firstOrNull { matched(it) == long }
+
+    /** Where the last token naming [long] stands, bare or with `=value`. */
+    fun lastSpelling(long: String): Int? = open.lastOrNull { matched(it) == long }
+
+    /** The `=value` of the token at [i], or null when it carries none. */
+    fun attached(i: Int): String? = tokens[i].takeIf { '=' in it }?.substringAfter('=')
 
     /**
-     * The value of a position-independent `--<long> value` / `--<long>=value` meta-option: the value,
-     * `null` when it is absent, or MissingOptionValue when it is present without one. The LAST occurrence
-     * wins, the same rule value options follow generally.
-     *
-     * A flag-like next token is never swallowed: a meta-option is klap's own and is read before any command
-     * resolves, so it keeps the strict reading the greedy rule dropped for a COMMAND's options, and
-     * `--color --json` still means a missing `--color` value rather than the literal value "--json".
+     * The value of a position-independent `--<long> value` / `--<long>=value` meta-option that requires one:
+     * the value, `null` when the option is absent, or MissingOptionValue when nothing follows it. The LAST
+     * occurrence wins, the same rule value options follow generally. The word after it is the value whatever it
+     * is spelled, as getopt_long takes a required argument (`--completion --json` asks for the shell `--json`).
      */
     fun value(long: String): Result<String?, CliError> {
-        val at = open.lastOrNull { matched(tokens[it]) == long } ?: return Result.Success(null)
-        val token = tokens[at]
-        val value = if ('=' in token) {
-            token.substringAfter('=')
-        } else {
-            tokens.getOrNull(at + 1)?.takeIf { at + 1 < headSize && !it.isFlagLike() }
-        }
+        val at = lastSpelling(long) ?: return Result.Success(null)
+        val value = attached(at) ?: tokens.getOrNull(at + 1)
         // [long] is the bare pool key; an error names an option the way every declared one is named, dashed.
         return value?.let { Result.Success(it) } ?: Result.Error(CliError.MissingOptionValue("--$long"))
     }
@@ -85,55 +100,38 @@ internal class ArgvScan(
      * since that shape is a usage error the caller has already reported.
      */
     fun strip(long: String): ArgvScan =
-        keeping(open.filterTo(mutableSetOf()) { '=' !in tokens[it] && matched(tokens[it]) == long })
+        keeping(open.filterTo(mutableSetOf()) { '=' !in tokens[it] && matched(it) == long })
+
+    /** This view with every token naming [long] removed, bare or with `=value`: an optional-value meta-option. */
+    fun stripSpellings(long: String): ArgvScan = keeping(open.filterTo(mutableSetOf()) { matched(it) == long })
 
     /**
-     * This view with every `--<long>`/`--<long>=value` occurrence removed, along with its value token in
-     * the space form. Mirrors [strip], but a required-value meta-option like `--color` also needs its
-     * consumed value gone, or it would resurface as a stray positional in the subcommand walk. A flag-like
-     * token after `--<long>` is never swallowed (matching [value]'s own read), since that shape means the
-     * value was missing, already rejected by the caller's validation before this ever runs.
+     * This view with every `--<long>`/`--<long>=value` occurrence removed, along with its value token in the
+     * space form, whatever that token is spelled: [value]'s reading of a required-value meta-option.
      */
     fun stripValued(long: String): ArgvScan {
         val dropped = mutableSetOf<Int>()
-        var i = 0
-        while (i < headSize) {
-            if (isOpen(i) && matched(tokens[i]) == long) {
-                dropped += i
-                if ('=' !in tokens[i] && i + 1 < headSize && !tokens[i + 1].isFlagLike()) {
-                    dropped += i + 1
-                    i += 1
-                }
-            }
-            i += 1
+        for (i in open) {
+            if (matched(i) != long) continue
+            dropped += i
+            if ('=' !in tokens[i] && i + 1 < tokens.size) dropped += i + 1
         }
         return keeping(dropped)
     }
 
     private fun keeping(dropped: Set<Int>): ArgvScan {
         val kept = tokens.indices.filterNot { it in dropped }
-        return ArgvScan(pool, infer, valueSlots, kept.map { tokens[it] }, kept.map { positions[it] })
+        return ArgvScan(pools, infer, valueSlots, kept.map { tokens[it] }, kept.map { positions[it] })
     }
 }
 
 /**
- * The [argv] indices holding a value-taking option's argument, read with full arity knowledge: the walk
- * descends the subcommand path as it goes, so a leaf's own options claim their values as surely as the
- * root's or a global's do.
- *
- * This is what every position-independent built-in scan skips. POSIX.1 XBD 12.2 guideline 6 gives the
- * token after `-e` to `-e` whatever it is spelled, and guideline 10 leaves `--` as the only thing that
- * ends option arguments, so `mygrep -e --json f.txt` must search for the literal `--json` and read
- * `f.txt` — no built-in, `--help` included, may step into that slot.
- *
- * Best-effort by design: an unknown option, an ambiguous abbreviation, or a malformed cluster claims
- * nothing, so a line klap is about to reject is scanned exactly as it was before, and the reached
- * command's own [sift] stays the one place that reports it.
+ * [argv] as every position-independent scan reads it: each token resolves against the pool of the command in
+ * scope where it stands, and the value slots are read off the tree's full arity ([ArityWalk]).
  */
-internal fun Cli.optionValueSlots(argv: List<String>): Set<Int> {
-    val end = argv.indexOf(END_OF_OPTIONS)
-    val head = if (end < 0) argv else argv.take(end)
-    return ArityWalk(this).slots(head)
+internal fun Cli.builtinScan(argv: List<String>): ArgvScan {
+    val walk = ArityWalk(this).apply { walk(argv) }
+    return ArgvScan(walk::poolAt, abbreviation != Abbreviation.None, walk.slots, argv)
 }
 
 /**
@@ -146,29 +144,51 @@ private class Claim(val takesNext: Boolean, val preStripped: Boolean)
 private val CLAIMS_NOTHING = Claim(takesNext = false, preStripped = false)
 
 /**
- * The left-to-right walk behind [optionValueSlots]. It tracks the command the tokens belong to as it goes,
- * so every option is resolved against the surface actually in scope at its position rather than against
- * the root's alone.
+ * The left-to-right walk behind [builtinScan]. It tracks the command the tokens belong to as it goes, routing
+ * as the subcommand walk routes, so every token is resolved against the surface actually in scope at its
+ * position, and the argv indices holding a value-taking option's argument ([slots]) are read with full arity
+ * knowledge: a leaf's own options claim their values as surely as the root's or a global's do.
+ *
+ * The slots are what every position-independent built-in scan skips. getopt gives the token after `-e` to `-e`
+ * whatever it is spelled, `--` included (`grep -e -- -v` searches for `--`), so `mygrep -e --json f.txt` must
+ * search for the literal `--json` and read `f.txt` — no built-in, `--help` included, may step into that slot.
+ *
+ * Best-effort by design: an unknown option, an ambiguous abbreviation, or a malformed cluster claims
+ * nothing, so a line klap is about to reject is scanned exactly as it was before, and the reached
+ * command's own [sift] stays the one place that reports it.
  */
 private class ArityWalk(private val cli: Cli) {
     private val globals = cli.globalLookup()
+    private val globalFlagShorts = globals.flagSpecs.flatMapTo(mutableSetOf()) { it.shorts }
 
     private var cmd: Command = cli
     private var pool: List<String> = cli.longMatchPool(globals)
+    private val pools = mutableMapOf<Command, List<String>>(cli to pool)
+
+    // The command in scope at each argv index the walk read; every later index is in [cmd]'s.
+    private val scopes = mutableListOf<Command>()
+
+    val slots = mutableSetOf<Int>()
+
+    /** The long pool of the command in scope at argv [position]. */
+    fun poolAt(position: Int): List<String> = pools.getValue(scopes.getOrNull(position) ?: cmd)
 
     // The subcommand walk stops at the first token klap cannot strip as a global before it, and every token
     // after that belongs to `cmd`'s own segment; descending past one would resolve later options against a
     // command the parse never reaches.
     private var routing = true
 
-    fun slots(head: List<String>): Set<Int> {
-        val slots = mutableSetOf<Int>()
+    fun walk(head: List<String>) {
         var i = 0
         while (i < head.size) {
             val token = head[i]
+            scopes += cmd
+            // Past an option's value, so this one ends the options; a `--` an option takes is skipped below.
+            if (token == END_OF_OPTIONS) return
             if (!token.isFlagLike()) {
                 val child = if (routing) {
-                    (cmd.resolveSubcommand(token, cli.abbreviation == Abbreviation.All) as? SubcommandMatch.One)?.command
+                    val match = cmd.resolveSubcommand(token, cli.abbreviation == Abbreviation.All)
+                    (match as? SubcommandMatch.One)?.command
                 } else {
                     null
                 }
@@ -176,25 +196,32 @@ private class ArityWalk(private val cli: Cli) {
                     routing = false
                     // `optionsEndAtFirstOperand` deliberately does not reach klap's position-independent
                     // built-ins, so past the operand that fires it the scans see argv as they always did.
-                    if (cmd.optionsEndAtFirstOperand) return slots
+                    if (cmd.optionsEndAtFirstOperand) return
                 } else {
                     enter(child)
                 }
                 i += 1
                 continue
             }
+            // The subcommand walk steps over these, so the tokens after them belong to the command it reaches.
+            if (routing && cli.routesTransparently(token, globalFlagShorts)) {
+                i += 1
+                continue
+            }
             val next = head.getOrNull(i + 1)
             val claim = if (token.startsWith("--")) longClaim(token, next) else clusterClaim(token, next)
-            if (claim.takesNext) slots += i + 1
+            if (claim.takesNext) {
+                slots += i + 1
+                scopes += cmd
+            }
             routing = routing && claim.preStripped
             i += if (claim.takesNext) 2 else 1
         }
-        return slots
     }
 
     private fun enter(child: Command) {
         cmd = child
-        pool = cmd.longMatchPool(globals)
+        pool = pools.getOrPut(child) { child.longMatchPool(globals) }
     }
 
     private fun longClaim(token: String, next: String?): Claim {
@@ -221,63 +248,49 @@ private class ArityWalk(private val cli: Cli) {
     /**
      * What a built-in spelling claims. Only `--json` and `--color` are removed before the walk; the rest
      * either short-circuit the parse outright or, like `--help`, survive into the walk and stop it.
+     * `--completion` and `--docs` take the next word whatever it is, as getopt_long's required argument does;
+     * `--color`'s value is optional, so it takes none.
      */
     private fun builtinClaim(long: String, inline: Boolean, next: String?): Claim = when {
         long == "json" && cli.builtins.json -> Claim(takesNext = false, preStripped = true)
-        // `--color` is stripped WITH its value, so the walk has to step over that token too. Recording it
-        // as a slot costs nothing: a value klap accepts here is never flag-like, so no built-in spelling
-        // can be sitting in it.
-        long == "color" && cli.builtins.color ->
-            Claim(takesNext = !inline && next != null && !next.isFlagLike(), preStripped = true)
+        long == "color" && cli.builtins.color -> Claim(takesNext = false, preStripped = true)
+        cli.builtinLongTable().takesNextWord(long) -> Claim(takesNext = !inline && next != null, preStripped = false)
 
         else -> CLAIMS_NOTHING
     }
 
     private fun clusterClaim(token: String, next: String?): Claim {
         val chars = token.removePrefix("-")
+        if (cmd.refusesCluster(chars, globals)) return CLAIMS_NOTHING
         // A cluster is pre-stripped only when EVERY char is a global; one local char leaves it whole for
         // the reached command's own sift, exactly as siftGlobals does.
         var allGlobal = true
         var j = 0
         while (j < chars.length) {
-            val run = cmd.numberRunAt(chars, j, globals)
-            if (run != null) {
-                // The number input is the command's own, so the cluster carrying it is never pre-stripped.
-                allGlobal = false
-                j += run.length
-                continue
+            val read = cmd.readShort(chars, j, globals)
+            when (read) {
+                // The number input is the command's own, and siftGlobals cannot strip a cluster carrying klap's
+                // own short either, so either one leaves the token whole for the walk, where it stops the routing.
+                is ShortRead.NumberRun, ShortRead.Builtin -> allGlobal = false
+                is ShortRead.Flag -> if (read.hit.globals == null) allGlobal = false
+                is ShortRead.Option -> {
+                    val attached = chars.length > j + 1
+                    val takesNext = takesValue(read.hit.spec, inline = attached, next = next)
+                    return Claim(takesNext, preStripped = allGlobal && read.hit.globals != null)
+                }
+
+                ShortRead.Unresolved -> return CLAIMS_NOTHING
             }
-            if (globals.isBuiltinShort(chars[j])) {
-                // Reads on past it like any other resolved char, but siftGlobals cannot strip a cluster
-                // carrying klap's own short, so the token survives into the walk and stops the routing.
-                allGlobal = false
-                j += 1
-                continue
-            }
-            val ch = chars[j].toString()
-            if (cmd.flags.findFlag("-$ch") != null || cmd.flags.findNegatedShort(ch) != null) {
-                allGlobal = false
-                j += 1
-                continue
-            }
-            if (globals.flagSpecs.findFlag("-$ch") != null || globals.flagSpecs.findNegatedShort(ch) != null) {
-                j += 1
-                continue
-            }
-            val local = cmd.options.findOption(null, ch)
-            val option = local ?: globals.optionSpecs.findOption(null, ch)
-            if (option == null) return CLAIMS_NOTHING
-            if (local != null) allGlobal = false
-            val attached = chars.length > j + 1
-            return Claim(takesValue(option, inline = attached, next = next), preStripped = allGlobal)
+            j += read.width
         }
         return Claim(takesNext = false, preStripped = allGlobal)
     }
 
     /**
      * Whether [option] reaches for the token after it. An `.optionalValue(...)` option never does — it
-     * cannot tell its own value from an operand — and neither does one whose value is already attached.
+     * cannot tell its own value from an operand — nor does a `.gluedValue()` one or one whose value is already
+     * attached.
      */
     private fun takesValue(option: OptionSpec, inline: Boolean, next: String?): Boolean =
-        !inline && option.bareValue == null && next != null
+        !inline && !option.valueAttachedOnly && next != null
 }

@@ -147,7 +147,7 @@ public class ParitySuite<T>(private val typed: TypedCli<T>) {
 
     /**
      * A built-in swallows [argv] before the command sees it, so the line is neither bound nor rejected —
-     * `rm __complete` resolves to completion candidates, `chmod -h ...` to help. Pinning these keeps a
+     * `rm __complete` resolves to completion candidates, `git -h` to help. Pinning these keeps a
      * built-in's reach visible: it is the mechanism behind every name-collision note in the fixtures.
      */
     public fun shortCircuits(vararg argv: String, because: String) {

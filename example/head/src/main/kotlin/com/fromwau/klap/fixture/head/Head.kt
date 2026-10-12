@@ -32,7 +32,7 @@ public fun headCli(): TypedCli<HeadInputs> = cliOf("head") {
     // GNU head takes any unambiguous prefix of a long option: `head --ver f` is ambiguous.
     abbreviation = Abbreviation.Options
     help = "Print the first 10 lines of each FILE to standard output."
-    version = Version.Of("9.11")
+    version = Version.Of("9.12", text = HEAD_VERSION_TEXT)
     epilogue = "With no FILE, or when FILE is -, read standard input. " +
         "NUM may have a multiplier suffix: b 512, kB 1000, K 1024, MB 1000*1000, M 1024*1024, and so on."
 
@@ -51,7 +51,7 @@ public fun headCli(): TypedCli<HeadInputs> = cliOf("head") {
 
     // The two spellings of one quantity, folded so the action reads a line count without knowing which was
     // written; the fold then takes part in the unit override below as one member.
-    val lines = lastOneWins(named, direct)
+    val lines = lastOf(named, direct)
 
     val bytes = option(short = 'c', long = "bytes", help = "print the first NUM bytes of each file")
         .validate("invalid number of bytes") { HEAD_NUM.matches(it) }
@@ -59,7 +59,7 @@ public fun headCli(): TypedCli<HeadInputs> = cliOf("head") {
 
     // Real head lets the LAST of -c/-n decide the unit: `head -c 5 -n 3 f` prints three lines and
     // `head -n 3 -c 5 f` prints five bytes, both verified against coreutils 9.11. That is an override
-    // rule, so requireAtMostOne would be wrong here: it would reject lines real head accepts.
+    // rule, so atMostOne would be wrong here: it would reject lines real head accepts.
     lastWins(lines, bytes)
 
     // One holder carries all three of real head's spellings, so `-q`, `--quiet` and `--silent` are the
@@ -119,3 +119,15 @@ public val NOTHING_BOUND: HeadInputs = HeadInputs(
     zeroTerminated = false,
     files = emptyList(),
 )
+
+/**
+ * What `head --version` prints for GNU coreutils 9.12, the version installed when it was pinned
+ * (2026-10-10).
+ */
+internal val HEAD_VERSION_TEXT: String = """head (GNU coreutils) 9.12
+Copyright (C) 2026 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Written by David MacKenzie and Jim Meyering."""

@@ -6,6 +6,7 @@ import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.TypedCli
+import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
 
@@ -30,6 +31,8 @@ public fun sshCli(): TypedCli<SshInputs> = cliOf("ssh") {
     // locally instead of reaching the remote host.
     optionsEndAtFirstOperand = true
     help = "OpenSSH remote login client"
+    // `ssh -V` prints the version and exits 0.
+    version = Version.Of("10.6p1", short = 'V', text = SSH_VERSION_TEXT)
     epilogue = "Everything after the destination is handed to the remote shell verbatim."
 
     example(
@@ -113,10 +116,6 @@ public fun sshCli(): TypedCli<SshInputs> = cliOf("ssh") {
     val ipv4 = flag(short = '4', long = "ipv4", help = "force IPv4 addresses only")
     val ipv6 = flag(short = '6', long = "ipv6", help = "force IPv6 addresses only")
 
-    // KLAP-GAP: ssh prints its version with `-V`, but `reservedLongNames()` reserves `version` for klap's
-    // own built-in (which carries no short), so `-V` here is a plain flag the action interprets itself.
-    val showVersion = flag(short = 'V', long = "show-version", help = "display the version number (real ssh: -V)")
-
     // ---------------------------------------------------------------------------------------------
     // Operands
     // ---------------------------------------------------------------------------------------------
@@ -164,7 +163,6 @@ public fun sshCli(): TypedCli<SshInputs> = cliOf("ssh") {
             if (!forwardAgent()) add("no-forward-agent")
             if (ipv4()) add("ipv4")
             if (ipv6()) add("ipv6")
-            if (showVersion()) add("show-version")
         }
         val host = destination()
         val what =
@@ -195,7 +193,6 @@ public fun sshCli(): TypedCli<SshInputs> = cliOf("ssh") {
             forwardAgent = forwardAgent(),
             ipv4 = ipv4(),
             ipv6 = ipv6(),
-            showVersion = showVersion(),
             destination = destination(),
             remoteCommand = remoteCommand(),
         )
@@ -229,7 +226,6 @@ public data class SshInputs(
     val forwardAgent: Boolean,
     val ipv4: Boolean,
     val ipv6: Boolean,
-    val showVersion: Boolean,
     val destination: String,
     val remoteCommand: List<String>,
 )
@@ -256,10 +252,15 @@ public val NOTHING_BOUND: SshInputs = SshInputs(
     forwardAgent = false,
     ipv4 = false,
     ipv6 = false,
-    showVersion = false,
     destination = "",
     remoteCommand = emptyList(),
 )
 
 /** A `-o` occurrence that is not `KEY=VALUE`. */
 private data object NotKeyValue : IError
+
+/**
+ * What `ssh -V` prints for OpenSSH 10.6p1, the version installed when it was pinned
+ * (2026-10-10).
+ */
+internal val SSH_VERSION_TEXT: String = """OpenSSH_10.6p1, OpenSSL 3.6.5 29 Sep 2026"""

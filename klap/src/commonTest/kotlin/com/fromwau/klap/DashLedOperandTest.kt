@@ -11,6 +11,7 @@ import kotlin.test.assertIs
 class DashLedOperandTest {
 
     private fun seekTree(mark: Boolean) = cli("echoctl") {
+        builtins { help = Help.ByCommand(short = 'h') }
         command("seek") {
             val position = if (mark) argument("position").dashLed() else argument("position")
             action { Ok("pos=${position()}") }

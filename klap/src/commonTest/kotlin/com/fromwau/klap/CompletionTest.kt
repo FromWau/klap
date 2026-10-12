@@ -9,8 +9,8 @@ import com.fromwau.klap.internal.render.Candidate
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 private fun sampleTree(): Cli = cli("todo") {
@@ -20,9 +20,6 @@ private fun sampleTree(): Cli = cli("todo") {
         command("set") { action { Ok("") } }
     }
 }
-
-/** Drives the same planner `__complete` answers from, for a tree with no subcommand to route through first. */
-private fun Cli.completionsFor(vararg words: String): List<String> = completeCandidates(words.toList()).map { it.value }
 
 private fun globalPrecedingSubcommandTree(): Cli = cli("myapp") {
     globalFlag(short = 'v', long = "verbose")
@@ -37,6 +34,7 @@ private fun globalPrecedingSubcommandTree(): Cli = cli("myapp") {
 class ShortClusterCompletionTest {
 
     private val cli = cli("tasks") {
+        builtins { help = Help.ByCommand(short = 'h') }
         command("list") {
             flag(short = 'r', long = "reverse", help = "newest first")
             flag(short = 'l', long = "long", help = "show due date and tags")
@@ -47,9 +45,9 @@ class ShortClusterCompletionTest {
 
     @Test
     fun `a partial short cluster offers every remaining short as a continuation`() {
-        // Guideline 5 bundles one-character options into one token, so a half-typed cluster has
+        // getopt bundles one-character options into one token, so a half-typed cluster has
         // continuations: `-r<TAB>` offers them, and only them, as `pacman -Q<TAB>` does.
-        val candidates = cli.completionsFor("list", "-r")
+        val candidates = cli.offered("list", "-r")
         assertTrue("-rl" in candidates, "expected -rl among $candidates")
         assertTrue("-rn" in candidates, "expected -rn among $candidates")
         assertTrue("-r" !in candidates, "the cluster typed so far is not a continuation of itself: $candidates")
@@ -59,7 +57,7 @@ class ShortClusterCompletionTest {
 
     @Test
     fun `clustering continues past the second flag`() {
-        val candidates = cli.completionsFor("list", "-rl")
+        val candidates = cli.offered("list", "-rl")
         assertTrue("-rln" in candidates, "expected -rln among $candidates")
         assertTrue("-rlr" !in candidates, "already-typed shorts stay out: $candidates")
     }
@@ -71,30 +69,44 @@ class ShortClusterCompletionTest {
             flag(short = 'l', long = "long")
             action { Ok("") }
         }
-        val candidates = counting.completionsFor("-v")
+        val candidates = counting.offered("-v")
         assertTrue("-vv" in candidates, "a counted short means more each time: $candidates")
-        assertTrue("-ll" !in counting.completionsFor("-l"), "a plain flag binds once")
+        assertTrue("-ll" !in counting.offered("-l"), "a plain flag binds once")
     }
 
     @Test
     fun `the help short continues a cluster as any flag does`() {
         // getopt reads every letter after `-h`: `pacman -Qhi` prints the -Q page, `pacman -Qhz` is an invalid option.
-        val candidates = cli.completionsFor("list", "-rh")
+        val candidates = cli.offered("list", "-rh")
         assertTrue("-rhl" in candidates, "expected -rhl among $candidates")
+    }
+
+    @Test
+    fun `a negative short continues a cluster as any flag does`() {
+        // getopt reads `-P` of `-L, -P` as one more letter of the cluster: `cp -rP a b` and `cp -Pr a b` copy.
+        val negating = cli("copy") {
+            flag(short = 'L', long = "dereference").negatable(short = 'P', long = "no-dereference")
+            flag(short = 'r', long = "recursive")
+            action { Ok("") }
+        }
+        val afterNegative = negating.offered("-P")
+        assertTrue("-Pr" in afterNegative, "expected -Pr among $afterNegative")
+        val throughNegative = negating.offered("-rP")
+        assertTrue("-rPL" in throughNegative, "expected -rPL among $throughNegative")
     }
 
     @Test
     fun `a value taking short ends the cluster so nothing is offered after it`() {
         // `-n` consumes the rest of the token as its value, so no further short can follow it. Offering
         // one would suggest a line klap then rejects.
-        assertTrue(cli.completionsFor("list", "-rn").none { it.length > 3 }, "nothing may follow a value-taker")
-        assertEquals(emptyList(), cli.completionsFor("list", "-n").filter { it != "-n" })
+        assertTrue(cli.offered("list", "-rn").none { it.length > 3 }, "nothing may follow a value-taker")
+        assertEquals(emptyList(), cli.offered("list", "-n").filter { it != "-n" })
     }
 
     @Test
     fun `a long option is never treated as a cluster`() {
         // `--r` is a prefix of one long name, not a bundle of shorts.
-        assertEquals(listOf("--reverse"), cli.completionsFor("list", "--r"))
+        assertEquals(listOf("--reverse"), cli.offered("list", "--r"))
     }
 }
 
@@ -574,10 +586,44 @@ class FlagNameCandidateTest {
     }
 
     @Test
-    fun `complete candidates offers help all when the command has visible subcommands`() {
-        // --help-all is a real, parser-recognized flag only where Help.kt itself advertises it (a command
-        // with at least one visible subcommand), so completion must offer it under that same gate.
+    fun `a subcommand offers the built-ins its help page lists`() {
         val tree = cli("app") {
+            version = Version.Of("1.0")
+            builtins { help = Help.ByTree() }
+            action { Ok("") }
+            command("sub") {
+                command("leaf") { action { Ok("") } }
+            }
+        }
+        val term = RecordingTerminal()
+        tree.run(arrayOf("sub", "--help"), term)
+        val listed = Regex("""(?<![\w-])--?[\w-]+""")
+            .findAll(term.out.toString().substringAfter("Global options:"))
+            .map { it.value }
+            .toList()
+        assertEquals(listed, tree.completeCandidates(listOf("sub", "-")).map { it.value })
+    }
+
+    @Test
+    fun `completion reaches the command named after a help request`() {
+        // `g --help build` is build's help, so `g --help build --` completes build's own names.
+        val tree = cli("g") {
+            command("build") {
+                flag(long = "fast")
+                action { Ok("") }
+            }
+        }
+        val reached = tree.completeCandidates(listOf("--help", "build", "--")).map { it.value }
+        assertEquals(tree.completeCandidates(listOf("build", "--")).map { it.value }, reached)
+        assertTrue("--fast" in reached, reached.toString())
+    }
+
+    @Test
+    fun `complete candidates offers help all when the command has visible subcommands`() {
+        // Under Help.ByTree --help-all is a real, parser-recognized flag only where Help.kt itself advertises it
+        // (a command with at least one visible subcommand), so completion must offer it under that same gate.
+        val tree = cli("app") {
+            builtins { help = Help.ByTree() }
             command("build") { help = "build things"; action { Ok("") } }
         }
         val dashDash = tree.completeCandidates(listOf("--")).map { it.value }
@@ -591,7 +637,10 @@ class FlagNameCandidateTest {
     fun `complete candidates omits help all for a leaf tool with no subcommands`() {
         // Mirrors Help.kt: a leaf tool with no subcommands never advertises --help-all in --help, so
         // completion must not offer it either.
-        val tree = cli("app") { action { Ok("") } }
+        val tree = cli("app") {
+            builtins { help = Help.ByTree() }
+            action { Ok("") }
+        }
         val names = tree.completeCandidates(listOf("--")).map { it.value }
         assertTrue("--help-all" !in names, names.toString())
     }
@@ -979,6 +1028,7 @@ class CandidateDescriptionTest {
     @Test
     fun `builtin option names carry their own help text`() {
         val tree = cli("app") {
+            builtins { help = Help.ByCommand(short = 'h') }
             version = Version.Of("1.0")
             command("build") { action { Ok("") } }
         }
@@ -1020,17 +1070,15 @@ class BuiltinColorValueCompletionTest {
 
 
     @Test
-    fun `complete candidates completes the builtin color option value space form`() {
-        // --color is a built-in meta-option, not a user-declared OptionSpec, so its value must complete
-        // from COLOR_MODE_NAMES directly instead of falling through to the next positional/subcommand once
-        // its name has been typed. A tree with subcommands makes the difference visible: falling through
-        // would return the subcommand list ("build"/"test") instead of the color choices.
+    fun `complete candidates offers no color value after a bare color`() {
+        // --color[=WHEN] takes its value only attached, so the word after a bare one is the next slot's:
+        // getopt -o '' -l color:: -- --color build gives " --color '' -- 'build'".
         val tree = cli("app") {
             command("build") { action { Ok("") } }
             command("test") { action { Ok("") } }
         }
         assertEquals(
-            listOf("auto", "always", "never"),
+            listOf("build", "test", "completion", "docs"),
             tree.completeCandidates(listOf("--color", "")).map { it.value },
         )
     }
@@ -1042,15 +1090,15 @@ class BuiltinColorValueCompletionTest {
             command("test") { action { Ok("") } }
         }
         assertEquals(
-            listOf("auto", "always"),
-            tree.completeCandidates(listOf("--color", "a")).map { it.value },
+            listOf("--color=auto", "--color=always"),
+            tree.completeCandidates(listOf("--color=a")).map { it.value },
         )
     }
 
     @Test
     fun `complete candidates completes the builtin color option value attached form`() {
         // zsh's $words array (and fish's `commandline -ct`) never split a word at `=`, so `--color=` arrives
-        // as ONE word; this must complete the same way the space form above does.
+        // as ONE word, and the value is completed inside it.
         val tree = cli("app") {
             command("build") { action { Ok("") } }
             command("test") { action { Ok("") } }
@@ -1074,8 +1122,8 @@ class CompleteFilesDirectiveTest {
             }
             action<String>(human = { it }) { Ok("ran") }
         }
-        assertEquals(listOf(" klap:files:if="), tree.completionsFor("if=/dev/ze"))
-        assertEquals(listOf("if=", "count="), tree.completionsFor(""))
+        assertEquals(listOf(" klap:files:if="), tree.offered("if=/dev/ze"))
+        assertEquals(listOf("if=", "count="), tree.offered(""))
     }
 
     @Test
@@ -1087,8 +1135,8 @@ class CompleteFilesDirectiveTest {
             argument("b").completeWith { completeFiles() }
             action<String>(human = { it }) { Ok("ran") }
         }
-        assertEquals(listOf(" klap:files:if="), tree.completionsFor("if=/dev/ze"))
-        assertEquals(listOf(" klap:files:"), tree.completionsFor("x", ""))
+        assertEquals(listOf(" klap:files:if="), tree.offered("if=/dev/ze"))
+        assertEquals(listOf(" klap:files:"), tree.offered("x", ""))
     }
 
     @Test
@@ -1102,7 +1150,7 @@ class CompleteFilesDirectiveTest {
             argument("operand").multiple().completeWith { completeFiles() }
             action<String>(human = { it }) { Ok("ran") }
         }
-        assertEquals(listOf(" klap:files:"), tree.completionsFor("if"))
+        assertEquals(listOf(" klap:files:"), tree.offered("if"))
     }
 
     @Test
@@ -1117,7 +1165,7 @@ class CompleteFilesDirectiveTest {
             }
             action<String>(human = { it }) { Ok("ran") }
         }
-        assertEquals(listOf(" klap:files:"), tree.completionsFor(""))
+        assertEquals(listOf(" klap:files:"), tree.offered(""))
     }
 
     @Test
@@ -1133,7 +1181,7 @@ class CompleteFilesDirectiveTest {
             }
             action<String>(human = { it }) { Ok("ran") }
         }
-        assertEquals(listOf(" klap:files:if="), tree.completionsFor(""))
+        assertEquals(listOf(" klap:files:if="), tree.offered(""))
     }
 }
 
@@ -1158,9 +1206,9 @@ class CompletionModifierRoutingTest {
         // parse() strips these before its walk; completion must too, or the walk breaks on the modifier at
         // token 0 and completes against the ROOT (which has no --st* option, hence an empty list).
         assertEquals(baseline, tree.candidateValuesFor("--json", "list", "--st"))
-        assertEquals(baseline, tree.candidateValuesFor("--color", "never", "list", "--st"))
+        assertEquals(baseline, tree.candidateValuesFor("--color", "list", "--st"))
         assertEquals(baseline, tree.candidateValuesFor("--color=never", "list", "--st"))
-        assertEquals(baseline, tree.candidateValuesFor("--json", "--color", "never", "list", "--st"))
+        assertEquals(baseline, tree.candidateValuesFor("--json", "--color", "list", "--st"))
         // ...and after the subcommand, too.
         assertEquals(baseline, tree.candidateValuesFor("list", "--json", "--st"))
     }
@@ -1168,11 +1216,9 @@ class CompletionModifierRoutingTest {
     @Test
     fun `color value still completes despite the strip`() {
         val tree = modifierTree()
-        // The strip deletes the token the SPACE form matches on, so that branch must be answered from the
-        // raw head before it runs; the attached form reads `current`, which is never stripped.
-        assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--color", ""))
+        // The attached form reads `current`, which is never stripped; a bare --color takes no word.
         assertEquals(listOf("--color=always"), tree.candidateValuesFor("--color=al"))
-        assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("list", "--color", ""))
+        assertEquals(listOf("--color=always"), tree.candidateValuesFor("list", "--color=al"))
     }
 }
 
@@ -1186,10 +1232,9 @@ class ColorAbbreviationCompletionTest {
 
     @Test
     fun `an abbreviated color option offers color modes under abbreviation all`() {
-        // An unambiguous abbreviation binds --color at parse time, so completion has to offer its values
-        // rather than falling through to the first-positional branch and naming subcommands.
+        // An unambiguous abbreviation binds --color at parse time, so completion offers its attached values.
         val tree = colorAbbreviationDispatcherTree(Abbreviation.All)
-        assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--col", ""))
+        assertEquals(listOf("--col=auto", "--col=always", "--col=never"), tree.candidateValuesFor("--col="))
     }
 
     @Test
@@ -1224,7 +1269,6 @@ class ColorAbbreviationCompletionTest {
     @Test
     fun `the exact color spelling still completes under every abbreviation mode`() {
         val tree = colorAbbreviationDispatcherTree(Abbreviation.All)
-        assertEquals(listOf("auto", "always", "never"), tree.candidateValuesFor("--color", ""))
         assertEquals(listOf("--color=auto", "--color=always", "--color=never"), tree.candidateValuesFor("--color="))
     }
 }
@@ -1284,7 +1328,7 @@ class SiftAccumulationTest {
         // neither the rest of the token nor a following one supplies.
         val sifted = siftTree().sift(listOf("-vo"))
 
-        assertEquals(CliError.MissingOptionValue("--out"), sifted.error)
+        assertEquals(CliError.MissingOptionValue("-o"), sifted.error)
         assertEquals(1, sifted.flags.entries.single { it.key.name == "--verbose" }.value)
         assertTrue(sifted.options.isEmpty())
     }
@@ -1350,9 +1394,10 @@ class CompletionSlotCountingTest {
         assertEquals(listOf("SECOND"), tree.candidateValuesFor("go", "--", "a", ""))
         // An unknown option consumes no slot (it is skipped, not demoted to a positional).
         assertEquals(listOf("SECOND"), tree.candidateValuesFor("go", "--bogus", "a", ""))
-        // A space-form --color is stripped before the walk, exactly as parse() strips it, so its VALUE
-        // never fills a positional slot. Before that strip it did, and the cursor landed one slot late.
-        assertEquals(listOf("FIRST"), tree.candidateValuesFor("go", "--color", "never", ""))
+        // A bare --color is stripped before the walk, exactly as parse() strips it, and takes no word: the
+        // word after it fills the first slot (`ls --color always` lists the file `always`).
+        assertEquals(listOf("FIRST"), tree.candidateValuesFor("go", "--color", ""))
+        assertEquals(listOf("SECOND"), tree.candidateValuesFor("go", "--color", "never", ""))
     }
 }
 
@@ -1564,6 +1609,80 @@ class OptionalValueCompletionTest {
     }
 }
 
+/**
+ * An optional-value short takes its value only glued (getopt's `O::`: `-O 3` is a bare `-O` and an operand `3`,
+ * `-O3` gives 3), so its candidates are offered glued to the short.
+ */
+class GluedOptionalValueCompletionTest {
+
+    private fun tree(shortOptions: ShortOptions = ShortOptions.Clustered): Cli = cli("cc") {
+        this.shortOptions = shortOptions
+        option(short = 'O', long = "optimise", help = "optimisation level")
+            .optionalValue()
+            .completeWith { candidates(listOf("0", "1", "2", "3")) }
+        option(short = 'm', help = "machine").choice("x86", "arm").optionalValue()
+        option(short = 'g', help = "debug format").optionalValue()
+        option(short = 'o', long = "output", help = "output file").file()
+        flag(short = 'v', help = "be loud")
+        argument("file").multiple(min = 0).completeWith { candidate("FILE") }
+        action { Ok("") }
+    }
+
+    @Test
+    fun `the bare short offers its candidates glued`() {
+        val offered = tree().completeCandidates(listOf("-O"))
+        assertEquals((0..3).map { Candidate("-O$it", "optimisation level") }, offered)
+    }
+
+    @Test
+    fun `a glued partial value offers what continues it`() {
+        assertEquals(listOf("-O1"), tree().candidateValuesFor("-O1"))
+        assertEquals(listOf("-marm"), tree().candidateValuesFor("-ma"))
+    }
+
+    @Test
+    fun `a choice is offered glued too`() {
+        assertEquals(listOf("-mx86", "-marm"), tree().candidateValuesFor("-m"))
+    }
+
+    @Test
+    fun `a short without candidates is offered by its name`() {
+        assertEquals(listOf("-g"), tree().candidateValuesFor("-g"))
+    }
+
+    @Test
+    fun `a dash offers the glued forms in place of the bare short`() {
+        val names = tree().candidateValuesFor("-")
+        assertTrue(listOf("-O0", "-O1", "-O2", "-O3", "-mx86", "-marm", "-g").all { it in names }, "$names")
+        assertTrue("-O" !in names && "-m" !in names, "$names")
+        assertTrue("--optimise" in names, "$names")
+    }
+
+    @Test
+    fun `the long form keeps its attached form`() {
+        assertEquals(listOf("--optimise"), tree().candidateValuesFor("--opt"))
+        assertEquals(listOf("--optimise=2"), tree().candidateValuesFor("--optimise=2"))
+        assertEquals(listOf("$COMPLETE_FILES--output="), tree().candidateValuesFor("--output="))
+    }
+
+    @Test
+    fun `a cluster ending in the short offers its candidates glued`() {
+        assertEquals((0..3).map { "-vO$it" }, tree().candidateValuesFor("-vO"))
+    }
+
+    @Test
+    fun `a cluster continues with the glued forms`() {
+        val names = tree().candidateValuesFor("-v")
+        assertTrue(listOf("-vO0", "-vO3", "-vmarm", "-vg").all { it in names }, "$names")
+        assertTrue("-vO" !in names, "$names")
+    }
+
+    @Test
+    fun `a short alone offers its candidates glued`() {
+        assertEquals((0..3).map { "-O$it" }, tree(ShortOptions.Alone).candidateValuesFor("-O"))
+    }
+}
+
 class CompletionConditionalOperandTest {
 
     private fun chmodLike(): Cli = cli("chmod") {
@@ -1601,19 +1720,19 @@ class NumberOptionCompletionTest {
 
     @Test
     fun `a cluster opening with a run still offers the remaining shorts`() {
-        val candidates = cli.completionsFor("list", "-5")
+        val candidates = cli.offered("list", "-5")
         assertTrue("-5r" in candidates, "expected -5r among $candidates")
         assertTrue("-5l" in candidates, "expected -5l among $candidates")
     }
 
     @Test
     fun `a value taking short after a run still completes the next word`() {
-        assertEquals(listOf("pending", "done"), cli.completionsFor("list", "-5n", ""))
+        assertEquals(listOf("pending", "done"), cli.offered("list", "-5n", ""))
     }
 
     @Test
     fun `a value glued after a run still completes`() {
-        assertEquals(listOf("-5npending"), cli.completionsFor("list", "-5np"))
+        assertEquals(listOf("-5npending"), cli.offered("list", "-5np"))
     }
 }
 
@@ -1622,7 +1741,7 @@ class CompletionLineRulesTest {
     private val cli = cli("pkg") {
         val query = flag(short = 'Q', long = "query")
         val sync = flag(short = 'S', long = "sync")
-        requireExactlyOne(query, sync)
+        exactlyOne(query, sync)
         flag(short = 'i', long = "info")
         option(long = "when").choice("always", "never")
         argument("target").multiple()
@@ -1631,7 +1750,7 @@ class CompletionLineRulesTest {
 
     @Test
     fun `a cluster holding one member of an exclusive set does not continue with another`() {
-        val candidates = cli.completionsFor("-Q")
+        val candidates = cli.offered("-Q")
         assertTrue("-QS" !in candidates, "-QS names two members: $candidates")
         assertTrue("-Qi" in candidates, "expected -Qi among $candidates")
     }
@@ -1644,7 +1763,36 @@ class CompletionLineRulesTest {
 
     @Test
     fun `a word after the end of options takes no option value`() {
-        assertTrue("always" !in cli.completionsFor("--", "--when", ""), "after -- --when is a target")
-        assertTrue("--when=always" !in cli.completionsFor("--", "--when=al"), "after -- --when=al is a target")
+        assertTrue("always" !in cli.offered("--", "--when", ""), "after -- --when is a target")
+        assertTrue("--when=always" !in cli.offered("--", "--when=al"), "after -- --when=al is a target")
+    }
+}
+
+class AmbiguousLongCompletionTest {
+
+    @Test
+    fun `nothing completes after an ambiguous long`() {
+        // getopt refuses `copy --re a b` as ambiguous, so the word after it is neither a value nor an operand.
+        val tree = cli("copy") {
+            abbreviation = Abbreviation.Options
+            flag(long = "recursive")
+            option(long = "reflink")
+            argument("source").file()
+            action { Ok("") }
+        }
+        assertEquals(emptyList(), tree.offered("--re", ""))
+        assertEquals(emptyList(), tree.offered("--re", "a"))
+        assertEquals(emptyList(), tree.completeCandidates(listOf("--re", "", "a"), cursor = 1))
+    }
+
+    @Test
+    fun `an unknown long leaves the next word an operand`() {
+        val tree = cli("copy") {
+            abbreviation = Abbreviation.Options
+            flag(long = "recursive")
+            argument("source").file()
+            action { Ok("") }
+        }
+        assertEquals(listOf(COMPLETE_FILES), tree.offered("--zzz", ""))
     }
 }

@@ -1,8 +1,8 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.assertError
+import com.fromwau.kern.result.assertSuccess
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -28,17 +28,11 @@ class PrioCommandTest {
         action { Ok("root with ${token()}") }
     }
 
-    private fun Cli.out(vararg argv: String): String {
-        val terminal = RecordingTerminal()
-        run(arrayOf(*argv), terminal)
-        return terminal.out.toString().trim()
-    }
-
-    private fun Cli.invocation(vararg argv: String): Invocation = (parse(argv.toList()) as Result.Success).value
+    private fun Cli.invocation(vararg argv: String): Invocation = parse(argv.toList()).assertSuccess()
 
     @Test
     fun `a prio command runs without its parent's required globals`() {
-        assertEquals("MIT", tool(prio = true).out("license"))
+        assertEquals("MIT", tool(prio = true).bindText("license"))
         tool(prio = false).parse(listOf("license")).assertError<CliError.MissingRequiredOption>()
         tool(prio = true).parse(listOf("sync")).assertError<CliError.MissingRequiredOption>()
     }
@@ -60,8 +54,8 @@ class PrioCommandTest {
 
     @Test
     fun `a prio command runs ahead of --completion and --docs`() {
-        assertEquals("MIT", tool(prio = true).out("--completion", "bash", "license"))
-        assertEquals("MIT", tool(prio = true).out("license", "--docs", "markdown"))
+        assertEquals("MIT", tool(prio = true).bindText("--completion", "bash", "license"))
+        assertEquals("MIT", tool(prio = true).bindText("license", "--docs", "markdown"))
         assertIs<Invocation.ShowCompletion>(tool(prio = false).invocation("--completion", "bash", "license"))
     }
 }

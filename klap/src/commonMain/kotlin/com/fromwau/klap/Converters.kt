@@ -3,6 +3,7 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Result
 import com.fromwau.klap.internal.render.reason
 import com.fromwau.klap.internal.spec.Cardinality
+import com.fromwau.klap.internal.spec.DashLedGather
 import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.ValueSpec
 import com.fromwau.klap.internal.spec.requireValidSpelling
@@ -10,9 +11,29 @@ import com.fromwau.klap.internal.spec.spellings
 import com.fromwau.klap.internal.spec.token
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.jvm.JvmName
+import kotlin.math.abs
 
 private fun numeric(error: ConversionError, parse: (String) -> Any?): (String) -> Result<Any?, ConversionError> =
     { raw -> parse(raw)?.let { Result.Success(it) } ?: Result.Error(error) }
+
+/** The blanks C's `isspace` names, which `strtol` skips ahead of a number. */
+private const val C_BLANKS = " \t\n\u000B\u000C\r"
+
+/**
+ * [raw] as GNU tools read a decimal integer through `strtol`: leading blanks skipped, then an optional sign and
+ * ASCII digits only, so `" +2"` is `+2` while `"2 "` and `"١٢"` are null.
+ */
+private fun gnuDecimal(raw: String): String? {
+    val number = raw.trimStart { it in C_BLANKS }
+    val digits = if (number.startsWith('+') || number.startsWith('-')) number.drop(1) else number
+    return number.takeIf { digits.isNotEmpty() && digits.all { it in '0'..'9' } }
+}
+
+/** How help and a refusal name this progression: low to high, with its step when that is not 1. */
+private fun IntProgression.label(): String {
+    val bounds = "${minOf(first, last)}..${maxOf(first, last)}"
+    return if (step == 1 || step == -1) bounds else "$bounds step ${abs(step)}"
+}
 
 /**
  * Wraps a composed [ValueSpec.convert] whose newest stage is type-changing (`.int()`, `.long()`,
@@ -96,6 +117,20 @@ private fun OptionSpec.requireBareValueInChoices(bareValue: String, choices: Lis
     }
 }
 
+/** Fails when [otherForm] is already declared: a bare occurrence binds a value or [OptionalValue.Bare], not both. */
+private fun OptionSpec.requireOneBareReading(otherForm: Boolean) {
+    require(!otherForm) {
+        "option '$name': .optionalValue(whenBare) and .optionalValue() are two readings of a bare occurrence; " +
+            "declare one"
+    }
+    requireNotGluedAndOptional(gluedValue)
+}
+
+/** Fails when [conflicting] holds: `.gluedValue()` refuses the bare occurrence an optional value reads. */
+private fun OptionSpec.requireNotGluedAndOptional(conflicting: Boolean) {
+    require(!conflicting) { "option '$name': .gluedValue() refuses a bare occurrence, so its value cannot be optional" }
+}
+
 /**
  * A `.default()` outside [ValueSpec.choices] would be a value `--help` advertises but no input can produce.
  * [andThenConvert] already covers the `.default()`-then-`.choice()` order; this covers the reverse, matching
@@ -144,9 +179,13 @@ private fun ValueSpec.applyMap(transform: (String) -> Any?) {
 
 private fun <T> ValueSpec.applyValidate(message: String, predicate: (T) -> Boolean) {
     val prior = validate
+    // A check declared after `.optionalValue()` is typed over the OptionalValue it binds, while it runs on
+    // the converted attached value; a bare occurrence is never checked.
+    val given = this is OptionSpec && bareMarks
     validate = { value ->
+        val judged = if (given) OptionalValue.Given(value) else value
         @Suppress("UNCHECKED_CAST")
-        prior?.invoke(value) ?: if (predicate(value as T)) null else message
+        prior?.invoke(value) ?: if (predicate(judged as T)) null else message
     }
 }
 
@@ -193,15 +232,19 @@ public abstract class ConverterScope internal constructor() {
 
     // --- Arg type converters ---
 
-    /** Parses this operand as an `Int`; anything else fails as an invalid value before your action runs. */
+    /**
+     * Parses this operand as an `Int`, read as GNU tools read a number (`head -n`, `ls -w`): leading blanks, an
+     * optional sign, then ASCII digits, so ` +2` is 2. Anything else, `2 ` and `١٢` included, fails as an invalid
+     * value before your action runs.
+     */
     public fun Arg<String>.int(): Arg<Int> {
-        spec.andThenConvert(true, numeric(ConversionError.NotAnInteger) { it.toIntOrNull() })
+        spec.andThenConvert(true, numeric(ConversionError.NotAnInteger) { gnuDecimal(it)?.toIntOrNull() })
         return Arg(spec)
     }
 
-    /** Parses this operand as a `Long`; anything else fails as an invalid value before your action runs. */
+    /** Parses this operand as a `Long`, read as [int] reads an `Int`; anything else fails as an invalid value. */
     public fun Arg<String>.long(): Arg<Long> {
-        spec.andThenConvert(true, numeric(ConversionError.NotALong) { it.toLongOrNull() })
+        spec.andThenConvert(true, numeric(ConversionError.NotALong) { gnuDecimal(it)?.toLongOrNull() })
         return Arg(spec)
     }
 
@@ -299,13 +342,22 @@ public abstract class ConverterScope internal constructor() {
         return Arg(spec)
     }
 
-    /** Takes every remaining operand rather than one, requiring at least [min] of them. */
-    public fun <T> Arg<T>.multiple(min: Int = 0): Arg<List<T>> {
+    /**
+     * Takes every remaining operand rather than one, at least [min] of them and at most [max]. An operand past
+     * [max] is [CliError.TooManyArguments], so `multiple(min = 1, max = 2)` refuses a third operand as
+     * `diff a b c` refuses its "extra operand 'c'". Unbounded by default, as GNU's operand lists are.
+     *
+     * @param max at least 1 and at least [min].
+     */
+    public fun <T> Arg<T>.multiple(min: Int = 0, max: Int = Int.MAX_VALUE): Arg<List<T>> {
         // Enforces at build time the no-combine invariant the type system cannot express for Arg (unlike Opt).
         require(spec.cardinality !is Cardinality.Default && spec.cardinality !is Cardinality.Optional) {
             "argument '${spec.name}': .multiple() cannot be combined with .default()/.optional()"
         }
-        spec.cardinality = Cardinality.Multiple(min)
+        require(max >= 1 && max >= min) {
+            "argument '${spec.name}': .multiple(min = $min, max = $max) needs a max of at least 1 and at least min"
+        }
+        spec.cardinality = Cardinality.Multiple(min, max)
         return Arg(spec)
     }
 
@@ -330,12 +382,34 @@ public abstract class ConverterScope internal constructor() {
     }
 
     /**
+     * Caps this `.multiple()` operand at [n] values while [input] is given, so the operand past them is
+     * [CliError.TooManyArguments]: under `cp -T` a SOURCE and a DEST are all there is, and `cp -T a b c` is
+     * "extra operand 'c'".
+     *
+     * ```kotlin
+     * val noTarget = flag(short = 'T', long = "no-target-directory")
+     * val sources = argument("source").multiple(min = 1).atMostWhen(noTarget, 1)
+     * val dest = argument("dest")
+     * ```
+     *
+     * Several caps may be declared, and the smallest one whose input is given holds. [input] must be an input
+     * of this command, and a slot that is not `.multiple()` throws when the CLI is built.
+     *
+     * @param n the most operands the slot takes while [input] is given, zero or more.
+     */
+    public fun <T> Arg<T>.atMostWhen(input: Input, n: Int): Arg<T> {
+        require(n >= 0) { "argument '${spec.name}': .atMostWhen(${input.name}, $n) needs a cap of zero or more" }
+        spec.capsWhen += input.holderSpec() to n
+        return this
+    }
+
+    /**
      * Drops this operand's declared minimum to zero when [input] is supplied: `rm` errors with no operand
      * and `rm -f` exits 0 with none. The slot itself stays, so nothing shifts position; only the count
      * rule relaxes. Only a `.multiple()` operand has a minimum to relax, so this is rejected on any other.
      */
-    public fun <T> Arg<T>.requiredUnless(input: Input): Arg<T> {
-        spec.relaxedWhen = input.holderSpec()
+    public fun <T> Arg<T>.optionalWhen(input: Input): Arg<T> {
+        spec.optionalWhen = input.holderSpec()
         return this
     }
 
@@ -356,8 +430,8 @@ public abstract class ConverterScope internal constructor() {
     /** Sugar over [validate] for an integer progression, including stepped and descending ranges. */
     public fun Arg<Int>.range(range: IntProgression): Arg<Int> {
         require(!range.isEmpty()) { "range must not be empty: ${range.first}..${range.last}" }
-        spec.valueHint = "${range.first}..${range.last}"
-        return validate("must be in ${range.first}..${range.last}") { it in range }
+        spec.valueHint = range.label()
+        return validate("must be in ${range.label()}") { it in range }
     }
 
     /** Resolves the overlap between IntRange, ClosedRange<Int>, and IntProgression. */
@@ -397,7 +471,7 @@ public abstract class ConverterScope internal constructor() {
      * ```
      *
      * Anything the tree declares still wins: a flag, a short cluster, a long option, an abbreviation,
-     * a number input, or a built-in like `-h`. Only a token that resolves to none of those reaches this
+     * a number input, or a built-in short such as `-V`. Only a token that resolves to none of those reaches this
      * slot, and `--` remains the escape for a value that genuinely collides. Marking one slot does not
      * change how any other slot behaves: a single-dash token that reaches an operand slot without this
      * modifier is still reported as an unknown option, naming the whole word.
@@ -409,6 +483,36 @@ public abstract class ConverterScope internal constructor() {
      */
     public fun <T> Arg<T>.dashLed(): Arg<T> {
         spec.dashLed = true
+        return Arg(spec)
+    }
+
+    /**
+     * Makes this operand the one value of every single-dash word [accepts] takes, wherever on the line it
+     * stands before `--`, as GNU chmod reads `chmod -w -x f` as the mode `-w,-x` and `chmod u+x -w f` as the
+     * mode `-w` on the files `u+x` and `f`.
+     *
+     * ```kotlin
+     * val mode = argument("mode").dashLed(gather = ",") { word ->
+     *     word.drop(1).all { it in "rwxXstugoa01234567+=," }
+     * }
+     * val files = argument("file").multiple(min = 1)
+     * ```
+     *
+     * Anything the tree declares still wins, as for [dashLed]: `-R` stays a flag, and only a word that resolves
+     * to nothing is offered to [accepts]. A word it refuses is an unknown option, as `chmod -z f` is "invalid
+     * option -- 'z'". Once one word is taken this slot takes no plain operand, so every operand goes to the
+     * slots after it; with none taken it binds its operand as usual, so `chmod -- -w f` still works. The
+     * slot counts as given for a rule such as `atMostOne` whenever a word was taken, even where its
+     * `.absentWhen()` trigger removed it, so `chmod -w --reference=r f` is refused.
+     *
+     * One command has at most one such slot, and it holds one value, not `.multiple()`.
+     *
+     * @param gather the text joining the words taken, in line order, into the value your converter reads.
+     * @param accepts whether a dash word, written whole with its dash (`-w`, `-755`), belongs to this slot.
+     *   Called while the line is parsed and on every Tab press, so keep it a pure test of the word.
+     */
+    public fun <T> Arg<T>.dashLed(gather: String, accepts: (word: String) -> Boolean): Arg<T> {
+        spec.gather = DashLedGather(gather, accepts)
         return Arg(spec)
     }
 
@@ -433,15 +537,19 @@ public abstract class ConverterScope internal constructor() {
 
     // --- Opt converters ---
 
-    /** Parses this option's value as an `Int`; anything else fails as an invalid value. */
+    /**
+     * Parses this option's value as an `Int`, read as GNU tools read a number (`head -n ' 2'`, `ls -w +80`):
+     * leading blanks, an optional sign, then ASCII digits. Anything else, `2 ` and `١٢` included, fails as an
+     * invalid value.
+     */
     public fun Opt<String?>.int(): Opt<Int?> {
-        spec.andThenConvert(true, numeric(ConversionError.NotAnInteger) { it.toIntOrNull() })
+        spec.andThenConvert(true, numeric(ConversionError.NotAnInteger) { gnuDecimal(it)?.toIntOrNull() })
         return Opt(spec)
     }
 
-    /** Parses this option's value as a `Long`; anything else fails as an invalid value. */
+    /** Parses this option's value as a `Long`, read as [int] reads an `Int`; anything else is an invalid value. */
     public fun Opt<String?>.long(): Opt<Long?> {
-        spec.andThenConvert(true, numeric(ConversionError.NotALong) { it.toLongOrNull() })
+        spec.andThenConvert(true, numeric(ConversionError.NotALong) { gnuDecimal(it)?.toLongOrNull() })
         return Opt(spec)
     }
 
@@ -513,7 +621,7 @@ public abstract class ConverterScope internal constructor() {
     }
 
     /**
-     * Requires this option only when [flag] was given: `option(long = "token").requiredIf(remote)` is
+     * Requires this option only when [flag] was given: `option(long = "token").requiredWhen(remote)` is
      * optional on its own and a usage error alongside `--remote`. The rule reads what your user actually typed.
      *
      * Because it takes the [Flag] handle rather than a condition of your own, `--help` can state the rule as
@@ -522,9 +630,9 @@ public abstract class ConverterScope internal constructor() {
      * The accessor stays nullable, since the option really does bind null on every line where [flag] is
      * absent.
      */
-    public fun <T> Opt<T>.requiredIf(flag: Flag): Opt<T> {
+    public fun <T> Opt<T>.requiredWhen(flag: Flag): Opt<T> {
         require(spec.cardinality !is Cardinality.Required) {
-            "option '${spec.name}': .requiredIf() is pointless on an option that is always .required()"
+            "option '${spec.name}': .requiredWhen() is pointless on an option that is always .required()"
         }
         spec.requiredWhen = flag.spec
         spec.valueHint = listOfNotNull(spec.valueHint, "required when ${flag.spec.token()}").joinToString("; ")
@@ -536,16 +644,14 @@ public abstract class ConverterScope internal constructor() {
      * [whenBare]. `git commit -S[<keyid>]` and `ls --color[=WHEN]` are the shape.
      *
      * **The space form never binds.** `--color auto` binds [whenBare] and leaves `auto` as an operand,
-     * which is what GNU does and the only unambiguous reading available — an optional-value option cannot
-     * tell its own value from the next operand, which is exactly why POSIX.1 XBD 12.2 guideline 7 says
-     * option-arguments should not be optional. Declaring one takes this option outside that guideline
-     * knowingly; every option that does not call this stays conforming. Reach for `.negatable()` first if
-     * the tool's real shape is a two-state switch — it costs no conformance.
+     * which is what getopt_long does with an optional argument and the only unambiguous reading available: an
+     * optional-value option cannot tell its own value from the next operand. Reach for `.negatable()` first if
+     * the tool's real shape is a two-state switch.
      *
      * [whenBare] is a RAW value: it runs through this option's own converter and validation, so
      * `.optionalValue("0").int()` binds the Int `0`. When a choice set is already declared (`.choice()` or
      * `.enum<E>()`), [whenBare] must be one of them. That is rejected when the CLI is built rather than
-     * when someone types it, matched case-insensitively like the choice set itself, and it holds in either
+     * when someone types it, matched with the choice set's own case rule, and it holds in either
      * declaration order.
      */
     public fun <T> Opt<T>.optionalValue(whenBare: String): Opt<T> {
@@ -553,8 +659,59 @@ public abstract class ConverterScope internal constructor() {
             "option '${spec.name}': .optionalValue() needs a non-blank value to bind when the option is " +
                     "given bare; a blank one is indistinguishable from the option being absent"
         }
+        spec.requireOneBareReading(spec.bareMarks)
         spec.choices?.let { spec.requireBareValueInChoices(whenBare, it) }
         spec.bareValue = whenBare
+        return this
+    }
+
+    /**
+     * Makes this option's value optional, for a bare occurrence that names no value of its own: `cp --backup`
+     * takes its control from `VERSION_CONTROL`, and `cp --context` is "like -Z". A bare occurrence binds
+     * [OptionalValue.Bare], an attached value binds [OptionalValue.Given], and an absent option binds null.
+     *
+     * ```kotlin
+     * val backup = option(long = "backup").placeholder("CONTROL").optionalValue()
+     * // cp --backup a b           -> OptionalValue.Bare
+     * // cp --backup=numbered a b  -> OptionalValue.Given("numbered")
+     * // cp --backup numbered b    -> OptionalValue.Bare, and `numbered` is an operand
+     * ```
+     *
+     * As with `.optionalValue(whenBare)`, the space form never binds. Declare converters and choices before it:
+     * they read the attached value, so `.int().optionalValue()` binds `Given(5)` for `--depth=5`. Chain
+     * `.multiple()` after it to keep every occurrence, `[Bare, Given("x")]` for `--context --context=x`. A
+     * `.validate { }` after it receives the [OptionalValue.Given] of each attached value. Help shows the option as
+     * `--backup[=<CONTROL>]`, with no note of a bare value.
+     */
+    public fun <T> Opt<T?>.optionalValue(): Opt<OptionalValue<T>?> {
+        spec.requireOneBareReading(spec.bareValue != null)
+        spec.bareMarks = true
+        return Opt(spec)
+    }
+
+    /**
+     * Makes this option take its value only glued to the short (`-O3`) or attached to the long with `=`
+     * (`--optimise=3`); the option without one is refused as [CliError.MissingOptionValue], and so is
+     * `-O 3`, whose `3` stays a word of its own.
+     *
+     * ```kotlin
+     * val level = option(short = 'O', help = "optimisation level").placeholder("LEVEL").gluedValue().int()
+     * // find -O3 .   -> 3
+     * // find -O .    -> refused: option -O requires a value
+     * // find -O 3 .  -> refused the same way
+     * ```
+     *
+     * This is not a getopt form. getopt's required value (`O:`) also takes the next word, `-O 3`, and its optional
+     * value (`O::`) takes a bare `-O`; GNU find reads `-O` with its own parser, which refuses both ("The -O option
+     * must be immediately followed by a decimal integer"). Reach for it only to match such a tool. The type stays
+     * the plain value, so converters, `.multiple()` and `.completeWith { }` chain before or after it, a glued value
+     * may end a short cluster as a required value does, and [ShortOptions.Alone] lets it stay glued. Completion
+     * offers its candidates glued (`-O0`) and nothing after a bare `-O`, and help shows it as `-O<LEVEL>`, or
+     * `--optimise=<LEVEL>` when it has a long name. It cannot be combined with `.optionalValue()`.
+     */
+    public fun <T> Opt<T>.gluedValue(): Opt<T> {
+        spec.requireNotGluedAndOptional(spec.valueOptional)
+        spec.gluedValue = true
         return this
     }
 
@@ -607,8 +764,8 @@ public abstract class ConverterScope internal constructor() {
     /** Sugar over [validate] for an integer progression, including stepped and descending ranges. */
     public fun Opt<Int?>.range(range: IntProgression): Opt<Int?> {
         require(!range.isEmpty()) { "range must not be empty: ${range.first}..${range.last}" }
-        spec.valueHint = "${range.first}..${range.last}"
-        return validate("must be in ${range.first}..${range.last}") { it in range }
+        spec.valueHint = range.label()
+        return validate("must be in ${range.label()}") { it in range }
     }
 
     /** Resolves the overlap between IntRange, ClosedRange<Int>, and IntProgression. */
@@ -647,6 +804,21 @@ public abstract class ConverterScope internal constructor() {
         spec.complete = provider
         spec.completePrefixFilter = filterByPrefix
         return Opt(spec)
+    }
+
+    /**
+     * Sets what a second occurrence of this option does, over the CLI's own [CliBuilder.repeatedOptions]:
+     * `cp -t d -t e a` refuses its second target directory while `cp -S .x -S .y` takes the last suffix.
+     *
+     * ```kotlin
+     * option(short = 't', long = "target-directory").repeated(RepeatedOptions.Refuse)
+     * ```
+     *
+     * Not for a `.multiple()` option, which collects every occurrence; that throws when the CLI is built.
+     */
+    public fun <T> Opt<T>.repeated(policy: RepeatedOptions): Opt<T> {
+        spec.repeated = policy
+        return this
     }
 
     // --- Flag ---
@@ -713,6 +885,16 @@ public abstract class ConverterScope internal constructor() {
     /** A negative half with one short and several longs; see the list form for how spellings are read. */
     public fun Flag.negatable(short: Char, long: List<String>, default: Boolean = true, help: String? = null): Flag =
         negatable(listOf(short), long, default, help)
+
+    /**
+     * Sets what a second occurrence of this flag does, over the CLI's own [CliBuilder.repeatedOptions]. Its
+     * negative form is the same input, so `--cache --no-cache` repeats it. Not for a `.count()` flag, which
+     * counts every occurrence; that throws when the CLI is built.
+     */
+    public fun Flag.repeated(policy: RepeatedOptions): Flag {
+        spec.repeated = policy
+        return this
+    }
 
     /** Omit this flag from `--help`; it still parses and binds normally. */
     public fun Flag.hidden(): Flag {

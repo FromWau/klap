@@ -15,14 +15,14 @@ import com.fromwau.klap.projection
  * ```
  *
  * Bodies are stubs on purpose; only the parsing surface is under study. Three things this shape asks of a
- * parser: two exclusivity rules (`requireExactlyOne`, `requireAtMostOne`), bundled clusters whose last
- * char takes a value (`-cvf out.tar`), and an optional trailing operand list.
+ * parser: two exclusivity rules (`exactlyOne`, `atMostOne`), bundled clusters whose last char takes a value
+ * (`-cvf out.tar`), and an optional trailing operand list.
  */
 public fun tarCli(): TypedCli<TarInputs> = cliOf("tar") {
     // GNU tar takes any unambiguous prefix of a long option: `tar --cr --file a.tar` is --create.
     abbreviation = Abbreviation.Options
     help = "Manipulate tape archives"
-    version = Version.Of("1.35")
+    version = Version.Of("1.35", text = TAR_VERSION_TEXT)
     epilogue = "The mode flags -c, -x and -t are mutually exclusive; exactly one must be given."
 
     // In a cluster only the LAST character may take a value, so `-cvf out.tar` binds `f`'s value and
@@ -37,7 +37,7 @@ public fun tarCli(): TypedCli<TarInputs> = cliOf("tar") {
     val extract = flag(short = 'x', long = "extract", help = "extract files from an archive")
     val listContents = flag(short = 't', long = "list", help = "list the contents of an archive")
 
-    requireExactlyOne(create, extract, listContents)
+    exactlyOne(create, extract, listContents)
 
     // GNU tar's -v really is cumulative (-vv lists more per member), so .count() is the faithful shape and
     // it clusters exactly like a boolean flag does (`-cvvf out.tar` counts 2).
@@ -46,7 +46,7 @@ public fun tarCli(): TypedCli<TarInputs> = cliOf("tar") {
     val gzip = flag(short = 'z', long = "gzip", help = "filter the archive through gzip")
     val bzip2 = flag(short = 'j', long = "bzip2", help = "filter the archive through bzip2")
 
-    requireAtMostOne(gzip, bzip2)
+    atMostOne(gzip, bzip2)
 
     // Real tar falls back to $TAPE/stdin when -f is absent; the studied surface declares it mandatory.
     val archive = option(short = 'f', long = "file", help = "use archive file ARCHIVE ('-' for stdin/stdout)")
@@ -62,8 +62,8 @@ public fun tarCli(): TypedCli<TarInputs> = cliOf("tar") {
         .multiple()
 
     action {
-        // requireExactlyOne guarantees one mode holds, and requireAtMostOne that the two compression
-        // flags never both do, so neither `when` needs a conflict branch.
+        // exactlyOne guarantees one mode holds, and atMostOne that the two compression flags never both do,
+        // so neither `when` needs a conflict branch.
         val mode = when {
             create() -> "-c"
             extract() -> "-x"
@@ -119,3 +119,15 @@ public val NOTHING_BOUND: TarInputs = TarInputs(
     exclude = emptyList(),
     files = emptyList(),
 )
+
+/**
+ * What `tar --version` prints for GNU tar 1.35, the version installed when it was pinned
+ * (2026-10-10).
+ */
+internal val TAR_VERSION_TEXT: String = """tar (GNU tar) 1.35
+Copyright (C) 2023 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Written by John Gilmore and Jay Fenlason."""

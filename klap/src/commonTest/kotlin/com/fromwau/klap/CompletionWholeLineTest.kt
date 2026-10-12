@@ -1,7 +1,6 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -28,13 +27,10 @@ class CompletionWholeLineTest {
         }
     }
 
-    private fun Cli.completionsAt(cursor: Int, vararg words: String): List<String> =
-        completeCandidates(words.toList(), cursor).map { it.value }
-
     @Test
     fun `a provider reads an input typed after the cursor`() {
-        assertEquals(listOf(".ow|conf.toml|false"), tool().completionsAt(1, "get", ".ow", "conf.toml"))
-        assertEquals(listOf(".ow|conf.toml|true"), tool().completionsAt(1, "get", ".ow", "-r", "conf.toml"))
+        assertEquals(listOf(".ow|conf.toml|false"), tool().offeredAt(1, "get", ".ow", "conf.toml"))
+        assertEquals(listOf(".ow|conf.toml|true"), tool().offeredAt(1, "get", ".ow", "-r", "conf.toml"))
     }
 
     @Test
@@ -46,34 +42,34 @@ class CompletionWholeLineTest {
                 action { Ok("") }
             }
         }
-        assertEquals(listOf("other.json"), tasks.completionsAt(1, "done", "", "--file", "other.json"))
-        assertEquals(listOf("tasks.json"), tasks.completionsAt(1, "done", ""))
+        assertEquals(listOf("other.json"), tasks.offeredAt(1, "done", "", "--file", "other.json"))
+        assertEquals(listOf("tasks.json"), tasks.offeredAt(1, "done", ""))
     }
 
     @Test
     fun `the word under the cursor keeps its slot so a later word lands in its own`() {
-        assertEquals(listOf("|conf.toml|false"), tool().completionsAt(1, "get", "", "conf.toml"))
+        assertEquals(listOf("|conf.toml|false"), tool().offeredAt(1, "get", "", "conf.toml"))
     }
 
     @Test
     fun `an input not on the line reads as absent`() {
-        assertEquals(listOf(".ow|null|false"), tool().completionsAt(1, "get", ".ow"))
+        assertEquals(listOf(".ow|null|false"), tool().offeredAt(1, "get", ".ow"))
     }
 
     @Test
     fun `the planner reads only the words before the cursor`() {
         // `tool <TAB> get`: the slot under the cursor is still the subcommand's, whatever follows it.
-        assertEquals(tool().completionsAt(0, ""), tool().completionsAt(0, "", "get"))
+        assertEquals(tool().offeredAt(0, ""), tool().offeredAt(0, "", "get"))
     }
 
     @Test
     fun `a provider reads the word under the cursor through its own input`() {
-        assertEquals(listOf(".ow|conf.toml"), tool().completionsAt(1, "query", ".ow", "conf.toml"))
+        assertEquals(listOf(".ow|conf.toml"), tool().offeredAt(1, "query", ".ow", "conf.toml"))
     }
 
     @Test
     fun `a required input not yet on the line offers nothing`() {
-        assertEquals(emptyList(), tool().completionsAt(1, "query", ".ow"))
+        assertEquals(emptyList(), tool().offeredAt(1, "query", ".ow"))
     }
 
     @Test
@@ -88,11 +84,11 @@ class CompletionWholeLineTest {
             }
         }
         // The word is typed in full, as when Tab is pressed to finish it with a space.
-        assertEquals(listOf("red"), tags.completionsAt(1, "add", "red"))
-        assertEquals(listOf("red"), tags.completionsAt(2, "add", "blue", "red"))
-        assertEquals(listOf("red"), tags.completionsAt(1, "add", "red", "blue"))
-        assertEquals(listOf("red"), tags.completionsAt(2, "add", "--tag", "red"))
-        assertEquals(listOf("--tag=red"), tags.completionsAt(1, "add", "--tag=red"))
+        assertEquals(listOf("red"), tags.offeredAt(1, "add", "red"))
+        assertEquals(listOf("red"), tags.offeredAt(2, "add", "blue", "red"))
+        assertEquals(listOf("red"), tags.offeredAt(1, "add", "red", "blue"))
+        assertEquals(listOf("red"), tags.offeredAt(2, "add", "--tag", "red"))
+        assertEquals(listOf("--tag=red"), tags.offeredAt(1, "add", "--tag=red"))
     }
 
     @Test
@@ -108,10 +104,10 @@ class CompletionWholeLineTest {
             }
         }
         // The shell replaces the word under the cursor, so a candidate is that whole word, not only its value.
-        assertEquals(listOf("--tag=red", "--tag=blue"), tool.completionsAt(1, "add", "--tag=rd"))
-        assertEquals(listOf("-vtred", "-vtblue"), tool.completionsAt(1, "add", "-vtre"))
-        assertEquals(listOf("red", "blue"), tool.completionsAt(2, "add", "--tag", "re"))
-        assertEquals(listOf("--color=always"), tool.completionsAt(1, "add", "--color=al"))
+        assertEquals(listOf("--tag=red", "--tag=blue"), tool.offeredAt(1, "add", "--tag=rd"))
+        assertEquals(listOf("-vtred", "-vtblue"), tool.offeredAt(1, "add", "-vtre"))
+        assertEquals(listOf("red", "blue"), tool.offeredAt(2, "add", "--tag", "re"))
+        assertEquals(listOf("--color=always"), tool.offeredAt(1, "add", "--color=al"))
     }
 
     @Test
@@ -121,10 +117,10 @@ class CompletionWholeLineTest {
             tag.completeWith { candidates(listOf("red", "blue") - tag().toSet()) }
             command("add") { action { Ok("") } }
         }
-        assertEquals(listOf("red"), tags.completionsAt(2, "add", "--tag", "red"))
-        assertEquals(listOf("--tag=red"), tags.completionsAt(1, "add", "--tag=red"))
-        assertEquals(listOf("red"), tags.completionsAt(4, "add", "--tag", "blue", "--tag", "red"))
-        assertEquals(listOf("red"), tags.completionsAt(2, "add", "--tag", "red", "--tag", "blue"))
+        assertEquals(listOf("red"), tags.offeredAt(2, "add", "--tag", "red"))
+        assertEquals(listOf("--tag=red"), tags.offeredAt(1, "add", "--tag=red"))
+        assertEquals(listOf("red"), tags.offeredAt(4, "add", "--tag", "blue", "--tag", "red"))
+        assertEquals(listOf("red"), tags.offeredAt(2, "add", "--tag", "red", "--tag", "blue"))
     }
 
     @Test
@@ -138,8 +134,8 @@ class CompletionWholeLineTest {
             }
         }
         // `-vta` hides the global in a cluster, which only the command's own sift finds.
-        assertEquals(listOf("[a, b]"), git.completionsAt(5, "remote", "-vta", "--tag", "b", "--tag", "a"))
-        assertEquals(listOf("[a, b]"), git.completionsAt(3, "remote", "-vta", "--tag", "", "--tag", "b"))
+        assertEquals(listOf("[a, b]"), git.offeredAt(5, "remote", "-vta", "--tag", "b", "--tag", "a"))
+        assertEquals(listOf("[a, b]"), git.offeredAt(3, "remote", "-vta", "--tag", "", "--tag", "b"))
     }
 
     @Test
@@ -152,7 +148,7 @@ class CompletionWholeLineTest {
                 action { Ok("") }
             }
         }
-        assertEquals(listOf("[]|dest"), cp.completionsAt(1, "cp", "", "dest"))
+        assertEquals(listOf("[]|dest"), cp.offeredAt(1, "cp", "", "dest"))
     }
 
     @Test
@@ -166,7 +162,7 @@ class CompletionWholeLineTest {
                 action { Ok("") }
             }
         }
-        assertEquals(listOf("tag=[]"), git.completionsAt(2, "remote", "--tag", "", "add"))
+        assertEquals(listOf("tag=[]"), git.offeredAt(2, "remote", "--tag", "", "add"))
     }
 
     @Test
@@ -179,8 +175,8 @@ class CompletionWholeLineTest {
                 action { Ok("") }
             }
         }
-        assertEquals(listOf("-vtverbose=true tag=[]"), tool.completionsAt(1, "add", "-vtre"))
-        assertEquals(listOf("verbose=true tag=[]"), tool.completionsAt(2, "add", "-vt", "re"))
+        assertEquals(listOf("-vtverbose=true tag=[]"), tool.offeredAt(1, "add", "-vtre"))
+        assertEquals(listOf("verbose=true tag=[]"), tool.offeredAt(2, "add", "-vt", "re"))
     }
 
     @Test
@@ -191,7 +187,7 @@ class CompletionWholeLineTest {
             argument("file").multiple(1).completeWith(filterByPrefix = false) { candidate("FILE") }
             action { Ok("") }
         }
-        assertEquals(listOf("FILE"), chmod.completionsAt(0, "", "f", "--reference", "r"))
+        assertEquals(listOf("FILE"), chmod.offeredAt(0, "", "f", "--reference", "r"))
     }
 
     @Test
@@ -206,8 +202,8 @@ class CompletionWholeLineTest {
             }
         }
         // Between `a` and `b` the word is a second source: `b`, the last operand, is the target.
-        assertEquals(listOf("source|b"), cp.completionsAt(2, "cp", "a", "", "b"))
-        assertEquals(listOf("target"), cp.completionsAt(2, "cp", "a", ""))
+        assertEquals(listOf("source|b"), cp.offeredAt(2, "cp", "a", "", "b"))
+        assertEquals(listOf("target"), cp.offeredAt(2, "cp", "a", ""))
     }
 
     @Test
@@ -221,7 +217,7 @@ class CompletionWholeLineTest {
                 action { Ok("") }
             }
         }
-        val offered = git.completionsAt(1, "remote", "a", "--url", "x")
+        val offered = git.offeredAt(1, "remote", "a", "--url", "x")
         assertTrue("a|x" in offered, "$offered")
     }
 

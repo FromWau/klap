@@ -2,7 +2,6 @@ package com.fromwau.klap.fixture.pacman
 
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.suggestionsFor
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -10,8 +9,8 @@ import kotlin.test.assertTrue
 /**
  * What Tab completes at each slot and cursor column of a pacman line (K and K7 of the testing matrix, with their cursor
  * columns and required cells), checked against what real pacman 7.1.0 would accept there: the exact suggestions with
- * their descriptions, the line once one is taken and the line after one Tab. The generated cells cover every input
- * under every operation and with none; a slot cell names its K row.
+ * their descriptions. The generated cells cover every input under every operation and with none; a slot cell names
+ * its K row.
  */
 class PacmanCompletionTest {
 
@@ -110,7 +109,7 @@ class PacmanCompletionTest {
     @Test
     fun `a long name is completed from the cursor wherever it stands in the word`() = pacman.checkPacman(
         // K2, K5, K15a: handed the name as far as typed, the rest of the word stays.
-        slot("K2 inside", "pacman -Q --ve|rbose", named = "--verbose"),
+        slot("K2 inside", "pacman -Q --ve|rbose"),
         slot("K2 inside", "pacman --qu|ery"),
         slot("K5 words after", "pacman -Q --dbp| /tmp pkg"),
         slot("K9 inside the name", "pacman -Q --dbp|ath=/tm"),
@@ -442,18 +441,7 @@ class PacmanCompletionTest {
     @Test
     fun `a cluster continues with the letters of an operation after the cursor`() =
         pacman.checkPacman(cells("operation cluster after the cursor", ANY_OPERATION, OPERATION))
-}
 
-/**
- * The slots and cursor columns of a pacman line (K and K7 of the testing matrix) where klap offers something other than
- * what real pacman 7.1.0 would accept. Each test states what real pacman 7.1.0 does and is ignored with `TDD target:
- * <what must change>`; removing the annotation shows it failing for that reason, and no other test pins today's
- * behaviour, so a fix breaks nothing else.
- */
-class PacmanCompletionTargetsTest {
-    private val pacman = pacmanCli().cli
-
-    @Ignore("TDD target: klap must continue an operation's cluster with its page letters, a counted one once more")
     @Test
     fun `a cluster continues from the cursor with its operation's page letters`() = pacman.checkPacman(
         // Handed the cluster as far as typed: `-Q` of `-Qv`, `-Qi` of `-Qiv` and `-Qii`, `-S` of `-Sy`.
@@ -467,18 +455,16 @@ class PacmanCompletionTargetsTest {
         slot("K7q inside", "pacman -S|y"),
     )
 
-    @Ignore("Will not do (todo 40): states a pacman quirk klap does not follow")
-    @Test
-    fun `a first target named __complete is an ordinary target`() = pacman.checkPacman(
-        // K58: `pacman -Q __complete`: "package '__complete' was not found"; with no operation yet, every name.
-        slot("K58", "pacman __complete --verb|", expected = setOf(name("--verbose"))),
-    )
-
-    @Ignore("Will not do (todo 33): states a pacman quirk klap does not follow")
     @Test
     fun `names go on after a -- that was an option's value`() = pacman.checkPacman(
         // K41: `pacman -Q -b -- --verbose`: "failed to resolve path '--' passed to '--dbpath'", so getopt gave
         // `--` to -b and options did not end.
         slot("K41 a name after", "pacman -Q -b -- --verb|", expected = setOf(name("--verbose", Op.QUERY))),
+    )
+
+    @Test
+    fun `a first target named __complete is an ordinary target`() = pacman.checkPacman(
+        // K58: `pacman -Q __complete`: "package '__complete' was not found"; with no operation yet, every name.
+        slot("K58", "pacman __complete --verb|", expected = setOf(name("--verbose"))),
     )
 }

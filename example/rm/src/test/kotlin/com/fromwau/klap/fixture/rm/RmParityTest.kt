@@ -51,7 +51,7 @@ class RmParityTest {
         )
         // The escape rm's own epilogue documents for a dash-led filename.
         parity.binds("--", "-foo", expected = NOTHING_BOUND.copy(files = listOf("-foo")))
-        // Real rm needs an operand unless -f is given, and .requiredUnless() expresses that rule at parse
+        // Real rm needs an operand unless -f is given, and .optionalWhen() expresses that rule at parse
         // time: `rm -f` binds an empty list, and bare `rm` never reaches the action at all (see
         // `rejects what real rm rejects` for the bare-`rm` line).
         parity.binds("-f", expected = NOTHING_BOUND.copy(force = true))

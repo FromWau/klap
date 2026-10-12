@@ -68,8 +68,8 @@ class RsyncParityTest {
             expected = NOTHING_BOUND.copy(verbose = 3, paths = listOf("src/", "dst/")),
         )
         // Real rsync's -h is human-readable everywhere except when it is the entire command line, and
-        // it is cumulative: `rsync -hh --dry-run src/ dst/` runs (verified). Declining klap's
-        // `helpShort` built-in is what makes the character reachable at all.
+        // it is cumulative: `rsync -hh --dry-run src/ dst/` runs (verified). klap's `--help` has no short,
+        // so the character is rsync's.
         parity.binds(
             "-h", "src/", "dst/",
             expected = NOTHING_BOUND.copy(humanReadable = 1, paths = listOf("src/", "dst/")),
@@ -287,25 +287,18 @@ class RsyncParityTest {
         // GAP 1 — `-h` alone. Real rsync documents "-h is help only on its own": `rsync -h` prints help
         // and exits 0, while `-h` anywhere alongside anything else is --human-readable (both verified).
         // klap resolves a spelling to exactly one input regardless of what else is on the line, so with
-        // `helpShort = false` the character is human-readable everywhere and this line is a missing
+        // no short on `--help` the character is human-readable everywhere and this line is a missing
         // operand instead. There is no declarative form for "this short means the built-in iff argv
         // has length 1".
         parity.rejects("-h", because = "real rsync: -h on its own prints help and exits 0")
 
-        // GAP 2 — `-V`. Real rsync answers `-V` and `--version` alike, anywhere on the line (verified:
-        // `rsync -V --dry-run src/ dst/` prints the version and exits 0). klap's `--version` built-in
-        // arrives from `version = "3.4.4"` with no way to give it an extra spelling — `builtins { }`
-        // only switches a built-in off — and declaring a plain `flag(short = 'V')` would bind a flag nobody
-        // reads rather than short-circuit, so the honest record is that `-V` is unreachable here.
-        parity.rejects("-V", "src/", "dst/", because = "real rsync: -V prints the version and exits 0")
-
-        // GAP 3 — the negative half of a counted flag. Real rsync's generic --no-OPTION rule covers
+        // GAP 2 — the negative half of a counted flag. Real rsync's generic --no-OPTION rule covers
         // both of these (verified exit 0). `.count()` and `.negatable()` are mutually exclusive in klap,
         // and counting is the half that carries the tool's actual meaning.
         parity.rejects("--no-verbose", "src/", "dst/", because = "real rsync: --no-verbose is accepted")
         parity.rejects("--no-human-readable", "src/", "dst/", because = "real rsync: --no-human-readable is accepted")
 
-        // GAP 4 — `--no-p`. Real rsync resolves it through its own much larger option set (to
+        // GAP 3 — `--no-p`. Real rsync resolves it through its own much larger option set (to
         // --no-perms, a flag this fixture never declares) and exits 0; klap has no abbreviation to reach for
         // at Abbreviation.None, so the token simply names nothing here. Neither tool is wrong; they are
         // reading the prefix against two different option sets.
@@ -327,7 +320,7 @@ class RsyncParityTest {
 
     @Test
     fun `--help-all is refused as the real rsync refuses it`() {
-        // klap has --help-all only where there are subcommands to expand.
+        // klap offers --help-all only under Help.ByTree, and only beside a subcommand.
         parity.rejects("--help-all", "src/", "dst/", because = "real rsync: --help-all: unknown option")
     }
 }

@@ -1,8 +1,7 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
-import com.fromwau.klap.internal.render.completeCandidates
+import com.fromwau.kern.result.assertError
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -33,13 +32,9 @@ class ClusterMatrixTest {
         action { Ok("root") }
     }
 
-    private fun bound(vararg argv: String): String {
-        val terminal = RecordingTerminal()
-        tasks.run(arrayOf(*argv), terminal)
-        return terminal.out.toString().trim()
-    }
+    private fun bound(vararg argv: String): String = tasks.bindText(*argv)
 
-    private fun offered(vararg words: String): List<String> = tasks.completeCandidates(words.toList()).map { it.value }
+    private fun offered(vararg words: String): List<String> = tasks.offered(*words)
 
     @Test
     fun `K7k a global letter beside the command's own letters binds both in either order`() {
@@ -75,13 +70,14 @@ class ClusterMatrixTest {
     @Test
     fun `K7h a command's value-taking short in the middle of a cluster takes the rest of it as its value`() {
         assertEquals("verbose=false store=null reverse=true long=false limit=vl", bound("list", "-rnvl"))
-        assertTrue(offered("list", "-rn").none { it.length > 3 }, "nothing follows a value-taking letter")
+        assertEquals(emptyList(), offered("list", "-rn"), "nothing follows a value-taking letter")
     }
 
     @Test
     fun `K7ag a parent's own letter in a subcommand's cluster names nothing there`() {
-        assertTrue(tasks.parse(listOf("list", "-Xr")) is Result.Error, "-X is the root's own, not list's")
-        assertTrue(tasks.parse(listOf("list", "-rX")) is Result.Error)
+        val unknown = CliError.UnknownOption("-X", cluster = "-Xr")
+        assertEquals(unknown, tasks.parse(listOf("list", "-Xr")).assertError(), "-X is the root's own, not list's")
+        assertEquals(unknown.copy(cluster = "-rX"), tasks.parse(listOf("list", "-rX")).assertError())
         assertEquals(emptyList(), offered("list", "-X"), "nothing continues a letter list does not have")
         assertTrue("-rX" !in offered("list", "-r"), "and no cluster offers it")
     }

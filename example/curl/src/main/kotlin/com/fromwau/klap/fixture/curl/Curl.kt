@@ -28,7 +28,7 @@ public fun curlCli(): TypedCli<CurlInputs> = cliOf("curl") {
     // curl matches long options exactly: `--loc` and `--sil` really do answer "option --loc: is unknown".
     abbreviation = Abbreviation.None
     help = "Transfer a URL"
-    version = Version.Of("8.21.0")
+    version = Version.Of("8.22.0", long = "version", short = 'V', text = CURL_VERSION_TEXT)
     epilogue = "This is a parsing-surface study: no request is ever sent."
 
     example("curl https://example.com", "GET a URL to stdout")
@@ -78,8 +78,7 @@ public fun curlCli(): TypedCli<CurlInputs> = cliOf("curl") {
         // (long-form negation only, matching curl). Renders as `--[no-]silent (default: off)`.
         silent = flag(short = 's', long = "silent", help = "Silent mode").negatable(default = false)
 
-        // A non-alphanumeric short works: validateShortNames only rejects a digit, '.', or '-'
-        // (BuilderValidation.kt), and sift's short-cluster walk matches on the raw char.
+        // A short may be any visible character, `#` and `:` included.
         progressBar = flag(short = '#', long = "progress-bar", help = "Display transfer progress as a bar")
     }
 
@@ -113,10 +112,9 @@ public fun curlCli(): TypedCli<CurlInputs> = cliOf("curl") {
     // somewhere" rule is enforced in the action instead. See the `--url` note above.
     val urls = argument("url", "URL(s) to fetch").multiple()
 
-    // KLAP-GAP: `-h, --help <subject>` (curl's help takes a value) and `-V, --version` cannot be
-    // declared with those spellings — klap's help/version built-ins are reserved unconditionally. Even
-    // spelled otherwise the subject would not reach it: klap's help takes no value, so `curl --help http`
-    // (verified against 8.21.0) prints curl's own help rather than the http category.
+    // KLAP-GAP: curl's `-h, --help <subject>` takes a category and klap's `--help` takes none, so `curl --help http`
+    // prints the whole help here, not the http category. `Help.Off` would free both names, but an option of the
+    // fixture's own under them prints no help.
 
     action<String>(human = { it }) {
         val effectiveUrls = urls() + urlOption()
@@ -200,3 +198,12 @@ public val NOTHING_BOUND: CurlInputs = CurlInputs(
     next = 0,
     urls = emptyList(),
 )
+
+/**
+ * What `curl --version` prints for curl 8.22.0, the version installed when it was pinned
+ * (2026-10-10).
+ */
+internal val CURL_VERSION_TEXT: String = """curl 8.22.0 (x86_64-pc-linux-gnu) libcurl/8.22.0 OpenSSL/3.6.5 zlib/1.3.2 brotli/1.2.0 zstd/1.5.7 libidn2/2.3.8 libpsl/0.21.5 libssh2/1.11.1 nghttp2/1.70.0 ngtcp2/1.25.0 nghttp3/1.18.0 mit-krb5/1.22.2
+Release-Date: 2026-09-02
+Protocols: dict file ftp ftps gopher gophers http https imap imaps ipfs ipns mqtt mqtts pop3 pop3s rtsp scp sftp smtp smtps telnet tftp ws wss
+Features: alt-svc AsynchDNS brotli GSS-API HSTS HTTP2 HTTP3 HTTPS-proxy IDN IPv6 Kerberos Largefile libz PSL SPNEGO SSL threadsafe UnixSockets zstd"""

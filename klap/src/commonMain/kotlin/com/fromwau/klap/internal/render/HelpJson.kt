@@ -75,6 +75,7 @@ internal fun Command.helpJson(
     qualifiedName: String,
     globalSpecs: List<NamedSpec>,
     rootVersioned: Boolean,
+    rootMetaOptions: Boolean,
     builtins: Builtins,
 ): HelpJson = HelpJson(
     command = qualifiedName,
@@ -86,7 +87,7 @@ internal fun Command.helpJson(
         CommandHelp(it.token, it.aliases + it.flagSpellings.drop(1), it.description, it.section)
     },
     globalOptions = globalSpecs.filter { !it.hidden }.map { it.toHelp() } +
-        builtinOptions(rootVersioned, builtins).map { it.toHelp() },
+        builtinOptions(rootVersioned, rootMetaOptions, builtins).map { it.toHelp() },
     examples = examples.map { ExampleHelp(it.command, it.description) },
     epilogue = epilogue.ifEmpty { null },
     author = (this as? Cli)?.author?.takeUnless { it.isBlank() },
@@ -97,14 +98,16 @@ internal fun Command.helpJsonText(
     qualifiedName: String,
     globalSpecs: List<NamedSpec>,
     rootVersioned: Boolean,
+    rootMetaOptions: Boolean,
     builtins: Builtins,
     recursive: Boolean,
 ): String {
     if (!recursive) {
-        return Json.encodeToString(HelpJson.serializer(), helpJson(qualifiedName, globalSpecs, rootVersioned, builtins))
+        val page = helpJson(qualifiedName, globalSpecs, rootVersioned, rootMetaOptions, builtins)
+        return Json.encodeToString(HelpJson.serializer(), page)
     }
     val all = visibleTree(qualifiedName).map { (node, path) ->
-        node.helpJson(path, globalSpecs, rootVersioned, builtins)
+        node.helpJson(path, globalSpecs, rootVersioned, rootMetaOptions, builtins)
     }
     return Json.encodeToString(ListSerializer(HelpJson.serializer()), all)
 }
@@ -123,7 +126,7 @@ private fun ArgumentSpec.toHelp(): ArgumentHelp = ArgumentHelp(
     default = (cardinality as? Cardinality.Default)?.let { display(it.value) },
     choices = choices,
     absentWith = absentWhen?.constraintToken(),
-    optionalWith = relaxedWhen?.constraintToken(),
+    optionalWith = optionalWhen?.constraintToken(),
 )
 
 private fun NamedSpec.toHelp(): OptionHelp = when (this) {

@@ -51,6 +51,7 @@ class HeadParityTest {
     fun `rejects what real head rejects`() {
         parity.rejects("--zzz", because = "real head: unrecognized option '--zzz'")
         parity.rejects("-Q", "f", because = "real head: invalid option -- 'Q'")
+        parity.rejects("-h", "f", because = "real head: invalid option -- 'h'")
         parity.rejects("-n", because = "real head: option requires an argument -- 'n'")
         parity.rejects("--lines", because = "real head: option '--lines' requires an argument")
         parity.rejects("-n", "abc", "f", because = "real head: invalid number of lines: 'abc'")
@@ -69,9 +70,7 @@ class HeadParityTest {
     @Test
     fun `the help abbreviations real head accepts reach help here too`() {
         // `--help` is the only long real head has starting with `h`, so it answers all three of these with
-        // its help text. klap injects `--help-all` into every tree on top of that, and were the injected
-        // name to take part in prefix resolution, all three would turn ambiguous on a tool whose author
-        // never asked for it. It matches its full spelling only, so head keeps the abbreviations.
+        // its help text. klap offers no `--help-all` beside it, so the three resolve to --help here as well.
         parity.showsHelp("--h", "f", because = "real head: --h is an unambiguous abbreviation of --help")
         parity.showsHelp("--he", "f", because = "real head: --he is an unambiguous abbreviation of --help")
         parity.showsHelp("--hel", "f", because = "real head: --hel is an unambiguous abbreviation of --help")
@@ -125,9 +124,7 @@ class HeadParityTest {
         parity.binds("-5", "--", "-1", expected = NOTHING_BOUND.copy(lines = "5", files = listOf("-1")))
         parity.binds("-n5", "./-1", expected = NOTHING_BOUND.copy(lines = "5", files = listOf("./-1")))
 
-        // klap's injected built-ins reach a tool that has neither. Real head answers `head -h f` with
-        // "invalid option -- 'h'", and treats `__complete` as an ordinary filename.
-        parity.shortCircuits("-h", "f", because = "klap's built-in -h outranks head's own option letters")
+        // klap's hidden __complete reaches a tool that has none; real head treats it as an ordinary filename.
         parity.shortCircuits("__complete", because = "klap's hidden __complete subcommand shadows a filename")
     }
 }

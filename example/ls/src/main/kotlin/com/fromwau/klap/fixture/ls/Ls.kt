@@ -3,7 +3,6 @@ package com.fromwau.klap.fixture.ls
 import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Builtin
-import com.fromwau.klap.Help
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
@@ -30,19 +29,15 @@ public fun lsCli(): TypedCli<LsInputs> = cliOf("ls") {
     // GNU ls takes any unambiguous prefix of a long option or a choice value: `ls --rec` is --recursive.
     abbreviation = Abbreviation.Options
     help = "List information about the FILEs (the current directory by default)."
-    version = Version.Of("9.11")
+    version = Version.Of("9.12", text = LS_VERSION_TEXT)
     epilogue = "Sort entries alphabetically if none of -tSUX nor --sort is specified. " +
         "The WHEN argument defaults to 'always' and can also be 'auto' or 'never'."
 
-    // Both of these built-ins claim a name real ls already uses, and declining them hands the name
-    // back. Without `helpShort = false`, validateReservedNames rejects `flag(short = 'h', long = "human-readable")`
-    // outright, and without `color = false` the same check rejects `option(long = "color")` — and worse, parse()
-    // would strip `--color` and its value before ls ever saw them, silently swallowing an option the tool
-    // documents.
-    builtins {
-        help = Help.Generate(short = null)
-        color = Builtin.Off
-    }
+    // klap's --color claims a name real ls already uses, and declining it hands the name back. Without
+    // `color = Builtin.Off`, validateReservedNames rejects `option(long = "color")`, and parse() would strip
+    // `--color` and its value before ls ever saw them, silently swallowing an option the tool documents.
+    // klap's --help has no short, so `-h` is free for --human-readable.
+    builtins { color = Builtin.Off }
 
     example("ls -la", "long format, including dotfiles")
     example("ls -lhS", "long format, human-readable sizes, largest first")
@@ -100,7 +95,7 @@ public fun lsCli(): TypedCli<LsInputs> = cliOf("ls") {
         // Real ls treats the sort shorts and --sort as ONE setting whose last mention wins ("sort entries
         // alphabetically if none of -cftuvSUX nor --sort is specified"): `ls -S -t` sorts by time,
         // `ls -S --sort=time` by time and `ls --sort=time -S` by size, all verified against coreutils
-        // 9.11. requireAtMostOne would be the wrong rule, since it is precedence rather than exclusivity:
+        // 9.11. atMostOne would be the wrong rule, since it is precedence rather than exclusivity:
         // it would reject lines real ls accepts.
         lastWins(sortByTime, sortBySize, unsorted, sortByExtension, sort)
 
@@ -287,3 +282,15 @@ public val NOTHING_BOUND: LsInputs = LsInputs(
     context = false,
     files = emptyList(),
 )
+
+/**
+ * What `ls --version` prints for GNU coreutils 9.12, the version installed when it was pinned
+ * (2026-10-10).
+ */
+internal val LS_VERSION_TEXT: String = """ls (GNU coreutils) 9.12
+Copyright (C) 2026 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Written by Richard M. Stallman and David MacKenzie."""

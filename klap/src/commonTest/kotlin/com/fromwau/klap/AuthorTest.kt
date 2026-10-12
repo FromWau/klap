@@ -138,12 +138,20 @@ class AuthorTest {
     }
 
     @Test
-    fun `a long that is blank or carries an equals sign is rejected`() {
-        for (spelling in listOf("", " ", "key=value")) {
-            assertFailsWith<IllegalArgumentException>("'$spelling' must not declare an input") {
+    fun `a long that is blank or carries an equals sign or a control character is rejected`() {
+        for (spelling in listOf("", " ", "key=value", "na${Char(1)}me")) {
+            assertFailsWith<IllegalArgumentException>("'$spelling' must not declare an option") {
                 cli("app") {
                     command("go") {
                         option(long = listOf(spelling), help = "nope")
+                        action { Ok("") }
+                    }
+                }
+            }
+            assertFailsWith<IllegalArgumentException>("'$spelling' must not declare a flag") {
+                cli("app") {
+                    command("go") {
+                        flag(long = spelling, help = "nope")
                         action { Ok("") }
                     }
                 }

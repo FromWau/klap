@@ -111,19 +111,12 @@ collection klap hands back is a `List`.
   suspending-actions service monitor with real Ctrl-C cancellation, so every answer is runnable code to
   copy from.
 
-## POSIX conformance
+## GNU conformance
 
-klap follows the [POSIX.1-2024 Utility Syntax
-Guidelines](https://pubs.opengroup.org/onlinepubs/9799919799.2024edition/basedefs/V1_chap12.html) (IEEE Std
-1003.1-2024, XBD chapter 12 §12.2). The conveniences it adds over them, long options, reading an option
-after an operand, `--opt=value`, only give meaning to input POSIX leaves undefined:
-
-> klap never changes the meaning of a command line the guidelines define.
-
-Each guideline is executed as a test in `PosixConformanceTest`, quoting the standard's text at the
-assertion, so this is verified on every build rather than claimed here. Every extension is paired there
-with the conforming line it must not disturb. The full account, including each opt-out and the switch that
-trades an extension back, is in [the guide](docs/guide.md#posix-conformance).
+klap reads a command line as GNU `getopt_long` reads it: shorts in clusters, longs with `--opt=value` and
+unambiguous prefixes, options mixed with operands, `--` ending the options, and an option taking the next word as
+its value whatever it is spelled. Each rule runs as a test in `GnuConformanceTest`, so this is checked on every
+build rather than claimed here; the full account is in [the guide](docs/guide.md#gnu-conformance).
 
 ## License
 

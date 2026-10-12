@@ -26,12 +26,7 @@ class PacmanConverterTest {
     @Test
     fun `a color value outside its exact spellings is refused`() = parity.checkAll(
         listOf("a", " always", "always ", "x").map {
-            cell(
-                q("--color=$it", "pacman"),
-                null,
-                "pacman: error: invalid argument '$it' for --color",
-                differs = if (it == "a") "klap refuses `a` as ambiguous, not as invalid (todo 37)" else null,
-            )
+            cell(q("--color=$it", "pacman"), null, "pacman: error: invalid argument '$it' for --color")
         },
     )
 

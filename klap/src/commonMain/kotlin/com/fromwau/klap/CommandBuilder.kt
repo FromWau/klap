@@ -179,21 +179,21 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * Members must all be inputs of this one command, never a `globalOption`/`globalFlag` or another
      * command's. Fewer than two members, a repeat, or a foreign input throws when the command is built.
      */
-    public abstract fun requireExactlyOne(vararg inputs: Input)
+    public abstract fun exactlyOne(vararg inputs: Input)
 
     /**
-     * The at-most-one counterpart of [requireExactlyOne]: none is fine, two or more is a usage error.
+     * The at-most-one counterpart of [exactlyOne]: none is fine, two or more is a usage error.
      * `tar`'s `-z`/`-j` compression set, or `find`'s `-H`/`-L`/`-P`. Rows are annotated
      * `(at most one of -z, -j)`, and membership follows the same rules.
      */
-    public abstract fun requireAtMostOne(vararg inputs: Input)
+    public abstract fun atMostOne(vararg inputs: Input)
 
     /**
      * Declares that [inputs] override one another, the one written last winning: `rm -i -f` forces,
      * `rm -f -i` prompts, and neither is an error. `find`'s `-P`/`-L`/`-H`, `head`'s `-c`/`-n`, and `ls`'s
      * `-S` against `--sort=WORD` all behave this way.
      *
-     * **This overrides, it does not exclude.** [requireAtMostOne] reads plausibly here and is the wrong
+     * **This overrides, it does not exclude.** [atMostOne] reads plausibly here and is the wrong
      * tool: it would reject a line every one of those tools accepts.
      *
      * Order comes from the command line, inside a cluster too, so `-if` forces and `-fi` prompts. Losers
@@ -202,7 +202,7 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      *
      * A set may mix flags and options, since a tool often spells one setting both ways. It may not include
      * a positional, a `.required()` option or a `.multiple()` option. Membership follows
-     * [requireExactlyOne]'s rules.
+     * [exactlyOne]'s rules.
      */
     public abstract fun lastWins(vararg inputs: Input)
 
@@ -214,7 +214,7 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * val named = option(short = 'n', long = "lines").int()
      * val direct = numberOption().int()
      * val bytes = option(short = 'c', long = "bytes").int()
-     * val lines = lastOneWins(named, direct)
+     * val lines = lastOf(named, direct)
      * lastWins(lines, bytes)
      * ```
      *
@@ -227,7 +227,7 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * @return a handle reading the winner, or the absent reading when the user wrote none of them. It is an
      *   input like any other: pass it to [lastWins] to give the folded quantity an override partner.
      */
-    public abstract fun <T> lastOneWins(vararg inputs: Opt<T>): Opt<T>
+    public abstract fun <T> lastOf(vararg inputs: Opt<T>): Opt<T>
 
     /**
      * Declares `-<NUM>`, any run of digits, as an input of this command: `head -5`, `head -5v`, `git log -2`.

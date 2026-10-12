@@ -96,28 +96,11 @@ class NegationSpellingTest {
     fun `a negative spelling reserved by a builtin is rejected at construction`() {
         val failure = assertFailsWith<IllegalArgumentException> {
             cli("t") {
+                builtins { help = Help.ByCommand(short = 'h') }
                 flag(short = 'v', long = "verbose").negatable(short = 'h')
                 action<String>(human = { it }) { Ok("x") }
             }
         }
         assertTrue("-h" in failure.message.orEmpty())
     }
-}
-
-/**
- * Runs [args] against this tree via [Cli.run] and returns the rendered stdout, minus the trailing newline
- * [run] always appends. Shared across test files (not file-private): any test that wants a tree's bound
- * human-readable output without hand-rolling a [RecordingTerminal] can reuse this one.
- */
-internal fun Cli.bindText(vararg args: String): String {
-    val terminal = RecordingTerminal()
-    run(arrayOf(*args), terminal)
-    return terminal.out.toString().removeSuffix("\n")
-}
-
-/** This tree's own `--help` output via [Cli.run], for tests asserting on rendered help text. */
-internal fun Cli.helpText(): String {
-    val terminal = RecordingTerminal()
-    run(arrayOf("--help"), terminal)
-    return terminal.out.toString().removeSuffix("\n")
 }

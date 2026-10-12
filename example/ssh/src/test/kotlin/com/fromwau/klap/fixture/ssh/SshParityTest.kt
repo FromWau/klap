@@ -53,6 +53,10 @@ class SshParityTest {
         parity.binds("-a", "web1", expected = NOTHING_BOUND.copy(forwardAgent = false, destination = "web1"))
         parity.binds("-aA", "web1", expected = NOTHING_BOUND.copy(forwardAgent = true, destination = "web1"))
         parity.binds("-Aa", "web1", expected = NOTHING_BOUND.copy(forwardAgent = false, destination = "web1"))
+        // `-4`/`-6` are ordinary short flags; without that, a dash-led digit would be read as a value and land in the
+        // first positional slot instead, turning `destination` into "-4".
+        parity.binds("-4", "web1", expected = NOTHING_BOUND.copy(ipv4 = true, destination = "web1"))
+        parity.binds("-6", "web1", expected = NOTHING_BOUND.copy(ipv6 = true, destination = "web1"))
         // The remote command passes through untouched: `ls -la` reaches the remote as itself rather than
         // being read as this CLI's own `-l` taking the attached value "a".
         parity.binds(
@@ -72,19 +76,24 @@ class SshParityTest {
     fun `rejects what real ssh rejects`() {
         parity.rejects("--zzz", "web1", because = "real ssh: unknown option -- -")
         parity.rejects("-Z", "web1", because = "real ssh: unknown option -- Z")
+        parity.rejects("-h", "web1", because = "real ssh: unknown option -- h")
         parity.rejects(because = "real ssh: usage: ssh ... destination")
         parity.rejects("-p", because = "real ssh: option requires an argument -- p")
         parity.rejects("-p", "abc", "web1", because = "real ssh: Bad port 'abc'")
         parity.rejects("-p", "0", "web1", because = "real ssh: Bad port '0'")
         parity.rejects("-o", "novalue", "web1", because = "real ssh: no argument after keyword \"novalue\"")
-        // ssh declares no `version =`, so klap injects no `--version` either and both tools answer the same.
+    }
+
+    @Test
+    fun `--version is refused as ssh refuses it`() {
         parity.rejects("--version", because = "real ssh: unknown option -- - (its version switch is -V)")
     }
 
     @Test
-    fun `known divergence from real ssh`() {
-        // `optionsEndAtFirstOperand` (set in sshCli) stops option parsing at the destination, so an
-        // undeclared short reaches the remote instead of erroring, and a declared one is not stolen either.
+    fun `options end at the destination as real ssh reads them`() {
+        // `optionsEndAtFirstOperand` (set in sshCli) stops option parsing at the destination, so an undeclared short
+        // reaches the remote instead of erroring, and a declared one is not stolen either: `ssh -G web1 tar -C /src`
+        // reports compression no, where `ssh -G -C web1` sets it.
         parity.binds(
             "web1", "grep", "-x", "pat",
             expected = NOTHING_BOUND.copy(destination = "web1", remoteCommand = listOf("grep", "-x", "pat")),
@@ -93,21 +102,26 @@ class SshParityTest {
             "web1", "tar", "-C", "/src",
             expected = NOTHING_BOUND.copy(destination = "web1", remoteCommand = listOf("tar", "-C", "/src")),
         )
+    }
 
-        // klap's own `--json` is recognized before the tree knows which command it will reach at all, so
-        // it is stripped from the remote command wherever it sits ahead of a literal `--` (see
-        // `binds connection options and the optional remote command` for the line that shields it).
+    @Test
+    fun `--json is stripped from the remote command`() {
+        // klap's own `--json` is recognized before the tree knows which command it will reach at all, so it is
+        // stripped from the remote command wherever it sits ahead of a literal `--` (see `binds connection options
+        // and the optional remote command` for the line that shields it). Real ssh forwards `echo --json`.
         parity.binds(
             "web1", "echo", "--json",
             expected = NOTHING_BOUND.copy(destination = "web1", remoteCommand = listOf("echo")),
         )
+    }
 
-        // A `--` after the destination diverges from real ssh, even though both accept the line: probed
-        // against OpenSSH, `ssh host -- -p abc` skips the "Bad port" that `ssh host -p abc` triggers, so
-        // real ssh's own option scan restarts after the destination and reads that `--` as its own
-        // end-of-options marker, consuming it rather than forwarding it. klap's switch instead treats
-        // the destination as ending all further interpretation, so the `--` itself binds as a literal
-        // token in the tail.
+    @Test
+    fun `a -- after the destination is forwarded to the remote command`() {
+        // Real ssh and klap both accept the line, but probed against OpenSSH, `ssh host -- -p abc` skips the "Bad
+        // port" that `ssh host -p abc` triggers, so real ssh's own option scan restarts after the destination and
+        // reads that `--` as its own end-of-options marker, consuming it rather than forwarding it. klap's switch
+        // treats the destination as ending all further interpretation, so the `--` binds as a literal token in the
+        // tail.
         parity.binds(
             "web1", "--", "ls", "-la", "/var/log",
             expected = NOTHING_BOUND.copy(
@@ -115,23 +129,12 @@ class SshParityTest {
                 remoteCommand = listOf("--", "ls", "-la", "/var/log"),
             ),
         )
-        // Same divergence: real ssh's restarted scan consumes this `--` too, forwarding only `echo
-        // --json` to the remote. klap keeps the `--` in the bound tail; without it, this remote `--json`
-        // would instead be stripped by klap's own `--json` built-in, per the line above.
+        // Real ssh consumes this `--` too, forwarding only `echo --json` to the remote. klap keeps the `--` in the
+        // bound tail; without it, this remote `--json` would be stripped by klap's own `--json` built-in.
         parity.binds(
             "web1", "--", "echo", "--json",
             expected = NOTHING_BOUND.copy(destination = "web1", remoteCommand = listOf("--", "echo", "--json")),
         )
-
-        // `-4`/`-6` are ordinary short flags; without that, a dash-led digit would be read as a value and
-        // land in the first positional slot instead, turning `destination` into "-4".
-        parity.binds("-4", "web1", expected = NOTHING_BOUND.copy(ipv4 = true, destination = "web1"))
-        parity.binds("-6", "web1", expected = NOTHING_BOUND.copy(ipv6 = true, destination = "web1"))
-
-        // Real ssh prints its version for -V and exits 0. klap's `--version` built-in carries no short and its
-        // long name is reserved tree-wide even for an unversioned root, so `-V` can only be an ordinary flag —
-        // which leaves the required <destination> unsatisfied.
-        parity.rejects("-V", because = "klap gap: no short reaches a print-and-exit built-in, NOT real-ssh behaviour")
     }
 
     @Test
@@ -169,7 +172,6 @@ class SshParityTest {
         )
 
         parity.shortCircuits("--help", because = "real ssh: unknown option -- -")
-        parity.shortCircuits("-h", "web1", because = "real ssh: unknown option -- h")
         parity.shortCircuits("--completion", "bash", because = "real ssh: unknown option -- -")
         parity.shortCircuits("--docs", "markdown", because = "real ssh: unknown option -- -")
         // A host literally named `__complete` is unreachable: the hidden built-in wins the subcommand walk.
@@ -178,7 +180,7 @@ class SshParityTest {
 
     @Test
     fun `--help-all is refused as the real ssh refuses it`() {
-        // klap has --help-all only where there are subcommands to expand.
+        // klap offers --help-all only under Help.ByTree, and only beside a subcommand.
         parity.rejects("--help-all", because = "real ssh: unknown option -- -")
     }
 }

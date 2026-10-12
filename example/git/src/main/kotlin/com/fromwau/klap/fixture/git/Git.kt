@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.git
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Abbreviation
+import com.fromwau.klap.Help
 import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.ValueScope
@@ -11,7 +12,7 @@ import com.fromwau.klap.dispatch
 import com.fromwau.klap.projection
 
 /**
- * git 2.55.0, reproduced as a command-line surface only (every action is a stub).
+ * git 2.56.0, reproduced as a command-line surface only (every action is a stub).
  *
  * Real usage:
  *   git [-v | --version] [-h | --help] [-C <path>] [-c <name>=<value>]
@@ -34,8 +35,10 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
     // top-level one; klap's switch is root-only, so it abbreviates both (see `known divergence from real git`).
     abbreviation = Abbreviation.Options
     help = "the stupid content tracker"
-    version = Version.Of("2.55.0")
+    version = Version.Of("2.56.0", text = GIT_VERSION_TEXT)
     epilogue = "See 'git help <command>' to read about a specific subcommand."
+    // `git -h` and `git status -h` print the usage: git's `-h` is its help.
+    builtins { help = Help.ByCommand(short = 'h') }
 
     example("git -C /tmp/repo status --short", "a global option before the subcommand")
     example("git remote add origin https://example.com/x.git", "two levels of subcommand")
@@ -62,7 +65,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
 
     // `--exec-path[=<path>]` is optional-value: a bare occurrence binds the default below, and the space
     // form leaves the next token alone, so `git --exec-path log` routes to `log` rather than swallowing
-    // it as the path. Real git's bare form is actually print-and-exit (verified against 2.55.0), which
+    // it as the path. Real git's bare form is actually print-and-exit (verified against 2.56.0), which
     // klap has no way to express for a single option — it binds and continues instead, so `log` runs here
     // where real git never gets that far. Pinned in `known divergence from real git` below.
     val execPath = globalOption(long = "exec-path", help = "path to where your core git programs are installed")
@@ -82,8 +85,9 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         namespace(), bare(), execPath(), noReplaceObjects(), noOptionalLocks(),
     )
 
-    // KLAP-GAP: git's top-level `-v` is a short for `--version`, but the built-in `--version` has no short
-    // form and none can be added, so `git -v` is not expressible (`git --vers` still abbreviates fine).
+    // KLAP-GAP: git's top-level `-v` is a short for `--version`, but a `Version.Of` short is reserved in every
+    // command, and `git add -v` and `git remote -v` are --verbose, so `git -v` is not expressible (`git --vers`
+    // still abbreviates fine).
 
     val status = command("status") {
         help = "show the working tree status"
@@ -123,7 +127,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         )
 
         // Real git accepts `git add --chmod -x file`: parse-options hands a required-value option the next
-        // token whatever it looks like (verified against 2.55.0), so the space-separated `-x` binds as the
+        // token whatever it looks like (verified against 2.56.0), so the space-separated `-x` binds as the
         // value here too, same as the attached `--chmod=-x` form.
         val chmod = option(long = "chmod", help = "override the executable bit of the listed files")
             .choice("+x", "-x")
@@ -131,7 +135,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         val pathspecFromFile = option(long = "pathspec-from-file", help = "read pathspec from file").file()
 
         // git's usage line writes `<pathspec>...` as mandatory, but real `git add` with zero operands
-        // exits 0 with "Nothing specified, nothing added." (verified against 2.55.0), so min = 0 is the
+        // exits 0 with "Nothing specified, nothing added." (verified against 2.56.0), so min = 0 is the
         // faithful arity and the action carries the hint. Bracketing in the rendered usage line is keyed
         // on that min alone (internal/render/Help.kt), so klap prints `[pathspec...]` where git's own
         // -h prints `<pathspec>...`.
@@ -209,7 +213,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         // and leaves `-m x` alone, unaffected. git's `-u[<mode>]` is the same shape and stays unexpressed.
         //
         // KLAP-GAP: real git also has `--no-gpg-sign` alongside `-S`/`--gpg-sign[=<key-id>]` (verified against
-        // 2.55.0) — the same negatable-plus-optional-value shape `--decorate` and `--preserve-root` face,
+        // 2.56.0) — the same negatable-plus-optional-value shape `--decorate` and `--preserve-root` face,
         // and klap cannot hold both on one holder here either. Unlike those two, this one took the value
         // form and lost `--no-gpg-sign`: the trade goes the other way because picking WHICH key signs
         // (`-S`/`-S<keyid>`) is what git users actually reach for on this option, where `--decorate` and
@@ -264,7 +268,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
             .int()
             .validate("must be a positive count") { it > 0 }
 
-        val maxCount = lastOneWins(namedMaxCount, directMaxCount)
+        val maxCount = lastOf(namedMaxCount, directMaxCount)
 
         val skip = option(long = "skip", help = "skip <n> commits before starting to show output").int()
 
@@ -330,7 +334,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
     // on one node, and routing wins over a free positional (there is none here, so nothing collides).
     val remote = command("remote") {
         help = "manage the set of tracked repositories"
-        // KLAP-GAP: real git accepts `git remote -v add up <url>` (verified against 2.55.0); klap's walk
+        // KLAP-GAP: real git accepts `git remote -v add up <url>` (verified against 2.56.0); klap's walk
         // breaks at the first non-child token, so `-v` binds on `remote` instead — only a global survives
         // there, since `siftGlobals` strips globals out of argv before the walk runs.
         val verbose = flag(short = 'v', long = "verbose", help = "be verbose")
@@ -533,7 +537,7 @@ public sealed interface GitInputs {
 public val NO_GLOBALS: GitGlobals = GitGlobals(
     directory = emptyList(),
     config = emptyList(),
-    // globalFlag(...).negatable(short = 'P', long = "no-pager") took no explicit `default`, so the vararg overload's
+    // globalFlag(...).negatable(short = 'P', long = "no-pager") takes no explicit `default`, so `.negatable()`'s
     // own default of true applies: real git paginates unless told not to, and so does this fixture.
     paginate = true,
     gitDir = null,
@@ -623,3 +627,9 @@ public val NOTHING_REMOTE_ADD: GitInputs.RemoteAdd = GitInputs.RemoteAdd(
 
 /** `git remote remove` with no arguments at all: every field at the default its declaration gives it. */
 public val NOTHING_REMOTE_REMOVE: GitInputs.RemoteRemove = GitInputs.RemoteRemove(NO_GLOBALS, name = "")
+
+/**
+ * What `git --version` prints for git 2.56.0, the version installed when it was pinned
+ * (2026-10-10).
+ */
+internal val GIT_VERSION_TEXT: String = """git version 2.56.0"""

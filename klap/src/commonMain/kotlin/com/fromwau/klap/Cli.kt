@@ -87,8 +87,9 @@ public open class Command internal constructor(
     internal val flagSubcommands: List<Command> get() = subcommands.filter { it.isFlagSpelled }
 
     /**
-     * The child named exactly [token], by its own name or one of its aliases, or null. This never resolves
-     * an abbreviation, even under [Abbreviation.All], so it can miss a token that parsing would have matched.
+     * The child named exactly [token], by its own name, one of its aliases, or a flag spelling as written
+     * (`--sync`, `-S`), or null. This never resolves an abbreviation, even under [Abbreviation.All], so it can
+     * miss a token that parsing would have matched.
      */
     public fun subcommand(token: String): Command? =
         subcommands.firstOrNull { it.name == token || token in it.aliases || token in it.flagSpellings }
@@ -151,7 +152,11 @@ public class Cli internal constructor(
     internal val builtins: Builtins = Builtins.DEFAULT,
     // Root-only, like [builtins]: threaded from here into every scan and sift, since a subcommand node
     // carries no root-only facts of its own.
-    internal val abbreviation: Abbreviation = Abbreviation.None,
+    internal val abbreviation: Abbreviation = Abbreviation.LongOptions,
+    // Root-only too: what an option given twice does wherever its own `.repeated()` says nothing.
+    internal val repeatedOptions: RepeatedOptions = RepeatedOptions.LastWins,
+    // Root-only too: whether a one-dash word may hold several shorts.
+    internal val shortOptions: ShortOptions = ShortOptions.Clustered,
     optionsEndAtFirstOperand: Boolean = false,
 ) : Command(
     name = name,
@@ -189,31 +194,34 @@ public class Cli internal constructor(
     internal val metaOptions: Boolean get() = action != null
 
     /**
-     * Every long spelling declared anywhere in this tree, dashes stripped: each node's own options and
-     * flags, plus each negatable flag's negative half, folded over the whole subcommand walk.
-     *
-     * Held rather than derived per call, unlike the other spec views above: the scans that run before the
-     * subcommand walk resolve an abbreviation against it on every parse, and the tree is immutable once
-     * built, so the walk can only ever produce the same list.
+     * The longs each command shares with its flag-spelled family, dashes stripped: a command with flag-spelled
+     * children and those children read one table, as pacman's operations are options of one getopt_long table
+     * (`pacman -Q --no` is ambiguous among every `--no...` pacman has). A command outside any family has none.
      */
-    internal val declaredLongs: List<String> by lazy { subtreeLongs() }
+    internal val sharedLongs: Map<Command, List<String>> by lazy {
+        mutableMapOf<Command, List<String>>().also { collectFlagFamilies(it) }
+    }
 
     /**
      * The qualified path of the first command in this tree declared with `actionSuspending { }`, or null
      * when none is.
      *
-     * Held rather than derived per call, for the same reason as [declaredLongs]: `run` and `main` read this
-     * on every call, the walk allocates a path string per node visited, and the tree is immutable once
-     * built, so it can only ever produce the same answer.
+     * Held rather than derived per call: `run` and `main` read this on every call, the walk allocates a path
+     * string per node visited, and the tree is immutable once built, so it can only ever produce the same answer.
      */
     internal val suspendingPath: String? by lazy { firstSuspendingPath() }
 }
 
-private fun Command.subtreeLongs(): List<String> =
-    namedInputs.flatMap { it.longs } +
-            flags.filter { it.negatable }.flatMap { it.negativeLongs } +
-            flagSubcommands.flatMap { sub -> sub.flagSpellings.filter { it.startsWith("--") }.map { it.drop(2) } } +
-            subcommands.flatMap { it.subtreeLongs() }
+private fun Command.collectFlagFamilies(into: MutableMap<Command, List<String>>) {
+    if (flagSubcommands.isNotEmpty()) {
+        val family = listOf(this) + flagSubcommands
+        val longs = family.flatMap { member ->
+            member.namedInputs.flatMap { it.longs } + member.flags.filter { it.negatable }.flatMap { it.negativeLongs }
+        } + flagSubcommands.flatMap { sub -> sub.flagSpellings.filter { it.startsWith("--") }.map { it.drop(2) } }
+        family.forEach { into[it] = into[it].orEmpty() + longs }
+    }
+    subcommands.forEach { it.collectFlagFamilies(into) }
+}
 
 private fun Command.firstSuspendingPath(prefix: String = name): String? {
     if (action?.suspending == true) return prefix

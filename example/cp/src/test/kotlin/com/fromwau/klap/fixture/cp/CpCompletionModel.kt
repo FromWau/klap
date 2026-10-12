@@ -1,25 +1,25 @@
 package com.fromwau.klap.fixture.cp
 
 import com.fromwau.klap.Cli
+import com.fromwau.klap.fixture.cp.CpLineContext.FILES
+import com.fromwau.klap.fixture.cp.CpLineContext.assertTab
 import com.fromwau.klap.fixture.marked
 import com.fromwau.klap.testing.Suggestion
-import com.fromwau.klap.testing.acceptSuggestion
 import com.fromwau.klap.testing.filesAfter
-import com.fromwau.klap.testing.suggestionsFor
-import com.fromwau.klap.testing.tab
-import kotlin.test.assertEquals
 
 /*
- * What Tab should offer on a cp line: exactly what real cp 9.12 would accept at the cursor, computed from the
- * table in CpModel.kt. Every option is described by cp's own help, a choice value comes in cp's case only, an
- * operand slot hands the word to the shell's file completion, and nothing is offered that cp would refuse on that
- * line: a second -t, -t beside -T, a third operand under -T, or klap's own built-ins.
+ * What Tab should offer on a cp line, computed from the table in CpModel.kt: every option described by cp's own help,
+ * a choice value in cp's case only, and an operand slot handing the word to the shell's file completion. Of what real
+ * cp 9.12 refuses on a line, the model leaves out what the fixture declares: a second -t, -t beside -T, -l beside -s,
+ * a third operand under -T, and klap's own built-ins. What only cp's validators refuse, --backup beside -n,
+ * --update=none or --update=none-fail, and --reflink=always beside a --sparse other than auto, it still offers, as
+ * Tab does.
  */
-
-private val FILES: Suggestion = filesAfter()
 
 private val TARGET = input("--target-directory")
 private val NO_TARGET = input("--no-target-directory")
+private val HARD_LINK = input("--link")
+private val SYMBOLIC_LINK = input("--symbolic-link")
 
 /** What a run of words gives: the inputs named, the operands, and whether options have ended or a value is due. */
 private data class Scan(
@@ -72,6 +72,9 @@ private fun refused(given: List<Input>): Set<Input> = buildSet {
         add(NO_TARGET)
     }
     if (NO_TARGET in given) add(TARGET)
+    // `cp -l -s a b`: "cannot make both hard and symbolic links".
+    if (HARD_LINK in given) add(SYMBOLIC_LINK)
+    if (SYMBOLIC_LINK in given) add(HARD_LINK)
 }
 
 private fun pool(refused: Set<Input>): List<Suggestion> = buildList {
@@ -84,7 +87,7 @@ private fun pool(refused: Set<Input>): List<Suggestion> = buildList {
 }
 
 /** What real cp would accept for the word [current] (as far as typed) after [head], with [after] past the cursor. */
-internal fun cpOffers(
+private fun cpOffers(
     head: List<String>,
     current: String,
     after: List<String>,
@@ -93,7 +96,7 @@ internal fun cpOffers(
     val later = scan(after)
     val given = before.given + later.given
     before.pending?.let { input ->
-        if (input == TARGET && given.count { it == TARGET } > 1) return emptySet()
+        if (input in refused(given - input)) return emptySet()
         return valueOffers(input, current, head = null)
     }
     if (before.endOfOptions || !current.startsWith("-")) {
@@ -154,7 +157,7 @@ private fun valueOffers(
 
 /**
  * One Tab press: which cursor position and form it is ([kind]), what is being completed ([subject]), the line and
- * cursor, what real cp would accept there ([cp]), and the suggestion an accept takes ([named], else the first).
+ * cursor, and what real cp would accept there ([cp]).
  */
 internal data class CompletionCell(
     val kind: String,
@@ -162,67 +165,38 @@ internal data class CompletionCell(
     val line: String,
     val cursor: Int,
     val cp: Set<Suggestion>,
-    val named: String?,
 ) {
     override fun toString(): String = "$kind, $subject: ${marked(line, cursor)}"
 }
 
-private fun wordStart(
+/** What real cp would accept at [cursor] on [line], which starts with `cp`. */
+internal fun cpOffersAt(
     line: String,
     cursor: Int,
-): Int = line.lastIndexOf(' ', cursor - 1) + 1
+): Set<Suggestion> {
+    val start = line.lastIndexOf(' ', cursor - 1) + 1
+    val head = line.take(start).split(' ').filter { it.isNotEmpty() }.drop(1)
+    val current = line.substring(start, cursor)
+    val after = line.drop(cursor).dropWhile { !it.isWhitespace() }.split(' ').filter { it.isNotEmpty() }
+    return cpOffers(head, current, after)
+}
 
 private fun cell(
     kind: String,
     subject: String,
     line: String,
     cursor: Int = line.length,
-    named: String? = null,
-): CompletionCell {
-    val start = wordStart(line, cursor)
-    val head = line.take(start).split(' ').filter { it.isNotEmpty() }.drop(1)
-    val current = line.substring(start, cursor)
-    val after = line.drop(cursor).dropWhile { !it.isWhitespace() }.split(' ').filter { it.isNotEmpty() }
-    return CompletionCell(kind, subject, line, cursor, cpOffers(head, current, after), named)
-}
+): CompletionCell = CompletionCell(kind, subject, line, cursor, cpOffersAt(line, cursor))
 
-/** Tab on [cell] offers cp's set, and taking [CompletionCell.named] (or the first) and one Tab give its lines. */
-internal fun Cli.assertCp(cell: CompletionCell) {
-    val line = cell.line
-    val cursor = cell.cursor
-    val expected = cell.cp
-    val actual = suggestionsFor(line, cursor)
-    assertEquals(expected.sortedBy { it.value }, actual.sortedBy { it.value }, "$cell: offered (cp's set first)")
-    assertEquals(actual.size, actual.toSet().size, "$cell: a suggestion is offered twice: $actual")
-    val take = expected.firstOrNull { it.value == cell.named } ?: expected.minByOrNull { it.value }
-    if (take != null && !take.value.startsWith(FILES.value)) {
-        val taken = line.take(wordStart(line, cursor)) + take.value + line.drop(cursor)
-        assertEquals(taken, acceptSuggestion(line, take, cursor), "$cell: once ${take.value} is taken")
-    }
-    assertEquals(tabbed(cell), tab(line, cursor), "$cell: after one Tab")
-}
-
-/** [cell]'s line after one Tab, as every shell does it: the one suggestion, or what all of them share. */
-private fun tabbed(cell: CompletionCell): String {
-    val line = cell.line
-    val cursor = cell.cursor
-    val values = cell.cp.map { it.value }
-    if (values.isEmpty() || values.first().startsWith(FILES.value)) return line
-    val shared = values.reduce { shared, value -> shared.commonPrefixWith(value) }
-    val start = wordStart(line, cursor)
-    val typed = line.substring(start, cursor)
-    return if (shared.length > typed.length) line.take(start) + shared + line.drop(cursor) else line
-}
+/** Tab on [cell] offers cp's set. */
+internal fun Cli.assertCp(cell: CompletionCell) = assertTab("$cell", cell.line, cell.cursor, cell.cp)
 
 // --- what a cell completes, in cp's terms ---
 
 internal const val OPERAND = "an operand"
 internal const val FULL_OPERANDS = "an operand -T has no room for"
-internal const val SAME_WORDING = "a name the fixture describes in cp's words"
-internal const val OTHER_WORDING = "a name the fixture describes in other words"
-internal const val SHADOWED = "a name as typed that also starts a klap-only long"
-internal const val BUILT_IN = "help or version"
-internal const val KLAP_ONLY = "a name only klap or the fixture has"
+internal const val CP_NAME = "a long name cp has"
+internal const val UNKNOWN_NAME = "a long name cp does not have"
 internal const val REFUSED = "a name cp refuses on this line"
 internal const val LETTERS = "the letters a cluster continues with"
 internal const val VALUE_LETTER = "a letter taking a value"
@@ -231,38 +205,23 @@ internal const val CHOICE = "a choice value"
 internal const val ATTRIBUTE = "an attribute name"
 internal const val TEXT_VALUE = "a free text value"
 internal const val OPTIONAL = "an optional value"
-internal const val REQUIRED_HERE = "an optional value the fixture makes required"
-internal const val VALUE_OTHER_WORDING = "a value whose option the fixture describes in other words"
-internal const val NEGATION = "the negation the fixture declares without its own help"
 internal const val CAPITALS = "a choice typed in capitals"
 
 private const val AFTER = " a b"
 
-private fun nameSubject(typed: String): String {
-    if (KLAP_ONLY_LONGS.any { it.startsWith(typed) }) return SHADOWED
-    val matches = CP_LONGS.filter { it.startsWith(typed) }
-    if (matches.isEmpty()) return KLAP_ONLY
-    if (matches.all { it == "--help" || it == "--version" }) return BUILT_IN
-    val inputs = INPUTS.filter { it.long in matches }
-    if (inputs.all { it.fixtureHelp == NEGATION_HELP }) return NEGATION
-    return if (inputs.all { it.help == it.fixtureHelp }) SAME_WORDING else OTHER_WORDING
-}
+private fun nameSubject(typed: String): String = if (CP_LONGS.any { it.startsWith(typed) }) CP_NAME else UNKNOWN_NAME
 
-private val REQUIRED_IN_FIXTURE = listOf("--preserve", "--context")
-
-/** What a value cell completes; [attached] when the value shares its word with the option and so its description. */
+/** What a value cell completes; [attached] when the value shares its word with the option. */
 private fun valueSubject(
     input: Input,
     attached: Boolean,
 ): String {
     val kind = input.kind as Kind.Value
     return when {
-        !attached && input.long in REQUIRED_IN_FIXTURE -> REQUIRED_HERE
+        kind.optional && !attached -> OPTIONAL
         kind.list -> ATTRIBUTE
-        attached && kind.choices != null && input.help != input.fixtureHelp -> VALUE_OTHER_WORDING
         kind.optional -> OPTIONAL
         kind.path -> PATH_VALUE
-        kind.list -> ATTRIBUTE
         kind.choices != null -> CHOICE
         else -> TEXT_VALUE
     }
@@ -303,16 +262,16 @@ private fun generateCells(): List<CompletionCell> = buildList {
     add(cell("dash", REFUSED, "cp -T --"))
     for (long in CP_LONGS) {
         val subject = nameSubject(long)
-        add(cell("long end", subject, P + long, named = long))
-        add(cell("long end", subject, P + long + AFTER, cursor = P.length + long.length, named = long))
+        add(cell("long end", subject, P + long))
+        add(cell("long end", subject, P + long + AFTER, cursor = P.length + long.length))
         add(cell("long inside", nameSubject(long.dropLast(1)), P + long, cursor = P.length + long.length - 1))
-        abbreviationOf(long)?.let { add(cell("long abbreviated", nameSubject(it), P + it, named = long)) }
+        abbreviationOf(long)?.let { add(cell("long abbreviated", nameSubject(it), P + it)) }
     }
     for (long in KLAP_ONLY_LONGS) {
-        add(cell("long end", KLAP_ONLY, P + long))
+        add(cell("long end", UNKNOWN_NAME, P + long))
         add(cell("long inside", nameSubject(long.dropLast(1)), P + long, cursor = P.length + long.length - 1))
     }
-    for (prefix in listOf("--j", "--col", "--com", "--do")) add(cell("long abbreviated", KLAP_ONLY, P + prefix))
+    for (prefix in listOf("--j", "--col", "--com", "--do")) add(cell("long abbreviated", UNKNOWN_NAME, P + prefix))
     add(cell("long end", REFUSED, "cp -t d --no-target-directory"))
     add(cell("long inside", REFUSED, "cp --no-target-directory -t d", cursor = P.length + 20))
     add(cell("long end", REFUSED, "cp -T --target-directory"))
@@ -369,5 +328,7 @@ private fun generateCells(): List<CompletionCell> = buildList {
         }
     }
     add(cell("value no word", REFUSED, "cp -t d -t "))
+    add(cell("value no word", REFUSED, "cp -T -t "))
+    add(cell("value no word", REFUSED, "cp -T --target-directory "))
     add(cell("value attached", REFUSED, "cp -T --target-directory="))
 }

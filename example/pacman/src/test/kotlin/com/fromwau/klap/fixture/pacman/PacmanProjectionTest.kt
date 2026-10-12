@@ -172,14 +172,7 @@ class PacmanProjectionTest {
         parity.check(ParseCell(listOf("-Qf"), null, "pacman: error: invalid option '-f'"))
         parity.check(ParseCell(listOf("-Q", "--zzz"), null, "pacman: unrecognized option '--zzz'"))
         parity.check(ParseCell(listOf("-Q", "--colour=never"), null, "pacman: unrecognized option '--colour=never'"))
-        parity.check(
-            ParseCell(
-                listOf("--docs"),
-                null,
-                "pacman: unrecognized option '--docs'",
-                differs = "klap reads its --docs built-in and wants a format, pacman has no --docs (todo 8)",
-            ),
-        )
+        parity.check(ParseCell(listOf("--docs"), null, "pacman: unrecognized option '--docs'"))
     }
 
     @Test
@@ -420,18 +413,13 @@ class PacmanProjectionTest {
     }
 
     @Test
-    fun `an unknown option on the line refuses it even beside help`() = parity.checkAll(
-        listOf(
-            cell(q("--help", "--bogus"), null, "pacman: unrecognized option '--bogus'"),
-            cell(q("--bogus", "--help"), null, "pacman: unrecognized option '--bogus'"),
-        ),
+    fun `an unknown option ahead of help refuses the line`() = parity.checkAll(
+        listOf(cell(q("--bogus", "--help"), null, "pacman: unrecognized option '--bogus'")),
     )
 
     @Test
-    fun `help outranks a bad value on the same line`() {
-        parity.showsHelp("-Q", "--color=bogus", "--help", because = "pacman -Q --color=bogus --help prints the -Q page")
+    fun `help ahead of a bad value answers`() {
         parity.showsHelp("-Q", "--help", "--color=bogus", because = "pacman -Q --help --color=bogus prints the page")
-        parity.showsHelp("-Q", "--debug=3", "--help", because = "pacman -Q --debug=3 --help prints the -Q page")
     }
 
     @Test
@@ -446,14 +434,7 @@ class PacmanProjectionTest {
 
     @Test
     fun `a prefix of --docs alone is refused`() = parity.checkAll(
-        listOf(
-            cell(
-                q("--doc"),
-                null,
-                "pacman: unrecognized option '--doc'",
-                differs = "klap resolves --doc to its --docs built-in and wants a format (todo 41)",
-            ),
-        ),
+        listOf(cell(q("--doc"), null, "pacman: unrecognized option '--doc'")),
     )
 
     @Test
@@ -813,64 +794,7 @@ class PacmanProjectionTest {
             parity.check(ParseCell(listOf("-${op.short}"), null, "pacman ${op.long} requires <package(s)>"))
         }
     }
-}
 
-/**
- * The lines pacman 7.1.0 reads one way and klap or the fixture another today (P of the testing matrix). Each test
- * states what real pacman 7.1.0 does and is ignored with `TDD target: <what must change>`; removing the annotation
- * shows it failing for that reason, and no other test pins today's behaviour, so a fix breaks nothing else.
- */
-class PacmanProjectionTargetsTest {
-    private val parity = ParitySuite(pacmanCli())
-
-    @Ignore("Will not do (todo 36): states a pacman quirk klap does not follow")
-    @Test
-    fun `help outranks version in either order`() {
-        // `pacman --help --version` and `pacman --version --help` print the usage; with -Q, the -Q page.
-        val lines = listOf(
-            listOf("--help", "--version"),
-            listOf("--version", "--help"),
-            listOf("-Q", "--version", "--help"),
-            listOf("-Qh", "--version"),
-            listOf("-QV", "--help"),
-        )
-        checkCells(lines) { parity.showsHelp(argv = it.toTypedArray(), because = "pacman prints its usage") }
-    }
-
-    @Ignore("Will not do (todo 36): states a pacman quirk klap does not follow")
-    @Test
-    fun `an unknown option refuses the line beside version`() = parity.checkAll(
-        listOf(ParseCell(q("--version", "--bogus"), null, "pacman: unrecognized option '--bogus'")),
-    )
-
-    @Ignore("Will not do (todo 36): states a pacman quirk klap does not follow")
-    @Test
-    fun `two operations are refused beside help`() = parity.checkAll(
-        listOf(
-            ParseCell(q("-T", "--help"), null, "pacman: error: only one operation may be used at a time"),
-            ParseCell(listOf("-QT", "-h"), null, "pacman: error: only one operation may be used at a time"),
-        ),
-    )
-
-    @Ignore("Will not do (todo 33): states a pacman quirk klap does not follow")
-    @Test
-    fun `a value word that is exactly the end of options is the value`() = parity.checkAll(
-        listOf(ParseCell(q("--dbpath", "--"), QUERY.copy(dbPath = "--"), "-Qv --dbpath --: DB Path: .../--/")),
-    )
-
-    @Ignore("Will not do (todo 40): states a pacman quirk klap does not follow")
-    @Test
-    fun `__complete as the first word is a target`() = parity.checkAll(
-        listOf(
-            ParseCell(
-                listOf("__complete", "-Q"),
-                QUERY.copy(targets = listOf("__complete")),
-                "pacman __complete -Q: error: package '__complete' was not found",
-            ),
-        ),
-    )
-
-    @Ignore("Will not do (todo 6): states a pacman quirk klap does not follow")
     @Test
     fun `the operation given twice is refused`() {
         // `pacman -QQ pacman`, `pacman -Q -Q pacman`, `pacman -Q --query pacman`: all "error: only one operation
@@ -884,5 +808,68 @@ class PacmanProjectionTargetsTest {
             )
         }
         checkCells(cells) { parity.check(it) }
+    }
+
+    @Test
+    fun `a value word that is exactly the end of options is the value`() = parity.checkAll(
+        listOf(ParseCell(q("--dbpath", "--"), QUERY.copy(dbPath = "--"), "-Qv --dbpath --: DB Path: .../--/")),
+    )
+
+    @Test
+    fun `two operations are refused beside help`() = parity.checkAll(
+        listOf(
+            ParseCell(q("-T", "--help"), null, "pacman: error: only one operation may be used at a time"),
+            ParseCell(listOf("-QT", "-h"), null, "pacman: error: only one operation may be used at a time"),
+        ),
+    )
+
+    @Test
+    fun `__complete as the first word is a target`() = parity.checkAll(
+        listOf(
+            ParseCell(
+                listOf("__complete", "-Q"),
+                QUERY.copy(targets = listOf("__complete")),
+                "pacman __complete -Q: error: package '__complete' was not found",
+            ),
+        ),
+    )
+}
+
+/**
+ * The lines pacman 7.1.0 reads one way and klap another (P of the testing matrix), where only pacman behaves so and
+ * klap does not follow. Each test states what real pacman 7.1.0 does and is kept as a record, ignored with `Will not do
+ * (todo N)`.
+ */
+class PacmanProjectionTargetsTest {
+    private val parity = ParitySuite(pacmanCli())
+
+    @Ignore("Will not do (todo 61): klap answers --help and --version ahead of a later unknown option, as GNU does")
+    @Test
+    fun `an unknown option refuses the line beside help or version`() = parity.checkAll(
+        listOf(
+            cell(q("--help", "--bogus"), null, "pacman: unrecognized option '--bogus'"),
+            cell(q("--version", "--bogus"), null, "pacman: unrecognized option '--bogus'"),
+        ),
+    )
+
+    @Ignore("Will not do (todo 61): klap refuses a bad value written ahead of --help, as GNU does")
+    @Test
+    fun `help outranks a bad value written before it`() {
+        parity.showsHelp("-Q", "--color=bogus", "--help", because = "pacman -Q --color=bogus --help prints the -Q page")
+        parity.showsHelp("-Q", "--debug=3", "--help", because = "pacman -Q --debug=3 --help prints the -Q page")
+    }
+
+    @Ignore("Will not do (todo 36): states a pacman quirk klap does not follow")
+    @Test
+    fun `help outranks version in either order`() {
+        // `pacman --help --version` and `pacman --version --help` print the usage; with -Q, the -Q page.
+        val lines = listOf(
+            listOf("--help", "--version"),
+            listOf("--version", "--help"),
+            listOf("-Q", "--version", "--help"),
+            listOf("-Qh", "--version"),
+            listOf("-QV", "--help"),
+        )
+        checkCells(lines) { parity.showsHelp(argv = it.toTypedArray(), because = "pacman prints its usage") }
     }
 }

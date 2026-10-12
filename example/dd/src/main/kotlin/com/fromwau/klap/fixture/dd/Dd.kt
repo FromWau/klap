@@ -29,7 +29,7 @@ public fun ddCli(): TypedCli<DdInputs> = cliOf("dd") {
     // dd declares no long option of its own, but real dd still abbreviates klap's injected --help/--version.
     abbreviation = Abbreviation.Options
     help = "Copy a file, converting and formatting according to the operands"
-    version = Version.Of("9.11")
+    version = Version.Of("9.12", text = DD_VERSION_TEXT)
 
     example("dd if=/dev/zero of=out.img bs=4M count=10 status=progress", "write a 40 MiB file, with progress")
     example("dd if=disk.img of=/dev/sdb bs=1M conv=fsync oflag=direct", "restore an image with direct I/O")
@@ -61,9 +61,8 @@ public fun ddCli(): TypedCli<DdInputs> = cliOf("dd") {
             }
         }
 
-    // KLAP-GAP: klap accepts built-ins that real dd rejects as operands (`--json`, `--color`, `--help-all`,
-    // `--completion`, `--docs`); `builtins { }` can decline all but `--help`/`--help-all`, but this
-    // fixture declines nothing.
+    // KLAP-GAP: klap accepts built-ins that real dd rejects as operands (`--json`, `--color`, `--completion`,
+    // `--docs`); `builtins { }` could decline each of them, but this fixture declines nothing.
     // KLAP-GAP: klap has no declarative form for dd's `name=value` operands, so this fixture documents
     // them in the epilogue instead of declaring them.
     epilogue = """
@@ -256,3 +255,15 @@ public data class DdInputs(val operands: List<DdOperand>)
 
 /** `dd` with no operands at all: every field at the default the declaration gives it. */
 public val NOTHING_BOUND: DdInputs = DdInputs(operands = emptyList())
+
+/**
+ * What `dd --version` prints for GNU coreutils 9.12, the version installed when it was pinned
+ * (2026-10-10).
+ */
+internal val DD_VERSION_TEXT: String = """dd (coreutils) 9.12
+Copyright (C) 2026 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Written by Paul Rubin, David MacKenzie, and Stuart Kemp."""

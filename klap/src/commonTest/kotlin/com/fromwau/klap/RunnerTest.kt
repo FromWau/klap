@@ -314,6 +314,7 @@ class RunnerTest {
     @Test
     fun `nested help shows full path`() {
         val vcs = cli("vcs") {
+            builtins { help = Help.ByCommand(short = 'h') }
             command("remote") {
                 command("add") {
                     argument("name")

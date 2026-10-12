@@ -154,25 +154,22 @@ class BuiltinsTest {
     }
 
     @Test
-    fun `completion meta option treats a flag like next token as missing value`() {
+    fun `completion meta option takes a flag like next token as its shell`() {
+        // getopt -o '' -l completion: -- --completion --foo gives " --completion '--foo'".
         val tree = greet()
-        val err = tree.parse(listOf("--completion", "--foo")).assertError<CliError.MissingOptionValue>()
-        assertEquals(CliError.MissingOptionValue("--completion"), err)
+        val err = tree.parse(listOf("--completion", "--foo")).assertError<CliError.InvalidChoice>()
+        assertEquals("--foo", err.value)
     }
 
     @Test
-    fun `json interleaved with completion meta option does not consume the shell value`() {
-        // --json is position-independent and stripped before the meta-option scan, so a --json sitting
-        // between --completion and its shell value must not be mistaken for that value; this resolves
-        // identically to --json appearing before --completion.
+    fun `json beside the completion meta option is the json builtin`() {
+        // --json ahead of --completion or after its shell is the built-in; between them it is the shell asked
+        // for, as getopt_long takes a required argument (getopt -o '' -l completion:,json -- --completion --json).
         val tree = greet()
-        val interleaved =
-            tree.parse(listOf("--completion", "--json", "bash")).assertSuccess()
-        val leading =
-            tree.parse(listOf("--json", "--completion", "bash")).assertSuccess()
-        assertIs<Invocation.ShowCompletion>(interleaved)
-        assertEquals(CompletionShell.BASH, interleaved.shell)
-        assertEquals(interleaved, leading)
+        val leading = tree.parse(listOf("--json", "--completion", "bash")).assertSuccess()
+        assertIs<Invocation.ShowCompletion>(leading)
+        assertEquals(CompletionShell.BASH, leading.shell)
+        assertEquals(leading, tree.parse(listOf("--completion", "bash", "--json")).assertSuccess())
     }
 
     @Test
@@ -183,6 +180,7 @@ class BuiltinsTest {
         // needs a root without one, so the first bucket is read on a dispatcher.
         val dispatcher = cli("greet") {
             version = Version.Of("1.0.0")
+            builtins { help = Help.ByTree() }
             command("hello") { action { Ok("") } }
         }
         assertIs<Invocation.ShowVersion>(parseOf(dispatcher, "--version", "--help-all"))
@@ -205,7 +203,7 @@ class BuiltinsTest {
     fun `a version short prints the version alone or in a cluster`() {
         // `pacman -V` and `pacman -QV` print the banner; curl and ssh take -V too.
         val tool = cli("pkg") {
-            version = Version.Of("7.1.0", short = 'V')
+            version = Version.Of("7.1.0", long = "version", short = 'V')
             flag(short = 'Q', long = "query")
             action { Ok("") }
         }
@@ -223,7 +221,7 @@ class BuiltinsTest {
         val tool = cli("cp") {
             version = Version.Of("9.12", description = "output version information and exit")
             builtins {
-                help = Help.Generate(description = "display this help and exit")
+                help = Help.ByCommand(description = "display this help and exit")
             }
             argument("file")
             action { Ok("") }
@@ -236,6 +234,22 @@ class BuiltinsTest {
     }
 
     @Test
+    fun `a dispatcher's completion and docs commands are described in the words the tool gives them`() {
+        val tool = cli("tool") {
+            builtins {
+                completion = Builtin.On("emit the script")
+                docs = Builtin.On("emit the manual")
+            }
+            command("sync") { action { Ok("") } }
+        }
+        val help = RecordingTerminal().also { tool.run(arrayOf("--help"), it) }.out.toString()
+        assertTrue("emit the script" in help && "emit the manual" in help, help)
+        val offered = tool.completeCandidates(listOf(""))
+        assertTrue(Candidate("completion", "emit the script") in offered, "$offered")
+        assertTrue(Candidate("docs", "emit the manual") in offered, "$offered")
+    }
+
+    @Test
     fun `a cli with no subcommand has no help-all`() {
         // Nothing for it to expand, and real single-command tools refuse it (`dd --help-all`: "unrecognized option").
         assertIs<CliError.UnknownOption>(ladderRoot().parse(listOf("--help-all")).assertError())
@@ -243,6 +257,39 @@ class BuiltinsTest {
             option(long = "help-all", help = "the tool's own")
             action { Ok("") }
         }
+    }
+
+    @Test
+    fun `a built-in short is held to the shape of every other short`() {
+        assertFailsWith<IllegalArgumentException> {
+            cli("tool") {
+                version = Version.Of("1.0", short = ' ')
+                action { Ok("") }
+            }
+        }
+        assertFailsWith<IllegalArgumentException> {
+            cli("tool") {
+                builtins { help = Help.ByCommand(short = '-') }
+                action { Ok("") }
+            }
+        }
+        assertFailsWith<IllegalArgumentException> {
+            cli("tool") {
+                builtins { help = Help.Custom("usage: tool", short = '=') }
+                action { Ok("") }
+            }
+        }
+    }
+
+    @Test
+    fun `a tool's own --help-all ahead of --version leaves the version to answer`() {
+        val tool = cli("tool") {
+            version = Version.Of("1.0")
+            flag(long = "help-all", help = "the tool's own")
+            action { Ok("") }
+        }
+        assertIs<Invocation.ShowVersion>(parseOf(tool, "--help-all", "--version"))
+        assertIs<Invocation.ShowVersion>(parseOf(tool, "--version", "--help-all"))
     }
 
     @Test
@@ -278,9 +325,36 @@ class BuiltinsTest {
     }
 
     @Test
+    fun `a version given only a short has no long`() {
+        // ssh: `-V` prints the version, `--version` is "unknown option -- -".
+        val tree = cli("ssh") {
+            version = Version.Of("10.6p1", short = 'V')
+            action { Ok("") }
+        }
+        assertIs<Invocation.ShowVersion>(parseOf(tree, "-V"))
+        assertIs<CliError.UnknownOption>(tree.parse(listOf("--version")).assertError())
+        val help = RecordingTerminal().also { tree.run(arrayOf("--help"), it) }.out.toString()
+        assertTrue(help.lines().any { it.trim().startsWith("-V ") }, help)
+        assertTrue("--version" !in help, help)
+        val noSpelling = assertFailsWith<IllegalArgumentException> {
+            cli("none") {
+                version = Version.Of("1.0", long = null)
+                action { Ok("") }
+            }
+        }
+        assertTrue("needs a long or a short" in noSpelling.message.orEmpty(), noSpelling.message)
+    }
+
+    @Test
     fun `a version is printed by its own long short and text`() {
         val tree = cli("pkg") {
-            version = Version.Of("7.1.0", long = "ver", short = 'V', description = "show it", text = "pkg v7.1.0 (banner)")
+            version = Version.Of(
+                "7.1.0",
+                long = "ver",
+                short = 'V',
+                description = "show it",
+                text = "pkg v7.1.0 (banner)",
+            )
             action { Ok("") }
         }
         for (argv in listOf(arrayOf("--ver"), arrayOf("-V"))) {
@@ -293,10 +367,9 @@ class BuiltinsTest {
     }
 
     @Test
-    fun `a declined help-all is refused and frees its name even with subcommands`() {
+    fun `a cli with subcommands has no help-all by default and its name is free`() {
         // pacman, whose operations are commands, has no --help-all ("unrecognized option '--help-all'").
         val tree = cli("pac") {
-            builtins { helpAll = Builtin.Off }
             command("sync") { action { Ok("") } }
         }
         assertIs<CliError.UnknownOption>(tree.parse(listOf("--help-all")).assertError())
@@ -304,7 +377,6 @@ class BuiltinsTest {
         val help = RecordingTerminal().also { tree.run(arrayOf("--help"), it) }.out.toString()
         assertTrue("--help-all" !in help, help)
         cli("pac") {
-            builtins { helpAll = Builtin.Off }
             globalFlag(long = "help-all", help = "the tool's own")
             command("sync") { action { Ok("") } }
         }
@@ -364,31 +436,34 @@ class BuiltinsTest {
     }
 
     @Test
-    fun `bad color value is invalid choice and bare color is missing value`() {
+    fun `a bad attached color value is an invalid choice`() {
+        // `ls --color=bogus` is "invalid argument 'bogus' for '--color'" (coreutils 9.12).
         val tree = cli("app") { command("go") { action { Ok("") } } }
-
-        // Attached bad value.
         assertEquals(
             CliError.InvalidChoice("--color", "bogus", listOf("auto", "always", "never"), null),
             tree.parse(listOf("--color=bogus", "go")).assertError<CliError.InvalidChoice>(),
         )
-        // The space form consumes the next token as the value (like --completion), so a bad space value
-        // is InvalidChoice too, not MissingOptionValue.
-        assertEquals(
-            CliError.InvalidChoice("--color", "nope", listOf("auto", "always", "never"), null),
-            tree.parse(listOf("--color", "nope", "go")).assertError<CliError.InvalidChoice>(),
-        )
-        // MissingOptionValue only when no value follows (--color at the end).
-        assertEquals(
-            CliError.MissingOptionValue("--color"),
-            tree.parse(listOf("go", "--color")).assertError<CliError.MissingOptionValue>(),
-        )
     }
 
     @Test
-    fun `bad color value outranks version short circuit`() {
-        // A malformed rendering modifier is reported even when --version is present, matching
-        // builtinInlineValueError's precedence over the version short-circuit.
+    fun `a bare color means always and the word after it is an operand`() {
+        // ls --help: "--color[=WHEN] ... The WHEN argument defaults to 'always'"; `ls --color always` lists the
+        // file `always` (coreutils 9.12), and getopt -o '' -l color:: -- --color always gives
+        // " --color '' -- 'always'".
+        val tree = cli("app") {
+            val files = argument("file").multiple(min = 0)
+            action<String>(human = { it }) { Ok("files=${files()}") }
+        }
+        assertEquals("files=[always, f]", tree.bindText("--color", "always", "f"))
+        assertEquals("files=[f]", tree.bindText("f", "--color"))
+        assertEquals(ColorMode.ALWAYS, listOf("--color").colorMode())
+        assertEquals(ColorMode.ALWAYS, listOf("--color", "never").colorMode())
+        assertEquals(ColorMode.NEVER, listOf("--color=never").colorMode())
+    }
+
+    @Test
+    fun `a bad color value ahead of --version refuses the line`() {
+        // `ls --color=bogus --version` is "invalid argument 'bogus' for '--color'" (coreutils 9.12, todo 61).
         val tree = cli("app") {
             version = Version.Of("1.0")
             command("go") { action { Ok("") } }
@@ -398,12 +473,33 @@ class BuiltinsTest {
             CliError.InvalidChoice("--color", "bogus", listOf("auto", "always", "never"), null),
             tree.parse(listOf("--color=bogus", "--version")).assertError<CliError.InvalidChoice>(),
         )
-        assertEquals(
-            CliError.MissingOptionValue("--color"),
-            tree.parse(listOf("--color", "--version")).assertError<CliError.MissingOptionValue>(),
-        )
+        // `ls --color --version` prints the version: a bare --color is always, so nothing is refused.
+        assertIs<Invocation.ShowVersion>(tree.parse(listOf("--color", "--version")).assertSuccess())
         assertIs<Invocation.ShowVersion>(
             tree.parse(listOf("--color=always", "--version")).assertSuccess(),
+        )
+    }
+
+    @Test
+    fun `completion and docs take the next word whatever it is`() {
+        // getopt -o '' -l completion:,json -- --completion --json gives " --completion '--json'".
+        val tree = cli("app") { action { Ok("") } }
+        assertEquals(
+            CliError.InvalidChoice("--completion", "--x", COMPLETION_SHELL_NAMES, null),
+            tree.parse(listOf("--completion", "--x")).assertError<CliError.InvalidChoice>(),
+        )
+        assertEquals(
+            "--json",
+            tree.parse(listOf("--completion", "--json")).assertError<CliError.InvalidChoice>().value,
+        )
+        assertEquals(
+            "--",
+            tree.parse(listOf("--docs", "--")).assertError<CliError.InvalidChoice>().value,
+        )
+        // getopt -o '' -l completion: -- --completion: "option '--completion' requires an argument".
+        assertEquals(
+            CliError.MissingOptionValue("--completion"),
+            tree.parse(listOf("--completion")).assertError<CliError.MissingOptionValue>(),
         )
     }
 
@@ -439,18 +535,15 @@ class BuiltinsTest {
     }
 
     @Test
-    fun `json between space form color and its value still resolves to that value`() {
-        // colorMode() must see the same token view parse() does: --json stripped first. Before the fix,
-        // colorMode() read the raw argv, saw "--color --json always", treated "--json" as color's would-be
-        // value, found it flag-like, and silently fell back to AUTO instead of ALWAYS.
+    fun `json after a bare color is still json`() {
+        // A bare --color takes no word, so the --json after it is the built-in, read by parse and run alike.
         val tree = cli("app") {
             version = Version.Of("1.0")
             command("go") { action { Ok("") } }
         }
-        val argv = listOf("--color", "--json", "always", "go")
+        val argv = listOf("--color", "--json", "go")
 
-        assertIs<Invocation.Execute>(tree.parse(argv).assertSuccess())
-        // Pins the fix: without stripping --json first, this would be ColorMode.AUTO, not ALWAYS.
+        assertTrue(assertIs<Invocation.Execute>(tree.parse(argv).assertSuccess()).globals.json)
         assertEquals(ColorMode.ALWAYS, argv.colorMode())
     }
 
@@ -470,8 +563,7 @@ class BuiltinsTest {
 
     // --- A built-in's reach stops at a value-taking option's argument slot ---
     //
-    // The rule and its conforming half live in PosixConformanceTest
-    // (guideline10_aBuiltinSpellingInAnOptionArgumentSlotIsThatOptionsValue); these pin the shapes around
+    // The rule lives in GnuConformanceTest (`a value word may look like an option`); these pin the shapes around
     // it, in both directions: what a value slot hides from the scans, and what it must NOT hide.
 
     @Test
@@ -488,8 +580,8 @@ class BuiltinsTest {
 
     @Test
     fun `builtin after a cluster ending in a value taking short is that shorts value`() {
-        // Guideline 5's group: the flags come first and the one option that takes an argument ends the
-        // cluster, so `-ve` reaches for the next token exactly as a bare `-e` does.
+        // A getopt group: the flags come first and the one option that takes a value ends the cluster, so `-ve` reaches
+        // for the next token exactly as a bare `-e` does.
         assertEquals("v=true e=--json files=[f.txt]", grepWithFlag().bindText("-ve", "--json", "f.txt"))
     }
 
@@ -508,14 +600,12 @@ class BuiltinsTest {
     }
 
     @Test
-    fun `an undeclared cluster char is reported ahead of the help short`() {
-        // The cluster walk reports the leftmost character it cannot place, and the help short changes
-        // nothing about that: `-xv` with `-v` declared blames `-x` too. Behind it, help never answers a
-        // line carrying a spelling the tree declares nowhere.
+    fun `an undeclared cluster char refuses the line only ahead of the help short`() {
+        // getopt reads a cluster character by character: `gzip -xh` is "invalid option -- 'x'" and `gzip -hx`
+        // prints the usage (gzip 1.15, todo 61).
         val before = grepWithFlag().parse(listOf("-xh", "f.txt")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("-x", cluster = "-xh"), before)
-        val after = grepWithFlag().parse(listOf("-hx", "f.txt")).assertError<CliError.UnknownOption>()
-        assertEquals(CliError.UnknownOption("-x", cluster = "-hx"), after)
+        assertIs<Invocation.ShowHelp>(grepWithFlag().parse(listOf("-hx", "f.txt")).assertSuccess())
     }
 
     @Test
@@ -623,7 +713,7 @@ class BuiltinsTest {
 
     @Test
     fun `a builtin spelling after the delimiter is still an operand`() {
-        // Guideline 10 already put these out of every scan's reach; the arity rule leaves that alone.
+        // The end of options already put these out of every scan's reach; the arity rule leaves that alone.
         assertEquals("e=null files=[--json, f.txt]", grep().bindText("--", "--json", "f.txt"))
         assertEquals(false, executeOf(grep(), "--", "--json", "f.txt").globals.json)
     }
@@ -726,6 +816,7 @@ private fun grep(): Cli = cli("mygrep") {
 }
 
 private fun grepWithFlag(): Cli = cli("mygrep") {
+    builtins { help = Help.ByCommand(short = 'h') }
     val invert = flag(short = 'v', long = "invert-match")
     val regexp = option(short = 'e', long = "regexp")
     val files = argument("file").multiple(min = 0)

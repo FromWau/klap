@@ -22,7 +22,7 @@ public fun mkdirCli(): TypedCli<MkdirInputs> = cliOf("mkdir") {
     // GNU mkdir takes any unambiguous prefix of a long option: `mkdir --par` is --parents.
     abbreviation = Abbreviation.Options
     help = "Create the DIRECTORY(ies), if they do not already exist."
-    version = Version.Of("9.11")
+    version = Version.Of("9.12", text = MKDIR_VERSION_TEXT)
     epilogue = "Report bugs to: bug-coreutils@gnu.org"
 
     example("mkdir -p a/b/c", "create every missing parent along the way")
@@ -89,3 +89,15 @@ public val NOTHING_BOUND: MkdirInputs = MkdirInputs(
     context = null,
     directories = emptyList(),
 )
+
+/**
+ * What `mkdir --version` prints for GNU coreutils 9.12, the version installed when it was pinned
+ * (2026-10-10).
+ */
+internal val MKDIR_VERSION_TEXT: String = """mkdir (GNU coreutils) 9.12
+Copyright (C) 2026 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Written by David MacKenzie."""

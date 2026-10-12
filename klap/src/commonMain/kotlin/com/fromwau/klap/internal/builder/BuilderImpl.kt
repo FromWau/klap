@@ -16,6 +16,8 @@ import com.fromwau.klap.Flag
 import com.fromwau.klap.Input
 import com.fromwau.klap.Opt
 import com.fromwau.klap.Projection
+import com.fromwau.klap.RepeatedOptions
+import com.fromwau.klap.ShortOptions
 import com.fromwau.klap.Version
 import com.fromwau.klap.holderSpec
 import com.fromwau.klap.internal.render.HelpExample
@@ -47,7 +49,7 @@ private val passthrough: (String) -> Result<Any?, ConversionError> = { Result.Su
  */
 internal class BuilderImpl(
     private val name: String,
-    // The root's own globalSpecs, threaded down so a nested `.requiredIf()` trigger can resolve against it.
+    // The root's own globalSpecs, threaded down so a nested `.requiredWhen()` trigger can resolve against it.
     // Null exactly for the root, which [build] reads as "this is the tree's outermost build()".
     private val rootGlobalSpecs: List<NamedSpec>? = null,
 ) : CliBuilder() {
@@ -61,7 +63,9 @@ internal class BuilderImpl(
     override var aliases: Collection<String> = emptyList()
     override var version: Version = Version.Off
     override var author: String? = null
-    override var abbreviation: Abbreviation = Abbreviation.None
+    override var abbreviation: Abbreviation = Abbreviation.LongOptions
+    override var repeatedOptions: RepeatedOptions = RepeatedOptions.LastWins
+    override var shortOptions: ShortOptions = ShortOptions.Clustered
     override var epilogue: String = ""
     override var hidden: Boolean = false
     override var prio: Boolean = false
@@ -128,18 +132,18 @@ internal class BuilderImpl(
 
     private val constraints = mutableListOf<InputConstraint>()
 
-    override fun requireExactlyOne(vararg inputs: Input): Unit =
-        addConstraint(ConstraintArity.ExactlyOne, "requireExactlyOne", inputs)
+    override fun exactlyOne(vararg inputs: Input): Unit =
+        addConstraint(ConstraintArity.ExactlyOne, "exactlyOne", inputs)
 
-    override fun requireAtMostOne(vararg inputs: Input): Unit =
-        addConstraint(ConstraintArity.AtMostOne, "requireAtMostOne", inputs)
+    override fun atMostOne(vararg inputs: Input): Unit =
+        addConstraint(ConstraintArity.AtMostOne, "atMostOne", inputs)
 
     override fun lastWins(vararg inputs: Input): Unit =
         addConstraint(ConstraintArity.LastWins, "lastWins", inputs)
 
-    override fun <T> lastOneWins(vararg inputs: Opt<T>): Opt<T> {
+    override fun <T> lastOf(vararg inputs: Opt<T>): Opt<T> {
         // Ahead of the fold spec, so a malformed set fails before this command grows an input for it.
-        addConstraint(ConstraintArity.LastWins, "lastOneWins", inputs)
+        addConstraint(ConstraintArity.LastWins, "lastOf", inputs)
         val members = inputs.map { it.spec }
         val fold = OptionSpec(
             names = emptyList(),
@@ -236,7 +240,7 @@ internal class BuilderImpl(
         return result
     }
 
-    /** The root's globals, read by [cli] when assembling the [com.fromwau.klap.Cli]; a [Command] node never carries them. */
+    /** The root's globals, read by [cli] when assembling the [com.fromwau.klap.Cli]; a [Command] never carries them. */
     internal fun builtGlobals(): List<NamedSpec> = globalSpecs.toList()
 
     /**
@@ -265,7 +269,9 @@ internal class BuilderImpl(
         validateLastWinsMembers(name, constraints)
         validateFoldCardinality(name, specs)
         validateConditionalOperandTriggers(name, specs)
-        validateRequiredIfTriggers(name, specs, reachableGlobalSpecs)
+        validateGatheringSlot(name, specs)
+        validateRequiredWhenTriggers(name, specs, reachableGlobalSpecs)
+        validateRepeatedPolicies(name, specs + globalSpecs)
         validateCanActOrDispatch(name, actionSpec != null, subs.isNotEmpty(), builtinKind != null)
         val built = Command(
             name = name,

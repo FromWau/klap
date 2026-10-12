@@ -1,7 +1,6 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
-import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -38,53 +37,51 @@ class CompletionValueSlotTest {
     fun `a global in a value slot leaves the cursor on an operand`() {
         // parse: `-e` binds the literal "--tag" and f.txt stays an operand, so the next word is an operand
         // too — offering --tag's values would advertise a binding the parser will not make.
-        assertEquals(listOf("FILE"), grep().candidatesFor("-e", "--tag", ""))
+        assertEquals(listOf("FILE"), grep().offered("-e", "--tag", ""))
     }
 
     @Test
     fun `a builtin in a value slot leaves the cursor on an operand`() {
         // --color is answered by its own preemption ahead of every other branch, so it needs its own case.
-        assertEquals(listOf("FILE"), grep().candidatesFor("-e", "--color", ""))
-        assertEquals(listOf("FILE"), grep().candidatesFor("-e", "--json", ""))
+        assertEquals(listOf("FILE"), grep().offered("-e", "--color", ""))
+        assertEquals(listOf("FILE"), grep().offered("-e", "--json", ""))
     }
 
     @Test
     fun `the attached form in a value slot leaves the cursor on an operand`() {
-        assertEquals(listOf("FILE"), grep().candidatesFor("-e", "--tag=v", ""))
+        assertEquals(listOf("FILE"), grep().offered("-e", "--tag=v", ""))
     }
 
     @Test
     fun `a cluster ending in a value taking short shields the slot too`() {
         // `-ve`: the flag peels off and `-e` takes the next token, so "--tag" is a value here as well.
-        assertEquals(listOf("FILE"), grep().candidatesFor("-ve", "--tag", ""))
+        assertEquals(listOf("FILE"), grep().offered("-ve", "--tag", ""))
     }
 
     @Test
     fun `the slot is shielded inside a subcommand too`() {
-        assertEquals(listOf("FILE"), dispatcher().candidatesFor("sub", "-e", "--tag", ""))
-        assertEquals(listOf("FILE"), dispatcher().candidatesFor("sub", "-e", "--color", ""))
+        assertEquals(listOf("FILE"), dispatcher().offered("sub", "-e", "--tag", ""))
+        assertEquals(listOf("FILE"), dispatcher().offered("sub", "-e", "--color", ""))
     }
 
     // --- Controls: an option that really is waiting for a value still completes it ---
 
     @Test
     fun `a dangling local option still completes its own values`() {
-        assertEquals(listOf("alpha", "beta"), grep().candidatesFor("-e", ""))
-        assertEquals(listOf("alpha", "beta"), grep().candidatesFor("-ve", ""))
+        assertEquals(listOf("alpha", "beta"), grep().offered("-e", ""))
+        assertEquals(listOf("alpha", "beta"), grep().offered("-ve", ""))
     }
 
     @Test
     fun `a dangling global still completes its own values`() {
-        assertEquals(listOf("TAG1", "TAG2"), grep().candidatesFor("--tag", ""))
-        assertEquals(listOf("TAG1", "TAG2"), grep().candidatesFor("-t", ""))
-        assertEquals(listOf("TAG1", "TAG2"), dispatcher().candidatesFor("sub", "--tag", ""))
+        assertEquals(listOf("TAG1", "TAG2"), grep().offered("--tag", ""))
+        assertEquals(listOf("TAG1", "TAG2"), grep().offered("-t", ""))
+        assertEquals(listOf("TAG1", "TAG2"), dispatcher().offered("sub", "--tag", ""))
     }
 
     @Test
-    fun `a dangling color still completes its choices`() {
-        assertEquals(listOf("auto", "always", "never"), grep().candidatesFor("--color", ""))
+    fun `an attached color completes its choices`() {
+        assertEquals(listOf("--color=auto", "--color=always", "--color=never"), grep().offered("--color="))
     }
 }
 
-private fun Cli.candidatesFor(vararg words: String): List<String> =
-    completeCandidates(words.toList()).map { it.value }

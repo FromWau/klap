@@ -89,6 +89,8 @@ internal fun CliError.toJson(): JsonElement = when (this) {
     }
     is CliError.ExactlyOneRequired -> typed("ExactlyOneRequired") { putStrings("inputs", inputs) }
     is CliError.MutuallyExclusive -> typed("MutuallyExclusive") { putStrings("inputs", inputs) }
+    is CliError.RepeatedCommand -> typed("RepeatedCommand") { put("command", command) }
+    is CliError.RepeatedOption -> typed("RepeatedOption") { put("option", option) }
     is CliError.Usage -> typed("Usage") { put("detail", detail) }
     is CliError.Failure -> typed("Failure") { put("detail", detail) }
     is CliError.Domain -> json ?: typed("Domain") { put("detail", detail) }
