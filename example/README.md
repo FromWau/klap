@@ -106,7 +106,7 @@ or klap fails today, kept under `@Ignore("TDD target: ...")` and filed in [`todo
 | pacman | pacman 7.1.0         | done: 171 tests, every target passes; 3 kept as records of pacman quirks (todo 36, 61)     |
 | cp     | GNU coreutils 9.12   | done: 179 tests, every target passes; 1 kept as a record (todo 89)                         |
 | chmod  | GNU coreutils 9.12   | done: 103 tests, every target passes                                                       |
-| curl   | curl 8.22.0          | not yet done                                                                               |
+| curl   | curl 8.23.0          | not yet done                                                                               |
 | dd     | GNU coreutils 9.12   | done: 98 tests, every target passes                                                        |
 | find   | GNU findutils 4.11.0 | done: 201 tests, every target passes; 9 kept as records (F1, todo 48a, 67, 72, 75)         |
 | git    | git 2.56.0           | not yet done                                                                               |
@@ -145,9 +145,8 @@ variants a caller matches exhaustively. `remote` both acts and nests, so its own
 `dispatch(remoteAdd, remoteRemove, projection { ... })`.
 
 Every fixture is measured against the real tool. Its `version =` line prints, word for word, what that tool's
-`--version` printed when it was pinned (2026-10-10), and a `<Tool>VersionTest` holds the text: GNU coreutils 9.12,
-GNU findutils 4.11.0, git 2.56.0, curl 8.22.0, OpenSSH 10.6p1, pacman 7.1.0, GNU tar 1.35. Older
-evidence comments name the release they were run against (coreutils 9.11, git 2.55.0, curl 8.21.0).
+`--version` printed when it was pinned (2026-10-10; curl 2026-10-17), and a `<Tool>VersionTest` holds the text: GNU
+coreutils 9.12, GNU findutils 4.11.0, git 2.56.0, curl 8.23.0, OpenSSH 10.6p1, pacman 7.1.0, GNU tar 1.35.
 `ssh` answers `-V` and has no `--version`, as `Version.Of("10.6p1", short = 'V')` declares. `find` transliterates find's
 expression grammar rather than reproducing it, but prints the installed find's version all the same. Where klap
 cannot reproduce something, the file says so in a `KLAP-GAP` comment rather than quietly working around
@@ -165,7 +164,7 @@ The tools, and why each is in the suite:
 | Tool                     | The shape it contributes                                                                                                                                   |
 |--------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | [`pacman`](pacman/)      | one required operation mode out of seven, each with its own option set                                                                                     |
-| [`git`](git/)            | a deep subcommand tree, global options before the subcommand, eight negatable flags                                                                        |
+| [`git`](git/)            | a deep subcommand tree, root options read before the first subcommand only, nine negatable flags                                                           |
 | [`find`](find/)          | an expression language rather than an option list, and where that stops fitting                                                                            |
 | [`ssh`](ssh/)            | a wrapper: its options run on past the destination, and everything from the remote command's first word belongs to it                                       |
 | [`curl`](curl/)          | a wide flat tool whose help needs sections, repeatable headers                                                                                             |
@@ -185,7 +184,7 @@ visible in its file:
 
 | Mode                                          | Fixtures                                                                                                                                                                                                                                                                                                                                                     |
 |-----------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `Abbreviation.Options`                        | `chmod`, `cp`, `dd`, `git`, `head`, `ls`, `mv`, `rm`, `tar` — nine, including **all seven coreutils stubs**, which go through `getopt_long` without exception, plus `git`, whose subcommands' options abbreviate the same way — though its top-level ones do not, since real git refuses abbreviation there and the switch is root-only              |
+| `Abbreviation.Options`                        | `chmod`, `cp`, `dd`, `git`, `head`, `ls`, `mv`, `rm`, `tar` — nine, including **all seven coreutils stubs**, which go through `getopt_long` without exception, plus `git`, whose subcommands' options abbreviate the same way, while its root's own options match whole through `ownOptions(ShortOptions.Alone, Abbreviation.None)`                          |
 | `Abbreviation.LongOptions` (declared)         | `pacman`: a long option abbreviates but a value only in full, so `pacman --quer` is `--query` and `pacman -Q --color=al` is refused                                                                                                                                                                                                                          |
 | `Abbreviation.None` (declared, not inherited) | `curl`, `find` — each matches long options exactly, and each says so rather than inheriting the default silently                                                                                                                                                                                                                                    |
 | `Abbreviation.All`                            | `task-manager`, the showcase                                                                                                                                                                                                                                                                                                                                 |

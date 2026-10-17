@@ -76,7 +76,7 @@ Those receivers have names, and you will want them the first time you factor a d
 
 | Receiver         | Where it is the receiver | What it carries                                                                                                                                                                                                                                                       |
 |------------------|--------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `CommandBuilder` | `command(name) { }`      | `argument`, `option`, `flag`, `numberOption`, `command`, `group`, `example`, `action`; the cross-input rules `exactlyOne`, `atMostOne`, `lastWins`, `lastOf`, `validateInputs`; the per-command settings `help`, `aliases`, `epilogue`, `hidden`, `optionsEndAtFirstOperand` |
+| `CommandBuilder` | `command(name) { }`      | `argument`, `option`, `flag`, `numberOption`, `command`, `group`, `example`, `action`, `ownOptions`; the cross-input rules `exactlyOne`, `atMostOne`, `lastWins`, `lastOf`, `validateInputs`; the per-command settings `help`, `aliases`, `epilogue`, `hidden`, `optionsEndAtFirstOperand` |
 | `CliBuilder`     | `cli(name) { }`          | everything on `CommandBuilder`, plus the root-only `globalOption`, `globalFlag`, `version`, `author`, `abbreviation`, `shortOptions`, `builtins { }`                                                                                                                  |
 | `ConverterScope` | the base of both         | every converter: `.int()`, `.map()`, `.default()`, `.range()`, `.count()`, `.negatable()`, `.absentWhen()`, `.completeWith()`, ...                                                                                                                                    |
 
@@ -715,8 +715,9 @@ subcommand pool is not closed: aliases and third-party `git-*` binaries on `PATH
 abbreviation there could change meaning depending on what is installed. Any CLI with a large or
 extensible subcommand set wants that same shape.
 
-Root-only, with no per-command override, so one prefix rule holds for every command in the tree. The two
-exceptions are per input, `.spelledInFull()` and `.enum<E>(abbreviates = false)` below.
+Set on the root, it holds for every command in the tree. A command whose own options read differently, as git's root
+matches its longs whole, sets `ownOptions` (see [Short options](#short-options)); per input, `.spelledInFull()` and
+`.enum<E>(abbreviates = false)` below do the same for one option.
 
 **Wherever abbreviation is on, an exact spelling always wins outright**, so a pool holding both `--sort` and
 `--sort-by` keeps the shorter one reachable, and `list` stays reachable beside `listen`. A prefix that
@@ -811,7 +812,28 @@ holding more than one short is one unknown option, named whole (`error: unknown 
 value, so the word after `-LD` is an operand. A help short asks for help only alone, a command spelled as a short
 (`pacman -Q`) is named only by its own word, and a run of a [number option](#numbers-on-the-command-line) such as
 `-25` still reads as the number.
-Completion offers each short alone, with no cluster continuations. Root-only, like [abbreviation](#abbreviation).
+Completion offers each short alone, with no cluster continuations.
+
+Both settings cover the whole tree. A command whose own options read differently says so with `ownOptions`, which
+takes both and applies to that command's own segment, its options before its child's name. git's root reads each word
+as a whole option while its commands cluster and abbreviate:
+
+```kotlin
+cli("git") {
+    abbreviation = Abbreviation.Options
+    ownOptions(shortOptions = ShortOptions.Alone, abbreviation = Abbreviation.None)
+    val directory = option(short = 'C')
+    command("status") {
+        val short = flag(short = 's')
+        val branch = flag(short = 'b', long = "branch")
+        ...
+    }
+}
+// git -C sub status       -> -C takes sub
+// git -Csub status        -> refused: -C takes the next word only
+// git --git-d=x status    -> refused: the root matches its longs whole
+// git status -sb --bran   -> both flags: status reads by the tree's settings
+```
 
 ## Cross-input constraints
 
@@ -1185,6 +1207,22 @@ default, means no version and no `--version`, and `Version.Of(number, long, shor
 Its spellings follow a flag's: `Version.Of("1.0")` is `--version`, `Version.Of("10.6p1", short = 'V')` is `-V` alone
 (ssh's), and `Version.Of("7.1.0", long = "version", short = 'V')` is both (pacman's). A short answers alone or in a
 cluster (`-V`, `-QV`), and `text` replaces the `<name> <number>` line with your own.
+
+The spellings answer at every depth of the tree. `rootOnly = true` keeps them on the root's own segment, before the
+first subcommand, as git reads its `-v` and `--version`, and frees them for the commands below:
+
+```kotlin
+cli("git") {
+    version = Version.Of("2.56.0", long = "version", short = 'v', rootOnly = true)
+    command("add") {
+        val verbose = flag(short = 'v', long = "verbose")
+        action { Ok("verbose=${verbose()}") }
+    }
+}
+// git -v                -> git 2.56.0
+// git add -v            -> verbose=true
+// git add --version     -> refused: unknown option
+```
 
 Each `description` is what `--help`, the generated docs and tab completion say beside that built-in; a null one keeps
 klap's wording:
@@ -1724,9 +1762,9 @@ case; native targets are unaffected, since they check stdout alone.
 
 A command with subcommands and no `action` is a group; klap prints its help when invoked bare. Nest
 with `command(name) { }` to any depth, a `help = "..."` inside the block giving the subcommand's
-description. A group has nothing to read its own
-`option`/`flag`, so declaring a local one on an action-less command throws at construction; put the
-option on a leaf command's `action`, or use `globalOption` / `globalFlag` to share it across subcommands:
+description. A group's own `option`/`flag` stands before its child's name and the child's `action` reads it, as
+git's root options are read by every git command; given alone, the group shows its help. A positional on an
+action-less command throws at construction, since its slot is read as a subcommand name.
 
 ```kotlin
 cli("fleet") {
@@ -1752,6 +1790,29 @@ rather than binding as the action's positional. So a hybrid whose action reads a
 force `build` to bind as the positional. Routing wins over any positional here, free-form or
 `.choice(...)`-restricted alike, so `--` is the way to force a positional value that collides with a
 sibling subcommand name. A plain leaf command (no subcommands) has no such collision to begin with.
+
+A hybrid's own options stand on its own segment, between its name and its child's name, as git reads
+`git remote -v add origin url`: each level reads its own options, and the child's name ends the parent's. The
+child's `action` may read them, an absent one giving its default:
+
+```kotlin
+cli("git") {
+    command("remote") {
+        val verbose = flag(short = 'v', long = "verbose", help = "be verbose")
+        command("add") {
+            val name = argument("name")
+            action { Ok("added ${name()} verbose=${verbose()}") }
+        }
+        action { Ok("listed verbose=${verbose()}") }
+    }
+}
+// git remote -v add o   -> added o verbose=true
+// git remote add -v o   -> refused: -v is remote's, and the line is past remote's segment
+// git -v remote add o   -> refused: -v is no option of the root
+```
+
+The root's own options work the same way before the first subcommand. An option that should bind at every
+depth, before or after the path, is a global (below).
 
 A command can also declare `aliases`, a `var` on the command builder, so an alternate name routes to
 the same command:

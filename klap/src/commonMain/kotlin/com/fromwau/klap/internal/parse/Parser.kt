@@ -184,6 +184,13 @@ internal fun Command.bind(
     positions: List<Int> = emptyList(),
 ): Result<Invocation, CliError> {
     if (isGroup) {
+        // A group given only its own options shows its help, as `git -C .` prints git's usage.
+        if (namedInputs.isNotEmpty()) {
+            val own = sift(segment, globalAcc, positions)
+            if (own.error == null && own.positionals.isEmpty()) {
+                return Result.Success(Invocation.ShowHelp(this, qualifiedName))
+            }
+        }
         val ddIndex = segment.indexOf(END_OF_OPTIONS)
         val head = if (ddIndex < 0) segment else segment.take(ddIndex)
         val tail = if (ddIndex < 0) emptyList() else segment.drop(ddIndex + 1)
@@ -240,26 +247,13 @@ internal fun Command.bind(
 
     val sifted = sift(segment, globalAcc, positions)
     val inferValues = globalAcc?.inferValues ?: false
-    val globalSift = globalAcc?.toGlobalSift() ?: GlobalSift(emptyMap(), emptyMap(), emptyMap())
+    val globalSift = globalAcc?.toGlobalSift() ?: NO_GLOBALS
     // The line's first refusal wins, as getopt's loop meets each option and its value in turn. A global's repeat
     // is counted only once this sift has topped the globals up, so the refusals are ordered here.
     listOfNotNull(sifted.refusal, globalAcc?.repeatRefusal(), firstBadValue(sifted, globalSift, inferValues))
         .minByOrNull { it.at }
         ?.let { return Result.Error(it.error) }
-    checkConstraints(sifted)?.let { return Result.Error(it) }
-    bindFlagsAndOptions(
-        flags,
-        options,
-        sifted.flags,
-        sifted.negations,
-        sifted.options,
-        sink,
-        inferValues,
-    ).getOrElse { return Result.Error(it) }
-    // Ahead of resolveLastWins: a fold reads its winner's bound value, and an ENCLOSING set that overrode
-    // the fold must then be free to reset it.
-    resolveFolds(sifted, sink)
-    resolveLastWins(sifted, sink)
+    bindOptions(sifted, sink, inferValues)?.let { return Result.Error(it) }
     bindPositionals(sifted.positionals, sink, sifted, inferValues, qualifiedName = qualifiedName)
         .getOrElse { return Result.Error(it) }
     checkConditionalRequirements(sifted, globalAcc)?.let { return Result.Error(it) }
@@ -269,6 +263,49 @@ internal fun Command.bind(
     val resolved = action ?: return Result.Success(Invocation.ShowHelp(this, qualifiedName))
     val line = lineOrder(sifted, globalSift, inferValues)
     return Result.Success(Invocation.Execute(this, globals, resolved, ActionScope(emptyMap(), line = line)))
+}
+
+private val NO_GLOBALS = GlobalSift(emptyMap(), emptyMap(), emptyMap())
+
+/** This command's flags and options from [sifted] into [sink], after the checks that span several of them. */
+private fun Command.bindOptions(
+    sifted: Sifted,
+    sink: MutableMap<HolderSpec, Any?>,
+    inferValues: Boolean,
+): CliError? {
+    checkConstraints(sifted)?.let { return it }
+    bindFlagsAndOptions(
+        flags,
+        options,
+        sifted.flags,
+        sifted.negations,
+        sifted.options,
+        sink,
+        inferValues,
+    ).getOrElse { return it }
+    // Ahead of resolveLastWins: a fold reads its winner's bound value, and an ENCLOSING set that overrode
+    // the fold must then be free to reset it.
+    resolveFolds(sifted, sink)
+    resolveLastWins(sifted, sink)
+    return null
+}
+
+/** What refuses [this] sift of a passed command's option words, its globals left to the command reached. */
+internal fun Sifted.refusals(inferValues: Boolean): List<Refusal> =
+    listOfNotNull(refusal, firstBadValue(this, NO_GLOBALS, inferValues))
+
+/**
+ * Binds the option words [sifted] read on this command's own segment, for a command the walk passed on the way to
+ * a child: its options are the child's to read, an absent one its default.
+ */
+internal fun Command.bindOwnOptions(
+    sifted: Sifted,
+    sink: MutableMap<HolderSpec, Any?>,
+    globalAcc: GlobalAccumulator,
+): CliError? {
+    sifted.refusals(globalAcc.inferValues).minByOrNull { it.at }?.let { return it.error }
+    bindOptions(sifted, sink, globalAcc.inferValues)?.let { return it }
+    return checkConditionalRequirements(sifted, globalAcc)
 }
 
 /**
@@ -552,9 +589,15 @@ internal fun Command.longMatchPool(globalAcc: GlobalAccumulator?): LongPool {
             flagCommands.map { it.removePrefix("--") } +
             globalAcc?.sharedLongs?.get(this).orEmpty() +
             globalAcc.offeredBuiltinLongs()
-    val whole = (namedInputs + globals)
-        .filter { it.spelledInFull }
-        .flatMapTo(mutableSetOf()) { spec -> spec.longs + ((spec as? FlagSpec)?.negativeLongs).orEmpty() }
+    // A segment read without abbreviation matches every name whole, so the scans that resolve a token against this
+    // pool before the walk read it as the command's own sift will.
+    val whole = if (globalAcc?.inferNames == false) {
+        names.toSet()
+    } else {
+        (namedInputs + globals)
+            .filter { it.spelledInFull }
+            .flatMapTo(mutableSetOf()) { spec -> spec.longs + ((spec as? FlagSpec)?.negativeLongs).orEmpty() }
+    }
     return LongPool(names, whole)
 }
 
@@ -1229,6 +1272,18 @@ private fun Command.clusterCharError(
         j,
     )
 
+/** [sift] seeded as this tree's accumulator, the one form parse and completion both read the globals through. */
+internal fun Cli.globalsFrom(sift: GlobalSift): GlobalAccumulator = sift.accumulator(
+    globalSpecs,
+    version,
+    builtins,
+    metaOptions,
+    abbreviation,
+    repeatedOptions,
+    shortOptions,
+    sharedLongs,
+)
+
 /**
  * Seed a mutable [GlobalAccumulator] from this pre-strip result, ready for the segment sift to top up. The
  * root's surface is threaded through so a nested command's [longOptionCandidates] and [longMatchPool] see
@@ -1265,18 +1320,7 @@ internal fun GlobalSift.accumulator(
  * READ the global surface before [siftGlobals] has produced one asks its questions through, so its reading
  * of a token is identical to the one [sift] will give.
  */
-internal fun Cli.globalLookup(): GlobalAccumulator =
-    GlobalSift(emptyMap(), emptyMap(), emptyMap())
-        .accumulator(
-            globalSpecs,
-            version,
-            builtins,
-            metaOptions,
-            abbreviation,
-            repeatedOptions,
-            shortOptions,
-            sharedLongs,
-        )
+internal fun Cli.globalLookup(): GlobalAccumulator = globalsFrom(NO_GLOBALS)
 
 /**
  * Walk [scan]'s tokens before the end-of-options marker, pull out those naming a global (long form, or a
@@ -1605,6 +1649,33 @@ internal class GlobalAccumulator(
         position?.let { flagPositions.getOrPut(spec) { mutableListOf() } += it }
         flagHits += FlagHit(spec, on, position)
         if (spec.negatable) negations.recordPolarity(spec, on = on, at = position)
+    }
+
+    /**
+     * This tally as [cmd] reads it, the occurrences shared: by the command's own [Command.ownReading] where it has
+     * one, and below the root without a `rootOnly` version ([Builtins.versionRootOnly]), whose letter and long are
+     * then free for the command's own inputs.
+     */
+    fun at(cmd: Command): GlobalAccumulator {
+        val own = cmd.ownReading
+        val versionless = cmd !is Cli && builtins.versionRootOnly
+        if (own == null && !versionless) return this
+        return GlobalAccumulator(
+            flagSpecs,
+            optionSpecs,
+            rootVersion = rootVersion.takeUnless { versionless },
+            if (versionless) builtins.copy(versionLong = null, versionShort = null) else builtins,
+            metaOptions,
+            own?.abbreviation ?: abbreviation,
+            repeatedOptions,
+            own?.shortOptions ?: shortOptions,
+            sharedLongs,
+            flags,
+            negations,
+            options,
+            flagPositions,
+            flagHits,
+        )
     }
 
     /** Whether a long option name resolves by prefix here; an exact spelling always binds. */

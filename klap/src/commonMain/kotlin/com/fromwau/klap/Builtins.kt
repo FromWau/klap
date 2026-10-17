@@ -85,7 +85,9 @@ public sealed interface Builtin {
  *
  * The spellings follow a flag's: one short alone is that short only (`Version.Of("10.6p1", short = 'V')`, ssh's
  * `-V`), a long and a short are both (`Version.Of("7.1.0", long = "version", short = 'V')`, pacman's), and no
- * spelling given is `--version`.
+ * spelling given is `--version`. They answer at every depth of the tree; [Of.rootOnly] keeps them on the root's own
+ * segment, before the first subcommand, where git reads its `-v` and `--version`, and frees them for the commands
+ * below it (`git add -v` is add's verbose).
  */
 public sealed interface Version {
     /** A version, printed by `--version`. */
@@ -95,10 +97,16 @@ public sealed interface Version {
         val short: Char? = null,
         val description: String? = null,
         val text: String? = null,
+        val rootOnly: Boolean = false,
     ) : Version {
         /** A version printed by its [short] alone, with no long: ssh's `-V`. */
-        public constructor(number: String, short: Char, description: String? = null, text: String? = null) :
-            this(number, null, short, description, text)
+        public constructor(
+            number: String,
+            short: Char,
+            description: String? = null,
+            text: String? = null,
+            rootOnly: Boolean = false,
+        ) : this(number, null, short, description, text, rootOnly)
     }
 
     /** No version and no `--version`. */
@@ -168,6 +176,8 @@ internal data class Builtins(
     val versionShort: Char? = null,
     // A Version.Of text, printed in place of `<name> <number>`.
     val versionPrint: String? = null,
+    // Version.Of.rootOnly: the version's spellings belong to the root's own segment.
+    val versionRootOnly: Boolean = false,
     // Help.ByTree's --help-all, off on a tree with no visible subcommand, which has nothing for it to expand.
     val helpAll: Boolean = false,
     val helpText: String = BuiltinOptionHelp.HELP,
@@ -205,6 +215,7 @@ internal fun BuiltinsBuilder.resolve(version: Version): Builtins {
         versionLong = if (versioned != null) versioned.long else "version",
         versionShort = versioned?.short,
         versionPrint = versioned?.text,
+        versionRootOnly = versioned?.rootOnly ?: false,
         helpAll = help is Help.ByTree,
         helpText = helpDescription ?: BuiltinOptionHelp.HELP,
         helpAllText = (help as? Help.ByTree)?.allDescription ?: BuiltinOptionHelp.HELP_ALL,

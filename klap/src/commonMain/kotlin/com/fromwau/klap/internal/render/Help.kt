@@ -412,7 +412,7 @@ internal fun Command.builtinOptions(
     // --color is universal (like --json), so it advertises on every node the tree still offers it on.
     if (builtins.color) add(BuiltinOption(listOf("--color"), builtins.colorText, COLOR_MODE_NAMES, bare = "always"))
     val node = this@builtinOptions
-    if ((node is Cli && node.version != null) || rootVersioned) {
+    if ((node is Cli && node.version != null) || (rootVersioned && !builtins.versionRootOnly)) {
         val spellings = listOfNotNull(builtins.versionShort?.let { "-$it" }, builtins.versionLong?.let { "--$it" })
         add(BuiltinOption(spellings, builtins.versionText))
     }

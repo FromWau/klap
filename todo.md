@@ -194,15 +194,124 @@ off, value grammars) and one klap bug by chance (147). Next, the klap items: 28 
 confirmed ones fixed test-first, with 147; then one git pass scoped to its subcommand-tree rows (with 27). ssh, tar
 and curl leave the loop (their modules stay as examples); ssh's defect 31 goes with 28 to 31.
 
+### git (subcommand-tree pass 2026-10-17, git 2.56.0)
+
+The QA pass of 2026-10-17 covered only the matrix rows about git's subcommand tree (K8e, K19, K21, K35, K38, K39 and
+the cells disputed under 27; L17, L18, L25, S37 to S43; V1b, V3g, V8b, V16, V22, V28, V39, V40, V64, V77, V79, V84;
+P1, P2, P4b, P11 to P29, P35, P37, P38, P45, P47, P51) and answered 27 and 28.7 on the real git. New files beside
+`GitParityTest`: `GitCompletionTest`, `GitLineContextTest`, `GitValueCandidatesTest`, `GitSuggestionListTest`,
+`GitProjectionTest`, each with its `*TargetsTest` class, and `ParitySuite.helpFor`. 64 tests: 32 pass, 32 targets,
+each seen failing with its `@Ignore` removed. Evidence in a throwaway repository, spot-checked by the main session
+(`git remote -v add o2 u2` exits 0; `git remote add -v o3 u` and `git status -C .` give "unknown switch"). After the
+TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and the 2 skipped are the records of 171 and
+172; git's subcommand-tree pass is closed.
+
+- [x] **169. A command's own option binds on its own segment, before its child's name.** git parses each level with
+  its own parser, which stops at the child's name: `git remote -v add o2 u2` runs with remote's `-v` kept (`git
+  remote -h`: "must be placed before a subcommand"), `git remote add -v o u` is refused, and every root option is
+  refused after the subcommand (`git status -C .`). klap refuses the first with `UnroutedSubcommand` and binds the
+  last through `globalOption`. Settles 28.7 and the core of 27. Targets: `Projection: remote's own option before a
+  child's name routes to the child`, `LineContext: the walk continues past remote's own option to its child`, and
+  the root-option-after-the-leaf targets once git's root options are plain. klap core, then the fixture.
+  - **Owner, 2026-10-17:** A. A plain option of a parent binds on the parent's segment, between its name and its
+    child's name, and the walk routes on; after the child's name it is refused as today. No new API: `globalOption`
+    keeps binding at any depth, and git's root options move to plain root options, so their letters are free below
+    the root (`git -p log` and `git log -p`, commit's `-C`/`-c`). `UnroutedSubcommand`'s KDoc changes; the test `no
+    subcommand name is offered after an option of the parent` (`CompletionTest.kt:1845`) flips to expect the
+    children. This replaces 160's A for this case. Left for their own decisions: a glued value (`-Csub`), root shorts
+    in one cluster, root longs that abbreviate.
+  Done 2026-10-17: one walk (`internal/parse/Walk.kt`) serves the parse and Tab, and steps over a run of the command's
+  own option words, an option with the value it takes from the next word, when the command has children; the
+  built-in scan's walk routes on the same words. Every command passed binds its own options, so a child's action
+  reads them, an absent one its default. `ParentSegmentTest` (10) pins it, seen failing before the change and again
+  with the step disabled; `a local option of the parent stops the walk so its subcommand never routes` is gone, and
+  two completion cells are restated (`remote -v ‸` offers `add`; `-po list ‸` offers `list`, since `list` is `-o`'s
+  value). git's P14 target passes; S40 now waits on 174's words only. Open for the owner: a group without an action
+  still may not declare options, though a child could now read them.
+
+- [x] **170. git's root reads each word as a whole option, its subcommands by getopt.** `git -Csub status`, `git
+  -pP status` and `git --git-d=.git status` are "unknown option", while `git status -sb`, `-uno` and `--bran` run
+  (git 2.56.0). getopt_long takes all three (`getopt -o 'C:c:pP' -- -Csub status` gives `-C 'sub'`), so this is
+  git's own root parser, not GNU. klap has the rules (`ShortOptions.Alone`, `Abbreviation.None`) only CLI-wide.
+  Targets: `Projection: -C and -c take their value as the next word only`, `root shorts in one word are refused`, `a
+  root long is matched whole`; `LineContext: a cluster continues with the command's own letters only`. Rest of 27.
+  klap core, then the fixture.
+  - **Owner, 2026-10-17:** A. A command may set `shortOptions` and `abbreviation` for its own segment; unset, its
+    segment follows the CLI-wide setting. git sets its root's segment to `ShortOptions.Alone` and
+    `Abbreviation.None`. The builder name is open (`ownSegment { }` was the sketch).
+  - **Owner, 2026-10-17 (170a):** A. `ownOptions(shortOptions, abbreviation)`, a call on any command builder, both
+    required, so no hidden unset state; a command without it reads its segment by the tree's settings.
+  Done 2026-10-17: `CommandBuilder.ownOptions(shortOptions, abbreviation)` sets a command's `OwnReading`; the globals
+  view `GlobalAccumulator.at(cmd)` carries it into the sift, the long pool (a segment without abbreviation matches every
+  name whole, so the pre-walk scans read `--vers` as the sift does), the cluster reads and Tab, and the walk resolves a
+  command's children by its own abbreviation. `OwnOptionsTest` (5) pins it; 4 fail again with the call ignored. Left as
+  they are: the globals' pre-strip reads by the tree's `shortOptions`, and on a tree whose `abbreviation` is `None` the
+  built-in scans do not abbreviate inside a segment that does. Under `Alone` Tab offers the typed short itself
+  (`ShortOptionsTest`), where git's S42 target expects nothing after `git -P`: settled when the fixture moves.
+
+- [x] **173. A version built-in recognised only on the root's segment.** `git -v` and `git -v status` print `git
+  version 2.56.0`, `git status --version` and `git remote --version` are "unknown option `version'" (exit 129), and
+  `git add -v f` and `git remote -v` are verbose. klap's version built-in, short included, is claimed at every depth,
+  so the fixture cannot declare git's `-v` (`Git.kt:88`, whose "`git --vers` still abbreviates fine" is false, see
+  170). Target: `Completion: status offers globals and --json, --color, --version` (its `--version` part). klap core,
+  then the fixture.
+  - **Owner, 2026-10-17:** A. An opt-in setting makes the version built-in, long and short, the root's segment only,
+    its letters free below; the default stays every depth. git turns it on and declares
+    `Version.Of("2.56.0", long = "version", short = 'v')`.
+  - **Owner, 2026-10-17 (173a):** A. The setting is `rootOnly: Boolean = false` on `Version.Of`:
+    `Version.Of("2.56.0", long = "version", short = 'v', rootOnly = true)`.
+  Done 2026-10-17: below the root the parse, Tab, help and the built-in scan read the globals through a view without
+  the version (`GlobalAccumulator.at`), the version short answers only on the root's segment, and the build reserves
+  its names on the root only. `VersionRootOnlyTest` (7) pins it; 4 of them fail again with the runtime half off, the
+  other 3 at the build check. The fixture's `-v` and its KLAP-GAP note at `Git.kt:88` go with 174.
+
+- [x] **174. The fixture's surface against git's.** `git completion` is "not a git command", `git status --json` is
+  "unknown option `json'", `git --directory . status` is "unknown option: --directory" (and `--config`), `git remote
+  --no-verbose` runs, `git var` alone is usage (exit 129) while `git var GIT_EDITOR` runs; every description in git's
+  own words (`git help -a`, man git, man git-remote, `git <cmd> -h`), an alias described as its command. Targets: the
+  "in git's words" ones in Completion, LineContext, ValueCandidates and SuggestionList; `Projection: a built-in git
+  does not have is refused`, `git var needs -l or a variable`, `remote's verbose has a negative form`; `SuggestionList:
+  the subcommand slot offers no subcommand git does not have`. Fixture.
+  - **Owner, 2026-10-17:** A. Fixed test-first in the same TDD pass as 169, 170 and 173: klap first, then the fixture
+    moves its root options to plain root options and takes git's surface.
+  Done 2026-10-17 by the fixture pass: root options are plain root options under `ownOptions(ShortOptions.Alone,
+  Abbreviation.None)`, with `-p`/`--paginate`, commit's `-C`/`-c`, `-v` as the `rootOnly` version, no `--directory` or
+  `--config`; klap's json, color, completion and docs built-ins off; remote's `--no-verbose`; `git var` takes `-l` or a
+  variable (`exactlyOne`; `git var --list` and `git var -l GIT_EDITOR` exit 129); every description in git's words but
+  log's (93). Every target passes; `GitParityTest` cells restated with git's runs (`git -v`, `__complete` refused).
+
+- [x] **177. Tab on a complete short under `ShortOptions.Alone`.** The S42 target expected nothing after `git -P‸`;
+  under `Alone` klap offers the typed short itself (`ShortOptionsTest`: `-L‸` offers `-L`), and `-P` is a word git
+  takes, while every continuation (`-pP`, `-PC`) is refused. fish's own git completion offers those continuations, so it
+  is no guide. **Owner, 2026-10-17:** A. klap's rule stays; the fixture pass restates the S42 cell to expect `-P` with
+  its description.
+  Done 2026-10-17: the S42 cell expects `-P`, "Do not pipe Git output into a pager", and passes.
+
+- [x] **176. Options on a command group with no action.** The build refuses an option or flag on an action-less
+  command with children ("has no action to read it", `BuilderValidation.kt` `validateActionlessLocalOptions`), so git's
+  root options cannot move off `globalOption`: `git` bare is a group. Since 169 its children read them. **Owner,
+  2026-10-17:** A. A group may declare options and flags, read by its children, an absent one its default; a group run
+  bare still shows its help; a group's operands stay refused. klap core, ahead of the fixture pass.
+  Done 2026-10-17: `validateActionlessOperands` (was `validateActionlessLocalOptions`) refuses only a positional; a group
+  given only its own options binds them and shows its help. `ActionlessCommandInputTest` restates the three refusals as
+  `a group's own option and flag are read by its child`, `a group given only its own options shows its help` and `a
+  nested group's own option is read by its child`, each seen failing first; the help one fails again with its step off.
+
 ### git and curl (later)
 
-- [ ] **93. Git.kt's header claims every subcommand matches git's `-h`.** Found building item 92. `Git.kt:23` says the
+- [x] **93. Git.kt's header claims every subcommand matches git's `-h`.** Found building item 92. `Git.kt:23` says the
   covered subcommands were "all verified against git 2.55.0's own `-h` output"; at 2.56.0 `git log -h` lists none of
   `-n`, `-p` or `--oneline`, so the claim is false for log. Open: drop the claim, or name what each subcommand was
   checked against. Fixture comment.
-- [ ] **94. curl's `-d` help differs from curl 8.22.0.** Found building item 92. Every option and short matches
+  - **Owner, 2026-10-17:** A. The header names git 2.56.0 and where each kind of description comes from (`git help
+    -a`, git(1), git-remote(1), `git <cmd> -h`), and says log's keep the fixture's words. Done 2026-10-17.
+- [x] **94. curl's `-d` help differs from curl 8.22.0.** Found building item 92. Every option and short matches
   `curl --help all` at 8.22.0, but the fixture's `-d` says "HTTP POST data" where 8.22.0 says "Post data", so
   `Curl.kt:16` still says 8.21.0. Open: change the help to 8.22.0's and renumber. Fixture.
+  - **Owner, 2026-10-17:** A, at curl 8.23.0, installed since: the fixture pins 8.23.0 (header, `Version.Of`, its
+    `--version` text and `CurlVersionTest`) and `-d` says "Post data"; the other 13 options match `curl --help all`.
+    `CurlParityTest: data is described in curl's words` pins it. `example/README.md` names 8.23.0 and drops its
+    sentence on older evidence comments, of which none is left. Done 2026-10-17.
 
 ## Candidate work
 
@@ -235,7 +344,22 @@ and curl leave the loop (their modules stay as examples); ssh's defect 31 goes w
   (`gradle/libs.versions.toml:10`) while kern is at 0.5.1, and kern's 0.6.0 (logger API, result's smart casts,
   `toResult` and combining, the two terminal fixes of `2d1a924`) is not yet in Maven Local. Kotlin is 2.4.21 in klap,
   2.4.20 in kern; the notes want kern raised to match. klap uses only `result`, `terminal`, `fuzzy` and `result-test`,
-  so kern's `dirs`/`fs` split does not touch it. Waits on kern 0.6.0 being published. Build.
+  so kern's `dirs`/`fs` split does not touch it; kern 0.6.0 has no `fuzzy` (item 175). Waits on kern 0.6.0 being
+  published. Build.
+- [ ] **175. `didYouMean` and `editDistance` move into klap.** Owner, 2026-10-17 (kern notes, section 6, F2 A): kern's
+  "two real projects" rule, and klap is fuzzy's only user. kern 0.6.0 drops the module; the source is in kern at
+  `3c5b4bb` (`fuzzy/`). Both become public in `com.fromwau.klap` (the guide's "Did-you-mean, in your own messages"
+  changes its import); `fuzzyRank` and natural order are not moved. Lands with 135. Then, test-first, from kern's
+  fuzzy QA (2026-10-17, probes against kern `3c5b4bb`):
+  - a one-character word suggests nothing: `r` over docker's commands gives `rm`, and `s` with an alias `st` gives
+    `st` (one dropped character from a two-character name);
+  - the unique-prefix rule follows `Abbreviation`: with `None`, `--o` suggests `--output` and `--n` `--namespace`
+    today; decide whether a prefix is a typo there;
+  - `warning` over `trace, debug, info, warn, error, off` suggests nothing (three edits from `warn`);
+  - the KDoc and guide name the package, say a one-character word can match a two-character name, and that a word
+    equal to a candidate is never suggested back.
+  Corpus: 88 shared cases plus three held-out sets (224) where kmatch 0.3.1 with a one-swap scorer (`Scorers.Ratio`,
+  `defaultProcess`, cutoff 70) made no mistakes and kern 9; kern notes, section 6, have the numbers.
 - [ ] **136. Mordant for help layout.** From the notes, section 1 (kern:terminal kept, revised 2026-10-13): Mordant
   3.1.0 would give Unicode-aware wrapping, aligned option columns and the real JVM terminal width; kern keeps the
   colour policy (passed to Mordant as `ansiLevel`, since Mordant ignores `CLICOLOR*` and lets `TERM=dumb` beat
@@ -269,7 +393,7 @@ and curl leave the loop (their modules stay as examples); ssh's defect 31 goes w
   `Infinity`, `-(1h 30m)` and `1h30m`, so decide which of them klap accepts; `Instant.parse` takes an offset of
   just `+02` and refuses `12:00Z` without seconds; whether `.uuid()` takes a UUID without dashes depends on
   which `Uuid` parse it calls.
-- [ ] **27. An option of the root that stays before the subcommand, as git's are.**
+- [x] **27. An option of the root that stays before the subcommand, as git's are.**
   A `globalOption` is persistent: it binds at any depth, the way task-manager's `--file` is meant to. git's
   options before the subcommand are not: `git remote add -C . o u` ("unknown switch `C'"), `git status
   --no-pager` and `git status -c x=y` are refused (git 2.56.0, run 2026-10-09 in a throwaway repository). The git
@@ -282,6 +406,9 @@ and curl leave the loop (their modules stay as examples); ssh's defect 31 goes w
   and `git -csome.key=v status` are "unknown option"), and klap has no way to say so; git also has no
   `--directory` or `--config` long, which the fixture declares. Matrix rows: K21, K38, K39, and the cells disputed
   for this reason (K4b, K5, K10, K19, K43, K66, K7k, P17, P20, P22, P23, P51).
+  - **Verdict 2026-10-17** (git pass): confirmed on git 2.56.0 and split into 169 (a command's option on its own
+    segment), 170 (git's root reads whole words), 173 (version at the root only) and 174 (the fixture's surface);
+    closes with them. Closed 2026-10-17 with the git fixture pass.
 
 ## Owner calls
 
@@ -305,6 +432,18 @@ and curl leave the loop (their modules stay as examples); ssh's defect 31 goes w
 
 ## Will not do
 
+- **172. A bare `--exec-path` that prints and exits.** git pass 2026-10-17: `git --exec-path status` prints
+  `/usr/lib/git-core` and exits 0 without running status; klap binds the optional value's default and routes on
+  (`Git.kt:71`). getopt_long has no such form; a tool acts on it in its own code. Owner A: nothing in klap; an app
+  acts on a bare value before it dispatches. `Projection: a bare exec-path answers before any command` becomes a
+  `Will not do (todo 172)` record; `git --exec-path bogus` stays refused by klap where git prints and exits.
+- **171. git's help page by position.** git pass 2026-10-17: `git --help remote add` shows git-remote(1) (the root's
+  `--help` takes only the next word as a topic) and `git remote -h add` prints remote's usage, where klap shows the
+  deepest command named, wherever the request sits (`docs/guide.md`, "Which command help documents"). Owner A: keep
+  klap's rule, which lets a tree be explored by appending names; klap's defaults behave as GNU tools do, and a tool
+  that departs gets an opt-in setting only when one is decided. The two cells of `Projection: a help request shows the
+  page git shows for its position` become a `Will not do (todo 171)` record; `git remote -v add -h` (add's usage)
+  stays a target under 169.
 - **148. The mkdir and rsync fixtures.** Owner, 2026-10-16: removed rather than brought to parity, as their command
   lines are shapes the finished fixtures already cover: mkdir's `-m MODE` (chmod), `--context[=CTX]` (ls's
   `--color[=WHEN]`, cp's `--backup[=CONTROL]`) and directory operands; rsync's sources then a destination (cp),
@@ -355,6 +494,7 @@ Decided against, with the reason, so they are not proposed again.
   are declared or provided in`), and a provider that wants fuzzy matching ranks its own candidates. The same pass
   tried `fuzzyRank` for the "did you mean" hints, which made them wrong (`--he` suggested `--header` over
   `--help`, and hints appeared where nothing is close); they stay on `didYouMean`. `fuzzyRank` stays in kern.
+  It was dropped from kern 0.6.0 on 2026-10-17 (item 175).
 
 ## Done
 

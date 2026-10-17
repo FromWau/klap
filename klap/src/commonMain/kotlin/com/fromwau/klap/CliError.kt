@@ -119,11 +119,8 @@ public sealed interface CliError : IError {
     public data class SubcommandAfterSeparator(val command: String, val parent: String) : CliError
 
     /**
-     * A real subcommand of [parent] read as an operand, because an earlier token stopped subcommand
-     * routing. An option belonging to [parent] itself is the usual cause.
-     *
-     * Declare that option with `globalOption`/`globalFlag` and it can be used alongside a subcommand.
-     * Reordering the line is no remedy: [parent]'s own options are out of scope once a subcommand is named.
+     * A real subcommand of [parent] read as an operand, because an earlier operand of [parent] stopped
+     * subcommand routing: [parent]'s own options before the name route on, its operands do not.
      */
     public data class UnroutedSubcommand(val command: String, val parent: String) : CliError
 
