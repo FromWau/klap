@@ -9,6 +9,7 @@ import com.fromwau.klap.internal.platform.platformExit
 import com.fromwau.klap.internal.render.Candidate
 import com.fromwau.klap.internal.render.HelpStyle
 import com.fromwau.klap.internal.render.completeCandidates
+import com.fromwau.klap.internal.render.forShell
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.render.helpTextAll
 import com.fromwau.klap.internal.render.helpJsonText
@@ -160,7 +161,7 @@ private inline fun Invocation.render(
     is Invocation.ShowCompleteCandidates -> {
         // No candidates prints nothing (not a blank line), matching a leaf action that returns "".
         // Each candidate renders as one line, `value` or `value\tdescription`, and the per-shell scripts
-        // decode the tab; a value that would break that format is dropped (Candidate.toCompletionLine()).
+        // decode the tab; a value that would break that format is dropped (Candidate.forShell()).
         val text = cli.completeCandidates(words, cursor).mapNotNull { it.toCompletionLine() }.joinToString("\n")
         if (text.isNotEmpty()) terminal.out(text + "\n")
         0
@@ -250,19 +251,8 @@ public fun Cli.main(argv: Array<String>) {
 }
 
 /**
- * Encode this candidate as one `__complete` wire line — bare [Candidate.value], or `value\t<description>`
- * — or null to drop it. A value carrying a tab, newline, or carriage return is dropped rather than
- * cleaned: a shell inserts the value back into the command line verbatim, so cleaning it would offer a
- * candidate that no longer matches the data it came from. A description has no such contract, so it is
- * cleaned (tab/newline/CR to a space, then trimmed) and a blank one encodes as the bare value.
+ * Encode this candidate as one `__complete` wire line, the value then a tab and its description when it has one,
+ * or null to drop it; [forShell] decides what survives.
  */
-internal fun Candidate.toCompletionLine(): String? {
-    if (value.any { it == '\t' || it == '\n' || it == '\r' }) return null
-    val cleaned = description
-        ?.replace('\t', ' ')
-        ?.replace('\n', ' ')
-        ?.replace('\r', ' ')
-        ?.trim()
-        .orEmpty()
-    return if (cleaned.isEmpty()) value else "$value\t$cleaned"
-}
+internal fun Candidate.toCompletionLine(): String? =
+    forShell()?.let { shell -> shell.description?.let { "${shell.value}\t$it" } ?: shell.value }

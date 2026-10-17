@@ -206,7 +206,7 @@ class ArgvOrderInvarianceTest {
         assertEquals("Execute(app json=false verbose=true quiet=true out=x jobs=4 name=ada)", baseline)
     }
 
-    // CONVENTION - cp/rsync: SOURCE and DEST are told apart by their order and by nothing else, while
+    // CONVENTION - cp/mv: SOURCE and DEST are told apart by their order and by nothing else, while
     // GNU permutation lets an option sit anywhere among them.
     @Test
     fun `two operands keep their own order while options move freely between them`() {

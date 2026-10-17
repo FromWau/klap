@@ -138,7 +138,7 @@ private fun Command.scanLevel(
             }
 
             // A word Alone refuses names no command and takes no value.
-            token.isFlagLike() && refusesCluster(token.drop(1), globals) -> Unit
+            token.isFlagLike() && refusesCluster(token.drop(1), globals, firstWord = i == start) -> Unit
 
             token.isFlagLike() -> {
                 val letters = token.drop(1)

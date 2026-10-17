@@ -90,7 +90,10 @@ internal fun ValueSpec.displayName(): String = placeholder ?: name
 
 // An explicit .placeholder() wins over the choice list: a long list of choices in the signature column widens
 // every other row (see the choice-list layout note), and a tool that names its operand FILE means it.
-internal fun ValueSpec.resolvedPlaceholder(): String = placeholder ?: choices?.joinToString("|") ?: "value"
+internal fun ValueSpec.resolvedPlaceholder(): String = placeholder ?: listedChoices?.joinToString("|") ?: "value"
+
+/** The choices help lists: an enum entry by its first word, so `never|once|always` stands for every word. */
+internal val ValueSpec.listedChoices: List<String>? get() = choiceEntries?.map { it.first() } ?: choices
 
 /**
  * Render a value for help: for a choice-backed spec, show the matching choice so an enum default
@@ -170,7 +173,7 @@ internal fun ValueSpec.metaHint(): String {
         // placeholder is just its name — in both cases the choices have nowhere else to appear, and
         // silently dropping the set of legal values is worse than a slightly longer row.
         if (choices != null && (this@metaHint is ArgumentSpec || placeholder != null)) {
-            add("one of: ${choices!!.joinToString(", ")}")
+            add("one of: ${listedChoices!!.joinToString(", ")}")
         }
         valueHint?.let { add(it) }
         // The bare form's value is not derivable from the signature: `--color[=<WHEN>]` says a bare

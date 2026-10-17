@@ -26,14 +26,10 @@ private fun sshOptionKeyValue(raw: String): Result<Pair<String, String>, Convers
  * A study of OpenSSH's client surface expressed in klap. Every action body is a stub.
  */
 public fun sshCli(): TypedCli<SshInputs> = cliOf("ssh") {
-    // Real ssh is a wrapper: everything after the destination is the remote's own command line, not ssh's
-    // to interpret. Without this, a remote flag this CLI happens to also declare (`-l`, `-C`, ...) was read
-    // locally instead of reaching the remote host.
-    optionsEndAtFirstOperand = true
     help = "OpenSSH remote login client"
     // `ssh -V` prints the version and exits 0.
     version = Version.Of("10.6p1", short = 'V', text = SSH_VERSION_TEXT)
-    epilogue = "Everything after the destination is handed to the remote shell verbatim."
+    epilogue = "Everything from the remote command's first word on is handed to the remote shell verbatim."
 
     example(
         "ssh -p 2222 -i ~/.ssh/id_ed25519 admin@web1",
@@ -132,12 +128,14 @@ public fun sshCli(): TypedCli<SshInputs> = cliOf("ssh") {
     val destination = argument("destination", "[user@]hostname")
         .validate("destination must not be blank") { it.isNotBlank() }
 
-    // `optionsEndAtFirstOperand` above makes this arrive verbatim: destination is klap's last say over the
-    // line, and everything after it, dash-led or not, is the remote's own command. A remote command that
-    // itself needs to say `--json`/`--color`/`--help`/etc. still needs its own `--` ahead of it, since
+    // Real ssh is a wrapper: its options run on past the destination (`ssh web1 -p 2222`), and the remote
+    // command's first word ends them, so everything from there, dash-led or not, is the remote's own command line
+    // and a remote flag this CLI also declares (`ls -l`) reaches the remote host. A remote command that itself
+    // needs to say `--json`/`--color`/`--help`/etc. still needs a `--` ahead of it, which ssh consumes, since
     // klap's own built-ins are recognized before the walk knows which command it will reach at all.
     val remoteCommand = argument("command", "the command to run on the remote host, and its arguments")
         .multiple()
+        .endsOptions()
 
     action {
         val tail = remoteCommand()

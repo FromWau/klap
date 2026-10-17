@@ -107,7 +107,7 @@ Notes:
 - G18: `render/Completion.kt` the built-in `names +=` block. `CompletionTest.kt` `builtin option names carry their own help text`. Every fixture.
 - G19: `render/Completion.kt` `return subcommands + positionalCandidates`. git root (subcommands only, so mostly `n/a`); `CompletionTest.kt` `complete files stays exclusive of a sibling subcommand name at the first positional`.
 - G20: `render/Completion.kt` `sub.words.map { Candidate(it, help) }` (the name, then its aliases). git (`add`/`stage`, `remote remove`/`rm`).
-- G21: `render/Completion.kt` the `inCluster` branch filters the same `names` list. cp, pacman (`-Q‸`), rsync, tar.
+- G21: `render/Completion.kt` the `inCluster` branch filters the same `names` list. cp, pacman (`-Q‸`), tar.
 - G22: `Converters.kt` `applyEnum` sets `choices = spellings` in `values` order; planner `candidatesFor` `choices` branch. task-manager (`.enum<Priority>()`); `n/a` for a fixture without `.enum<E>()`.
 - G23: `render/Completion.kt` `candidatesFor` `scope.collected.filter`. chmod mode provider, dd operand keys; `CompletionFlowTest.kt` `suggestions keep the order they are declared or provided in`.
 
@@ -115,14 +115,14 @@ Notes:
 
 | ID | Property | What a cell checks | Example |
 |---|---|---|---|
-| G24 | a name shared by an app input and a built-in | one entry, carrying the app's description | rsync and ls free `-h` (`help = Help.ByCommand(short = null)`) and declare their own: `ls -‸` offers `-h` once, as `--human-readable`'s help |
+| G24 | a name shared by an app input and a built-in | one entry, carrying the app's description | ls frees `-h` (`help = Help.ByCommand(short = null)`) and declares its own: `ls -‸` offers `-h` once, as `--human-readable`'s help |
 | G25 | duplicates a provider returns | one entry per value, as the real tool would offer it (needs checking: klap keeps a provider's repeats, nothing dedupes `collected`) | a provider returning `a`, `a` |
 | G26 | a subcommand name equal to an operand value at a hybrid slot | one entry (needs checking: the subcommand list and the operand list are concatenated without `distinctBy`) | a provider that also offers `status` beside the `status` command |
 | G27 | cluster continuations | one entry per letter, even where two specs answer to it in some form | `cp -r‸` offers `-rP` once |
 
 Notes:
 
-- G24: `render/Completion.kt` `names.distinctBy { it.value }` keeps the first, and app specs are appended before built-ins. ls and rsync (`-h`), pacman and ls (`color = Builtin.Off` plus their own `--color`).
+- G24: `render/Completion.kt` `names.distinctBy { it.value }` keeps the first, and app specs are appended before built-ins. ls (`-h`), pacman and ls (`color = Builtin.Off` plus their own `--color`).
 - G25: `render/Completion.kt` `candidatesFor` returns `scope.collected` without `distinctBy`; `Completion.kt` `CompletionScope.candidate`. No fixture today; likely a klap target if the owner wants dedupe.
 - G26: `render/Completion.kt` `subcommands + positionalCandidates`. No fixture; klap test candidate.
 - G27: `render/Completion.kt` inCluster branch `.distinctBy { it.value }`. cp, git (`-P` negative short of a global).
@@ -188,7 +188,7 @@ Notes:
 - G41: `render/Completion.kt` `candidatesFor` `choices` branch builds `Candidate(it)`; only `asWholeWord` adds the option's help. cp, ls, pacman, git; `CompletionTest.kt` `choice value completion carries no description`.
 - G42: `render/Completion.kt` `attachedValueOption` short branch then `asWholeWord(..., attachedOption.help)`. cp (`-S`, `-t`), tar (`-f`), pacman.
 - G43: `render/Completion.kt` `asWholeWord` `it.description ?: help`. dd (`candidate("$key=", help)` against `candidate("$key=$value")`), chmod.
-- G44: `render/Completion.kt` `val negativeHelp = spec.negativeHelp ?: help` for `negativeLongs` and `negativeShorts`; `Converters.kt` `Flag.negatable(..., help)`; `CompletionTest.kt` `short and negated option names carry their help as description`. git, cp, chmod, curl, rsync, rm, ssh, pacman.
+- G44: `render/Completion.kt` `val negativeHelp = spec.negativeHelp ?: help` for `negativeLongs` and `negativeShorts`; `Converters.kt` `Flag.negatable(..., help)`; `CompletionTest.kt` `short and negated option names carry their help as description`. git, cp, chmod, curl, rm, ssh, pacman.
 - G45: `render/Help.kt` `BuiltinOptionHelp`, overridden through `Builtins.kt` (`Help.ByCommand.description`, `Help.ByTree.allDescription`, `Version.Of.description`, `Builtin.On.description`) into `builtins.helpText` and the like. Every fixture whose tool has `--help`/`--version`; cp, find and pacman word `--help`.
 - G46: `render/Completion.kt` `colorValueCandidates` (attached form only), `colorModeCandidates`; `CompletionTest.kt` `complete candidates offers no color value after a bare color`, `complete candidates prefix filters the builtin color option value`, `complete candidates completes the builtin color option value attached form`. Fixtures that keep `color` (git, tar and the rest; cp, find, ls and pacman set `color = Builtin.Off`).
 - G47: `render/Help.kt` `FlagSpec.metaHint`/`ValueSpec.metaHint` append to help rows; the planner reads `spec.help` raw. Every fixture with negatables, choices, defaults, constraints.
@@ -207,7 +207,7 @@ Notes:
 
 Notes:
 
-- G50: G6 asks for verbatim; this pins how a wrapped `--help` row reads as one description. `render/Completion.kt` reads `spec.help` as declared. cp, ls, rsync, curl.
+- G50: G6 asks for verbatim; this pins how a wrapped `--help` row reads as one description. `render/Completion.kt` reads `spec.help` as declared. cp, ls, curl.
 - G51: `Runner.kt` `toCompletionLine` sanitises; `testing/Completion.kt` `suggestionsFor` maps `completeCandidates` directly, skipping it. Every fixture. Needs checking whether the test API should go through `toCompletionLine` (an API gap if not).
 - G52: `render/Completion.kt` `help.takeIf { it.isNotBlank() }` in the name and subcommand branches, none in `candidatesFor`; `Runner.kt` `toCompletionLine`. git (`dry run` style helps), task-manager.
 - G53: `render/Completion.kt` keeps it; PowerShell's tooltip falls back to the value when there is none (`Completion.kt` `renderPowershell`). Low value; klap test only.
@@ -261,7 +261,7 @@ Notes:
 
 Notes:
 
-- G64: `render/Completion.kt` `builtins.helpShort?.let { names += Candidate("-$it", builtins.helpText) }` and the inCluster branch takes every two-character name; `Help.ByCommand(short = null)` frees `-h`. cp, find, ls, rsync and chmod free it; chmod declares `-h` as `--no-dereference`.
+- G64: `render/Completion.kt` `builtins.helpShort?.let { names += Candidate("-$it", builtins.helpText) }` and the inCluster branch takes every two-character name; `Help.ByCommand(short = null)` frees `-h`. cp, find, ls and chmod free it; chmod declares `-h` as `--no-dereference`.
 - G65: `render/Completion.kt` `if (builtins.helpAll && cmd.subcommands.any { !it.hidden })`, `builtins.helpAll` set only by `Help.ByTree` (`Builtins.kt`); `CompletionTest.kt` `complete candidates offers help all when the command has visible subcommands`, `complete candidates omits help all for a leaf tool with no subcommands`; `HelpSettingTest.kt` `completion offers --help-all only under ByTree in its words`. git, task-manager (dispatchers, default `Help.ByCommand`: absent).
 - G66: `render/Completion.kt` `if (version != null)`. Every fixture; checks the fixture sets `version`.
 - G67: `render/Completion.kt` `if (metaOptions)`; dd's comment on declining them. cp, dd, head, ls (single-command).
@@ -320,7 +320,7 @@ Notes:
 - G81: `render/Completion.kt` `asWholeWord` prepends `head` unconditionally; guide "a provider offers the bare value". dd (its operand provider returns `key=value` for a whole operand, not attached, so fine).
 - G82: `render/Completion.kt` the `valueOption` branch runs before the name branch. git (`.choice("+x", "-x")`), chmod.
 - G83: `render/Completion.kt` name branch `current.startsWith("-")` precedes the positional branch. chmod, find (`-name` style primaries), git.
-- G84: `render/Completion.kt` `body.indexOf('=')`. dd, rsync, curl.
+- G84: `render/Completion.kt` `body.indexOf('=')`. dd, curl.
 - G85: `render/Completion.kt` `attachedValueOption` short branch. tar, cp.
 
 ### G: empty lists and failure
@@ -349,7 +349,7 @@ Notes:
 | G92 | an empty value | `__complete` prints an empty line, or nothing when it is the only one; `suggestionsFor` returns `Suggestion("")` (decide whether an empty value is ever offered) | `candidate("")` |
 | G93 | a value with a space, quote, `$`, `!`, backtick or `\` | returned raw by klap; each shell escapes it on insertion (bash `%q` or the open quote's escaping, zsh inside `"`, PowerShell single quotes); fixture cells assert the raw value, real-shell tests the insertion | a provider value `a b`, `it's` |
 | G94 | a unicode value | matched and inserted as typed, the prefix filter comparing UTF-16 units (needs checking for combining marks and case-insensitive choices beyond ASCII) | a choice `ü` |
-| G95 | a very long list | every entry, in order, no truncation; the shell may ask before showing it | `pacman -S --‸`, `rsync --‸` |
+| G95 | a very long list | every entry, in order, no truncation; the shell may ask before showing it | `pacman -S --‸`, `curl --‸` |
 
 Notes:
 
@@ -357,7 +357,7 @@ Notes:
 - G92: `Runner.kt` `if (text.isNotEmpty())`. klap test candidate.
 - G93: `Completion.kt` `renderBash`, `renderZsh`, `renderPowershell` quoting; `RealShellCompletionTest.kt` `bash inserts a candidate so that a run receives it as offered`, `powershell quotes a candidate a run would not receive as offered`. Fixture cells `n/a` beyond the raw value.
 - G94: `render/Completion.kt` `startsWith` on `String`. klap test candidate.
-- G95: no limit anywhere in `render/Completion.kt`. pacman, rsync, curl, git.
+- G95: no limit anywhere in `render/Completion.kt`. pacman, curl, git.
 
 ### G: what a shell shows
 

@@ -75,5 +75,12 @@ the merge's diff with main's; it must print "main matches the merge". Then remov
 - An agent's count includes only its own half. Recount the merge yourself.
 - An agent's claim about another file can be wrong (R7: two classes "did not exist" but were nested in another
   file). Check a surprising claim before you repeat it.
+- When the klap agent only moved its cross-dependency targets and the fixture agent restated the record, every
+  fixture test file conflicts. Take the fixture worktree's test files whole (check first that the klap agent's test
+  diff is only moves and removed `@Ignore` lines), then un-ignore the cross-dependency targets and move them yourself
+  (rm, 2026-10-13).
+- A TDD agent can find that a decided shape cannot pass a test (rm's `.enum<RootScope>()` abbreviated `=al` under
+  `Abbreviation.Options`). It parks the cells as a new target; file the question as `<item>a`, walk it, and build it
+  with one agent in a fresh worktree made after the merge is in main, so its baseline is the merged state.
 - Your own claims in a decision can be wrong too ("nothing tested is lost" in 102 lost four wire tests). Say so in the
   report when the build shows it.

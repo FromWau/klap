@@ -56,6 +56,27 @@ class ConvertersTest : ConverterScope() {
     }
 
     @Test
+    fun `an error thrown by a map refuses the value instead of escaping parse`() {
+        val tree = cli("app") {
+            option(long = "later").map<Int> { throw NotImplementedError("converter not written yet") }
+            action { Ok("") }
+        }
+        val refused = tree.parse(listOf("--later", "z")).assertError<CliError.BadValue>()
+        assertTrue(refused.cause is ConversionError.Threw, "cause ${refused.cause}")
+    }
+
+    @Test
+    fun `an error thrown by a validate refuses the value instead of escaping parse`() {
+        val tree = cli("app") {
+            option(long = "before").validate("never") { _: String -> throw NotImplementedError("first check") }.int()
+            option(long = "after").int().validate("never") { throw NotImplementedError("second check") }
+            action { Ok("") }
+        }
+        assertEquals("first check", tree.parse(listOf("--before", "1")).assertError<CliError.BadValue>().reason)
+        assertEquals("second check", tree.parse(listOf("--after", "1")).assertError<CliError.BadValue>().reason)
+    }
+
+    @Test
     fun `read of a holder the command did not bind fails with a clear message`() {
         // Reading outside action { } is a compile error now (accessors live on ActionScope), so the one
         // surviving runtime misuse is a foreign accessor (e.g. a sibling command's option closed over
@@ -402,6 +423,41 @@ class ConvertersTest : ConverterScope() {
     }
 
     @Test
+    fun `a double refuses a type suffix and a trailing blank`() {
+        // coreutils 9.12 `timeout 1.5f true` and `timeout '1 ' true` are "invalid time interval".
+        val spec = argSpec()
+        Arg<String>(spec).double()
+        listOf("1.5f", "1.5F", "1.5d", "1.5D", "1 ").forEach { raw ->
+            assertEquals(Result.Error(ConversionError.NotADouble), spec.convert(raw), "`$raw`")
+        }
+    }
+
+    @Test
+    fun `a double reads infinity nan and a hex float as strtod does`() {
+        // glibc strtod as coreutils 9.12 reads it: `timeout inf true`, `timeout 0x1A true` and `timeout ' 1' true` run.
+        val spec = argSpec()
+        Arg<String>(spec).double()
+        assertEquals(Result.Success(Double.POSITIVE_INFINITY), spec.convert("inf"))
+        assertEquals(Result.Success(Double.NEGATIVE_INFINITY), spec.convert("-Infinity"))
+        assertEquals(Result.Success(Double.NaN), spec.convert("NAN"))
+        assertEquals(Result.Success(8.0), spec.convert("0x1p3"))
+        assertEquals(Result.Success(26.0), spec.convert("0x1A"))
+        assertEquals(Result.Success(0.5), spec.convert("+.5"))
+        assertEquals(Result.Success(1.5), spec.convert(" 1.5"))
+        assertEquals(Result.Success(Double.POSITIVE_INFINITY), spec.convert("1e400"))
+    }
+
+    @Test
+    fun `a double refuses a word strtod reads only in part`() {
+        // coreutils 9.12 `timeout 1e true`, `timeout 0x true` and `timeout infx true` are "invalid time interval".
+        val spec = argSpec()
+        Arg<String>(spec).double()
+        listOf("1e", "0x", "infx", "infin", "1.5e+", "", "+", ".", "١٫٥").forEach { raw ->
+            assertEquals(Result.Error(ConversionError.NotADouble), spec.convert(raw), "`$raw`")
+        }
+    }
+
+    @Test
     fun `opt enum sets choices and binds`() {
         val spec = optSpec()
         val opt = Opt<String?>(spec).enum<Color>()
@@ -553,31 +609,68 @@ class ConvertersTest : ConverterScope() {
         assertEquals(Result.Success(2), spec.convert("  hi  "))
     }
 
-    // --- Converter ordering: .validate()/.range() must be called after every type-changing converter,
+    // --- Converter ordering: a .validate()/.range() judges the value converted so far at its place in the chain,
     // and a type-changing converter cannot be stacked on top of another one, even through a stale handle ---
 
     @Test
-    fun `validate before a type changing converter is rejected at construction`() {
-        val spec = argSpec()
-        Arg<String>(spec).validate("must not be blank") { it.isNotBlank() }
-        val ex = assertFailsWith<IllegalArgumentException> { Arg<String>(spec).int() }
-        assertEquals(
-            "argument 'x': call .validate()/.range() after every type-changing converter " +
-                "(.int()/.long()/.double()/.boolean()/.enum<E>()), not before",
-            ex.message,
-        )
+    fun `a validate before a type changing converter judges the raw value`() {
+        val tree = cli("app") {
+            val n = argument("n").validate("must not be blank") { it.isNotBlank() }.int()
+            action { Ok("n=${n()}") }
+        }
+        assertEquals("n=7", tree.bindText("7"))
+        assertEquals("must not be blank", tree.parse(listOf(" ")).assertError<CliError.BadValue>().reason)
+        assertEquals(ConversionError.NotAnInteger, tree.parse(listOf("x")).assertError<CliError.BadValue>().cause)
     }
 
     @Test
-    fun `range before a type changing converter is rejected at construction`() {
-        val spec = argSpec()
-        Arg<String>(spec).range("a".."z")
-        val ex = assertFailsWith<IllegalArgumentException> { Arg<String>(spec).int() }
-        assertEquals(
-            "argument 'x': call .validate()/.range() after every type-changing converter " +
-                "(.int()/.long()/.double()/.boolean()/.enum<E>()), not before",
-            ex.message,
-        )
+    fun `a range before a type changing converter bounds the raw value`() {
+        // The range compares strings, so `10` sorts inside "0".."5" and `7` outside it, whatever their Int.
+        val tree = cli("app") {
+            val n = argument("n").range("0".."5").int()
+            action { Ok("n=${n()}") }
+        }
+        assertEquals("n=10", tree.bindText("10"))
+        assertEquals("must be in 0..5", tree.parse(listOf("7")).assertError<CliError.BadValue>().reason)
+    }
+
+    @Test
+    fun `a validate before a map never judges the mapped value`() {
+        val tree = cli("head") {
+            val n = option(short = 'n')
+                .validate("must not be empty") { s: String -> s.isNotEmpty() }
+                .map { it.length }
+            action { Ok("n=${n()}") }
+        }
+        assertEquals("n=3", tree.bindText("-n", "abc"))
+        assertEquals("must not be empty", tree.parse(listOf("-n", "")).assertError<CliError.BadValue>().reason)
+    }
+
+    @Test
+    fun `checks on both sides of a converter each judge the value at their place`() {
+        val tree = cli("app") {
+            val n = option(long = "n")
+                .validate("must be short") { s: String -> s.length < 4 }
+                .int()
+                .validate("must be even") { it % 2 == 0 }
+            action { Ok("n=${n()}") }
+        }
+        assertEquals("n=12", tree.bindText("--n", "12"))
+        assertEquals("must be short", tree.parse(listOf("--n", "1234")).assertError<CliError.BadValue>().reason)
+        assertEquals("must be even", tree.parse(listOf("--n", "13")).assertError<CliError.BadValue>().reason)
+    }
+
+    @Test
+    fun `a validate before a choice refuses as a bad value not as a choice`() {
+        val tree = cli("app") {
+            val mode = option(long = "mode").validate("must be lowercase") { s: String -> s == s.lowercase() }
+                .choice("fast", "Slow")
+            action { Ok("mode=${mode()}") }
+        }
+        assertEquals("mode=fast", tree.bindText("--mode", "fast"))
+        val refused = tree.parse(listOf("--mode", "Slow")).assertError<CliError.BadValue>()
+        assertEquals("must be lowercase", refused.reason)
+        assertNull(refused.cause)
     }
 
     @Test

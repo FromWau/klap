@@ -20,7 +20,7 @@ public sealed interface ConversionError : IError {
     /** `.long()` was given something that is no decimal `Long`, including an integer past `Long`'s range. */
     public data object NotALong : ConversionError
 
-    /** `.double()` was given something `toDoubleOrNull` rejects. */
+    /** `.double()` was given something that is no number as `strtod` reads one whole (see `.double()`). */
     public data object NotADouble : ConversionError
 
     /** `.boolean()` was given anything other than exactly `true` or `false`. */
@@ -32,7 +32,7 @@ public sealed interface ConversionError : IError {
      */
     public data class NotOneOf(val choices: List<String>) : ConversionError
 
-    /** A `.map { }` transform threw. klap catches it rather than letting a bad value crash the parse. */
+    /** A `.map { }` transform threw, an `Error` included. klap catches it rather than letting it crash the parse. */
     public data class Threw(val thrown: Throwable) : ConversionError
 
     /**

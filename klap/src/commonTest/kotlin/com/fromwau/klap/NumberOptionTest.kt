@@ -35,7 +35,7 @@ private fun headTree(): Cli = cli("head") {
  * `-<NUM>` is an input of its own, and a maximal run of digits that nothing else has claimed binds to it
  * wherever in the token it sits. GNU head accepts `head -5v f` and rejects `head -v5 f`, because a
  * value-taking short takes the rest of its cluster and only position zero is unambiguous to a reader;
- * klap resolves that from the declarations and accepts both.
+ * klap resolves that from the declarations and, unless `firstWordOnly` asks for head's rule, accepts both.
  */
 class NumberOptionTest {
 
@@ -169,7 +169,7 @@ class NumberOptionTest {
 
     @Test
     fun `where the number sits in the command is not constrained`() {
-        // klap does not adopt head's leading-only rule: a dash-led token is an option, as getopt reads it,
+        // head's leading-only rule is opt-in (`firstWordOnly`): a dash-led token is an option, as getopt reads it,
         // and a CLI declaring a number option has told its users so. `--` and `./` remain the escapes.
         assertEquals(
             "lines=2 bytes=null quiet=true verbose=false files=[f]",

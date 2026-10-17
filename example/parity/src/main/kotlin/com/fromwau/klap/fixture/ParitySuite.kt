@@ -14,7 +14,7 @@ import kotlin.test.fail
  *
  * The installed binary is the oracle for [binds] versus [rejects] only — it can say whether an invocation
  * is valid, never what it bound internally, so a [binds] expectation is hand-authored and reviewed. Never
- * compare exit codes with it either: on a bad option `mkdir` exits 1, `ls` 2, `tar` 64 and `git` 129, so
+ * compare exit codes with it either: on a bad option `rm` exits 1, `ls` 2, `tar` 64 and `git` 129, so
  * the only portable claim is the binary one this class makes.
  *
  * Takes a [TypedCli] rather than a `Cli`, so a bound invocation arrives as the fixture's own projected

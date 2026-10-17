@@ -65,6 +65,48 @@ class GuideSnippetsTest {
         )
     }
 
+    private enum class Interactive(val words: List<String>) {
+        Never(listOf("never", "no", "none")),
+        Once(listOf("once")),
+        Always(listOf("always", "yes")),
+    }
+
+    @Test
+    fun `the guides enum words resolve a prefix of one entry`() {
+        val rm = cli("rm") {
+            abbreviation = Abbreviation.Options
+            val interactive = option(long = "interactive").enum<Interactive>(spellings = { it.words })
+            action<String>(human = { it }) { Ok("${interactive()}") }
+        }
+        assertEquals("Never", rm.bindText("--interactive=n"))
+        assertEquals("Always", rm.bindText("--interactive=yes"))
+    }
+
+    private enum class RootScope { All }
+
+    @Test
+    fun `the guides whole long and whole enum value refuse a prefix`() {
+        val rm = cli("rm") {
+            abbreviation = Abbreviation.Options
+            val noPreserveRoot = flag(long = "no-preserve-root").spelledInFull()
+            val preserveRoot = option(long = "preserve-root").enum<RootScope>(abbreviates = false).optionalValue()
+            val verbose = flag(long = "verbose")
+            argument("file")
+            action<String>(human = { it }) { Ok("${noPreserveRoot()} ${preserveRoot()} ${verbose()}") }
+        }
+        val unknown = RecordingTerminal()
+        rm.run(arrayOf("--no-p", "d"), unknown)
+        assertContains(unknown.err.toString(), "error: unknown option '--no-p'")
+        val prefix = RecordingTerminal()
+        rm.run(arrayOf("--preserve-root=al", "d"), prefix)
+        assertContains(
+            prefix.err.toString(),
+            "error: invalid value 'al' for --preserve-root (choose from all). Did you mean all?\n",
+        )
+        assertEquals("false Given(value=All) false", rm.bindText("--pre=all", "d"))
+        assertEquals("false null true", rm.bindText("--verb", "d"))
+    }
+
     // --- "Inputs and converters": the two rendered error shapes ---
 
     @Test
@@ -120,23 +162,22 @@ class GuideSnippetsTest {
     // --- "Inputs and converters": the declaration-order rules the guide states as prose ---
 
     @Test
-    fun `the guides converter order rule is what the builder enforces`() {
-        // The guide's example of the wrong order, and of the right one it tells you to write instead.
-        val wrongOrder = assertFailsWith<IllegalArgumentException> {
-            cli("app") {
-                argument("n").validate("must not be blank") { it.isNotBlank() }.int()
-                action { Ok("") }
-            }
+    fun `the guides check order is the order a value is judged in`() {
+        // The guide's two chains: a check before .int() reads the text, a range after it reads the number.
+        val textChecked = cli("app") {
+            val n = argument("n").validate("must not be blank") { it.isNotBlank() }.int()
+            action { Ok("${n()}") }
         }
-        assertContains(wrongOrder.message.orEmpty(), "after every type-changing converter")
+        assertEquals("must not be blank", textChecked.parse(listOf("")).assertError<CliError.BadValue>().reason)
 
-        val rightOrder = cli("app") {
+        val numberChecked = cli("app") {
             val n = argument("n").int().range(1..10)
             action { Ok("${n()}") }
         }
         val t = RecordingTerminal()
-        rightOrder.run(arrayOf("7"), t)
+        numberChecked.run(arrayOf("7"), t)
         assertEquals("7\n", t.out.toString())
+        assertEquals("must be in 1..10", numberChecked.parse(listOf("11")).assertError<CliError.BadValue>().reason)
     }
 
     @Test
@@ -321,5 +362,18 @@ class GuideValidateInputsSnippetTest {
         val t = RecordingTerminal()
         assertEquals(0, tree.run(arrayOf("sub"), t))
         assertEquals("sub ran\n", t.out.toString())
+    }
+
+    @Test
+    fun `the endsOptions snippet reads options until the remote command`() {
+        val ssh = cli("ssh") {
+            val port = option(short = 'p', long = "port")
+            argument("destination")
+            val command = argument("command").multiple().endsOptions()
+            action<String>(human = { it }) { Ok("port=${port()} command=${command()}") }
+        }
+        assertEquals("port=2222 command=[]", ssh.bindText("web1", "-p", "2222"))
+        assertEquals("port=null command=[ls, -p, 2222]", ssh.bindText("web1", "ls", "-p", "2222"))
+        assertEquals("port=null command=[-p, 2222]", ssh.bindText("web1", "--", "-p", "2222"))
     }
 }

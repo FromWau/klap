@@ -3,6 +3,7 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.klap.internal.parse.LongPool
 import com.fromwau.klap.internal.parse.NameMatch
 import com.fromwau.klap.internal.parse.resolveLong
 import com.fromwau.klap.internal.render.message
@@ -15,7 +16,7 @@ import kotlin.test.assertTrue
 /** Prefix resolution itself, under the mode that enables it; [AbbreviationModeTest] owns the mode boundaries. */
 class AbbreviationTest {
 
-    private val pool = listOf("recursive", "reference", "verbose", "sort", "sort-by")
+    private val pool = LongPool(listOf("recursive", "reference", "verbose", "sort", "sort-by"))
 
     @Test
     fun `an exact spelling resolves to itself`() {
@@ -48,8 +49,8 @@ class AbbreviationTest {
     @Test
     fun `an empty name is a prefix of every long`() {
         // getopt -o '' -l beta: -- --=x gives " --beta 'x'"; `ls --=x` is ambiguous among all of ls's longs.
-        assertEquals(NameMatch.Prefix("beta"), resolveLong("", listOf("beta"), infer = true))
-        assertEquals(NameMatch.Ambiguous(pool), resolveLong("", pool, infer = true))
+        assertEquals(NameMatch.Prefix("beta"), resolveLong("", LongPool(listOf("beta")), infer = true))
+        assertEquals(NameMatch.Ambiguous(pool.toList()), resolveLong("", pool, infer = true))
         assertEquals(NameMatch.None, resolveLong("", pool, infer = false))
     }
 
@@ -57,7 +58,7 @@ class AbbreviationTest {
     fun `a duplicated candidate does not fake an ambiguity`() {
         // The same spelling can reach the pool twice (a local spec and the built-in list both offering it);
         // two entries naming ONE option are not two possibilities.
-        assertEquals(NameMatch.Prefix("verbose"), resolveLong("verb", listOf("verbose", "verbose"), infer = true))
+        assertEquals(NameMatch.Prefix("verbose"), resolveLong("verb", LongPool(listOf("verbose", "verbose")), infer = true))
     }
 
     private fun tree() = cli("t") {

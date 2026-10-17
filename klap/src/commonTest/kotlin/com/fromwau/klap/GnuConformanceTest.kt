@@ -91,7 +91,7 @@ class GnuConformanceTest {
 
     @Test
     fun `a long option abbreviates to any unambiguous prefix`() {
-        // `mkdir --par d` reaches --parents; `ls --s` is "option '--s' is ambiguous". klap's default reads names
+        // `cp --rec a b` reaches --recursive; `ls --s` is "option '--s' is ambiguous". klap's default reads names
         // so (todo 56b); `Abbreviation.None` opts out.
         assertEquals("a=true b=false c=cfg files=[f1]", bind("--al", "--conf", "cfg", "f1"))
         val ambiguous = cli("util") {

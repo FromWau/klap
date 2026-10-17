@@ -35,12 +35,21 @@ internal sealed interface ValueSpec : HolderSpec {
     var convert: (String) -> Result<Any?, ConversionError>
     var choices: List<String>?
 
+    // Set by .enum(spellings =): the words of each entry, in [choices] order. A prefix reaching several words of
+    // one entry names that entry, and help lists each entry by its first word.
+    var choiceEntries: List<List<String>>?
+
     // Set by .choice(ignoreCase = true) or .enum(ignoreCase = true): a value matches its choice in any case.
     // Off by default, as `ls --color=ALWAYS` and `cp --backup=NUMBERED` refuse a value in the wrong case.
     var choiceIgnoreCase: Boolean
 
-    // Runs after a successful convert(); null = pass, non-null = error message. Always yields BadValue,
-    // even on a choices-backed spec, so a validation failure is never mislabeled as "choose from ...".
+    // Cleared by .enum(abbreviates = false): a value matches its choice only whole, whatever the CLI's Abbreviation,
+    // as rm compares `--preserve-root=all`.
+    var choiceAbbreviates: Boolean
+
+    // The checks declared after the last converter, run on its value; null = pass, non-null = error message.
+    // A converter declared after them folds them into [convert], so each check judges the value at its place.
+    // Always yields BadValue, even on a choices-backed spec, so a refusal is never mislabeled "choose from ...".
     var validate: ((Any?) -> String?)?
 
     // Set by .placeholder(): the name shown in place of the generic `value` in help and usage, e.g.
@@ -78,6 +87,9 @@ internal sealed interface NamedSpec : HolderSpec {
 
     // Set by .repeated(): what a second occurrence does; null takes the CLI's own repeatedOptions.
     var repeated: RepeatedOptions?
+
+    // Set by .spelledInFull(): no prefix reaches this input's longs, whatever the CLI's abbreviation.
+    var spelledInFull: Boolean
 }
 
 /**
@@ -130,7 +142,9 @@ internal class ArgumentSpec(
     override var cardinality: Cardinality = Cardinality.Required,
 ) : ValueSpec {
     override var choices: List<String>? = null
+    override var choiceEntries: List<List<String>>? = null
     override var choiceIgnoreCase: Boolean = false
+    override var choiceAbbreviates: Boolean = true
     override var validate: ((Any?) -> String?)? = null
     override var valueHint: String? = null
     override var placeholder: String? = null
@@ -146,6 +160,9 @@ internal class ArgumentSpec(
 
     // Set by Arg.dashLed(gather) { }: this slot collects every accepted dash word on the line instead.
     var gather: DashLedGather? = null
+
+    // Set by Arg.endsOptions(): the first word bound to this slot ends its command's options.
+    var endsOptions: Boolean = false
 
     // Set by Arg.absentWhen(): the input whose presence removes this slot from the operand list entirely.
     // Deliberately not a Cardinality: the slot IS required in every other reading, and folding a condition
@@ -172,6 +189,12 @@ internal class DashLedGather(val separator: String, val accepts: (String) -> Boo
 /** The display name of the `-<NUM>` input: it has no spelling, so this is what help and errors name it by. */
 internal const val NUMBER_LABEL: String = "-<NUM>"
 
+/**
+ * Where a run of the number input may stand and what it keeps: only as its command's first word when
+ * [firstWordOnly], and with each of the [suffixes] letters typed after its digits kept in its value.
+ */
+internal class NumberShape(val firstWordOnly: Boolean, val suffixes: String)
+
 @PublishedApi
 internal class OptionSpec(
     override val names: List<String>,
@@ -182,8 +205,8 @@ internal class OptionSpec(
     // members' own tokens for a lastOf handle. Both are read off a handle rather than typed, so there
     // is no spelling for [name] to take and every error and help row would otherwise name nothing.
     label: String? = null,
-    // Set by numberOption(): this input binds a maximal run of digits rather than a spelling.
-    val isNumber: Boolean = false,
+    // Set by numberOption(): this input binds a run of digits rather than a spelling, read in this shape.
+    val number: NumberShape? = null,
     // Set by lastOf(): the members whose last-written occurrence this handle reports.
     val folds: List<OptionSpec> = emptyList(),
 ) : ValueSpec, NamedSpec {
@@ -197,7 +220,9 @@ internal class OptionSpec(
     override val name: String = label ?: names.first()
     override var cardinality: Cardinality = Cardinality.Optional
     override var choices: List<String>? = null
+    override var choiceEntries: List<List<String>>? = null
     override var choiceIgnoreCase: Boolean = false
+    override var choiceAbbreviates: Boolean = true
     override var validate: ((Any?) -> String?)? = null
     override var valueHint: String? = null
     override var placeholder: String? = null
@@ -207,6 +232,7 @@ internal class OptionSpec(
     override var isPath: Boolean = false
     override var constraintHint: String? = null
     override var repeated: RepeatedOptions? = null
+    override var spelledInFull: Boolean = false
 
     // Set by Opt.requiredWhen(): the flag whose presence makes this option required. Deliberately not a
     // Cardinality: the option IS optional in every other reading (it binds null when the flag is absent),
@@ -250,6 +276,7 @@ internal class FlagSpec(
     override var hidden: Boolean = false
     override var constraintHint: String? = null
     override var repeated: RepeatedOptions? = null
+    override var spelledInFull: Boolean = false
 
     // Set by Flag.count(): bind() reports the occurrence count instead of collapsing it to a boolean.
     var isCount: Boolean = false

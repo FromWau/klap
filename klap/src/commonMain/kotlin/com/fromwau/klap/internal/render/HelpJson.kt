@@ -40,8 +40,8 @@ internal data class ArgumentHelp(
     val repeatable: Boolean,
     val default: String? = null,
     val choices: List<String>? = null,
-    val absentWith: String? = null,
-    val optionalWith: String? = null,
+    val absentWhen: String? = null,
+    val optionalWhen: String? = null,
 )
 
 @Serializable
@@ -124,9 +124,9 @@ private fun ArgumentSpec.toHelp(): ArgumentHelp = ArgumentHelp(
     required = cardinality.isRequired(),
     repeatable = cardinality is Cardinality.Multiple,
     default = (cardinality as? Cardinality.Default)?.let { display(it.value) },
-    choices = choices,
-    absentWith = absentWhen?.constraintToken(),
-    optionalWith = optionalWhen?.constraintToken(),
+    choices = listedChoices,
+    absentWhen = absentWhen?.constraintToken(),
+    optionalWhen = optionalWhen?.constraintToken(),
 )
 
 private fun NamedSpec.toHelp(): OptionHelp = when (this) {
@@ -137,7 +137,7 @@ private fun NamedSpec.toHelp(): OptionHelp = when (this) {
         required = cardinality.isRequired(),
         repeatable = cardinality is Cardinality.Multiple,
         default = (cardinality as? Cardinality.Default)?.let { display(it.value) },
-        choices = choices,
+        choices = listedChoices,
         section = section,
     )
     is FlagSpec -> OptionHelp(

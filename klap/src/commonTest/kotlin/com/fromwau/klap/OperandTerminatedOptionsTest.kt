@@ -5,7 +5,9 @@ import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class OperandTerminatedOptionsTest {
 
@@ -55,6 +57,11 @@ class OperandTerminatedOptionsTest {
             }
         }
         assertEquals("rest=[tar, -cvf, x]", tree.bindText("run", "tar", "-cvf", "x"))
+    }
+
+    @Test
+    fun `a word after the first operand is no value of the command's option`() {
+        assertEquals("v=false l=null cmd=[ls, -l]", sshLike().bindText("web1", "ls", "-l", "--color=never"))
     }
 
     @Test
@@ -165,5 +172,133 @@ class OperandTerminatedOptionsTest {
             action<String>(human = { it }) { Ok("sort=${sort()} files=${files()}") }
         }
         assertEquals("sort=null files=[-fs]", tree.bindText("--", "-fs"))
+    }
+
+    @Test
+    fun `no option name of the command is offered after the first operand`() {
+        val tree = sshLike()
+        assertEquals("v=false l=null cmd=[ls, -v]", tree.bindText("web1", "ls", "-v"))
+        val offered = tree.offered("web1", "ls", "-")
+        val own = listOf("-v", "--verbose", "-l", "--login")
+        assertTrue(offered.none { it in own }, "the remote command's word offers $offered")
+    }
+}
+
+/** `Arg<T>.endsOptions()`: options permute until the first word bound to that argument, then end. */
+class EndsOptionsTest {
+
+    private fun sshLike() = cli("ssh") {
+        val verbose = flag(short = 'v', long = "verbose")
+        val login = option(short = 'l', long = "login")
+        argument("destination")
+        val command = argument("command").multiple().endsOptions()
+        action<String>(human = { it }) {
+            Ok("v=${verbose()} l=${login()} cmd=${command()}")
+        }
+    }
+
+    @Test
+    fun `options after an earlier operand still bind`() {
+        assertEquals("v=true l=root cmd=[]", sshLike().bindText("web1", "-v", "-l", "root"))
+    }
+
+    @Test
+    fun `the first word bound to the argument ends options`() {
+        assertEquals("v=true l=null cmd=[ls, -v, -l, root]", sshLike().bindText("web1", "-v", "ls", "-v", "-l", "root"))
+    }
+
+    @Test
+    fun `an end of options marker before that word is consumed`() {
+        assertEquals("v=false l=null cmd=[-l, root]", sshLike().bindText("web1", "--", "-l", "root"))
+    }
+
+    @Test
+    fun `a non final argument ends options at its own word`() {
+        val tree = cli("run") {
+            val verbose = flag(short = 'v', long = "verbose")
+            val host = argument("host")
+            val program = argument("program").endsOptions()
+            val args = argument("arg").multiple()
+            action<String>(human = { it }) { Ok("v=${verbose()} host=${host()} program=${program()} args=${args()}") }
+        }
+        assertEquals("v=true host=h program=p args=[-v]", tree.bindText("h", "-v", "p", "-v"))
+        assertEquals("v=true host=h program=p args=[]", tree.bindText("-v", "h", "p"))
+    }
+
+    @Test
+    fun `a word after that one is no value of the command's option`() {
+        // Past the remote command's first word `-l` is the remote's own, so klap's `--color` after it is the
+        // built-in it is anywhere else on the line, as it is past the first operand under the switch.
+        assertEquals("v=false l=null cmd=[ls, -l]", sshLike().bindText("web1", "ls", "-l", "--color=never"))
+    }
+
+    @Test
+    fun `an unknown option before that word is still an error`() {
+        val err = sshLike().parse(listOf("web1", "-x", "ls")).assertError<CliError.UnknownOption>()
+        assertEquals(CliError.UnknownOption("-x"), err)
+    }
+
+    @Test
+    fun `the help short still reaches past that word`() {
+        val tree = cli("ssh") {
+            builtins { help = Help.ByCommand(short = 'h') }
+            argument("destination")
+            argument("command").multiple().endsOptions()
+            action { Ok("ran") }
+        }
+        assertIs<Invocation.ShowHelp>(tree.parse(listOf("web1", "ls", "-h")).assertSuccess())
+    }
+
+    @Test
+    fun `completion offers the options until that word`() {
+        val offered = sshLike().offered("web1", "-")
+        val own = listOf("-v", "--verbose", "-l", "--login")
+        assertTrue(offered.containsAll(own), "the word after the destination offers $offered")
+    }
+
+    @Test
+    fun `completion offers no option name of the command after that word`() {
+        val offered = sshLike().offered("web1", "ls", "-")
+        val own = listOf("-v", "--verbose", "-l", "--login")
+        assertTrue(offered.none { it in own }, "the remote command's word offers $offered")
+        assertTrue("--help" in offered, "klap's own names are still read there, offered $offered")
+    }
+
+    @Test
+    fun `completion offers no value of the command's option after that word`() {
+        val tree = cli("ssh") {
+            option(short = 'l', long = "login").completeWith { candidate("root") }
+            argument("destination")
+            argument("command").multiple().endsOptions().completeWith { candidate("ls") }
+            action { Ok("") }
+        }
+        assertEquals(listOf("root"), tree.offered("web1", "-l", ""))
+        assertEquals(listOf("ls"), tree.offered("web1", "ls", "-l", ""))
+        assertEquals(emptyList(), tree.offered("web1", "ls", "--login="))
+    }
+
+    @Test
+    fun `an argument after a variadic cannot end options`() {
+        val error = assertFailsWith<IllegalArgumentException> {
+            cli("cp") {
+                argument("source").multiple()
+                argument("dest").endsOptions()
+                action { Ok("") }
+            }
+        }
+        assertTrue("endsOptions" in error.message.orEmpty(), error.message)
+    }
+
+    @Test
+    fun `a command cannot end options at its first operand and at an endsOptions argument`() {
+        val error = assertFailsWith<IllegalArgumentException> {
+            cli("ssh") {
+                optionsEndAtFirstOperand = true
+                argument("destination")
+                argument("command").multiple().endsOptions()
+                action { Ok("") }
+            }
+        }
+        assertTrue("optionsEndAtFirstOperand" in error.message.orEmpty(), error.message)
     }
 }

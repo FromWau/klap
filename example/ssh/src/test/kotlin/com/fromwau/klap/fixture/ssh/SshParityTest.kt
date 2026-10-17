@@ -90,8 +90,8 @@ class SshParityTest {
     }
 
     @Test
-    fun `options end at the destination as real ssh reads them`() {
-        // `optionsEndAtFirstOperand` (set in sshCli) stops option parsing at the destination, so an undeclared short
+    fun `options end at the remote command as real ssh reads them`() {
+        // The remote command's first word ends option parsing (`endsOptions()` in sshCli), so an undeclared short
         // reaches the remote instead of erroring, and a declared one is not stolen either: `ssh -G web1 tar -C /src`
         // reports compression no, where `ssh -G -C web1` sets it.
         parity.binds(
@@ -105,10 +105,25 @@ class SshParityTest {
     }
 
     @Test
+    fun `options after the destination bind until the remote command starts`() {
+        // OpenSSH 10.6p1: `ssh -G web1 -p 2222` prints port 2222, and `ssh -G web1 -v ls -p 2222` loglevel DEBUG
+        // with port 22.
+        parity.binds("web1", "-p", "2222", expected = NOTHING_BOUND.copy(port = 2222, destination = "web1"))
+        parity.binds(
+            "web1", "-v", "ls", "-p", "2222",
+            expected = NOTHING_BOUND.copy(
+                verbose = 1,
+                destination = "web1",
+                remoteCommand = listOf("ls", "-p", "2222"),
+            ),
+        )
+    }
+
+    @Test
     fun `--json is stripped from the remote command`() {
         // klap's own `--json` is recognized before the tree knows which command it will reach at all, so it is
-        // stripped from the remote command wherever it sits ahead of a literal `--` (see `binds connection options
-        // and the optional remote command` for the line that shields it). Real ssh forwards `echo --json`.
+        // stripped from the remote command wherever it sits ahead of a literal `--` (see `a -- after the destination
+        // ends the options and is not forwarded` for the line that shields it). Real ssh forwards `echo --json`.
         parity.binds(
             "web1", "echo", "--json",
             expected = NOTHING_BOUND.copy(destination = "web1", remoteCommand = listOf("echo")),
@@ -116,24 +131,22 @@ class SshParityTest {
     }
 
     @Test
-    fun `a -- after the destination is forwarded to the remote command`() {
-        // Real ssh and klap both accept the line, but probed against OpenSSH, `ssh host -- -p abc` skips the "Bad
-        // port" that `ssh host -p abc` triggers, so real ssh's own option scan restarts after the destination and
-        // reads that `--` as its own end-of-options marker, consuming it rather than forwarding it. klap's switch
-        // treats the destination as ending all further interpretation, so the `--` binds as a literal token in the
-        // tail.
+    fun `a -- after the destination ends the options and is not forwarded`() {
+        // OpenSSH 10.6p1: `ssh -G web1 -- -p 2222` prints port 22, where `ssh -G web1 -p 2222` prints 2222, so ssh's
+        // option scan, still running after the destination, reads that `--` as its own end of options and consumes
+        // it rather than forwarding it.
+        parity.binds(
+            "web1", "--", "-p", "2222",
+            expected = NOTHING_BOUND.copy(destination = "web1", remoteCommand = listOf("-p", "2222")),
+        )
         parity.binds(
             "web1", "--", "ls", "-la", "/var/log",
-            expected = NOTHING_BOUND.copy(
-                destination = "web1",
-                remoteCommand = listOf("--", "ls", "-la", "/var/log"),
-            ),
+            expected = NOTHING_BOUND.copy(destination = "web1", remoteCommand = listOf("ls", "-la", "/var/log")),
         )
-        // Real ssh consumes this `--` too, forwarding only `echo --json` to the remote. klap keeps the `--` in the
-        // bound tail; without it, this remote `--json` would be stripped by klap's own `--json` built-in.
+        // The `--` also shields a remote `--json` from klap's own built-in, which would otherwise strip it.
         parity.binds(
             "web1", "--", "echo", "--json",
-            expected = NOTHING_BOUND.copy(destination = "web1", remoteCommand = listOf("--", "echo", "--json")),
+            expected = NOTHING_BOUND.copy(destination = "web1", remoteCommand = listOf("echo", "--json")),
         )
     }
 

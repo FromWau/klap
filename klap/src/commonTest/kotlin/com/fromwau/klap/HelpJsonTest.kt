@@ -101,11 +101,11 @@ class HelpJsonTest {
         assertEquals(
             """[{"name":"source","help":"what to copy","required":true,"repeatable":true},""" +
                 """{"name":"dest","help":"where to copy it","required":true,"repeatable":false,""" +
-                """"absentWith":"--target-directory"}]""",
+                """"absentWhen":"--target-directory"}]""",
             arguments("cp"),
         )
         assertEquals(
-            """[{"name":"file","help":"what to remove","required":true,"repeatable":true,"optionalWith":"--force"}]""",
+            """[{"name":"file","help":"what to remove","required":true,"repeatable":true,"optionalWhen":"--force"}]""",
             arguments("rm"),
         )
     }

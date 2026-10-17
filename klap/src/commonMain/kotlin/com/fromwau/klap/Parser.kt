@@ -16,6 +16,7 @@ import com.fromwau.klap.internal.parse.firstBadValue
 import com.fromwau.klap.internal.parse.globalLookup
 import com.fromwau.klap.internal.parse.hoistCommands
 import com.fromwau.klap.internal.parse.isFlagLike
+import com.fromwau.klap.internal.parse.LongPool
 import com.fromwau.klap.internal.parse.longMatchPool
 import com.fromwau.klap.internal.parse.namesHelpShort
 import com.fromwau.klap.internal.parse.namesVersionShort
@@ -109,7 +110,7 @@ internal fun List<String>.colorMode(
     builtins: Builtins = Builtins.DEFAULT,
     abbreviation: Abbreviation = Abbreviation.None,
     scan: ArgvScan = ArgvScan(
-        { builtinLongs(builtins, versioned = true, metaOptions = true) },
+        { LongPool(builtinLongs(builtins, versioned = true, metaOptions = true)) },
         abbreviation != Abbreviation.None,
         emptySet(),
         this,
@@ -281,13 +282,13 @@ private fun Cli.parseTokens(typed: List<String>): Result<Invocation, CliError> {
     } else {
         listOfNotNull(
             builtins.versionLong?.let { scan.firstNaming(it) },
-            scan.firstOpen { namesVersionShort(it, globalLookup()) },
+            scan.firstOpenIndexed { i, token -> namesVersionShort(token, globalLookup(), firstWord = i == 0) },
         ).minOrNull()
     }
     // Answered after the walk, which tells whether a bad option or value stands ahead of it.
     val versionFirst = versionAt != null && listOfNotNull(
         scan.firstNaming(*helpLongs().toTypedArray()),
-        scan.firstOpen { namesHelpShort(it, globalLookup()) },
+        scan.firstOpenIndexed { i, token -> namesHelpShort(token, globalLookup(), firstWord = i == 0) },
     ).minOrNull().let { helpAt -> helpAt == null || versionAt < helpAt }
 
     // A bad built-in value refuses the line at once unless --help or --version may stand ahead of it, which
@@ -430,7 +431,7 @@ private fun Cli.parseTokens(typed: List<String>): Result<Invocation, CliError> {
     val helpAllAt = if (builtins.helpAll) segment.firstNaming("help-all") else null
     val plainHelpAt = listOfNotNull(
         segment.firstNaming("help").takeIf { builtins.help },
-        segment.firstOpen { cmd.namesHelpShort(it, globalAcc) },
+        segment.firstOpenIndexed { i, token -> cmd.namesHelpShort(token, globalAcc, firstWord = i == 0) },
     ).minOrNull()
     // The line's first of the built-in and a bad option or value decides, as GNU coreutils reads its options
     // in getopt's loop: `cp --help --bogus` prints the usage, `cp --bogus --help` is refused. Operands and
@@ -614,7 +615,7 @@ private fun runValidations(exec: Invocation.Execute): CliError? =
             rule(exec.scope)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             CliError.Failure("validateInputs failed: ${e.message?.takeIf { it.isNotBlank() } ?: "no message"}")
         }
     }
