@@ -154,9 +154,9 @@ Disputed (P3): "binds a different record" still passes when two same-typed const
 | P38 | a help-only group given an unknown word or option is refused, never `null` | `rejects` | `git bogus`, `git --bogus` |
 
 - P30: `hasHelpRequest`, `namesHelpShort`, `routesTransparently` in `Parser.kt`. pacman, cp, find, ssh; `ProjectionTest.a built in answers with null because no command ran`.
-- P31: `builtinLongs` (`Parser.kt`) and `builtins { }` (`Builtins.kt`); the projection's `ValueScope` cannot see `Globals.json`, so `--json` changes nothing on the record. cp and pacman targets `an option cp does not have is refused`, `an option pacman does not have is refused`; ls and rsync decline some.
+- P31: `builtinLongs` (`Parser.kt`) and `builtins { }` (`Builtins.kt`); the projection's `ValueScope` cannot see `Globals.json`, so `--json` changes nothing on the record. cp and pacman targets `an option cp does not have is refused`, `an option pacman does not have is refused`; ls declines some.
 - P32: value slots skipped by every built-in scan (`ArgvScan.valueSlots`), `ArgvScan.headSize` for `--`, `routeBuiltin` and the always-injected `__complete` (`CliBuilder.kt`). cp target `__complete is a source file name`; guide "Global / persistent options".
-- P33: the ladder in `parseTokens` (`Parser.kt`): version before help regardless of order, and an `UnknownOption` from `cmd.sift` raised before help. cp, ls, head, mkdir, rm, chmod (GNU getopt tools). Evidence (pacman 7.1.0): `pacman --help --version` and `--version --help` both print the usage, `-Q --help --bogus` and `-Q --version --bogus` are refused; pacman targets.
+- P33: the ladder in `parseTokens` (`Parser.kt`): version before help regardless of order, and an `UnknownOption` from `cmd.sift` raised before help. cp, ls, head, rm, chmod (GNU getopt tools). Evidence (pacman 7.1.0): `pacman --help --version` and `--version --help` both print the usage, `-Q --help --bogus` and `-Q --version --bogus` are refused; pacman targets.
 - P34: `parseTokens`: "an unresolvable NAME outranks help, a bad ARGUMENT does not". cp `--backup`, ls `--sort`. Evidence (pacman 7.1.0): `pacman -Q --color=bogus --help` and `-Q --debug=3 --help` print the -Q page (klap agrees), while `pacman -Q -T --help` is refused as two operations (a pacman target).
 - P35: `Invocation.ShowHelp.qualifiedName` from the walk; `ParitySuite.helpPage`. git, pacman target `an operation's help lists that operation's options only`.
 - P36: `ArityWalk.slots` deliberately does not stop at `optionsEndAtFirstOperand` for the built-in scans (`parse/ArgvScan.kt`). ssh (`SshParityTest` pins the `--json` strip today).
@@ -187,18 +187,18 @@ Disputed (P3): "binds a different record" still passes when two same-typed const
 
 | ID | Check | How | Example |
 |---|---|---|---|
-| P46 | an exact spelling wins over a longer one it prefixes; a unique prefix binds; a prefix reaching two spellings is refused | `binds` and `rejects` | `ls --sort=size` exact; `ls --so` is refused by GNU ls (`--sort` and `--show-control-chars`), but the ls fixture declares no `--show-control-chars`, so klap binds `--sort`: a fixture gap this cell exposes |
+| P46 | an exact spelling wins over a longer one it prefixes; a unique prefix binds; a prefix reaching two spellings is refused | `binds` and `rejects` | `ls --sort=size` exact; `ls --di` is refused by GNU ls (`--directory` and `--dired`); a fixture lacking `--dired` binds `--directory`, a gap this cell exposes (ls, todo 124) |
 | P47 | a prefix unique on the resolved command but shared with a long declared elsewhere in the tree binds as the real tool binds it | `binds` | `git remote add --f o u` and `git remote add --ma o u`: unique among `add`'s own longs (`--fetch`, `--master`), though `--force`, `--file` and `--max-count` stand elsewhere in the tree; real git accepts both, and klap resolves against the command's own longs since todo 77 (see the note) |
 | P48 | a prefix that also reaches a built-in is refused, or binds as the real tool reads it | `binds` or `rejects` | `--ver` beside `--verbose`; `--he` beside `--header` |
 | P49 | a negation abbreviates like any long, and a prefix of two negations is refused | `binds` and `rejects` | `cp --no-deref a b` gives `dereference = false`; `chmod --no-` refused |
-| P50 | a tool that does not abbreviate refuses every prefix; a tool marked `Abbreviation.None` whose real binary does abbreviate is a target | `rejects` or a target | curl, rsync (whether each binary abbreviates: needs checking) |
+| P50 | a tool that does not abbreviate refuses every prefix; a tool marked `Abbreviation.None` whose real binary does abbreviate is a target | `rejects` or a target | curl (`curl --verbos`: "option --verbos: is unknown") |
 | P51 | a global's long abbreviates by the pool of the command in scope where it stands, before the subcommand the root's and after it the command's, each as the real tool reads it | `binds` and `rejects` | `git --bar status` and `git status --bar` |
 
 - P46: `resolveName` exact-first, then `infer` prefix (`parse/NameMatch.kt`); `resolveLong` with `YIELDING_LONGS` (`--help-all` yields `--h` to `--help`). ls, cp, pacman (`an ambiguous abbreviation is refused`); `AbbreviationTest`. Shared with K35.
 - P47: since todo 77 `longMatchPool` (`parse/Parser.kt`) holds the command's own longs, its flag-spelled commands and the longs its flag-spelled family shares, the globals and the built-ins, as a GNU tool hands getopt_long its own table, so a sibling's long no longer makes a prefix ambiguous (`AbbreviationTest` `an abbreviation resolves against its own command's longs and not a sibling's`). git (only tree fixture). Evidence (K35 decision): `git remote add --ma main origin URL` and `git remote add --f o2 URL` accepted by real git.
 - P48: `longMatchPool` holds `offeredBuiltinLongs` beside the command's own longs (`parse/Parser.kt`). Every fixture with `Abbreviation.Options`.
 - P49: `longPool` includes `negativeLongs`. cp `--no-dereference`, chmod `--no-preserve-root`, git.
-- P50: `resolveName(infer = false)`. curl and rsync (`Abbreviation.None`).
+- P50: `resolveName(infer = false)`. curl and find (`Abbreviation.None`).
 - P51: every scan before the walk resolves a token against the `longMatchPool` of the command in scope where it stands (`ArgvScan.poolAt`, built by `builtinScan`), and the segment sift against the resolved command's `longMatchPool`. git.
   Disputed: the agreed K38 cells record that real git refuses a global after the subcommand (`git status --no-pager`), so `git status --bar` is a refusal in real git whatever the pool.
 
@@ -210,14 +210,14 @@ Disputed (P3): "binds a different record" still passes when two same-typed const
 | P53 | a negation refuses an attached value | `rejects` | `git commit --no-verify=x` |
 | P54 | inside a constraint or a `requiredWhen`, only a negatable flag's positive form selects or triggers | `binds` or `rejects` | no fixture yet (`OpenFindingsTest.the negative spelling does not trigger the requirement`) |
 | P55 | a counted flag sums every spelling: long, short, doubled, clustered, and repeated words | `binds` | `tar -v --verbose -vv -cf a.tar` gives `verbose = 4` |
-| P56 | a counted flag the real tool also negates binds its negation | a target while `.count()` and `.negatable()` exclude each other | `rsync -hh --no-human-readable` |
+| P56 | a counted flag the real tool also negates binds its negation | a target while `.count()` and `.negatable()` exclude each other | no fixture yet |
 | P57 | a plain flag repeated binds `true` once; a tool that refuses a repeat is refused | `binds` or `rejects` | `cp -vv a b` exits 0 |
 
-- P52: `bindFlags` and the `hit` polarity in `sift` (`parse/Bind.kt`, `parse/Parser.kt`); negative shorts in `findNegatedShort`. cp, chmod, git, curl, rsync, ssh; `NegationSpellingTest`.
+- P52: `bindFlags` and the `hit` polarity in `sift` (`parse/Bind.kt`, `parse/Parser.kt`); negative shorts in `findNegatedShort`. cp, chmod, git, curl, ssh; `NegationSpellingTest`.
 - P53: the `negated != null` branch in `sift` records `FlagTakesNoValue`. git, cp.
 - P54: `supplied` for a negatable `FlagSpec` reads `negations[spec] == true` (`parse/Parser.kt`). No fixture yet.
-- P55: `bindFlags` `isCount`. tar, ssh, rsync, pacman.
-- P56: `Flag.count` / `Flag.negatable` mutual `require` (`Converters.kt`). rsync (comment in `Rsync.kt`).
+- P55: `bindFlags` `isCount`. tar, ssh, pacman.
+- P56: `Flag.count` / `Flag.negatable` mutual `require` (`Converters.kt`). No fixture yet.
 - P57: `bindFlags` (`hits > 0`). cp (`LONG_REPEATED`, `SHORT_REPEATED` cells).
 
 ## Numbers and folds
@@ -257,7 +257,7 @@ Disputed (P3): "binds a different record" still passes when two same-typed const
 - P67: `bindPositionals` `fixedAfter` slicing (`parse/Bind.kt`). cp, mv; `OpenFindingsTest.operands past the slot count resolve the way the bind would`.
 - P68: `activeArguments` and the `absentValue` bind of removed slots. cp, mv, chmod; `ConditionalOperandTest`, `OpenFindingsTest.absent when then default binds the default not null`.
 - P69: `lastWinsLosers` passed as `overridden` to `activeArguments` and the `optionalWhen` check. rm (`optionalWhen(force)`); `ConditionalOperandTest.a trigger that lost its override set leaves the slot in place`, `... leaves the minimum standing`.
-- P70: `dashLedSlot` with `shortClusterResolvesInFull` in `sift`, rule 3 in `bindPositionals`. chmod (marked), head and mkdir (unmarked); `DashLedOperandTest`.
+- P70: `dashLedSlot` with `shortClusterResolvesInFull` in `sift`, rule 3 in `bindPositionals`. chmod (marked), head (unmarked); `DashLedOperandTest`.
 - P71: no transformation between the token and `convert`. Every fixture with a path or free-text operand; X8 for `~`.
 
 ## Repeats, overrides and defaults

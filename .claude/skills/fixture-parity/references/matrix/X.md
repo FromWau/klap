@@ -92,7 +92,7 @@ marked *needs checking* is one where it is not yet confirmed what klap or the pl
   klap's catalog pins kotlinx-datetime 0.8.0 and kotlinx-io 0.9.1, and klap also builds linuxX64, mingwX64 and
   macosArm64, so every platform-library observation is JVM-only and needs rechecking on the pinned versions and
   the native targets.
-- Real binaries, read-only or in a throwaway directory: GNU coreutils 9.12 (`head`, `ls`, `chmod`, `mkdir`, `cp`,
+- Real binaries, read-only or in a throwaway directory: GNU coreutils 9.12 (`head`, `ls`, `chmod`, `cp`,
   `dd`; the fixtures say 9.11), OpenSSH 10.6p1 (`ssh -G` only, which prints the resolved config and connects
   nowhere), and `find`, which on this machine is **bfs 4.1.1, not GNU findutils**. A find fixture pass must say
   which one it took as the oracle.
@@ -112,12 +112,11 @@ marked *needs checking* is one where it is not yet confirmed what klap or the pl
 | X22 | signed comparison counts `[+-]N` (`.map`/`.convert`) | `N`, `+N`, `-N`, `++N`, `-+N`, `+-N`, a fraction `1.5`, ` 1`, `1e1`, `0x1`, an overflow, the sign alone, empty |
 | X23 | `numberOption()` through a converter | `-0`, `-007`, a run past `Int.MAX_VALUE`, a run glued to a letter `-5v`, a run the `.validate` refuses, the run beside a declared digit short |
 
-- X14: `Converters.kt` `numeric { it.toIntOrNull() }` / `toLongOrNull()`. **Observed accepted** on the JVM:
-  `toIntOrNull("١٢") == 12`, `toIntOrNull("１２") == 12`. Native needs checking. klap (a likely defect: a refusal
-  target), plus one fixture cell per tool that reads a number (`ls -w`, `ssh -p`, `find -O`, `git -n`, `curl`).
-- X15: `toIntOrNull` refuses both leading and trailing space (observed). Real tools differ: `head -n ' 5'`,
-  `ls -w ' 80'`, `ssh -p ' 22'` accept, `head -n '5 '` refuses (observed). klap for the converter; fixture
-  head, ls, ssh for the tool's reading (targets where the tool accepts).
+- X14: since todo 72 klap's `.int()` and `.long()` take ASCII decimal digits only, so `١٢` and `１２` are refused, as
+  every C tool refuses them; `.double()` is still open (todo 30). One fixture cell per tool that reads a number
+  (`ls -w`, `ssh -p`, `find -O`, `git -n`, `curl`).
+- X15: since todo 72 klap's `.int()` and `.long()` take leading blanks and refuse trailing ones, as strtol does:
+  `head -n ' 5'`, `ls -w ' 80'`, `ssh -p ' 22'` accept, `head -n '5 '` refuses (observed). A fixture cell per tool.
 - X16: `toIntOrNull` is decimal only. Observed: `ls -w 0x50` accepted and `ls -w 080` refused (base 0), `ssh -p 022`
   reads 22 and `ssh -p 0x16` refuses (decimal), `head -n 010` accepted and `0x10` refused. klap for decimal-only;
   fixture ls, ssh, head, find.
@@ -240,7 +239,7 @@ marked *needs checking* is one where it is not yet confirmed what klap or the pl
 - X38: `valueFrom` takes `attached ?: bareValue` (`Parser.kt`), and `longToken` keeps `""` after `=` (`Parser.kt`).
   pacman: `--debug=` refused (klap agrees); an empty path value is refused by every path option but `--logfile` ("failed
   to resolve path ''"), a pacman target. Observed refused: `ls --color=`, `cp --update=`. klap; fixture ls, cp, mv, rm,
-  git, pacman, mkdir.
+  git, pacman.
 - X39: the short-cluster branch passes `chars.substring(j + 1).ifEmpty { null }` (`Parser.kt` `sift`), and `takesValue`
   never takes the next word for an optional-value option (`ArgvScan.kt`, `valueAttachedOnly`). `ParseOptionsTest` "a
   short form binds attached and bare the same way" covers two of these. klap; fixture git (`commit -S`).
@@ -295,7 +294,7 @@ marked *needs checking* is one where it is not yet confirmed what klap or the pl
 - X51: `convertOccurrences` turns a null into `BadValue(name, raw, "conversion failed")` (`Bind.kt`);
   `convertAll` keeps it. `ParseOptionsTest` "repeated null mapping option rejects the null element instead of
   binding it" covers the option side. klap (operand cell missing).
-- X52: no filtering in `bindOptions`. fixture tar, rsync (`--exclude`), ls (`--ignore`, `--hide`), pacman
+- X52: no filtering in `bindOptions`. fixture tar (`--exclude`), ls (`--ignore`, `--hide`), pacman
   (`--ignore`), curl (`-H`).
 - X53: option `TooFewOccurrences` (`Bind.kt` `bindOptions`), operand `MissingArgument` or `TooFewOccurrences`
   and `optionalWhen` (`Bind.kt` `bindPositionals`). klap; fixture rm (`-f`), cp.
@@ -333,9 +332,9 @@ marked *needs checking* is one where it is not yet confirmed what klap or the pl
   option equals form still takes the attached value including the equals sign"). klap; fixture dd (operands are
   `key=value` words with `=` in the value), ssh `-o`.
 - X59: each `numeric` stage refuses `""`; a plain string binds it. Observed refused: `ls -w ''`, `head -n ''`,
-  `ssh -p ''`, `mkdir -m ''`, `chmod ''`. klap; fixture each tool with a value-taking input.
+  `ssh -p ''`, `chmod ''`. klap; fixture each tool with a value-taking input.
 - X60: no trimming anywhere in the bind path. klap; fixture git (`-m`), curl (`-d`, `-H`).
-- X61: string inputs. fixture tar, rsync, ls, git (`--grep`).
+- X61: string inputs. fixture tar, ls, git (`--grep`).
 
 ## Validation
 
@@ -353,8 +352,7 @@ marked *needs checking* is one where it is not yet confirmed what klap or the pl
   `ParseOptionsTest` "nullable map then validate on bad input skips validate" covers null. klap only.
 - X64: `range` builds `validate("must be in ...") { it in range }` (`Converters.kt`; an `Int` range may be stepped
   or descending, `IntProgression`). klap; fixture ssh
-  (`-p`, `.range(1..65535)`: observed `ssh -p 0` and `65536` refused, `65535` accepted), curl (`-m`), rsync
-  (`--port` deliberately unranged). find's `-O` is no `.range()` any more: GNU find 4.11.0 accepts `-O4` to
+  (`-p`, `.range(1..65535)`: observed `ssh -p 0` and `65536` refused, `65535` accepted), curl (`-m`). find's `-O` is no `.range()` any more: GNU find 4.11.0 accepts `-O4` to
   `-O65535` and refuses `-O65536`, so the fixture reads it with `findOptimisationLevel` (ASCII digits up to
   65535) through `.map`.
 - X65: `numberOption` and globals share `convertOne`. klap; fixture git (`-n` and `-<n>` with `it > 0`), head.
@@ -368,7 +366,7 @@ marked *needs checking* is one where it is not yet confirmed what klap or the pl
 | X68 | `.map { }` / `.convert { }` stacked | `.map { }.map { }`, `.convert { }.map { }`, `.map { }.convert { }`, a nullable stage feeding a String stage |
 | X69 | `key=value` values | `k=v`, `k=`, `=v`, `k==v`, `k=v=w`, no `=`, the key's case, a space or tab separator (`Port 22`), an unknown key |
 | X70 | file mode strings | octal of 1 to 4 digits, 5 digits, the digit `8`, leading zeros `00755`, `+0755`, `=644`, `-022`, symbolic clauses `u+x,go-w`, `=,u+x`, `u=g`, `a+X`, `-w`, a leading, trailing or doubled comma, empty, `0x1ff` |
-| X71 | host specs and URLs | `host`, `user@host`, `user@host:port`, `ssh://user@host:22`, `[::1]`, `user@[::1]:22`, an empty user `@host`, `host::module` (rsync), a URL with and without a scheme, an unknown scheme |
+| X71 | host specs and URLs | `host`, `user@host`, `user@host:port`, `ssh://user@host:22`, `[::1]`, `user@[::1]:22`, an empty user `@host`, a URL with and without a scheme, an unknown scheme |
 | X72 | dates and times a tool reads itself | `git --date`/`--since`: ISO 8601, RFC 2822, `@1696852800`, `2 weeks ago`, `yesterday`; what klap-datetime would refuse |
 | X73 | durations a tool reads itself | `curl -m 0.5`, `.5`, `1e1`, `-1`, `0`; `timeout`-style suffixes `1s`, `1m`, `1d`, `1.5s`, `inf` |
 
@@ -382,13 +380,11 @@ marked *needs checking* is one where it is not yet confirmed what klap or the pl
   Observed with `ssh -G`: `Port=22`, `port=22`, `Port 22`, a tab separator accepted; `Port=`, `=22`, `Port=22=3`,
   `Port==22`, `Bogus=1` refused (the latter three by the key's own value check). The fixture accepts `Port=` and
   refuses `Port 22`: targets. fixture ssh (`-o`), dd (every key), git (`-c`, if declared).
-- X70: `chmod/Chmod.kt` `parseChmodMode` (`.convert`), `mkdir/Mkdir.kt` (`.validate` with `[0-7]{1,4}`, so
-  symbolic modes are refused), `find/Find.kt` `findPerm`. Observed chmod: `755`, `0755`, `00755`, `7755`, `+0755`,
+- X70: `chmod/Chmod.kt` `parseChmodMode` (`.convert`), `find/Find.kt` `findPerm`. Observed chmod: `755`, `0755`, `00755`, `7755`, `+0755`,
   `=644`, `-022`, `u+x,go-w`, `=,u+x`, `a+X`, `u=g`, `-w` accepted; `17755`, `8`, `,u+x`, `u+x,`, empty refused.
-  mkdir: `u+x`, `a=rwx` accepted (the fixture refuses: targets), `9`, empty, `0x1ff` refused. fixture chmod,
-  mkdir, find (`--perm`).
-- X71: ssh destination is a plain string with `.validate { it.isNotBlank() }` (`ssh/Ssh.kt`, `destination`); rsync and
-  curl keep strings. fixture ssh, rsync, curl (parse-only cells; no network).
+  fixture chmod, find (`--perm`).
+- X71: ssh destination is a plain string with `.validate { it.isNotBlank() }` (`ssh/Ssh.kt`, `destination`); curl
+  keeps strings. fixture ssh, curl (parse-only cells; no network).
 - X72: git `--date`, `--since`, `--until` are strings today. Expected values from `git` itself are not safe to
   run against a repository write; `git log --since=X` in a throwaway repository is read-only. fixture git.
 - X73: `curl/Curl.kt` `.double().range(0.0..86_400.0)` (`-m`); observed `timeout 1.5`, `1e1`, `1d`, `inf` accepted,
@@ -431,8 +427,8 @@ marked *needs checking* is one where it is not yet confirmed what klap or the pl
   uses decides the "without dashes" cell of X11. klap; fixture n/a today.
 - X84: `klap-io`, wrapping `kotlinx.io.files.Path`. **Observed** (kotlinx-io 0.8.0, JVM): `Path("a/")` prints `a`
   and equals `Path("a")`, `a//b` becomes `a/b`, `//` becomes `/`; `""`, `-`, `~` stay as written. A trailing
-  slash means something to `rsync src/ dst` and `cp -r a/ b`, so binding `Path` loses it: owner call before
-  rsync and cp opt in. mingw separators need checking. klap-io; fixture rsync, cp, mv, tar (`-f -`), pacman
+  slash means something to `cp -r a/ b`, so binding `Path` loses it: owner call before cp opts in. mingw
+  separators need checking. klap-io; fixture cp, mv, tar (`-f -`), pacman
   (`-U`), git (`-F`, `--pathspec-from-file`), curl (`-o`).
 - X85: todo 24 says `.path()` implies `.file()` and chains like a core converter. klap-io.
 - X86: todo 24 ("refused through `.convert { }` with a `ConversionError`"). klap, klap-io, klap-datetime.

@@ -27,6 +27,18 @@ class ValidateInputsTest {
     }
 
     @Test
+    fun `a block that throws an error is reported rather than thrown`() {
+        // `TODO()` throws an Error, not an Exception, and `.validate()` reports that too (todo 164).
+        val tree = cli("app") {
+            val name = option(long = "name").required()
+            validateInputs { TODO("rule not written yet") }
+            action { Ok("name=${name()}") }
+        }
+        val failure = tree.parse(listOf("--name", "x")).assertError<CliError.Failure>()
+        assertTrue("rule not written yet" in failure.detail, failure.detail)
+    }
+
+    @Test
     fun `completion and docs render without consulting a refusing block`() {
         // The same reason `--help` does not: neither produces the bound values a block reads, so a rule
         // that refuses every line must not stop a shell script or a man page from being written.

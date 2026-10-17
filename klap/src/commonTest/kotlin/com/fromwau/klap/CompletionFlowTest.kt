@@ -198,4 +198,34 @@ class CompletionFlowTest {
         tool.assertFlow("tool get .ow -f conf.toml", owner, "tool get .owner -f conf.toml", cursor = 12)
         assertEquals(emptyList(), tool.suggestionsFor("tool get .ow"))
     }
+
+    @Test
+    fun `suggestions are what the shell receives`() {
+        // `__complete` drops a value carrying a tab, newline or carriage return, and turns those into spaces in a
+        // description it then trims.
+        val raw = cli("tool") {
+            option(long = "tag").completeWith {
+                candidate("a\tb")
+                candidate("c\nd")
+                candidate("ok", " two\nlines ")
+            }
+            action { Ok("") }
+        }
+        assertEquals(listOf(Suggestion("ok", "two lines")), raw.suggestionsFor("tool --tag "))
+    }
+
+    @Test
+    fun `an attached value with a blank description shows the option's help`() {
+        val blank = cli("tool") {
+            option(long = "tag", help = "the tag").completeWith {
+                candidate("red", "")
+                candidate("blue")
+            }
+            action { Ok("") }
+        }
+        assertEquals(
+            listOf(Suggestion("--tag=red", "the tag"), Suggestion("--tag=blue", "the tag")),
+            blank.suggestionsFor("tool --tag="),
+        )
+    }
 }

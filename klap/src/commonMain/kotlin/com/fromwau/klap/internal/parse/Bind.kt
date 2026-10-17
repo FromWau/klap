@@ -3,6 +3,7 @@ package com.fromwau.klap.internal.parse
 import com.fromwau.kern.fuzzy.didYouMean
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.getOrElse
+import com.fromwau.klap.CheckRefused
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Command
@@ -17,6 +18,7 @@ import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.ValueSpec
 import com.fromwau.klap.internal.spec.constraintToken
 import com.fromwau.klap.internal.spec.token
+import com.fromwau.klap.judge
 import kotlin.coroutines.cancellation.CancellationException
 
 // The bind half: turns a completed Sifted walk into bound values, enforcing arity and cross-input constraints.
@@ -362,55 +364,43 @@ internal fun OptionSpec.convertOccurrence(raw: String?, inferValues: Boolean): R
  * root's [Abbreviation] mode itself.
  */
 private fun ValueSpec.convertOne(raw: String, inferValues: Boolean): Result<Any?, CliError> {
-    val resolved = if (!inferValues || choices == null) {
+    val resolved = if (!inferValues || !choiceAbbreviates || choices == null) {
         raw
     } else {
         resolveChoice(raw, choices!!).getOrElse { return Result.Error(it) }
     }
     // A converter chain that compiles but is misused (two type converters stacked, or a nullable map
-    // feeding a later String-typed stage) can throw at parse; the parse-never-throws contract turns any
-    // converter exception into a BadValue instead of crashing the process.
+    // feeding a later String-typed stage) can throw at parse; the parse-never-throws contract turns anything
+    // a converter throws, an Error included, into a BadValue instead of crashing the process.
     val converted = try {
         convert(resolved)
     } catch (e: CancellationException) {
         throw e
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
         val threw = ConversionError.Threw(e)
         return Result.Error(CliError.BadValue(name, raw, threw.reason(), threw))
     }
-    val value = converted.getOrElse { cause ->
-        return Result.Error(
-            if (choices != null) {
-                CliError.InvalidChoice(
-                    name, raw, choices!!,
-                    didYouMean(raw, choices!!),
-                )
-            } else {
-                CliError.BadValue(name, raw, cause.reason(), cause)
-            },
-        )
-    }
+    val value = converted.getOrElse { cause -> return Result.Error(refusal(raw, cause)) }
     // A converter that succeeds with null is treated as absent (see the bind-site "?: default"
-    // substitution), and an absent value never runs validate, so skip it here rather than hand a
-    // non-null predicate a null. Guard validate itself too, upholding the never-throw contract.
-    if (value != null) {
-        // A validate failure is always BadValue, never InvalidChoice, even on a choices-backed spec.
-        val message = try {
-            validate?.invoke(value)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            val reason = e.message?.takeIf { it.isNotBlank() } ?: "conversion failed"
-            return Result.Error(CliError.BadValue(name, raw, reason))
-        }
-        message?.let { return Result.Error(CliError.BadValue(name, raw, it)) }
-    }
+    // substitution), and an absent value is never judged, so a non-null predicate never sees a null.
+    val message = value?.let { checked -> validate?.let { judge(it, checked) } }
+    message?.let { return Result.Error(CliError.BadValue(name, raw, it)) }
     return Result.Success(value)
+}
+
+/**
+ * The [CliError] for [raw] refused by this spec's converters with [cause]. A check is always [CliError.BadValue]
+ * carrying its message alone, never [CliError.InvalidChoice], even on a choices-backed spec.
+ */
+private fun ValueSpec.refusal(raw: String, cause: ConversionError): CliError = when {
+    cause is ConversionError.Domain && cause.error == CheckRefused -> CliError.BadValue(name, raw, cause.detail)
+    choices != null -> CliError.InvalidChoice(name, raw, choices!!, didYouMean(raw, choices!!))
+    else -> CliError.BadValue(name, raw, cause.reason(), cause)
 }
 
 /** [resolveChoice], reading this spec's own [ValueSpec.name] as the error's [CliError.AmbiguousValue.name]. */
 private fun ValueSpec.resolveChoice(raw: String, choices: List<String>): Result<String, CliError> =
-    resolveChoice(name, raw, choices, choiceIgnoreCase)
+    resolveChoice(name, raw, choices, choiceIgnoreCase, choiceEntries)
 
 /**
  * A [CliError.TooManyArguments] whose first extra token, when it near-matches a visible subcommand,

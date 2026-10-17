@@ -212,6 +212,39 @@ internal fun validateGatheringSlot(name: String, specs: List<HolderSpec>) {
 }
 
 /**
+ * An `endsOptions()` slot ends its command's options at the operand that reaches it, so which operand that is
+ * must not depend on the rest of the line: one such slot per command, no variadic before it nor after it when
+ * it is the variadic, and no slot up to it that `.absentWhen()` removes or `dashLed(gather)` takes out of the
+ * count. Checked over the finished specs, since `.multiple()` and `.absentWhen()` may come after it.
+ */
+internal fun validateEndsOptionsSlot(name: String, specs: List<HolderSpec>, endsAtFirstOperand: Boolean) {
+    val positionals = specs.filterIsInstance<ArgumentSpec>()
+    val ending = positionals.filter { it.endsOptions }
+    require(!endsAtFirstOperand || ending.isEmpty()) {
+        "command '$name': optionsEndAtFirstOperand and endsOptions() on '${ending.first().name}' both say where " +
+            "options end; keep one"
+    }
+    require(ending.size <= 1) {
+        "command '$name': arguments ${ending.joinToString { "'${it.name}'" }} each declare endsOptions(); " +
+            "options end once, at one of them"
+    }
+    val spec = ending.singleOrNull() ?: return
+    val index = positionals.indexOf(spec)
+    val variadic = positionals.indexOfFirst { it.cardinality is Cardinality.Multiple }
+    require(variadic < 0 || variadic > index || variadic == index && index == positionals.lastIndex) {
+        "command '$name': argument '${spec.name}' declares endsOptions() beside the variadic " +
+            "'${positionals[variadic].name}', which takes a count of operands only the whole line decides, so " +
+            "the operand reaching '${spec.name}' would too"
+    }
+    val shifting = positionals.take(index + 1).firstOrNull { it.absentWhen != null || it.gather != null }
+    require(shifting == null) {
+        "command '$name': argument '${spec.name}' declares endsOptions(), and '${shifting?.name}', by its " +
+            ".absentWhen() or dashLed(gather), is not an operand slot on every line, so which operand reaches " +
+            "'${spec.name}' would depend on the line"
+    }
+}
+
+/**
  * `.repeated()` sets what a second occurrence does, and a `.multiple()` option or a `.count()` flag takes every
  * occurrence instead, so the two together say nothing coherent. Checked over the finished specs, since either
  * call may come first.
@@ -254,6 +287,7 @@ internal fun revalidateAgainstLaterMutation(command: Command) {
     validateFoldCardinality(command.name, command.specs)
     validateConditionalOperandTriggers(command.name, command.specs)
     validateGatheringSlot(command.name, command.specs)
+    validateEndsOptionsSlot(command.name, command.specs, command.optionsEndAtFirstOperand)
     command.subcommands.forEach(::revalidateAgainstLaterMutation)
 }
 

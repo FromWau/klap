@@ -84,11 +84,14 @@ private fun declaredShortsOf(specs: List<NamedSpec>): Set<String> =
     }
 
 /**
- * The maximal run of digits at [chars] index [at] that binds this command's number input, or null when
- * nothing there is one: no number input is declared, the character is not a digit, or every character of
- * the run names a declared short.
+ * The run of digits at [chars] index [at] that binds this command's number input, or null when nothing there
+ * is one: no number input is declared, the character is not a digit, the input is read only as its command's
+ * first word and this is not the start of that word ([firstWord] says whether [chars] is it), or every digit of
+ * the run names a declared short. Its value is the maximal run of digits plus each of the input's suffix
+ * letters typed after them, up to the next digit, in the order typed; its width covers the digits and the
+ * suffix letters right after them.
  *
- * That last case reads a token identifiable as a group of options as one, as getopt does, scoped to the RUN
+ * The declared-short case reads a token identifiable as a group of options as one, as getopt does, scoped to the RUN
  * rather than to the whole token. `-4` where a flag `-4` is declared is
  * that flag; `-45` where only `-4` is declared is not a valid group, so it is the number 45. A global's
  * shorts count as much as this command's own, since a cluster mixing the two reaches this sift whole
@@ -102,15 +105,40 @@ internal fun Command.numberRunAt(
     chars: String,
     at: Int,
     globalAcc: GlobalAccumulator?,
-): String? {
+    firstWord: Boolean,
+): ShortRead.NumberRun? {
     // Cheapest test first: [numberInput] and [declaredShortsOf] both walk spec lists, and this is asked once
     // per character of every short cluster the parser reads.
     if (at >= chars.length || !chars[at].isDigit()) return null
-    if (numberInput == null) return null
-    val run = chars.substring(at).takeWhile { it.isDigit() }
+    val shape = numberInput?.number ?: return null
+    if (shape.firstWordOnly && (at != 0 || !firstWord)) return null
+    val digits = chars.substring(at).takeWhile { it.isDigit() }
     val shorts = declaredShortsOf(namedInputs + globalAcc?.flagSpecs.orEmpty() + globalAcc?.optionSpecs.orEmpty())
-    return if (run.all { it.toString() in shorts }) null else run
+    if (digits.all { it.toString() in shorts }) return null
+    val letters = chars.substring(at + digits.length).takeWhile { !it.isDigit() }
+    val glued = letters.takeWhile { it in shape.suffixes }
+    return ShortRead.NumberRun(digits + letters.filter { it in shape.suffixes }, digits.length + glued.length)
 }
+
+/**
+ * Whether the character at [at] follows a run of a number input that keeps suffix letters, with no digit
+ * between them: such a cluster holds the run's own letters and flags, never a value-taking short.
+ */
+internal fun Command.followsSuffixRun(
+    chars: String,
+    at: Int,
+    globalAcc: GlobalAccumulator?,
+    firstWord: Boolean,
+): Boolean {
+    if (numberSuffixes.isEmpty()) return false
+    val lastDigit = (at - 1 downTo 0).firstOrNull { chars[it].isDigit() } ?: return false
+    var start = lastDigit
+    while (start > 0 && chars[start - 1].isDigit()) start -= 1
+    return numberRunAt(chars, start, globalAcc, firstWord) != null
+}
+
+/** The letters this command's number input keeps after its digits; empty without one. */
+internal val Command.numberSuffixes: String get() = numberInput?.number?.suffixes.orEmpty()
 
 /**
  * Whether [ch] is klap's own help short here. Asked ahead of every declared lookup, which costs nothing:
@@ -132,6 +160,14 @@ internal fun GlobalAccumulator?.refusesRepeat(spec: NamedSpec): Boolean =
 
 /** Whether any operand slot is `dashLed()`; over [Command.specs] so the answer costs one pass and no list. */
 private val Command.hasDashLedSlot: Boolean get() = specs.any { it is ArgumentSpec && it.dashLed }
+
+/**
+ * Which of this command's operands ends its options, counted from 0 among the operands, or null when only `--`
+ * does: the first under [Command.optionsEndAtFirstOperand], else the first word of its `endsOptions()` slot. That
+ * slot's place is fixed at build time, so its declared index is the operand that reaches it.
+ */
+internal val Command.optionsEndAt: Int?
+    get() = if (optionsEndAtFirstOperand) 0 else arguments.indexOfFirst { it.endsOptions }.takeIf { it >= 0 }
 
 /** The operand slot that gathers dash words, `dashLed(gather) { }`; a command has at most one. */
 internal val Command.gatheringSlot: ArgumentSpec? get() = arguments.firstOrNull { it.gather != null }
@@ -174,7 +210,8 @@ internal fun Command.bind(
                     // declared characters ahead of the offending one, and naming a declared global as
                     // unknown is worse than naming nothing.
                     val offending = if (long != null) firstToken
-                    else firstUnresolvedShort(firstToken.removePrefix("-"), globalAcc) ?: "-${firstToken[1]}"
+                    else firstUnresolvedShort(firstToken.removePrefix("-"), globalAcc, firstWord = true)
+                        ?: "-${firstToken[1]}"
                     val suggestion = long?.let { suggestLong(it, globalAcc) }
                     Result.Error(CliError.UnknownOption(offending, suggestion, firstToken.takeIf { it != offending }))
                 }
@@ -435,23 +472,36 @@ internal fun Command.operandCap(
  * against. A free function, taking [name] rather than a [ValueSpec] receiver, so klap's own
  * built-in choice values (`--color`, `completion <shell>`, `docs <format>`) share this implementation
  * without a spec of their own to be an extension on.
+ *
+ * With [entries], a prefix reaching several words of one entry resolves to the first of them, as gnulib's
+ * argmatch reads `rm --interactive=n` as `never`; one reaching words of two entries is still ambiguous.
  */
 internal fun resolveChoice(
     name: String,
     raw: String,
     choices: List<String>,
     ignoreCase: Boolean = false,
+    entries: List<List<String>>? = null,
 ): Result<String, CliError> {
     val lowered = if (ignoreCase) choices.map { it.lowercase() } else choices
     val typed = if (ignoreCase) raw.lowercase() else raw
     return when (val match = resolveName(typed, lowered, infer = true)) {
         is NameMatch.Exact, NameMatch.None -> Result.Success(raw)
         is NameMatch.Prefix -> Result.Success(choices[lowered.indexOf(match.name)])
-        is NameMatch.Ambiguous -> Result.Error(
-            CliError.AmbiguousValue(name, raw, match.candidates.map { choices[lowered.indexOf(it)] }),
-        )
+        is NameMatch.Ambiguous -> {
+            val reached = match.candidates.map { choices[lowered.indexOf(it)] }
+            if (entries != null && reached.nameOneEntry(entries)) {
+                Result.Success(reached.first())
+            } else {
+                Result.Error(CliError.AmbiguousValue(name, raw, reached))
+            }
+        }
     }
 }
+
+/** Whether every one of these words is a spelling of one entry of [entries]. */
+private fun List<String>.nameOneEntry(entries: List<List<String>>): Boolean =
+    map { word -> entries.indexOfFirst { word in it } }.distinct().size == 1
 
 /**
  * Candidate `--name` tokens for did-you-mean on an unknown long option: this command's own visible
@@ -483,7 +533,7 @@ private fun Command.longOptionCandidates(globalAcc: GlobalAccumulator?): List<St
  * Every long spelling this command answers to, dashes stripped: its own inputs and their negations, the flag-spelled
  * commands below it, the longs its flag-spelled family shares ([Cli.sharedLongs]), the globals, and the built-ins.
  * A GNU tool hands getopt_long the table of the command it runs, so an abbreviation resolves against this pool alone
- * and a sibling's long never makes it ambiguous.
+ * and a sibling's long never makes it ambiguous. A `.spelledInFull()` input's longs are its [LongPool.whole].
  *
  * Hidden inputs take part, which is why this is not [longOptionCandidates]: hiding an input removes it from help,
  * not from the parser, and letting an abbreviation resolve past a hidden spelling would bind a different option
@@ -492,16 +542,20 @@ private fun Command.longOptionCandidates(globalAcc: GlobalAccumulator?): List<St
  * Every scan that runs before the walk resolves a token against the pool of the command in scope where the token
  * stands ([com.fromwau.klap.builtinScan]), so no pass resolves what another calls ambiguous.
  */
-internal fun Command.longMatchPool(globalAcc: GlobalAccumulator?): List<String> {
+internal fun Command.longMatchPool(globalAcc: GlobalAccumulator?): LongPool {
     // klap's injected built-ins come last so a reported possibility list leads with the names the author wrote.
     val globals = globalAcc?.optionSpecs.orEmpty() + globalAcc?.flagSpecs.orEmpty()
     val negatable = (flags + globalAcc?.flagSpecs.orEmpty()).filter { it.negatable }
     val flagCommands = flagSubcommands.flatMap { sub -> sub.flagSpellings.filter { it.startsWith("--") } }
-    return (namedInputs + globals).flatMap { spec -> spec.longs } +
+    val names = (namedInputs + globals).flatMap { spec -> spec.longs } +
             negatable.flatMap { spec -> spec.negativeLongs } +
             flagCommands.map { it.removePrefix("--") } +
             globalAcc?.sharedLongs?.get(this).orEmpty() +
             globalAcc.offeredBuiltinLongs()
+    val whole = (namedInputs + globals)
+        .filter { it.spelledInFull }
+        .flatMapTo(mutableSetOf()) { spec -> spec.longs + ((spec as? FlagSpec)?.negativeLongs).orEmpty() }
+    return LongPool(names, whole)
 }
 
 /**
@@ -542,8 +596,11 @@ private fun <T> GlobalAccumulator?.clusterHit(
 
 /** What the character at one index of a short cluster reads as; every walk over a cluster asks this. */
 internal sealed interface ShortRead {
-    /** A run of this command's number input, which binds [run] whole. */
-    class NumberRun(val run: String) : ShortRead
+    /** A run of this command's number input, which binds [value] whole and spans [width] characters. */
+    class NumberRun(val value: String, val width: Int) : ShortRead
+
+    /** A suffix letter of the number run earlier in the cluster, already part of that run's value. */
+    data object NumberSuffix : ShortRead
 
     /** klap's help or version short, which binds nothing here. */
     data object Builtin : ShortRead
@@ -554,12 +611,20 @@ internal sealed interface ShortRead {
     /** A value-taking option's short, which takes the rest of the cluster or the next word. */
     class Option(val hit: ClusterHit<OptionSpec>) : ShortRead
 
-    /** Nothing this command or the globals declare. */
+    /** Nothing this command or the globals declare, or a value-taking short after a run's suffix letters. */
     data object Unresolved : ShortRead
 }
 
-internal fun Command.readShort(chars: String, at: Int, globalAcc: GlobalAccumulator?): ShortRead {
-    numberRunAt(chars, at, globalAcc)?.let { return ShortRead.NumberRun(it) }
+/** [firstWord] says whether [chars] is its command's first word, where a first-word-only number may stand. */
+internal fun Command.readShort(
+    chars: String,
+    at: Int,
+    globalAcc: GlobalAccumulator?,
+    firstWord: Boolean,
+): ShortRead {
+    numberRunAt(chars, at, globalAcc, firstWord)?.let { return it }
+    val afterSuffixRun = followsSuffixRun(chars, at, globalAcc, firstWord)
+    if (afterSuffixRun && chars[at] in numberSuffixes) return ShortRead.NumberSuffix
     if (globalAcc.isBuiltinShort(chars[at])) return ShortRead.Builtin
     val ch = chars[at].toString()
     globalAcc.clusterHit(findFlag("-$ch")) { flagSpecs.findFlag("-$ch") }
@@ -567,12 +632,12 @@ internal fun Command.readShort(chars: String, at: Int, globalAcc: GlobalAccumula
     globalAcc.clusterHit(findNegatedShort(ch)) { flagSpecs.findNegatedShort(ch) }
         ?.let { return ShortRead.Flag(it, on = false) }
     globalAcc.clusterHit(findOption(null, ch)) { optionSpecs.findOption(null, ch) }
-        ?.let { return ShortRead.Option(it) }
+        ?.let { return if (afterSuffixRun) ShortRead.Unresolved else ShortRead.Option(it) }
     return ShortRead.Unresolved
 }
 
 /** How many characters [read] spans in its cluster. */
-internal val ShortRead.width: Int get() = if (this is ShortRead.NumberRun) run.length else 1
+internal val ShortRead.width: Int get() = if (this is ShortRead.NumberRun) width else 1
 
 /**
  * A `--name` or `--name=value` token split into the parts a long-option walk needs: [typed] is the name as
@@ -684,6 +749,7 @@ internal fun Command.sift(
     // Loop-invariant; the properties behind them walk the specs on every read.
     val dashLedSlot = hasDashLedSlot
     val gather = gatheringSlot?.gather
+    val endAt = optionsEndAt
 
     val flagHits = mutableListOf<FlagHit>()
 
@@ -705,6 +771,7 @@ internal fun Command.sift(
         // measured in; a segment the caller did not map falls back to its own index.
         val tokenIndex = positions.getOrNull(i) ?: i
         val tokenAt = ClusterPosition(tokenIndex)
+        val firstWord = i == 0
         when {
             optionsEnded -> {
                 // Refused rather than kept: neither reading survives here (see MixedClusterAfterOperands),
@@ -714,8 +781,8 @@ internal fun Command.sift(
                 val chars = token.removePrefix("-")
                 val mixedGlobal =
                     if (endedBySeparator || !token.isFlagLike() || token.startsWith("--")) null
-                    else if (!shortClusterResolvesInFull(chars, globalAcc)) null
-                    else globalAcc?.let { mixedGlobalShort(chars, it) }
+                    else if (!shortClusterResolvesInFull(chars, globalAcc, firstWord)) null
+                    else globalAcc?.let { mixedGlobalShort(chars, it, firstWord) }
                 if (mixedGlobal != null) {
                     record(tokenAt) { CliError.MixedClusterAfterOperands(token, mixedGlobal) }
                 } else {
@@ -734,8 +801,8 @@ internal fun Command.sift(
                 positionals += token
                 i += 1
                 // klap's default is getopt's permutation, which keeps looking past an operand; a command that opted
-                // out (getopt's leading `+`, or POSIXLY_CORRECT) treats the first operand as the end of options.
-                if (optionsEndAtFirstOperand) optionsEnded = true
+                // out (getopt's leading `+`, POSIXLY_CORRECT, or ssh's restart after its destination) ends them here.
+                if (endAt != null && positionals.size > endAt) optionsEnded = true
             }
 
             token.startsWith("--") -> {
@@ -821,7 +888,7 @@ internal fun Command.sift(
                 // Decided before the walk, because the walk records flag hits as it goes and a token that
                 // turns out to be an operand would have to unwind them. A `--` token cannot arrive here at
                 // all, the arm above claims it, so long-option typos keep their did-you-mean.
-                val resolvesInFull = shortClusterResolvesInFull(chars, globalAcc)
+                val resolvesInFull = shortClusterResolvesInFull(chars, globalAcc, firstWord)
                 if (gather != null && !resolvesInFull && gather.accepts(token)) {
                     gathered += token
                     i += 1
@@ -832,12 +899,12 @@ internal fun Command.sift(
                     positionals += token
                     i += 1
                     // It is an operand, so it ends options where the command opted out of permutation, exactly as
-                    // the not-flag-like route above does; "the first operand" cannot depend on its spelling.
-                    if (optionsEndAtFirstOperand) optionsEnded = true
+                    // the not-flag-like route above does; which operand ends them cannot depend on its spelling.
+                    if (endAt != null && positionals.size > endAt) optionsEnded = true
                     continue
                 }
 
-                if (refusesCluster(chars, globalAcc)) {
+                if (refusesCluster(chars, globalAcc, firstWord)) {
                     record(tokenAt) { CliError.UnknownOption(token) }
                     i += 1
                     continue
@@ -848,9 +915,11 @@ internal fun Command.sift(
                     // One position per character, shared by the local record and the global top-up below, which
                     // must agree about where this character sat.
                     val at = ClusterPosition(tokenIndex, j)
-                    val read = readShort(chars, j, globalAcc)
+                    val read = readShort(chars, j, globalAcc, firstWord)
                     when (read) {
-                        is ShortRead.NumberRun -> addValue(numberInput!!, read.run, at)
+                        is ShortRead.NumberRun -> addValue(numberInput!!, read.value, at)
+
+                        ShortRead.NumberSuffix -> Unit
 
                         // Klap's own, so it binds nothing here; the help or version ladder answers it. An inline
                         // `=value` on it is the same usage error a declared boolean short reports.
@@ -942,15 +1011,19 @@ internal fun List<OptionSpec>.findOption(long: String?, short: String?): OptionS
  * is klap's help or version short, dash included, when the cluster also holds a character of this command's own;
  * null otherwise. Read as [sift] walks it, so a letter past a local option is that option's value and no global.
  */
-private fun Command.mixedGlobalShort(chars: String, globalAcc: GlobalAccumulator): String? {
+private fun Command.mixedGlobalShort(
+    chars: String,
+    globalAcc: GlobalAccumulator,
+    firstWord: Boolean,
+): String? {
     var global: String? = null
     var local = false
     var j = 0
     while (j < chars.length) {
-        val read = readShort(chars, j, globalAcc)
+        val read = readShort(chars, j, globalAcc, firstWord)
         when (read) {
             ShortRead.Unresolved -> Unit
-            is ShortRead.NumberRun -> local = true
+            is ShortRead.NumberRun, ShortRead.NumberSuffix -> local = true
             ShortRead.Builtin -> global = global ?: "-${chars[j]}"
             is ShortRead.Flag -> if (read.hit.globals != null) global = global ?: "-${chars[j]}" else local = true
             is ShortRead.Option -> {
@@ -974,18 +1047,57 @@ private fun Command.findOption(long: String?, short: String?): OptionSpec? =
  * more than one short, and is neither an `.optionalValue()` or `.gluedValue()` short with its value glued (`-O3`)
  * nor a run of the number input (`-25`).
  */
-internal fun Command.refusesCluster(chars: String, globalAcc: GlobalAccumulator?): Boolean {
+internal fun Command.refusesCluster(
+    chars: String,
+    globalAcc: GlobalAccumulator?,
+    firstWord: Boolean,
+): Boolean {
     if (globalAcc?.shortOptions != ShortOptions.Alone || chars.length < 2) return false
     val first = chars.take(1)
     val option = globalAcc.clusterHit(findOption(null, first)) { optionSpecs.findOption(null, first) }?.spec
-    return option?.valueAttachedOnly != true && numberRunAt(chars, 0, globalAcc) != chars
+    return option?.valueAttachedOnly != true && numberRunAt(chars, 0, globalAcc, firstWord)?.width != chars.length
+}
+
+/**
+ * Whether [token] names only globals and klap's own names, the ones a line still reads past the operand that
+ * ends this command's options ([optionsEndAt]); there any other dash word is an operand.
+ */
+internal fun Command.namesOnlyGlobals(
+    token: String,
+    globalAcc: GlobalAccumulator,
+    firstWord: Boolean,
+): Boolean {
+    if (token.startsWith("--")) {
+        val typed = token.removePrefix("--").substringBefore('=')
+        val long = when (val resolved = resolveLong(typed, longMatchPool(globalAcc), globalAcc.inferNames)) {
+            is NameMatch.Exact -> resolved.name
+            is NameMatch.Prefix -> resolved.name
+            is NameMatch.Ambiguous, NameMatch.None -> return false
+        }
+        val globalLongs = globalAcc.optionSpecs.flatMap { it.longs } +
+            globalAcc.flagSpecs.flatMap { it.longs + it.negativeLongs }
+        return long in globalLongs || long in globalAcc.offeredBuiltinLongs()
+    }
+    val chars = token.removePrefix("-")
+    var j = 0
+    while (j < chars.length) {
+        when (val read = readShort(chars, j, globalAcc, firstWord)) {
+            ShortRead.Builtin -> j += 1
+            is ShortRead.Flag -> if (read.hit.globals != null) j += 1 else return false
+            // The rest of the cluster is the option's value.
+            is ShortRead.Option -> return read.hit.globals != null
+            is ShortRead.NumberRun, ShortRead.NumberSuffix, ShortRead.Unresolved -> return false
+        }
+    }
+    return true
 }
 
 /** Whether every character of a short cluster resolves; see [firstUnresolvedShort]. */
-private fun Command.shortClusterResolvesInFull(
+internal fun Command.shortClusterResolvesInFull(
     chars: String,
     globalAcc: GlobalAccumulator?,
-): Boolean = firstUnresolvedShort(chars, globalAcc) == null
+    firstWord: Boolean,
+): Boolean = firstUnresolvedShort(chars, globalAcc, firstWord) == null
 
 /**
  * The leftmost character of [chars] naming nothing this command or [globalAcc] declares, dash included, or
@@ -995,13 +1107,14 @@ private fun Command.shortClusterResolvesInFull(
 private fun Command.firstUnresolvedShort(
     chars: String,
     globalAcc: GlobalAccumulator?,
+    firstWord: Boolean,
 ): String? {
-    if (refusesCluster(chars, globalAcc)) return "-$chars"
+    if (refusesCluster(chars, globalAcc, firstWord)) return "-$chars"
     var j = 0
     while (j < chars.length) {
-        val read = readShort(chars, j, globalAcc)
+        val read = readShort(chars, j, globalAcc, firstWord)
         when (read) {
-            is ShortRead.NumberRun, ShortRead.Builtin, is ShortRead.Flag -> Unit
+            is ShortRead.NumberRun, ShortRead.NumberSuffix, ShortRead.Builtin, is ShortRead.Flag -> Unit
             // An option takes the rest of the cluster as its value, so nothing after it has to resolve.
             is ShortRead.Option -> return null
             ShortRead.Unresolved -> return "-${chars[j]}"
@@ -1020,29 +1133,36 @@ private fun Command.firstUnresolvedShort(
  * sits in a cluster already refused (`-xh`), and on a `dashLed()` command a cluster that resolves to
  * nothing is an operand (`-1h`).
  */
-internal fun Command.namesHelpShort(token: String, globalAcc: GlobalAccumulator?): Boolean =
-    namesBuiltinShort(token, globalAcc) { globalAcc.isHelpShort(it) }
+internal fun Command.namesHelpShort(
+    token: String,
+    globalAcc: GlobalAccumulator?,
+    firstWord: Boolean,
+): Boolean = namesBuiltinShort(token, globalAcc, firstWord) { globalAcc.isHelpShort(it) }
 
 /** Whether [token] asks for the version through the short a tool gave it; read as [namesHelpShort] reads `-h`. */
-internal fun Command.namesVersionShort(token: String, globalAcc: GlobalAccumulator?): Boolean =
-    namesBuiltinShort(token, globalAcc) { globalAcc.isVersionShort(it) }
+internal fun Command.namesVersionShort(
+    token: String,
+    globalAcc: GlobalAccumulator?,
+    firstWord: Boolean,
+): Boolean = namesBuiltinShort(token, globalAcc, firstWord) { globalAcc.isVersionShort(it) }
 
 private fun Command.namesBuiltinShort(
     token: String,
     globalAcc: GlobalAccumulator?,
+    firstWord: Boolean,
     asked: (Char) -> Boolean,
 ): Boolean {
     if (!token.isFlagLike() || token.startsWith("--")) return false
     val chars = token.removePrefix("-")
-    if (refusesCluster(chars, globalAcc)) return false
-    if (hasDashLedSlot && !shortClusterResolvesInFull(chars, globalAcc)) return false
+    if (refusesCluster(chars, globalAcc, firstWord)) return false
+    if (hasDashLedSlot && !shortClusterResolvesInFull(chars, globalAcc, firstWord)) return false
     var j = 0
     while (j < chars.length) {
-        val read = readShort(chars, j, globalAcc)
+        val read = readShort(chars, j, globalAcc, firstWord)
         when (read) {
             // An `=value` on a boolean built-in is a usage error, raised where the sift walks the cluster.
             ShortRead.Builtin -> if (asked(chars[j])) return chars.getOrNull(j + 1) != '='
-            is ShortRead.NumberRun, is ShortRead.Flag -> Unit
+            is ShortRead.NumberRun, ShortRead.NumberSuffix, is ShortRead.Flag -> Unit
             is ShortRead.Option, ShortRead.Unresolved -> return false
         }
         j += read.width
@@ -1052,11 +1172,11 @@ private fun Command.namesBuiltinShort(
 
 /** Whether any token [this] scan may act on names klap's help short; see [Command.namesHelpShort]. */
 internal fun ArgvScan.namesHelpShort(cmd: Command, globalAcc: GlobalAccumulator?): Boolean =
-    openTokens.any { cmd.namesHelpShort(it, globalAcc) }
+    firstOpenIndexed { i, token -> cmd.namesHelpShort(token, globalAcc, firstWord = i == 0) } != null
 
 /** Whether any token [this] scan may act on names the version short; see [Command.namesVersionShort]. */
 internal fun ArgvScan.namesVersionShort(cmd: Command, globalAcc: GlobalAccumulator?): Boolean =
-    openTokens.any { cmd.namesVersionShort(it, globalAcc) }
+    firstOpenIndexed { i, token -> cmd.namesVersionShort(token, globalAcc, firstWord = i == 0) } != null
 
 /**
  * The error for an unrecognized char at `chars[j]` inside a short cluster (the chars before it, `chars[0

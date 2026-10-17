@@ -97,7 +97,7 @@ Facts from the source that most rows lean on:
   repeat (`refusedBy`'s `repeats`); a taken repeat binds the last value (B `bindOptions`). cp and mv refuse a
   second `-t` (`.repeated(RepeatedOptions.Refuse)`), so `cp -‸ -t d` offers no `-t`; mark `n/a` where the tool
   accepts a repeat.
-- L9: the names list; `.count()` on tar `-v`, ssh `-v`/`-t`, rsync `-v`/`-h`, pacman counted letters, curl `-:`.
+- L9: the names list; `.count()` on tar `-v`, ssh `-v`/`-t`, pacman counted letters, curl `-:`.
 - L10: the names list; tar `--exclude`, curl `-H`/`-d`, ssh `-i`/`-L`, git `-c`/`-C` (global), ls `--hide`/`--ignore`.
 
 ## L: slot-changing words after the cursor
@@ -236,7 +236,7 @@ Disputed: L20's cells put `--json` and `--color` on a `cp` line, while G11 says 
 | ID | State | What must hold |
 |---|---|---|
 | S16 | a plain flag given | offered again only where the tool accepts a repeat: `cp -v -‸` offers `-v` (`cp -v -v` accepted) |
-| S17 | a counted flag given in an earlier word | offered again: `tar -v -‸`, `ssh -v -‸`, `rsync -vv -‸` |
+| S17 | a counted flag given in an earlier word | offered again: `tar -v -‸`, `ssh -v -‸` |
 | S18 | a counted flag in the cluster under the cursor | continued once more as the tool counts it: `pacman -Qi‸` offers `-Qii`, `tar -v‸` offers `-vv` |
 | S19 | a `.multiple()` option given | offered again: `tar --exclude a --ex‸`, `curl -H a -‸` |
 | S20 | a non-repeatable option given | offered again where the tool takes the later value, left out where it refuses: `head -n 1 -‸` |
@@ -246,7 +246,7 @@ Disputed: S16 offers a plain flag again wherever the tool accepts a repeat (`cp 
 
 - S16: the names list keeps a supplied name unless it refuses a repeat (`refusedBy`). cp, mv, rm, ls (GNU accept
   repeats of a flag).
-- S17: `isCount` flags; the names list. tar, ssh, rsync, pacman, curl `-:`.
+- S17: `isCount` flags; the names list. tar, ssh, pacman, curl `-:`.
 - S18: the cluster continuations drop a typed letter unless its flag is counted (`counted`, todo 15); pacman
   `PacmanCompletionTest` `a counted letter is offered again in its cluster`, klap `ShortClusterCompletionTest` `a
   counted short continues a cluster that already holds it`.
@@ -351,7 +351,7 @@ Disputed: S44's cells put `--json` on a `cp` and a `git` line, while G11 says on
   operand slot; after an ambiguous one the planner returns nothing (`resolvedLong(prev, ...) is NameMatch.Ambiguous`,
   todo 60), as owner decision K34 settled. Evidence: "chmod: option '--re' is ambiguous; possibilities: '--recursive'
   '--reference'".
-- S46: `trailingValueOption` drops a bare optional-value option (`valueOptional`). ls, cp, mv, rm, mkdir, pacman
+- S46: `trailingValueOption` drops a bare optional-value option (`valueOptional`). ls, cp, mv, rm, pacman
   `--debug`, git `--exec-path`. Owner decision (K8, K11, K33): `cp --back numbered a b` reads numbered as a source.
 - S47: `firstNonFlagShort` reads a negative short and klap's own shorts as flag letters, so the cluster continues
   (`ShortClusterCompletionTest` `a negative short continues a cluster as any flag does`, `the help short continues
@@ -394,6 +394,6 @@ Which fixtures carry which rows, so a pass knows where its cells are not `n/a`:
 | ssh | L9 L10 L13 L16 S17 S34 S36 S47 |
 | dd | L13 S21 |
 | find | L7 S22 |
-| rsync, curl | L9 L10 S17 S19 |
+| curl | L9 L10 S17 S19 |
 | task-manager | L17 L19 S37 S42 S43 |
 | none (klap tests or a synthetic fixture) | L23 L24 S12 S14 S15 S26 S30 |

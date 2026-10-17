@@ -273,4 +273,51 @@ class DashLedOperandTest {
             tree.completeCandidates(listOf("go", "-1m", "-2m", "")).map { it.value },
         )
     }
+
+    @Test
+    fun `a dash led word the operand takes completes from its provider`() {
+        val tree = cli("chmod") {
+            flag(short = 'R', long = "recursive")
+            val mode = argument("mode")
+                .dashLed(gather = ",") { word -> word.drop(1).all { it in "rwx" } }
+                .completeWith { candidates(listOf("-w", "-x", "644")) }
+            val files = argument("file").multiple()
+            action<String>(human = { it }) { Ok("mode=${mode()} files=${files()}") }
+        }
+        assertEquals("mode=-w files=[f]", tree.bindText("-w", "f"))
+        assertEquals(listOf("-w"), tree.offered("-w"))
+    }
+
+    @Test
+    fun `a word only an option takes completes from the names`() {
+        val tree = chmodLike()
+        assertEquals("mode=u+x files=[f] recursive=true", tree.bindText("--rec", "u+x", "f"))
+        assertEquals(listOf("--recursive"), tree.offered("--rec"))
+    }
+
+    @Test
+    fun `a lone dash offers the names and the dash led operand's values`() {
+        val tree = chmodLike()
+        assertEquals("mode=- files=[f] recursive=false", tree.bindText("-", "f"))
+        assertEquals(
+            listOf("--recursive", "-R", "--help", "--version", "-w", "-x"),
+            tree.offered("-"),
+        )
+    }
+
+    private fun chmodLike() = cli("chmod") {
+        version = Version.Of("9.12")
+        builtins {
+            json = Builtin.Off
+            color = Builtin.Off
+            completion = Builtin.Off
+            docs = Builtin.Off
+        }
+        val recursive = flag(short = 'R', long = "recursive")
+        val mode = argument("mode")
+            .dashLed(gather = ",") { word -> word.drop(1).all { it in "rwx" } }
+            .completeWith { candidates(listOf("-w", "-x", "644")) }
+        val files = argument("file").multiple()
+        action<String>(human = { it }) { Ok("mode=${mode()} files=${files()} recursive=${recursive()}") }
+    }
 }

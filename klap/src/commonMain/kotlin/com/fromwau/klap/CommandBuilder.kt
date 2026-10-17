@@ -39,9 +39,10 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
     public abstract var prio: Boolean
 
     /**
-     * Stops reading dash-led tokens as options once the first operand appears, so the rest of the line
-     * reaches your action verbatim: `ssh web1 ls -la` passes `ls -la` through untouched, and
-     * `find . -name '*.kt'` hands find its own expression. Off by default.
+     * Stops reading dash-led tokens as options once the first operand appears, as getopt's leading `+` does, so
+     * the rest of the line reaches your action verbatim: `find . -name '*.kt'` hands find its own expression.
+     * Off by default. To end them at a later operand, as ssh does at its remote command, mark that operand with
+     * `endsOptions()` instead; building a command with both fails.
      */
     public abstract var optionsEndAtFirstOperand: Boolean
 
@@ -230,7 +231,7 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
     public abstract fun <T> lastOf(vararg inputs: Opt<T>): Opt<T>
 
     /**
-     * Declares `-<NUM>`, any run of digits, as an input of this command: `head -5`, `head -5v`, `git log -2`.
+     * Declares `-<NUM>`, a run of digits, as an input of this command: `head -5`, `head -5v`, `git log -2`.
      *
      * The digits are the value, so the handle takes the same converters and validation as [option] and is
      * read back the same way:
@@ -253,9 +254,26 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * The input has no spelling a user can type, so `-<NUM>` is the label help rows and error messages name
      * it by.
      *
+     * By default a run may stand in any word, after other shorts too (`git log -p -3`, `-v12`). GNU head's
+     * obsolete form, `-[NUM][bkm][cqv]` "recognized only if it is specified first", is this:
+     *
+     * ```kotlin
+     * val direct = numberOption(firstWordOnly = true, suffixes = "bcklm")
+     * // head -3bv f binds "3b" and -v; head -v -3 f and head -v12 f are unknown options
+     * ```
+     *
      * @param help the description shown on its `--help` row.
+     * @param firstWordOnly reads a run only at the start of the command's first word; anywhere else a digit is
+     *   an unknown option, as it would be without this input.
+     * @param suffixes letters a run keeps in its value after its digits, in the order typed: `-3bl` binds `"3bl"`.
+     *   The word's other letters are its cluster's flags (`-3vq` is 3, `-v` and `-q`), a value-taking short
+     *   there is refused (`-3n5`), and Tab after `-3` offers the suffixes and the flags. Letters only.
      */
-    public abstract fun numberOption(help: String = ""): Opt<String?>
+    public abstract fun numberOption(
+        help: String = "",
+        firstWordOnly: Boolean = false,
+        suffixes: String = "",
+    ): Opt<String?>
 
     /**
      * A rule no single input can answer, checked once every one of them is bound and before the action runs.

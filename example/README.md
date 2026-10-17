@@ -25,9 +25,9 @@ except pulse's row, which points at its module rather than a single file.
 | Two options that conflict but are both optional (`tar -z` vs `-j`)                                          | [`tar`](tar/)                                                   | `atMostOne`                         |
 | A flag repeated to raise a level (`-v`, `-vv`, `-vvv`)                                                      | [`pacman`](pacman/), [`ssh`](ssh/), [`curl`](curl/)             | `.count()`                          |
 | A cluster whose last character takes a value (`tar -cvf out.tar`)                                           | [`tar`](tar/)                                                   | short clustering                    |
-| An option with an explicit "off" spelling (`git --no-pager`)                                                | [`git`](git/), [`chmod`](chmod/), [`rm`](rm/)                   | `.negatable()`                      |
+| An option with an explicit "off" spelling (`git --no-pager`)                                                | [`git`](git/), [`chmod`](chmod/)                                | `.negatable()`                      |
 | The later of two conflicting flags winning (`head -q -v`)                                                   | [`cp`](cp/), [`head`](head/), [`ls`](ls/), [`find`](find/)      | `lastWins`                          |
-| Passing a trailing command through untouched (`ssh host ls -la`)                                            | [`ssh`](ssh/)                                                   | `optionsEndAtFirstOperand`          |
+| Passing a trailing command through untouched (`ssh host ls -la`)                                            | [`ssh`](ssh/)                                                   | `.endsOptions()`                    |
 | An operand that disappears when an option supplies it (`cp -t DIR`)                                         | [`cp`](cp/), [`mv`](mv/), [`chmod`](chmod/)                     | `.absentWhen()`                     |
 | An input required only when another is absent                                                               | [`rm`](rm/)                                                     | `.optionalWhen()`                   |
 | An option whose value may be omitted (`ls --color` vs `--color=never`)                                      | [`cp`](cp/), [`git`](git/), [`ls`](ls/), [`mv`](mv/)            | `.optionalValue()`                  |
@@ -37,11 +37,11 @@ except pulse's row, which points at its module rather than a single file.
 | Two spellings of one quantity read off one handle (`head -5` / `head -n 5`)                                 | [`head`](head/), [`git`](git/), [`task-manager`](task-manager/) | `lastOf`                            |
 | Single-dash words that bind as one operand, not as options (`chmod -w -x f`)                                | [`chmod`](chmod/)                                               | `.dashLed(gather) { }`              |
 | A subcommand tree with aliases (`git add` / `git stage`)                                                    | [`git`](git/)                                                   | `command { }`, `aliases`            |
-| Help split into sections on a wide flat tool                                                                | [`curl`](curl/), [`ls`](ls/)                                    | `group { }`                         |
-| A value restricted to a fixed set (`--sort=WORD`)                                                           | [`cp`](cp/), [`ls`](ls/), [`git`](git/)                         | `.choice()`                         |
-| A value parsed into your own enum                                                                           | [`mv`](mv/), [`task-manager`](task-manager/)                    | `.enum<E>()`                        |
+| Help split into sections on a wide flat tool                                                                | [`curl`](curl/)                                                 | `group { }`                         |
+| A value restricted to a fixed set (`cp --sparse=WHEN`)                                                      | [`cp`](cp/), [`git`](git/)                                      | `.choice()`                         |
+| A value parsed into your own enum (`ls --sort=WORD`)                                                        | [`ls`](ls/), [`mv`](mv/), [`task-manager`](task-manager/)       | `.enum<E>()`                        |
 | A number with bounds (`--max-time`, `-p PORT`)                                                              | [`ssh`](ssh/), [`curl`](curl/)                                  | `.int()`, `.range()`                |
-| Rejecting a malformed value with your own message                                                           | [`head`](head/), [`mkdir`](mkdir/), [`git`](git/)               | `.validate()`                       |
+| Rejecting a malformed value with your own message                                                           | [`head`](head/), [`git`](git/)                                  | `.validate()`                       |
 | Rejecting a value only wrong because of another input (`--due` in the past unless `--done`)                 | [`task-manager`](task-manager/)                                 | `validateInputs { }`                |
 | An input kept out of `--help`                                                                               | [`git`](git/), [`task-manager`](task-manager/)                  | `hidden`                            |
 | `-h` as the help, as `git -h` and `pacman -h` are                                                           | [`git`](git/), [`pacman`](pacman/)                              | `Help.ByCommand(short = 'h')`       |
@@ -107,15 +107,13 @@ or klap fails today, kept under `@Ignore("TDD target: ...")` and filed in [`todo
 | cp     | GNU coreutils 9.12   | done: 179 tests, every target passes; 1 kept as a record (todo 89)                         |
 | chmod  | GNU coreutils 9.12   | done: 103 tests, every target passes                                                       |
 | curl   | curl 8.22.0          | not yet done                                                                               |
-| dd     | GNU coreutils 9.12   | not yet done                                                                               |
+| dd     | GNU coreutils 9.12   | done: 98 tests, every target passes                                                        |
 | find   | GNU findutils 4.11.0 | done: 201 tests, every target passes; 9 kept as records (F1, todo 48a, 67, 72, 75)         |
 | git    | git 2.56.0           | not yet done                                                                               |
-| head   | GNU coreutils 9.12   | not yet done                                                                               |
-| ls     | GNU coreutils 9.12   | not yet done                                                                               |
-| mkdir  | GNU coreutils 9.12   | not yet done                                                                               |
+| head   | GNU coreutils 9.12   | done: 119 tests, every target passes; 1 kept as a record (todo 145)                        |
+| ls     | GNU coreutils 9.12   | done: 152 tests, every target passes                                                       |
 | mv     | GNU coreutils 9.12   | done: 174 tests, every target passes; 1 kept as a record (todo 89)                         |
-| rm     | GNU coreutils 9.12   | not yet done                                                                               |
-| rsync  | rsync 3.5.1          | not yet done                                                                               |
+| rm     | GNU coreutils 9.12   | done: 147 tests, every target passes; 2 kept as records (todo 118, 121)                    |
 | ssh    | OpenSSH 10.6p1       | not yet done                                                                               |
 | tar    | GNU tar 1.35         | not yet done                                                                               |
 
@@ -148,8 +146,8 @@ variants a caller matches exhaustively. `remote` both acts and nests, so its own
 
 Every fixture is measured against the real tool. Its `version =` line prints, word for word, what that tool's
 `--version` printed when it was pinned (2026-10-10), and a `<Tool>VersionTest` holds the text: GNU coreutils 9.12,
-GNU findutils 4.11.0, git 2.56.0, curl 8.22.0, OpenSSH 10.6p1, pacman 7.1.0, rsync 3.5.1, GNU tar 1.35. Older
-evidence comments name the release they were run against (coreutils 9.11, git 2.55.0, curl 8.21.0, rsync 3.4.4).
+GNU findutils 4.11.0, git 2.56.0, curl 8.22.0, OpenSSH 10.6p1, pacman 7.1.0, GNU tar 1.35. Older
+evidence comments name the release they were run against (coreutils 9.11, git 2.55.0, curl 8.21.0).
 `ssh` answers `-V` and has no `--version`, as `Version.Of("10.6p1", short = 'V')` declares. `find` transliterates find's
 expression grammar rather than reproducing it, but prints the installed find's version all the same. Where klap
 cannot reproduce something, the file says so in a `KLAP-GAP` comment rather than quietly working around
@@ -169,17 +167,15 @@ The tools, and why each is in the suite:
 | [`pacman`](pacman/)      | one required operation mode out of seven, each with its own option set                                                                                     |
 | [`git`](git/)            | a deep subcommand tree, global options before the subcommand, eight negatable flags                                                                        |
 | [`find`](find/)          | an expression language rather than an option list, and where that stops fitting                                                                            |
-| [`ssh`](ssh/)            | a wrapper: everything after the destination belongs to the remote command                                                                                  |
+| [`ssh`](ssh/)            | a wrapper: its options run on past the destination, and everything from the remote command's first word belongs to it                                       |
 | [`curl`](curl/)          | a wide flat tool whose help needs sections, repeatable headers                                                                                             |
 | [`tar`](tar/)            | value-taking clusters (`-cvf out.tar`), and both exclusivity shapes side by side: `exactlyOne` for `-c`/`-x`/`-t`, `atMostOne` for `-z`/`-j`               |
 | [`dd`](dd/)              | no flags and no options at all, only bare `key=value` operands                                                                                             |
 | [`cp`](cp/), [`mv`](mv/) | three synopsis forms, and an operand that moves into an option                                                                                             |
 | [`chmod`](chmod/)        | a mode operand that looks like an option, gathered with `dashLed(gather) { }` (`chmod -w -x notes.txt`)                                                    |
-| [`rm`](rm/)              | negatable interactivity flags, an operand optional when another input is present                                                                           |
+| [`rm`](rm/)              | prompt options the last of which wins, an operand optional when another input is present                                                                   |
 | [`ls`](ls/)              | many small format/sort flags that override one another                                                                                                     |
 | [`head`](head/)          | the obsolete `head -20` digit short, dash-led values (`-n -5`)                                                                                             |
-| [`mkdir`](mkdir/)        | the small end: a validated option and one variadic operand                                                                                                 |
-| [`rsync`](rsync/)        | clustered shorts ending in a value-taker (`-vauPe "ssh -p 2222"`), and a real tool whose long options never abbreviate                                     |
 
 ### What each fixture declares about `abbreviation`
 
@@ -189,9 +185,9 @@ visible in its file:
 
 | Mode                                          | Fixtures                                                                                                                                                                                                                                                                                                                                                     |
 |-----------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `Abbreviation.Options`                        | `chmod`, `cp`, `dd`, `git`, `head`, `ls`, `mkdir`, `mv`, `rm`, `tar` — ten, including **all eight coreutils stubs**, which go through `getopt_long` without exception, plus `git`, whose subcommands' options abbreviate the same way — though its top-level ones do not, since real git refuses abbreviation there and the switch is root-only              |
+| `Abbreviation.Options`                        | `chmod`, `cp`, `dd`, `git`, `head`, `ls`, `mv`, `rm`, `tar` — nine, including **all seven coreutils stubs**, which go through `getopt_long` without exception, plus `git`, whose subcommands' options abbreviate the same way — though its top-level ones do not, since real git refuses abbreviation there and the switch is root-only              |
 | `Abbreviation.LongOptions` (declared)         | `pacman`: a long option abbreviates but a value only in full, so `pacman --quer` is `--query` and `pacman -Q --color=al` is refused                                                                                                                                                                                                                          |
-| `Abbreviation.None` (declared, not inherited) | `curl`, `find`, `rsync` — each matches long options exactly, and each says so rather than inheriting the default silently                                                                                                                                                                                                                                    |
+| `Abbreviation.None` (declared, not inherited) | `curl`, `find` — each matches long options exactly, and each says so rather than inheriting the default silently                                                                                                                                                                                                                                    |
 | `Abbreviation.All`                            | `task-manager`, the showcase                                                                                                                                                                                                                                                                                                                                 |
 | left on the ambient default                   | `ssh`                                                                                                                                                                                                                                                                                                                                                        |
 
@@ -243,8 +239,8 @@ option in a cluster must come **last**, or it swallows the rest of the token as 
 
 ### Building a native binary
 
-All of its code lives in `commonMain`, and that one source set builds native Linux and Windows binaries
-and an Android library. Kotlin/Native run tasks do not accept `--args`, so for a CLI the built executable
+All of its code lives in `commonMain`, and that one source set builds native Linux and Windows binaries.
+Kotlin/Native run tasks do not accept `--args`, so for a CLI the built executable
 is what you actually use:
 
 ```bash

@@ -1,5 +1,6 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Result
 import com.fromwau.klap.internal.render.reason
 import com.fromwau.klap.internal.spec.Cardinality
@@ -29,6 +30,29 @@ private fun gnuDecimal(raw: String): String? {
     return number.takeIf { digits.isNotEmpty() && digits.all { it in '0'..'9' } }
 }
 
+/** The part of a C `strtod` number after its sign: a decimal float, or a hex float and its binary exponent. */
+private val STRTOD_DIGITS = Regex(
+    "([0-9]+\\.?[0-9]*|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?" +
+        "|0[xX](?:[0-9a-fA-F]+\\.?[0-9a-fA-F]*|\\.[0-9a-fA-F]+)([pP][+-]?[0-9]+)?",
+)
+
+/**
+ * [raw] as GNU tools read a floating-point number through `strtod`, with nothing left unread: leading blanks
+ * skipped, so `" 1.5"` is 1.5, `0x1A` is 26 and `INF` is infinity, while `"1 "`, `1.5f` and `1e` are null.
+ */
+private fun strtodDouble(raw: String): Double? {
+    val number = raw.trimStart { it in C_BLANKS }
+    val negative = number.startsWith('-')
+    val unsigned = if (negative || number.startsWith('+')) number.drop(1) else number
+    when (unsigned.lowercase()) {
+        "inf", "infinity" -> return if (negative) Double.NEGATIVE_INFINITY else Double.POSITIVE_INFINITY
+        "nan" -> return Double.NaN
+    }
+    val (decimal, binaryExponent) = STRTOD_DIGITS.matchEntire(unsigned)?.destructured ?: return null
+    // Kotlin reads a hex float only with its binary exponent, which strtod lets you leave out.
+    return if (decimal.isNotEmpty() || binaryExponent.isNotEmpty()) number.toDouble() else "${number}p0".toDouble()
+}
+
 /** How help and a refusal name this progression: low to high, with its step when that is not 1. */
 private fun IntProgression.label(): String {
     val bounds = "${minOf(first, last)}..${maxOf(first, last)}"
@@ -47,10 +71,10 @@ private class TypeChangedConverter(private val delegate: (String) -> Result<Any?
 }
 
 /**
- * Composes [next] after whatever converter is already on this spec, instead of overwriting it, so
- * chained String-input converters (`.choice().map { }`, `.map { }.map { }`, `.choice().int()`, ...)
- * stack. The inner cast to `String` holds only while every prior stage still yields one, so a
- * [typeChanging] stage closes the spec to further converters — which is what catches a second call made
+ * Composes [next] after whatever converter is already on this spec, and after the checks declared since,
+ * instead of overwriting it, so chained String-input converters (`.choice().map { }`, `.map { }.map { }`,
+ * `.choice().int()`, ...) stack. The inner cast to `String` holds only while every prior stage still yields
+ * one, so a [typeChanging] stage closes the spec to further converters — which is what catches a second call made
  * through a leaked `Arg<String>`/`Opt<String?>` handle, whose static type never advances to reveal it.
  */
 private fun ValueSpec.andThenConvert(typeChanging: Boolean = false, next: (String) -> Result<Any?, ConversionError>) {
@@ -60,11 +84,8 @@ private fun ValueSpec.andThenConvert(typeChanging: Boolean = false, next: (Strin
             "(.int()/.long()/.double()/.boolean()/.enum<E>()) has already run; this usually means a " +
             "converter was called through an Arg<String>/Opt<String?> handle kept alive past that point"
     }
-    require(!(typeChanging && validate != null)) {
-        "$label '$name': call .validate()/.range() after every type-changing converter " +
-            "(.int()/.long()/.double()/.boolean()/.enum<E>()), not before"
-    }
-    val prior = convert
+    val prior = convert.thenChecked(validate)
+    validate = null
     val composed: (String) -> Result<Any?, ConversionError> = { raw ->
         when (val p = prior(raw)) {
             is Result.Success -> next(p.value as String)
@@ -154,6 +175,7 @@ private fun ValueSpec.applyChoice(choices: List<String>, ignoreCase: Boolean) {
     require(choices.isNotEmpty()) { "choice() requires at least one choice" }
     requireDistinctChoices("'$name'", choices, ignoreCase)
     choiceIgnoreCase = ignoreCase
+    choiceAbbreviates = true
     (this as? OptionSpec)?.let { spec -> spec.bareValue?.let { spec.requireBareValueInChoices(it, choices) } }
     this.choices = choices
     andThenConvert { raw ->
@@ -171,9 +193,39 @@ private fun ValueSpec.applyMap(transform: (String) -> Any?) {
             Result.Success(transform(raw))
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Result.Error(ConversionError.Threw(e))
         }
+    }
+}
+
+/**
+ * The [ConversionError.Domain.error] of a `.validate()`/`.range()` declared before a later converter, which
+ * judges the value inside the chain; the refusal is its [ConversionError.Domain.detail].
+ */
+internal data object CheckRefused : IError
+
+/** What [check] says of [value]: null to pass, else the refusal, a check that throws refusing with its message. */
+internal fun judge(check: (Any?) -> String?, value: Any): String? = try {
+    check(value)
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Throwable) {
+    ConversionError.Threw(e).reason()
+}
+
+/**
+ * This chain followed by [check] on its value, so a check declared before a later converter still judges the
+ * value converted so far; a null value, which binds as absent, is never judged.
+ */
+private fun ((String) -> Result<Any?, ConversionError>).thenChecked(
+    check: ((Any?) -> String?)?,
+): (String) -> Result<Any?, ConversionError> {
+    check ?: return this
+    return { raw ->
+        val converted = this(raw)
+        val refusal = (converted as? Result.Success)?.value?.let { judge(check, it) }
+        if (refusal == null) converted else Result.Error(ConversionError.Domain(CheckRefused, refusal))
     }
 }
 
@@ -190,9 +242,9 @@ private fun <T> ValueSpec.applyValidate(message: String, predicate: (T) -> Boole
 }
 
 /**
- * The enum body behind both `.enum<E>()` overloads. `@PublishedApi` (not `private`) because those are
- * `inline`/`reified` and must call it; keeping the reified `enumValues<E>()` in the wrappers and passing
- * [values] in means the inline sites touch only this one member, so [andThenConvert] and
+ * The enum body behind every `.enum<E>()` overload, each entry typed as any of its [words]. `@PublishedApi` (not
+ * `private`) because those are `inline`/`reified` and must call it; keeping the reified `enumValues<E>()` in the
+ * wrappers and passing [values] in means the inline sites touch only this one member, so [andThenConvert] and
  * [requireDistinctChoices] can both stay `private`.
  */
 @PublishedApi
@@ -200,17 +252,24 @@ internal fun <E : Enum<E>> ValueSpec.applyEnum(
     enumName: String?,
     values: Array<out E>,
     ignoreCase: Boolean,
-    spelling: (E) -> String,
+    abbreviates: Boolean,
+    words: (E) -> List<String>,
 ) {
     require(values.isNotEmpty()) { "enum $enumName has no constants to choose from" }
-    val spellings = values.map(spelling)
+    val entries = values.map(words)
+    values.zip(entries).forEach { (value, spelled) ->
+        require(spelled.isNotEmpty()) { "enum $enumName spells $value with no word" }
+    }
+    val spellings = entries.flatten()
     spellings.forEach { require(it.isNotBlank()) { "enum $enumName spells a constant as a blank value" } }
     requireDistinctChoices("enum $enumName", spellings, ignoreCase)
     choiceIgnoreCase = ignoreCase
+    choiceAbbreviates = abbreviates
     (this as? OptionSpec)?.let { spec -> spec.bareValue?.let { spec.requireBareValueInChoices(it, spellings) } }
     choices = spellings
+    choiceEntries = entries
     andThenConvert(true) { raw ->
-        values.indices.firstOrNull { spellings[it].equals(raw, ignoreCase = ignoreCase) }
+        values.indices.firstOrNull { i -> entries[i].any { it.equals(raw, ignoreCase = ignoreCase) } }
             ?.let { Result.Success(values[it]) }
             ?: Result.Error(ConversionError.NotOneOf(spellings))
     }
@@ -248,9 +307,14 @@ public abstract class ConverterScope internal constructor() {
         return Arg(spec)
     }
 
-    /** Parses this operand as a `Double`; anything else fails as an invalid value before your action runs. */
+    /**
+     * Parses this operand as a `Double`, read as GNU tools read one through `strtod` (`timeout 1.5`,
+     * `timeout 0x1p3`): leading blanks, an optional sign, then a decimal or hex float or `inf`/`infinity`/`nan` in
+     * any case, with nothing after it. Anything else, `1.5f` and `1 ` included, fails as an invalid value; a
+     * number too large for a `Double` is infinity.
+     */
     public fun Arg<String>.double(): Arg<Double> {
-        spec.andThenConvert(true, numeric(ConversionError.NotADouble) { it.toDoubleOrNull() })
+        spec.andThenConvert(true, numeric(ConversionError.NotADouble, ::strtodDouble))
         return Arg(spec)
     }
 
@@ -268,7 +332,7 @@ public abstract class ConverterScope internal constructor() {
         ignoreCase: Boolean = false,
         noinline spelling: (E) -> String = { it.name.lowercase() },
     ): Arg<E> {
-        spec.applyEnum(E::class.simpleName, enumValues<E>(), ignoreCase, spelling)
+        spec.applyEnum(E::class.simpleName, enumValues<E>(), ignoreCase, abbreviates = true) { listOf(spelling(it)) }
         return Arg(spec)
     }
 
@@ -416,8 +480,9 @@ public abstract class ConverterScope internal constructor() {
     // --- Arg validation ---
 
     /**
-     * Checks [predicate] on each converted value; call before `.multiple()`. Failure renders as
-     * CliError.BadValue, never InvalidChoice.
+     * Checks [predicate] on each value as converted so far: `.validate { it.isNotBlank() }.int()` judges the text,
+     * `.int().validate { it > 0 }` the number. Call it before `.multiple()`. Failure renders as CliError.BadValue,
+     * never InvalidChoice.
      *
      * Judges the value alone: it runs during conversion, so no sibling input is readable yet. For a rule
      * weighing one input against another, see [CommandBuilder.validateInputs].
@@ -454,7 +519,10 @@ public abstract class ConverterScope internal constructor() {
         return Arg(spec)
     }
 
-    /** Omit this argument from `--help`; it still parses and binds normally. Intended for optional/default args. */
+    /**
+     * Leaves this argument out of `--help`, completion and the generated docs; it still parses and binds. Intended
+     * for an optional or defaulted argument, which a user can leave out without knowing it exists.
+     */
     public fun <T> Arg<T>.hidden(): Arg<T> {
         spec.hidden = true
         return Arg(spec)
@@ -517,6 +585,30 @@ public abstract class ConverterScope internal constructor() {
     }
 
     /**
+     * Ends this command's options at the first word bound to this operand, so that word and every word after it
+     * reach your action as written, while options before it still permute with the operands as getopt's do.
+     * OpenSSH reads `ssh web1 -p 2222` as port 2222, and `ssh web1 ls -p 2222` as the remote command `ls -p 2222`.
+     *
+     * ```kotlin
+     * argument("destination")
+     * val command = argument("command").multiple().endsOptions()
+     * ```
+     *
+     * A `--` before that word ends the options as it always does and is not bound. klap's own built-ins and the
+     * globals still reach past it, as they do past [CommandBuilder.optionsEndAtFirstOperand], which is this
+     * call on the first operand.
+     *
+     * Which operand reaches this slot must not depend on the rest of the line, so building the command fails
+     * when a `.multiple()` operand comes before it, or after it when this slot is the variadic, or when this
+     * slot or one before it is removed by `.absentWhen()` or gathers dash words with `dashLed(gather) { }`. One
+     * command has at most one such slot, and none beside [CommandBuilder.optionsEndAtFirstOperand].
+     */
+    public fun <T> Arg<T>.endsOptions(): Arg<T> {
+        spec.endsOptions = true
+        return Arg(spec)
+    }
+
+    /**
      * Supplies tab-completion candidates for this value at the moment the user presses Tab, so they can be
      * anything your program can compute: branch names, task ids, rows from a file.
      *
@@ -553,9 +645,9 @@ public abstract class ConverterScope internal constructor() {
         return Opt(spec)
     }
 
-    /** Parses this option's value as a `Double`; anything else fails as an invalid value. */
+    /** Parses this option's value as a `Double`, read through `strtod` as an operand's is; anything else is invalid. */
     public fun Opt<String?>.double(): Opt<Double?> {
-        spec.andThenConvert(true, numeric(ConversionError.NotADouble) { it.toDoubleOrNull() })
+        spec.andThenConvert(true, numeric(ConversionError.NotADouble, ::strtodDouble))
         return Opt(spec)
     }
 
@@ -578,13 +670,63 @@ public abstract class ConverterScope internal constructor() {
      * Parses this option's value as one of [E]'s entries, each typed as its [spelling] (the lower-cased name
      * unless given) and listed in `--help`: `.enum<Level>(spelling = { it.cli })`. A value matches in its exact
      * case unless [ignoreCase] is set.
+     *
+     * @param abbreviates lets a prefix of a value name it where the CLI's [Abbreviation] abbreviates values. Pass
+     *   false for a value that must be typed whole in every mode, as rm's `--preserve-root=all`: a prefix such as
+     *   `=al` is then an invalid value ("unrecognized --preserve-root argument: 'al'"), while the option's long
+     *   still abbreviates and Tab still completes `=a` to `=all`.
      */
     public inline fun <reified E : Enum<E>> Opt<String?>.enum(
         ignoreCase: Boolean = false,
+        abbreviates: Boolean = true,
         noinline spelling: (E) -> String = { it.name.lowercase() },
     ): Opt<E?> {
-        spec.applyEnum(E::class.simpleName, enumValues<E>(), ignoreCase, spelling)
+        spec.applyEnum(E::class.simpleName, enumValues<E>(), ignoreCase, abbreviates) { listOf(spelling(it)) }
         return Opt(spec)
+    }
+
+    /**
+     * Parses this option's value as one of [E]'s entries, each typed as any of its [spellings], as gnulib's
+     * argmatch reads rm's `--interactive` (`never`, `no`, `none` / `once` / `always`, `yes`).
+     *
+     * ```kotlin
+     * enum class Interactive(val words: List<String>) {
+     *     Never(listOf("never", "no", "none")), Once(listOf("once")), Always(listOf("always", "yes")),
+     * }
+     * val interactive = option(long = "interactive").enum<Interactive>(spellings = { it.words })
+     * // rm --interactive=none a  -> Never
+     * // rm --interactive=n a     -> Never, under Abbreviation.Options or All
+     * ```
+     *
+     * Where the CLI's [Abbreviation] abbreviates values, a prefix is accepted when every word it starts is a
+     * spelling of one entry, and refused as ambiguous when the words it starts belong to different entries. Tab
+     * offers every word in declared order, and an unknown value lists them all. `--help` names each entry by
+     * its first word, `--interactive <never|once|always>`.
+     *
+     * @param ignoreCase matches every word in any case.
+     * @param abbreviates lets a prefix of a word name its entry where the CLI's [Abbreviation] abbreviates values.
+     *   Pass false to accept only whole words in every mode; a prefix is then an invalid value.
+     * @param spellings gives each entry's words, its first word the one `--help` shows. Every entry needs at
+     *   least one word, and no word may belong to two entries; either mistake throws when the CLI is built.
+     */
+    @JvmName("enumOfSpellings")
+    public inline fun <reified E : Enum<E>> Opt<String?>.enum(
+        ignoreCase: Boolean = false,
+        abbreviates: Boolean = true,
+        noinline spellings: (E) -> List<String>,
+    ): Opt<E?> {
+        spec.applyEnum(E::class.simpleName, enumValues<E>(), ignoreCase, abbreviates, spellings)
+        return Opt(spec)
+    }
+
+    /**
+     * Matches this option's longs only when spelled in full, whatever the CLI's [Abbreviation]: rm's
+     * `--no-preserve-root` ("you may not abbreviate the --no-preserve-root option"). A prefix of one is an
+     * unknown option, the other inputs still abbreviate, and Tab still offers the whole word.
+     */
+    public fun <T> Opt<T>.spelledInFull(): Opt<T> {
+        spec.spelledInFull = true
+        return this
     }
 
     /**
@@ -746,7 +888,8 @@ public abstract class ConverterScope internal constructor() {
     // --- Opt validation ---
 
     /**
-     * Checks [predicate] on the converted value; failure renders as CliError.BadValue, never InvalidChoice.
+     * Checks [predicate] on the value as converted so far, at its place in the chain as for an operand; failure
+     * renders as CliError.BadValue, never InvalidChoice.
      * Judges the value alone; for one weighed against another input, see [CommandBuilder.validateInputs].
      */
     public fun <T> Opt<T?>.validate(message: String, predicate: (T) -> Boolean): Opt<T?> {
@@ -778,7 +921,7 @@ public abstract class ConverterScope internal constructor() {
         return Opt(spec)
     }
 
-    /** Omit this option from `--help`; it still parses and binds normally. */
+    /** Leaves this option out of `--help`, completion and the generated docs; it still parses and binds. */
     public fun <T> Opt<T>.hidden(): Opt<T> {
         spec.hidden = true
         return Opt(spec)
@@ -896,7 +1039,25 @@ public abstract class ConverterScope internal constructor() {
         return this
     }
 
-    /** Omit this flag from `--help`; it still parses and binds normally. */
+    /**
+     * Matches this flag's longs, its negation's included, only when spelled in full, whatever the CLI's
+     * [Abbreviation]: rm refuses `--no-p` for `--no-preserve-root`. The other inputs still abbreviate, and Tab
+     * still offers the whole word.
+     *
+     * ```kotlin
+     * val noPreserveRoot = flag(long = "no-preserve-root").spelledInFull()
+     * // rm --no-preserve-root -r d  -> true
+     * // rm --no-p -r d              -> refused: unknown option '--no-p'
+     * ```
+     *
+     * A prefix it shares with another long is still ambiguous, as getopt_long reports it.
+     */
+    public fun Flag.spelledInFull(): Flag {
+        spec.spelledInFull = true
+        return this
+    }
+
+    /** Leaves this flag out of `--help`, completion and the generated docs; it still parses and binds. */
     public fun Flag.hidden(): Flag {
         spec.hidden = true
         return Flag(spec)

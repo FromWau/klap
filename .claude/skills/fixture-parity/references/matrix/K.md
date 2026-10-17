@@ -77,7 +77,7 @@ quoted in each row's note.
 | K13g | built-in `--completion` and `--docs` (single-command root only) | the `--completion` and `--docs` names | | | | |
 | K14a | after `--`, on a leaf | `cp -- -v‸` | `cp -- -‸v` | `cp -- ‸-v` | `cp -- ‸`; a second `--`: `cp -- -- ‸` (the second is an operand) | `cp -- ‸ dst`; `--` after the cursor, cursor before it: `cp -‸ -- x` (names still offered) |
 | K14b | after `--`, on a dispatcher | a subcommand-like word after `--`: `git -- com‸` | | | a dispatcher: `git -- ‸` | |
-| K15a | abbreviation: name completion | `cp --rec‸`, ambiguous `cp --re‸`; under `Abbreviation.None`, `rsync --verb‸` names still prefix-filter; an abbreviated negation: `chmod --no-pres‸` | `cp --r‸ec` | | under `Help.ByTree`, `--help-` to `--help-al` reach `--help-all` and `--h` stays `--help`'s (klap test) | `cp --rec‸ src dst` |
+| K15a | abbreviation: name completion | `cp --rec‸`, ambiguous `cp --re‸`; under `Abbreviation.None`, `curl --verb‸` names still prefix-filter; an abbreviated negation: `chmod --no-pres‸` | `cp --r‸ec` | | under `Help.ByTree`, `--help-` to `--help-al` reach `--help-all` and `--h` stays `--help`'s (klap test) | `cp --rec‸ src dst` |
 | K15b | abbreviation: an abbreviated name before its value | as K33 | | | `cp --back=‸`; under `Abbreviation.None`: `curl --out ‸` does not resolve (`-o`'s values are not offered) | |
 | K15c | abbreviation: an ambiguous abbreviation before a value | as K34, K35 | | | | |
 | K16a | digit short (`numberOption`): the run alone | `head -2‸`; a run longer than one digit `head -20‸`; `head -‸` (does anything stand for `-<NUM>`?) | `head -2‸0` | `head ‸-20` | | `head -2‸ file` |
@@ -227,10 +227,10 @@ Notes:
 - K32: `trailingValueOption` resolves a whole `-s` through `matchingValueOption`'s `byName`. cp (`-S`), ssh (`-p`,
   `-i`), tar (`-f`), head (`-n`), curl (`-o`). Agreed examples: `tar -f`, `ssh -i`, and `cp -S` as free text.
 - K33: `matchingValueOption` resolves through `resolvedLong` (`resolveLong` against `longMatchPool`), so an
-  abbreviation the parse accepts completes that option's values. cp, chmod, head, ls, mkdir, mv, rm, tar, git
+  abbreviation the parse accepts completes that option's values. cp, chmod, head, ls, mv, rm, tar, git
   (all `Abbreviation.Options`); task-manager (`All`). Evidence: `ls --fo long -d .` accepted.
 - K34: done in klap 2026-10-11 (todo 60): after an ambiguous long the planner offers nothing, where it used to take
-  the positional branch and offer chmod's mode or files on a line the parse refuses. chmod (`--recursive`/`--reference`), ls (`--so`).
+  the positional branch and offer chmod's mode or files on a line the parse refuses. chmod (`--recursive`/`--reference`), ls (`--di`).
   Expect nothing after an ambiguous name. Evidence: "chmod: option '--re' is ambiguous; possibilities:
   '--recursive' '--reference'". Settled for pacman as a pass: `pacman -Q --conf ‸` offers nothing, as real
   `pacman -Q --conf x` is "option '--conf' is ambiguous".
@@ -302,7 +302,7 @@ Notes:
 - K50: same rule at the root: `walkTo` then routes the next word as a subcommand. git (`--exec-path`).
 - K51: attached long with `.file()` gives `filesAfter("--exec-path=")` (`asWholeWord`). git.
 - K52: choices filter on the attached part (`candidatesFor`'s `choices` arm). pacman (`--debug`), ls (`--color`,
-  `--classify`), cp (`--backup`, `--update`, `--reflink`), mv, mkdir, rm.
+  `--classify`), cp (`--backup`, `--update`, `--reflink`), mv, rm.
 
 ## klap's built-ins as slots
 
@@ -316,7 +316,7 @@ Notes:
 | K58 | the hidden `__complete` subcommand | `git __c‸` offers nothing | | | `rm __complete ‸` (routes into `__complete`; rm's KLAP-GAP) (needs checking) | `rm __c‸ file` |
 | K59 | the words after a built-in that answers alone | `cp --help sr‸` | | | `cp --help ‸`, `cp -h ‸`, `git --version ‸`; `tool --help-all ‸` under `Help.ByTree` (klap test) | `cp --help ‸ dst` |
 | K60 | a position-independent built-in before the slot | `git --json com‸`, `git --color=never com‸` | | | `git --json ‸`, `dd --json ‸` | `git --json com‸ -m x` |
-| K61 | a short a built-in gave back, declared by the tool | `ls -h‸`, `rsync -h‸` (the tool's own `-h`, its own description) | `ls -‸h` | `ls ‸-h` | | `ls -h‸ dir` |
+| K61 | a short a built-in gave back, declared by the tool | `ls -h‸` (the tool's own `-h`, its own description) | `ls -‸h` | `ls ‸-h` | | `ls -h‸ dir` |
 
 Notes:
 
@@ -325,7 +325,7 @@ Notes:
   so `git --color ‸` completes the next slot. Every fixture that keeps `color` (all but cp, find, ls and pacman,
   which set `color = Builtin.Off`).
 - K54: `scan.matched` resolves `--col` by abbreviation mode (`colorValueCandidates`); CompletionTest "an abbreviated
-  color option ..." tests. git (Options), curl and rsync (None: `--col=‸` names no `--color`), cp, find, ls and pacman
+  color option ..." tests. git (Options), curl (None: `--col=‸` names no `--color`), cp, find, ls and pacman
   (`color = Builtin.Off`).
 - Disputed: K54's `pacman --color ‸` (declined: an operand) misreads pacman, whose own `--color <when>` takes a
   required value (`pacman -Q --color` is "option '--color' requires an argument"), so the slot is its value: the
@@ -351,7 +351,7 @@ Notes:
   `stripSpellings("color")`). git, dd,
   task-manager.
 - K61: `builtins { help = Help.ByCommand(short = null) }` drops klap's `-h` (`builtins.helpShort` is null) so the
-  declared flag answers. ls, rsync.
+  declared flag answers. ls.
 
 ## Routing: which command the slot belongs to
 
@@ -510,7 +510,7 @@ Notes:
 - K7p: since 2026-10-10 (todo 15) a counted letter continues a cluster that holds it, as often as typed
   (`ShortClusterCompletionTest` in `CompletionTest.kt`, `a counted short continues a cluster that already holds
   it`); companion to K7e.
-  ssh, pacman, tar, curl, rsync.
+  ssh, pacman, tar, curl.
 - K7q: since 2026-10-10 (todo 1) a member in the cluster being continued, or typed after the cursor, rules the
   other members out (`CompletionLineRulesTest` in `CompletionTest.kt`: `a cluster holding one member of an exclusive
   set does not continue with another`, `a member typed after the cursor rules the others out`). pacman, tar.

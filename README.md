@@ -6,7 +6,7 @@ abbreviation, auto-generated help with sections and color, value-aware shell com
 man/markdown docs, structured `--json` output, and typed `Result` errors. No annotations, no reflection,
 no annotation processing.
 
-**Targets:** JVM, Android, linuxX64, mingwX64, macosArm64, iosArm64, iosSimulatorArm64.
+**Targets:** JVM, linuxX64, mingwX64, macosArm64, iosArm64, iosSimulatorArm64.
 
 ## Add to your build
 
@@ -42,11 +42,9 @@ implementing kern's `IError` marker, `CliError` included.
 Sources are published for every target, so an API question is answered by your IDE's own quick-doc and
 step-into rather than by reading a decompiled stub.
 
-**Toolchain floor.** The JVM and Android artifacts are Java 25 bytecode. The JVM variant declares that as
-`org.gradle.jvm.version`, so Gradle reports an unmet requirement instead of letting it surface later as a
-`class file has wrong version` error from `javac`. The Android side has no equivalent attribute — what
-constrains it is the dexer, so consuming the AAR needs Android build-tools 36.1.0 or newer. The native
-targets have no floor.
+**Toolchain floor.** The JVM artifact is Java 25 bytecode. It declares that as `org.gradle.jvm.version`, so
+Gradle reports an unmet requirement instead of letting it surface later as a `class file has wrong version`
+error from `javac`. The native targets have no floor.
 
 ## A whole program
 

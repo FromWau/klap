@@ -115,7 +115,7 @@ enum/choice/multiple/validate converters, a `.range()`-bounded `--limit`, colori
 `ColorScope` helper, a `hidden` diagnostic subcommand, typed errors with custom exit codes, and
 structured `--json`. The `example/task-manager/` module is itself a Kotlin Multiplatform
 library: all of its code lives in `commonMain`, and that one source set builds native Linux and Windows
-binaries and an Android library (AAR) (see
+binaries (see
 [Building a native binary](../example/README.md#building-a-native-binary)).
 
 For the other shape, here is a complete single-command tool: a temperature converter. Because its root
@@ -245,11 +245,29 @@ It gets a help row of its own, under the label errors name it by:
   -<NUM>   print the first NUM lines (1..1000; optional)
 ```
 
-The run is maximal and it may sit anywhere in the token, so `-12v` is twelve then `v`, never one then two.
-A run every character of which names a declared short is that cluster instead: a tree with both
-`flag(short = '4')` and a number input binds `-4` to the flag and `-45` to the number, which is what lets
-a tool have both. A flag's negative spellings are declared too, so `.negatable(short = '3')` keeps `-3`
-as the negation.
+The run is maximal and, by default, it may stand in any word and anywhere in the token: `-12v` is twelve then
+`v`, never one then two, and `git log -p -3` binds 3. A run every digit of which names a declared short is that
+cluster instead: a tree with both `flag(short = '4')` and a number input binds `-4` to the flag and `-45` to the
+number, which is what lets a tool have both. A flag's negative spellings are declared too, so
+`.negatable(short = '3')` keeps `-3` as the negation.
+
+Two parameters give it the shape of GNU head's obsolete form, `-[NUM][bkm][cqv]`, which head recognizes "only if
+it is specified first":
+
+```kotlin
+val direct = numberOption(firstWordOnly = true, suffixes = "bcklm")
+// head -3 f, head -3v f and head -3bl f bind; head -v -3 f, head f -3 and head -v12 f do not
+```
+
+- **`firstWordOnly = true`** reads a run only at the start of the command's first word. Anywhere else a digit
+  is what it would be without a number input: an unknown option.
+- **`suffixes`** names the letters a run keeps in its value after the digits, in the order typed: `-3bl` binds
+  `"3bl"`, for your converter to read. The word's other letters are its cluster's flags (`-3vq` is 3, `-v` and
+  `-q`), a suffix letter stays in the value even where a short is spelled the same (`-3c` keeps its `c` beside
+  head's `-c`), and a value-taking short there is refused (`-3n5` is an unknown `-n`). Tab after `-3` offers
+  the suffixes and the flags. Suffixes must be letters.
+
+Both are off by default.
 
 One combination klap refuses at build: a **global option** with a digit short, on a tree where any command
 declares a number input. Globals are pulled out before the command is known, so that option would claim the
@@ -273,9 +291,9 @@ lastWins(lines, bytes)           // the fold is an ordinary member of a further 
 moment either gains a `.default()`: a loser binds what it would have bound had you never written it, which is
 that default, so the fallback answers with the loser.
 
-A number carrying a **unit** (`-1m`, `-500ms`) is not one of these: a run stops at the first non-digit, so
-`-1m` is an unknown option either way — naming `-m` on a tree that declares a number input, and `-1` on one
-that does not. Mark the operand instead:
+An operand carrying a **unit** (`-1m`, `-500ms`) is not one of these: a run stops at the first letter it does not
+keep as a suffix, so `-1m` is an unknown option either way, naming `-m` on a tree whose number input keeps no
+`m`, and `-1` on a tree without one. Mark the operand instead:
 
 ```kotlin
 command("seek") {
@@ -322,9 +340,9 @@ val files   = argument("files").file().multiple(min = 1)                       /
 
 | Converter                      | On                              | Result                                                                                                                                                                                                                                                                                                                                                          |
 |--------------------------------|---------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `.int()` `.long()` `.double()` | argument, option                | the parsed primitive; `.int()` and `.long()` read a number as GNU tools do: leading blanks, a sign, ASCII digits                                                                                                                                                                                                                                                |
+| `.int()` `.long()` `.double()` | argument, option                | the parsed primitive, read as GNU tools read a number: `.int()` and `.long()` take leading blanks, a sign and ASCII digits, and `.double()` takes what `strtod` reads whole (a decimal or hex float, `inf`, `nan`), so `1.5f` and `1 ` are refused                                                                                                              |
 | `.boolean()`                   | argument, option                | `Boolean`, accepting only the exact lowercase literals `true` / `false` (case-sensitive: `True`, `TRUE`, `yes`, `no`, `1`, `0`, and `""` are all rejected)                                                                                                                                                                                                      |
-| `.enum<E>()`                   | argument, option                | `E`, matched in exact case (`ignoreCase = true` opts out); choices shown lowercase                                                                                                                                                                                                                                                                              |
+| `.enum<E>()`                   | argument, option                | `E`, matched in exact case (`ignoreCase = true` opts out); each entry spelled as its lowercase name, or as `spelling = { }` gives it. On an option, `spellings = { it.words }` types an entry as any of several words, `--help` naming it by the first, and `abbreviates = false` takes only whole values in every mode (see [Abbreviation](#abbreviation)) |
 | `.choice("a", "b")`            | argument, option                | the raw string, restricted to the given set (matched in exact case unless `ignoreCase = true`, returns the declared spelling)                                                                                                                                                                                                                                   |
 | `.map { raw -> T }`            | argument, option                | any type; a thrown exception becomes a clean parse error                                                                                                                                                                                                                                                                                                        |
 | `.convert { raw -> Result }`   | argument, option                | any type, failing with a case of your own                                                                                                                                                                                                                                                                                                                       |
@@ -335,6 +353,7 @@ val files   = argument("files").file().multiple(min = 1)                       /
 | `.required()`                  | option                          | fails if the option is missing                                                                                                                                                                                                                                                                                                                                  |
 | `.requiredWhen(flag)`          | option                          | fails if the option is missing *and* `flag` was given (see [Cross-input constraints](#cross-input-constraints))                                                                                                                                                                                                                                                 |
 | `.optionalValue(whenBare)`     | option                          | `--opt=V` binds `V`, a bare `--opt` binds `whenBare`, and the space form never binds (see [GNU conformance](#gnu-conformance))                                                                                                                                                                                                                              |
+| `.spelledInFull()`             | option, flag                    | its longs match only when spelled in full, whatever the root's `abbreviation`; Tab still offers the whole word (see [Abbreviation](#abbreviation))                                                                                                                                                                                                               |
 | `.repeated(policy)`            | option, flag                    | what a second occurrence does, over the root's `repeatedOptions` (see [An option given twice](#an-option-given-twice))                                                                                                                                                                                                                                          |
 | `.optionalValue()`             | option                          | `--opt=V` binds `OptionalValue.Given(V)`, a bare `--opt` binds `OptionalValue.Bare`, and the space form never binds; declare converters before it (see [Options whose value is optional](#options-whose-value-is-optional))                                                                                                                                 |
 | `.gluedValue()`                | option                          | `-O3` and `--opt=3` bind `3`, and a bare `-O` or `--opt` is `MissingOptionValue`, `-O 3` included; not a getopt form (see [Options whose value must be glued](#options-whose-value-must-be-glued))                                                                                                                                                          |
@@ -405,8 +424,7 @@ The English for those lives in klap's renderer, which is why the cases carry no 
 for the errors klap raises without running a converter, notably a `.validate()` or `.range()` rejection:
 those take a message string from you at declaration, so there is no error object to keep.
 
-`example/dd` is the worked example, a five-case operand grammar mapped to words in one `when`;
-`example/rsync` is the one-liner.
+`example/dd` is the worked example: four cases of its operand grammar, each mapped to dd's words in one `when`.
 
 `.map` is for total transforms; reach for `.convert { }` (or a thrown exception) when a value can be
 *invalid*, so the user sees a parse error instead of a silent fallback. A `.map { }` lambda that returns
@@ -455,12 +473,13 @@ already narrowed past it.
 Symmetrically, `.default(v)` narrows the accessor to non-null: it always reads back a value, since an
 absent input (or a converter that resolves to null) falls back to `v`. The default `v` must be non-null.
 
-`.validate(...)` and `.range(...)` capture the type they were declared on, so they belong *after* every
-type-changing converter. `.int().range(1..10)` is right; declaring the check against the raw string and
-converting afterwards — `.validate("must not be blank") { it.isNotBlank() }.int()` — is rejected when the
-tree is constructed, rather than failing on every value a user could type. A converter cannot be added
-twice through one handle either: `val n = argument("n"); n.int(); n.long()` is rejected for the same
-reason, since `n`'s static type never advances past `Arg<String>` for the compiler to catch it.
+`.validate(...)` and `.range(...)` judge the value at their place in the chain, typed as it is there.
+`.validate("must not be blank") { it.isNotBlank() }.int()` checks the text before it is read as a number,
+and `.int().range(1..10)` checks the number; checks on both sides of a converter each run, in the order
+written. So bound a number after reading it: `.range("0".."5").int()` compares text, and `"10"` passes it. A
+converter cannot be added twice through one handle: `val n = argument("n"); n.int(); n.long()`
+is rejected when the tree is constructed, since `n`'s static type never advances past `Arg<String>` for
+the compiler to catch it.
 
 A command may declare **one** variadic positional, and it need not be last: `cp SOURCE... DEST` is
 `argument("source").multiple(min = 1)` followed by `argument("dest")`. The fixed slots after it bind from
@@ -663,7 +682,7 @@ once the line holds it, before or after the cursor.
 
 ## Abbreviation
 
-**A long option name abbreviates, as GNU `getopt_long` abbreviates it**: `mkdir --par d` reaches `--parents`,
+**A long option name abbreviates, as GNU `getopt_long` abbreviates it**: `cp --rec a b` reaches `--recursive`,
 and a prefix reaching two names is refused (`ls --s`: "option '--s' is ambiguous"). Choice values and subcommand
 names must be spelled in full, and a miss suggests the nearest spelling. One root-level switch sets how far
 abbreviation reaches for the whole tree:
@@ -686,13 +705,18 @@ cli("tasks") {
 refused. `Options` adds the value matching coreutils does on top of getopt: `ls --colo=al` reaches `always`, as
 `--no-der` reaches a negatable flag's negative half. `All` adds what `ip` does (`ip a` for `ip address`).
 
+A value of `.enum<E>(spellings = { it.words })` is any word of an entry, and a prefix reaching several words of
+one entry is that entry, as gnulib's argmatch reads rm's `--interactive=n` as `never` among `never`, `no` and
+`none`. A prefix reaching words of two entries is ambiguous. Tab offers every word, in declared order.
+
 `git` is the reason `Options` stops short of subcommands. It abbreviates the options of a subcommand — `git branch --f`
 answers *ambiguous option: f (could be --force or --format)* — while refusing `git stat`, because its
 subcommand pool is not closed: aliases and third-party `git-*` binaries on `PATH` join it, so an
 abbreviation there could change meaning depending on what is installed. Any CLI with a large or
 extensible subcommand set wants that same shape.
 
-Root-only, with no per-command override, so one prefix rule holds for every command in the tree.
+Root-only, with no per-command override, so one prefix rule holds for every command in the tree. The two
+exceptions are per input, `.spelledInFull()` and `.enum<E>(abbreviates = false)` below.
 
 **Wherever abbreviation is on, an exact spelling always wins outright**, so a pool holding both `--sort` and
 `--sort-by` keeps the shorter one reachable, and `list` stays reachable beside `listen`. A prefix that
@@ -719,6 +743,25 @@ ambiguous among all of them (`ls --=x` is "option '--=x' is ambiguous"). Under `
 `--help-all`, which `Help.ByTree` adds, takes no part in `--h` to `--help`, which stay `--help`'s, so the help every
 CLI offers keeps its short prefixes; from `--help-` on (`--help-`, `--help-a`, `--help-al`) the prefixes are
 `--help-all`'s alone and reach it, as `getopt -o '' -l help,help-all -- --help-` reads `--help-all`.
+
+**One input can opt out of a prefix, whatever the mode.** `.spelledInFull()` keeps its longs from
+abbreviating, as rm refuses every abbreviation of `--no-preserve-root` ("you may not abbreviate the
+--no-preserve-root option"). `abbreviates = false` on an option's `.enum<E>()` keeps its values whole, as rm
+compares `--preserve-root=all` whole ("unrecognized --preserve-root argument: 'al'"):
+
+```kotlin
+val noPreserveRoot = flag(long = "no-preserve-root").spelledInFull()
+val preserveRoot = option(long = "preserve-root").enum<RootScope>(abbreviates = false).optionalValue()
+// rm --no-p d              -> error: unknown option '--no-p'
+// rm --preserve-root=al d  -> error: invalid value 'al' for --preserve-root (choose from all). Did you mean all?
+// rm --pre=all d           -> --preserve-root=all: the long still abbreviates
+// rm --verb d              -> still --verbose
+```
+
+On a negatable flag `.spelledInFull()` covers its negation too, and a prefix the long shares with another long is
+still ambiguous, as getopt_long reports it before rm's own check runs. Other enums keep their prefixes
+(`--interactive=nev`). In both cases Tab still offers the whole word, so `--preserve-root=a` completes to
+`--preserve-root=all`.
 
 **Shorts never abbreviate, in any mode.** A one-dash token is a cluster of one-character options
 (`-jso` is `-j -s -o`), or one short alone under [`ShortOptions.Alone`](#short-options), so there is nothing to
@@ -1502,7 +1545,7 @@ requires the `kotlin("plugin.serialization")` plugin in the consuming module.
 `--json` shapes an action's result (and its errors), and `--help --json` prints the help as data: the
 command, its usage line, and each argument, option, subcommand, global option and example as fields
 (`names`, `help`, `value`, `required`, `repeatable`, `default`, `choices`, and for an argument
-`absentWith` or `optionalWith`, the input that removes it or makes it optional), leaving out what does not
+`absentWhen` or `optionalWhen`, the input that removes it or makes it optional), leaving out what does not
 apply.
 Where help covers the tree (`--help-all` under `Help.ByTree`, `--help` under `Help.All`), `--json` prints an array of
 that, one per command.
@@ -1803,12 +1846,12 @@ cli("deploy") {
 add usage examples and a closing paragraph; `.hidden()` (or `hidden = true` on a command) keeps
 something out of help while it still parses. `author` (root-only, like `version`) adds an `Author:`
 footer to the root's `--help` and an `AUTHOR` section to the generated man page and markdown docs. Descriptions wrap to the terminal width (`COLUMNS`, else the
-detected terminal width, else 80); the JVM and Android targets have no width detection, since the JDK
+detected terminal width, else 80); the JVM target has no width detection, since the JDK
 exposes no such API, so they wrap at `COLUMNS` or 80. Headings and usage follow the same color resolution
 as `action { }`'s own output (see [Color output](#color-output)): `NO_COLOR` (present and non-empty)
 disables color, `FORCE_COLOR` / `CLICOLOR_FORCE` force it on (even off a TTY), `CLICOLOR=0` or
 `TERM=dumb` disables it, and otherwise it follows whether stdout is a real TTY, all of which
-`--color=always` / `--color=never` override. On the JVM and Android that last check is coarser than it
+`--color=always` / `--color=never` override. On the JVM that last check is coarser than it
 sounds: the only probe the JDK offers covers stdin and stdout together, so a piped stdin reads as
 "not a TTY" even when stdout is one. The native targets test stdout alone.
 
@@ -1867,8 +1910,21 @@ help lists them under `Global options:` and Tab offers them there.
 Either way the generated script is byte-identical. Enum/choice values and `.file()` paths complete
 automatically, and subcommand and option name completion carry each command's or option's declared `help`
 as the description (shown by shells that support it, bash excepted), so `myapp <TAB>` explains each choice
-for free. For values known only at runtime, `.completeWith` supplies candidates through a hidden
-`__complete` subcommand (present on both shapes while `completion` is on) that the script calls:
+for free. Tab offers what the parse would read at the cursor:
+
+- **A subcommand name** only where the walk would still route to it, so none after `--`, after an option of the
+  parent or after an unknown option: `git -- <TAB>`, `git remote -v <TAB>` and `git -s <TAB>` offer no
+  subcommand, since the parse routes none of those lines to one.
+- **A single-dash word a `dashLed()` operand takes** and no option does completes from that operand's values,
+  as a chmod mode such as `-w` does; a word an option takes completes from the names, and a lone `-`, which
+  either could take, offers both.
+- **Past the operand that ends a command's options** (see
+  [`optionsEndAtFirstOperand`](#optionsendatfirstoperand-the-one-switch-that-runs-the-other-way)) the word is an
+  operand: `ssh web1 ls -<TAB>` offers the operand's values and only the names the parse still reads there, the
+  globals and klap's own.
+
+For values known only at runtime, `.completeWith` supplies candidates through a hidden `__complete` subcommand
+(present on both shapes while `completion` is on) that the script calls:
 
 ```kotlin
 val branch = argument("branch").completeWith {
@@ -1883,7 +1939,9 @@ The provider is a `CompletionScope.() -> Unit` block: call `candidate(value, des
 A candidate's `value` is what the shell inserts back onto the command line, so it has to survive the wire
 format klap and the generated scripts share: one carrying a tab, newline, or carriage return is dropped
 rather than offered in a mangled form that would no longer match your data. A `description` is display
-text only, so it is collapsed onto one line instead.
+text only, so it is collapsed onto one line and trimmed instead, and a blank one counts as none: an attached
+value (`--tag=<TAB>`) without one shows its option's `help`. `suggestionsFor` returns the candidates in this
+same form, so a test sees what the shell receives.
 
 `completeFiles(nonPathPrefix = "")` is the third call: it hands the slot to the shell's own filesystem
 completion, the same thing `.file()` does for a whole input. Reach for it when only *part* of the word is
@@ -2219,7 +2277,7 @@ than claimed here.
   only as a word of its own instead. A short is a `Char`, so a multi-character short like
   find's `-name` cannot be declared.
 - **Longs** are a word after two dashes, their value attached (`--config=cfg`) or the next word
-  (`--config cfg`), and abbreviate to any unambiguous prefix of the command's own longs (`mkdir --par d`; `ls --s`
+  (`--config cfg`), and abbreviate to any unambiguous prefix of the command's own longs (`cp --rec a b`; `ls --s`
   is ambiguous). That is the default, `Abbreviation.LongOptions`; see [Abbreviation](#abbreviation) for the other
   modes.
 - **A value** is required unless the option makes it optional with `.optionalValue()`, getopt_long's optional
@@ -2231,7 +2289,7 @@ than claimed here.
   spelled, an option's spelling or `--` included (`ls --sort --` is "invalid argument '--' for '--sort'", and
   `grep -e -- -v` searches for `--` and still reads `-v`). See [Dash-led values](#dash-led-values).
 - **Options and operands mix**: an option after an operand is still an option, unless the command ends its
-  options at the first operand (below).
+  options at an operand (below).
 - **`--` ends the options** where an option would stand, and every word after it is an operand. A lone `-` is
   an operand.
 - **An undeclared option is an error**, never a filename (`ls --bogus` exits 2). `dashLed()` lets one operand
@@ -2253,23 +2311,44 @@ Permutation is getopt's default; this switch turns it off for one command, as ge
 `POSIXLY_CORRECT` does:
 
 ```kotlin
-cli("ssh") {
+cli("find") {
     optionsEndAtFirstOperand = true
     ...
 }
 ```
 
-With it on, the first operand ends the options, so `ssh web1 ls -la` passes `ls -la` through untouched
-instead of binding `-l` locally. It is off by default and set per command, since a subcommand that wraps
+With it on, the first operand ends the options, so `find . -name x` hands `-name x` through untouched instead
+of reading `-name` as an option. It is off by default and set per command, since a subcommand that wraps
 another program (`git bisect run`) sits beside siblings that must keep permuting. `--` is unaffected and
 still ends options wherever options have not already ended.
 
-It has one edge a wrapper should know about: klap's own position-independent built-ins (`--json`,
+OpenSSH ends its options later: `ssh web1 -p 2222` still sets the port, and the remote command's first word ends
+them, so `ssh web1 ls -p 2222` runs `ls -p 2222`. `.endsOptions()` on an operand declares that reading: the
+first word bound to it ends the options, and options before it permute as usual.
+
+```kotlin
+cli("ssh") {
+    argument("destination")
+    val command = argument("command").multiple().endsOptions()
+    ...
+}
+```
+
+A `--` before that word ends the options as ever and is not bound, as ssh consumes it: `ssh web1 -- -p 2222`
+binds the command `-p 2222` and leaves the port alone, as `ssh -G web1 -- -p 2222` shows port 22. Which operand
+reaches the slot must not depend on the rest of the line, so a command refuses `.endsOptions()` after a
+`.multiple()` operand, on a variadic followed by other operands, and where that slot or one before it can be
+removed by `.absentWhen()` or gathers with `dashLed(gather) { }`.
+
+Tab follows either form: past the operand that ends the options it offers that operand's values, the globals
+and klap's own names, never an option of the command.
+
+Both have one edge a wrapper should know about: klap's own position-independent built-ins (`--json`,
 `--color`, `--help`, `--version`, `--completion`, `--docs`), a long global, and a short cluster made
 entirely of global characters, klap's help and version shorts among them, are all claimed wherever they sit in the
 tail, since ending options here does not end *their* reach. (The one place none of them reach is a value-taking
 option's argument slot, which belongs to that option on every command — see [Dash-led values](#dash-led-values).)
-A cluster *mixing* a global character with a local one is refused there, `ssh web1 -ah` as much as one carrying a
+A cluster *mixing* a global character with a local one is refused there, `ssh web1 ls -ah` as much as one carrying a
 declared global: it cannot split without binding a local option past the end of options, and it cannot pass
 through whole without losing the global, so klap asks you to write the global before the operands. A tail that
 must carry one of those spellings literally

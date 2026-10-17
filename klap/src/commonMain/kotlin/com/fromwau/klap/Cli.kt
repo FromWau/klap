@@ -57,7 +57,7 @@ public open class Command internal constructor(
 
     // Derived rather than stored: a second source of truth could disagree with [specs] about which input
     // the digits bind to, and the builder already refuses a second one.
-    internal val numberInput: OptionSpec? get() = options.firstOrNull { it.isNumber }
+    internal val numberInput: OptionSpec? get() = options.firstOrNull { it.number != null }
 
     // Presentation, read straight off [display]; description/epilogue stay public, the rest is the
     // render walk's concern. section/hidden mirror HolderSpec's own, so a subcommand and an input read

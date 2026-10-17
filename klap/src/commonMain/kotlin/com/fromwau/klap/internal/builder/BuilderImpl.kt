@@ -30,6 +30,7 @@ import com.fromwau.klap.internal.spec.HolderSpec
 import com.fromwau.klap.internal.spec.InputConstraint
 import com.fromwau.klap.internal.spec.NUMBER_LABEL
 import com.fromwau.klap.internal.spec.NamedSpec
+import com.fromwau.klap.internal.spec.NumberShape
 import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.constraintHintToken
 import com.fromwau.klap.internal.spec.constraintToken
@@ -96,9 +97,16 @@ internal class BuilderImpl(
         return Opt(spec)
     }
 
-    override fun numberOption(help: String): Opt<String?> {
-        require(specs.none { it is OptionSpec && it.isNumber }) {
+    override fun numberOption(
+        help: String,
+        firstWordOnly: Boolean,
+        suffixes: String,
+    ): Opt<String?> {
+        require(specs.none { it is OptionSpec && it.number != null }) {
             "command '$name': numberOption is already declared; `-<NUM>` can only mean one input"
+        }
+        require(suffixes.all { it.isLetter() }) {
+            "command '$name': numberOption suffixes must be letters, got \"$suffixes\""
         }
         val spec = OptionSpec(
             names = emptyList(),
@@ -106,7 +114,7 @@ internal class BuilderImpl(
             convert = passthrough,
             section = currentSection,
             label = NUMBER_LABEL,
-            isNumber = true,
+            number = NumberShape(firstWordOnly, suffixes),
         )
         specs += spec
         return Opt(spec)
@@ -270,6 +278,7 @@ internal class BuilderImpl(
         validateFoldCardinality(name, specs)
         validateConditionalOperandTriggers(name, specs)
         validateGatheringSlot(name, specs)
+        validateEndsOptionsSlot(name, specs, optionsEndAtFirstOperand)
         validateRequiredWhenTriggers(name, specs, reachableGlobalSpecs)
         validateRepeatedPolicies(name, specs + globalSpecs)
         validateCanActOrDispatch(name, actionSpec != null, subs.isNotEmpty(), builtinKind != null)

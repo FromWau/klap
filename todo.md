@@ -13,7 +13,7 @@ Found by the matrix-extension agents on 2026-10-09 from klap's source (at `ca1bb
 test it. A TDD pass writing those rows reproduces or refutes each finding; a reproduced one moves to **Defects**
 or a fixture section with its failing test, a refuted one is ticked here with the evidence.
 
-- [ ] **28. Completion and parsing disagree, or klap differs from getopt, at these points.**
+- [x] **28. Completion and parsing disagree, or klap differs from getopt, at these points.**
   - `optionsEndAtFirstOperand` is never checked while completing: `ssh web1 ls -‸` likely offers ssh's own names
     (`Completion.kt:175` checks only a literal `--`). Rows K30, L16, S34.
   - Reproduced as item 32. The two value branches do not check for `--`: `cp -- --backup=n‸` likely offers
@@ -32,14 +32,21 @@ or a fixture section with its failing test, a refuted one is ticked here with th
     real `git remote -v show` works. Rows S40, P17.
   - `chmod -w‸` never runs the provider of chmod's dash-led mode operand: the flag-name branch answers first.
     Row V62.
-- [ ] **29. The test API and the providers see something other than what reaches the shell.**
+  - **Verdicts 2026-10-17** (at `0def2e2`): the first bullet is 159, the subcommand bullet 160, the chmod bullet
+    161. Refuted: negative shorts (`cp -P‸` offers `-PL`, `-Pr`, `-Pv`; `firstNonFlagShort` looks up
+    `negativeShorts`) and the tree-wide abbreviation (`git remote add --ma main o u` binds `master=main`). Not a bug:
+    a parent's option before the child's name, refused by design (`UnroutedSubcommand`), an owner call under 160.
+- [x] **29. The test API and the providers see something other than what reaches the shell.**
   - `suggestionsFor` skips `toCompletionLine`, so a value with a tab or newline (dropped on the wire) and a
     multi-line or blank description look different in tests than in a shell. Rows G91 to G95, V44, V45.
   - `candidate("x", "")` on an attached value replaces the option's help with nothing. Row V46.
   - One occurrence of a `.multiple()` input that fails to convert unbinds the whole list for providers. Row V69.
   - An `Error` thrown by an unrelated converter escapes the bind and stops every provider on the line. Row V92.
   - A provider reading `words` never sees the words after the cursor, though the accessors do. Row V60.
-- [ ] **30. Converting and binding accept what the real tools refuse.**
+  - **Verdicts 2026-10-17:** the first bullet is 162, the second 163, the fourth 164. Not a bug, by design: one bad
+    occurrence unbinds a `.multiple()` for providers (`Bind.kt` "Lenient leaves it unbound", the `CompletionScope`
+    KDoc), and `words` ends at the cursor (the `CompletionScope` KDoc).
+- [x] **30. Converting and binding accept what the real tools refuse.**
   - Reproduced as item 35. A single-valued option given twice converts only its last value (`Bind.kt:131`), so
     `--width abc --width 80` binds 80; real `head`, `ls` and `dd` refuse the line. Rows P72, X55.
   - `.int()` accepts non-ASCII digits (`"١٢"`, `"１２"` give 12) and `.double()` accepts `" 1"`, `"1.5f"`,
@@ -50,11 +57,16 @@ or a fixture section with its failing test, a refuted one is ticked here with th
     an `.absentWhen()` slot. Rows P10 to P19.
   - A built-in klap adds that the tool lacks binds the same record as the line without it (`cp --json a b`);
     overlaps cp item 22. Rows P30, P2 (disputed).
-- [ ] **31. The ssh fixture ends options at the host; real ssh reads them until the remote command.**
+  - **Verdicts 2026-10-17:** the `.double()` half is 165. Not a bug: `TypedCli.parse` throwing on a projection that
+    reads another command's input or uses `!!` on an absent slot (a programmer error, as an exception from an action
+    is). Refuted for cp (it turns `json` off since 103a); a CLI that keeps `--json` binds the same inputs on purpose.
+- [x] **31. The ssh fixture ends options at the host; real ssh reads them until the remote command.**
   `example/ssh/.../Ssh.kt:31` sets `optionsEndAtFirstOperand`, so the destination ends options. Real OpenSSH 10.6p1
   keeps reading them after the host and stops at the command's first word: `ssh -G web1 -p 2222` gives port 2222, `ssh
   -G web1 ls -p 2222` gives port 22 (run 2026-10-09). The fixture also declares `--ipv4` and `--ipv6` (`Ssh.kt:109`),
   and OpenSSH has no long options. Row K30; an ssh fixture pass writes the targets.
+  - **Verdict 2026-10-17:** the first half is 166. The invented longs are deliberate (`Ssh.kt:105`) and recorded by
+    `accepts surface real ssh does not have`.
 
 ## Fixture parity targets
 
@@ -127,6 +139,61 @@ target was seen to fail with its `@Ignore` removed, and nothing else failed. No 
 work with API klap has. Evidence from `/usr/bin/mv` 9.12 in a throwaway directory, spot-checked by the main session. An
 item names each target as `Class: test`, the class without its `Mv` prefix and `TargetsTest` suffix. After the TDD pass of 2026-10-12 (items 103 to 110, `Update` and `BackupControl` enums, the environment seam): 174 tests, 173 pass, 1 kept as a record (todo 89); mv's matrix pass is closed.
 
+### rm (matrix pass 2026-10-12, GNU coreutils 9.12)
+
+The QA pass of 2026-10-12 replaced `RmParityTest` with one file per matrix table: `RmCompletionTest` (K, K7),
+`RmValueCandidatesTest` (V), `RmLineContextTest` (L, S), `RmSuggestionListTest` (G, E), `RmProjectionTest` (P),
+`RmConverterTest` (X), each with its `*TargetsTest` class; `RmVersionTest` stays. 145 tests: 106 pass, 39 targets; every
+target was seen to fail with its `@Ignore` removed, and nothing else failed. No klap core bug; items 116 and 120 ask for
+klap API. Evidence from `/usr/bin/rm` 9.12 in a throwaway directory (never `--no-preserve-root` in any spelling),
+spot-checked by the main session. An item names each target as `Class: test`, the class without its `Rm` prefix and
+`TargetsTest` suffix. After the TDD pass of 2026-10-12 to 13 (items 114 to 121 and 117a; klap's
+`.enum<E>(spellings = )`, `abbreviates = false` and `.spelledInFull()`): 147 tests, 145 pass, 2 kept as records (todo
+118, 121); rm's matrix pass is closed.
+
+### ls (matrix pass 2026-10-13, GNU coreutils 9.12)
+
+The QA pass of 2026-10-13 replaced `LsParityTest` with one file per matrix table: `LsCompletionTest` (K, K7),
+`LsValueCandidatesTest` (V), `LsLineContextTest` (L, S), `LsSuggestionListTest` (G, E), `LsProjectionTest` (P),
+`LsConverterTest` (X), each with its `*TargetsTest` class; `LsVersionTest` stays. 156 tests: 121 pass, 35 targets; every
+target was seen to fail with its `@Ignore` removed, and nothing else failed. One klap core gap (123); the rest is
+fixture work. Evidence from `/usr/bin/ls` 9.12 in a throwaway directory with LS_COLORS, TIME_STYLE, QUOTING_STYLE,
+COLUMNS and POSIXLY_CORRECT unset, spot-checked by the main session. An item names each target as `Class: test`, the
+class without its `Ls` prefix and `TargetsTest` suffix. After the TDD pass of 2026-10-13 (items 123 to 132): 152 tests,
+every one passes, no record; ls's matrix pass is closed.
+
+### head (matrix pass 2026-10-16, GNU coreutils 9.12)
+
+The QA pass of 2026-10-16 replaced `HeadParityTest` with one file per matrix table: `HeadCompletionTest` (K, K7),
+`HeadValueCandidatesTest` (V), `HeadLineContextTest` (L, S), `HeadSuggestionListTest` (G, E), `HeadProjectionTest`
+(P), `HeadConverterTest` (X), with `*TargetsTest` classes for Completion, SuggestionList, Projection and Converter;
+`HeadVersionTest` stays. 118 tests: 94 pass, 24 targets; every target was seen to fail with its `@Ignore` removed,
+and nothing else failed. Three klap core gaps (143, 144, 145); the rest is fixture work. Evidence from
+`/usr/bin/head` 9.12 in a throwaway directory, spot-checked by the main session. An item names each target as
+`Class: test`, the class without its `Head` prefix and `TargetsTest` suffix. The matrix examples P60 (`head -n 3 -5`)
+and P61 (`head -c 5 -5`) are refused by real head ("invalid trailing option -- 5"), and K90's `head -5n ‸` is
+settled the same way (`-5n` is refused); the tests follow real head. After the TDD pass of 2026-10-16 (items
+138 to 146): 119 tests, every target passes, 1 kept as a record (todo 145); head's matrix pass is closed.
+
+### dd (matrix pass 2026-10-16, GNU coreutils 9.12)
+
+The QA pass of 2026-10-16 replaced `DdParityTest` with one file per matrix table: `DdCompletionTest` (K),
+`DdValueCandidatesTest` (V), `DdLineContextTest` (L, S), `DdSuggestionListTest` (G, E), `DdProjectionTest` (P),
+`DdConverterTest` (X), each with its `*TargetsTest` class; `DdVersionTest` stays. 94 tests: 66 pass, 28 targets;
+every target was seen to fail with its `@Ignore` removed, and nothing else failed. dd has no options but `--help`
+and `--version`, so the option rows of the matrix are `n/a`. One klap question (149, how a `key=value` operand is
+declared); the rest is fixture work. Evidence from `/usr/bin/dd` 9.12 in a throwaway directory, spot-checked by the
+main session. An item names each target as `Class: test`, the class without its `Dd` prefix and `TargetsTest`
+suffix. After the TDD pass of 2026-10-17 (items 149 to 158): 98 tests, every one passes, no record; dd's matrix
+pass is closed.
+
+### After dd (owner, 2026-10-17)
+
+The full matrix loop stops after dd: the ls, head and dd passes found almost only fixture work (help words, built-ins
+off, value grammars) and one klap bug by chance (147). Next, the klap items: 28 to 31 reproduced or refuted and the
+confirmed ones fixed test-first, with 147; then one git pass scoped to its subcommand-tree rows (with 27). ssh, tar
+and curl leave the loop (their modules stay as examples); ssh's defect 31 goes with 28 to 31.
+
 ### git and curl (later)
 
 - [ ] **93. Git.kt's header claims every subcommand matches git's `-h`.** Found building item 92. `Git.kt:23` says the
@@ -144,13 +211,42 @@ item names each target as `Class: test`, the class without its `Mv` prefix and `
   not told apart): ls 4, cp 3, git 3, curl 2, dd, find, pacman and rm 1 each; mv's two go with item 109. The guide's
   converter table (`docs/guide.md:327-328`) lists `.choice` beside `.enum` as a peer. Each fixture's next pass moves its
   closed sets to enums (cp's `--update` and resolved backup as mv's 109); the guide says when `.choice` is the right
-  hatch (a set not known until runtime, a spelling an enum cannot carry). Fixtures and docs.
+  hatch (a set not known until runtime, a spelling an enum cannot carry). Owner, 2026-10-13: `.choice` stays in klap
+  as the string-only escape hatch for a user who cannot use an enum; nothing removes it.  Done for ls 2026-10-13 by item 126 (no `.choice` left in `Ls.kt`). Fixtures and docs.
 
-- [ ] **113. The help JSON keys `absentWith` and `optionalWith` still say "with".** After 112d the help text reads
-  "absent when" and "optional when", and the calls are `absentWhen` and `optionalWhen`, but `--help --json` emits
-  `absentWith` and `optionalWith` (`internal/render/HelpJson.kt:43-44`, `docs/guide.md:1505`, pinned in
-  `HelpJsonTest`). A key is a published format, so the 112 rename left them. Owner call: rename them to
-  `absentWhen` and `optionalWhen` (pre-1.0, as 112e), or keep them. klap core.
+- [ ] **122. mv's and cp's `--backup` and ls's `--color` read their words through `.enum<E>(spellings = )`.** After
+  item 116, mv's private `argmatch` (`Mv.kt:315`) and its `.completeWith { candidates(...) }`, cp's same reading, and
+  ls's `--color` choice (`ls --color=n` and `=ye` are accepted) move onto the klap API. Each
+  fixture's next pass, with item 111. Done for ls 2026-10-13 by item 126; mv and cp remain. Fixtures.
+
+- [ ] **134. klap targets JDK 17 while building with 25.** From the notes, section 5: split the catalog's `jdk = "25"`
+  into `jdk-build` (25, the toolchain) and `jdk-target` (17); set `jvmTarget`, `-Xjdk-release=17` and the published
+  `TargetJvmVersion` from `jdk-target` (the toolchain alone sets `jvmTarget` 25, which `-Xjdk-release=17` refuses);
+  run the JVM tests on 17 too in `check` (`jvmTestOnTarget`). kern did this in `b2e1328` and it found a real JDK 17
+  difference there. klap's notes found no direct `java.*` use in `klap/src`. Fixtures and examples stay on the build
+  JDK. `README.md`'s toolchain floor ("Java 25 bytecode") is restated. Build.
+  **Blocked 2026-10-16 on kern 0.6.0:** built and reverted. With `jvmTarget` 17 the JVM compile classpath asks for
+  Java 17, and every kern 0.5.x JVM variant declares 25 (`org.gradle.jvm.version: 25` in Maven Local's 0.5.1;
+  `b2e1328` is in no kern tag), so `:klap:jvmTest` fails before compiling: "No matching variant of
+  com.fromwau.kern:result:0.5.0 was found. The consumer was configured to find a library … compatible with Java 17".
+  Lands with 135, once kern 0.6.0 is published. The edits are kern's `kern-module.gradle.kts` ones, applied in
+  `klap/build.gradle.kts`, plus `jdk-build` in `klap-fixture.gradle.kts` and `example/parity/build.gradle.kts`.
+- [ ] **135. klap's kern and Kotlin versions follow kern's.** From the notes, section 5: klap pins kern 0.5.0
+  (`gradle/libs.versions.toml:10`) while kern is at 0.5.1, and kern's 0.6.0 (logger API, result's smart casts,
+  `toResult` and combining, the two terminal fixes of `2d1a924`) is not yet in Maven Local. Kotlin is 2.4.21 in klap,
+  2.4.20 in kern; the notes want kern raised to match. klap uses only `result`, `terminal`, `fuzzy` and `result-test`,
+  so kern's `dirs`/`fs` split does not touch it. Waits on kern 0.6.0 being published. Build.
+- [ ] **136. Mordant for help layout.** From the notes, section 1 (kern:terminal kept, revised 2026-10-13): Mordant
+  3.1.0 would give Unicode-aware wrapping, aligned option columns and the real JVM terminal width; kern keeps the
+  colour policy (passed to Mordant as `ansiLevel`, since Mordant ignores `CLICOLOR*` and lets `TERM=dumb` beat
+  `FORCE_COLOR`), the Windows VT and UTF-8 setup (Mordant enables neither) and `writeResult()` (Mordant's
+  `System.out` swallows write errors). A klap-owned output interface stays, Mordant behind it. Open: whether to adopt
+  it at all; which JVM backend (FFM needs JDK 22 and `--enable-native-access` and steps aside silently below 22, so it
+  needs JNA beside it, or the omnibus `mordant`). Owner call.
+- [ ] **137. Markdown as a third output mode.** From the notes, section 1: next to plain text and `--json`, rendered
+  on a terminal and raw when piped (`tool --markdown > report.md`), as an opt-in artifact (`klap-markdown`) so tools
+  without it skip the parser; actions could return Markdown, and help text written in Markdown could drive terminal
+  help, generated docs and man pages from one source. Depends on 136. Idea.
 
 - [ ] **24. Opt-in converter modules for types klap core does not convert to.**
   Agreed with the owner 2026-10-09: klap core keeps converting only to plain types; a fixture or app that wants
@@ -209,6 +305,13 @@ item names each target as `Class: test`, the class without its `Mv` prefix and `
 
 ## Will not do
 
+- **148. The mkdir and rsync fixtures.** Owner, 2026-10-16: removed rather than brought to parity, as their command
+  lines are shapes the finished fixtures already cover: mkdir's `-m MODE` (chmod), `--context[=CTX]` (ls's
+  `--color[=WHEN]`, cp's `--backup[=CONTROL]`) and directory operands; rsync's sources then a destination (cp),
+  `Abbreviation.None` (find, curl) and `--no-` options (git), its own `host:path` being a network target with no safe
+  oracle. `example/mkdir` and `example/rsync` are deleted, with their `settings.gradle.kts` entries, the README rows
+  and every mention in the guide, the fixture-parity skill and its matrix files. The fixtures left to bring to parity
+  are dd, ssh, tar, git and curl.
 - **82. GNU's `-W foo` extension.** GNU audit 2026-10-12, owner A: glibc reads `-W alpha` as `--alpha` only for a tool
   whose short spec holds `W;` (`getopt -o 'W;' -l alpha,beta: -- -W alpha -Wbeta=1` gives ` --alpha --beta '1'`); no
   tool klap models uses it (`ls`, `cp`, `head`, `sort -W foo`: "invalid option -- 'W'", tar's `-W` is `--verify`),
@@ -255,6 +358,624 @@ Decided against, with the reason, so they are not proposed again.
 
 ## Done
 
+- [x] **168. `optionsEndAtFirstOperand` and `endsOptions()` on one command.** Both are accepted and the switch wins,
+  which neither KDoc says. Refuse the pair at build, or document it. Found in 166's TDD pass. klap core; owner call.
+
+  - **Owner, 2026-10-17:** A. Refused at build.
+  Done 2026-10-17: `validateEndsOptionsSlot` takes the switch and refuses the pair ("optionsEndAtFirstOperand and
+  endsOptions() on 'command' both say where options end; keep one"), from `build()` and the re-validation pass; both
+  KDocs say so. `EndsOptionsTest` `a command cannot end options at its first operand and at an endsOptions argument`
+  failed first, and passes.
+- [x] **167. A `validateInputs` block that throws an `Error` escapes `parse`.** `runValidations` (`Parser.kt:618`)
+  catches only `Exception`, though its KDoc says it is "guarded like `.validate()`", which catches every `Throwable`
+  but cancellation since 164. Found in 164's TDD pass, not yet pinned by a test. klap core.
+  Done 2026-10-17: `runValidations` catches `Throwable` but `CancellationException`; `ValidateInputsTest` `a block that
+  throws an error is reported rather than thrown` (a `TODO()` rule) failed with `NotImplementedError` out of `parse`
+  first, and passes.
+- [x] **147. A `.validate` written before `.map` checks the mapped value.** Found in head's TDD pass:
+  `option(...).validate { s: String -> ... }.map { Count.Lines(it) }` compiles, but the predicate runs on the
+  `Count.Lines`, so every value is refused (`BadValue(reason = "class ...Count$Lines cannot be cast to class
+  java.lang.String")`). `applyValidate` (`Converters.kt:181`) keeps one validator that runs on the final converted
+  value, while `.map` adds a conversion step, so the call order is lost. head now writes `.map` first. Either a
+  validator runs at the point of the chain it was declared (on the value converted so far), or `.map` after a
+  `.validate` is refused at build. klap core; owner call.
+  - **Owner, 2026-10-17:** A. A `.validate` runs where it is declared in the chain, on the value converted so far;
+    both orders work. Test: `ConvertersTest` `a validate before a map never judges the mapped value`.
+  - **Owner, 2026-10-17:** A, follow-up. The build-time rule "call .validate()/.range() after every type-changing
+    converter" goes for every converter: a check and a range run in declared order everywhere. The two tests
+    `validate before a type changing converter is rejected at construction` and `range before ...`
+    (`ConvertersTest.kt:573`, `:585`) are restated as chains that build and check the value at their place, and the
+    guide's ordering note with them.
+  Done 2026-10-17: a check added before a later converter is folded into the chain there (`thenChecked`), refusing as
+  `BadValue` with a null cause (internal `CheckRefused`), so checks on both sides of a converter each run in written
+  order; the build-time ordering rule is gone and its two tests are restated (`a validate before a type changing
+  converter judges the raw value`, `a range before ... bounds the raw value`: `.range("0".."5").int()` compares the
+  text, so `10` passes it), with `GuideSnippetsTest` and the guide's ordering note. Its test passes.
+- [x] **159. Past the first operand of an `optionsEndAtFirstOperand` command, Tab still offers its option names.**
+  `ssh web1 ls -‸` offers `--login`, `-l`, `--verbose`, `-v`, while the parse binds `cmd=[ls, -v]`; `optionsEnded`
+  in `completeCandidates` (`internal/render/Completion.kt`) checks only a literal `--`. From 28.1. Test:
+  `OperandTerminatedOptionsTest` `no option name of the command is offered after the first operand`. klap core.
+  - **Owner, 2026-10-17:** A. Past the first operand of such a command `optionsEnded` holds in `completeCandidates`,
+    in the name, value-option and attached branches; klap's built-ins stay offered, as the parse still reads them.
+  Done 2026-10-17: completion counts operands against the command's `optionsEndAt` (shared with 166); past it the name,
+  value-option and attached branches offer only globals and klap's built-ins, merged with the operand slot's
+  candidates. Its test passes.
+- [x] **160. Tab offers subcommand names where the parse never routes to one.** `git -- ‸` offers `status`,
+  `remote`, ... while the parse gives `SubcommandAfterSeparator`; `git remote -v ‸` offers `add` while the parse
+  gives `UnroutedSubcommand`; `git -s ‸` offers every name while the parse gives `UnknownOption` (real git refuses
+  `git -- status` and `git -s status`). The walk ignores the sift error. From 28.5; tied to 28.7 (a parent's own
+  option before the child's name), which klap refuses by design (`UnroutedSubcommand` KDoc, `Git.kt:337`) while real
+  git accepts `git remote -v show`. Tests: `UnroutedSubcommandCompletionTest` (3). klap core; owner call on 28.7.
+  - **Owner, 2026-10-17:** A. Completion follows today's parse: no subcommand name after `--`, after an unknown option,
+    or after the parent's own option. 28.7 (a parent's option before its child's name) waits for the git pass with
+    27; if that pass lets `git remote -v add` route, `no subcommand name is offered after an option of the parent`
+    flips to expect `add`.
+  Done 2026-10-17: `walkTo` reports whether the walk still routes (`Walk.routing`); names are offered only while it
+  does. Two `CompletionTest` cells restated: `-po list ‸` and `--col ‸` under `Abbreviation.None` now offer nothing, as
+  the parse routes nowhere. Its 3 tests pass.
+- [x] **161. A dash-led operand's provider never answers a word starting with a dash.** With a provider offering
+  `-w`, `-w f` parses as the mode but `-w‸` offers nothing: the flag-name branch answers first. From 28.8. Test:
+  `DashLedOperandTest` `a dash led word the operand takes completes from its provider`. klap core; owner call on a
+  word both could take.
+  - **Owner, 2026-10-17:** A. Completion asks what the parse asks: a word only the dash-led operand takes completes
+    from its provider, a word only an option takes from the names, and an unfinished word both could take (a lone
+    `-`) merges both lists; a `chmod -‸` cell is added with that expected value.
+  Done 2026-10-17: `dashLedOperandFor` reads the word as `sift` does; a lone `-` merges the names, then the operand's
+  values. Added: `a lone dash offers the names and the dash led operand's values`, `a word only an option takes
+  completes from the names`. Its test passes.
+- [x] **162. `suggestionsFor` returns what the shell never receives.** It skips `toCompletionLine`, so a value with
+  a tab or newline (dropped on the wire) and a multi-line or padded description (`" two\nlines "`, sent as `two
+  lines`) differ between tests and shells. From 29.1. Test: `CompletionFlowTest` `suggestions are what the shell
+  receives`. klap core (`testing/Completion.kt`).
+  - **Owner, 2026-10-17:** A. One normalisation, a `Candidate` for the shell or none, shared by the `__complete` wire
+    encoder (`Runner.kt`) and `suggestionsFor`; a test leaning on a raw description is restated with the shell's form.
+  Done 2026-10-17: internal `Candidate.forShell(): Candidate?` (null for a value with a tab, newline or carriage
+  return; a description folded to one trimmed line, blank to none), used by `toCompletionLine()` and `suggestionsFor`.
+  Its test passes.
+- [x] **163. A blank description on an attached value drops the option's help.** `candidate("red", "")` after
+  `--tag=` gives `Suggestion("--tag=red", "")`; `candidate("blue")` gives the option's help. From 29.2. Test:
+  `CompletionFlowTest` `an attached value with a blank description shows the option's help`. klap core
+  (`asWholeWord`).
+  - **Owner, 2026-10-17:** A. A blank description counts as none in `asWholeWord`, so the option's help fills in.
+  Done 2026-10-17: `asWholeWord` treats a blank description as none. Its test passes.
+- [x] **164. An `Error` thrown by one converter stops every provider, and escapes `parse`.** A `.map { throw
+  NotImplementedError() }` on `--later` makes a provider that reads only `--name` offer nothing, and
+  `parse(listOf("--later", "z"))` throws out of `parse`; `convertOne` and `applyMap` catch only `Exception`. From 29.4.
+  Test: `ProviderFailureTest` `an error thrown by another input's converter leaves a provider the inputs it reads`.
+  klap core; owner call on which throwables are caught.
+  - **Owner, 2026-10-17:** A. Converters and validators catch every `Throwable` but `CancellationException`, in parse
+    and completion, as `convertOne`'s parse-never-throws comment promises; an `Error` becomes `ConversionError.Threw`
+    and a `BadValue`. A parse cell (`--later z` refused, not thrown) is added.
+  Done 2026-10-17: `applyMap`, `convertOne` and a shared `judge` for every check catch `Throwable` but
+  `CancellationException`. Added: `an error thrown by a map refuses the value instead of escaping parse`, `an error
+  thrown by a validate refuses the value instead of escaping parse`. Its test passes. `validateInputs` still catches
+  only `Exception`: item 167.
+- [x] **165. `.double()` accepts a type suffix and a trailing blank.** `1.5f`, `1.5F`, `1.5d`, `1.5D` and `"1 "` bind
+  1.5 or 1.0 on the JVM and native, where strtod-reading tools refuse them (`timeout 1.5f true`, `timeout '1 ' true`:
+  "invalid time interval"); a leading blank and `0x1p3` are strtod's too. From 30.2. Test: `ConvertersTest` `a double
+  refuses a type suffix and a trailing blank`. klap core; owner call on `1e400` (Infinity today) and `inf`/`nan`.
+  - **Owner, 2026-10-17:** A. `.double()` reads strtod's grammar with nothing left over: optional blanks and sign, a
+    decimal or hex float, or `inf`/`infinity`/`nan` in any case; `f`/`d` suffixes and trailing text refused; an
+    overflow stays Infinity (timeout accepts `1e400`, checked 2026-10-17). Cells for `inf`, `NAN`, `0x1p3` added.
+  Done 2026-10-17: `strtodDouble` behind `.double()` on operands and options; `nan(chars)` stays refused. Added: `a
+  double reads infinity nan and a hex float as strtod does`, `a double refuses a word strtod reads only in part`. Its
+  test passes.
+- [x] **166. ssh's options run until the remote command, past the destination.** `ssh -G web1 -p 2222` gives port
+  2222, `ssh -G web1 -v ls -p 2222` gives loglevel DEBUG and port 22; the fixture's `optionsEndAtFirstOperand` binds
+  `-p 2222` into the command. klap has no switch for options ending at the second operand. From 31. Test:
+  `SshParityTest` `options after the destination bind until the remote command starts` (`@Ignore("TDD target (todo
+  31): ...")`). klap core or fixture; owner call.
+  - **Owner, 2026-10-17:** A. `Arg<T>.endsOptions()`, opt-in: the first word bound to that argument ends options, so
+    options before it permute as getopt's. ssh declares `remoteCommand.endsOptions()` and drops
+    `optionsEndAtFirstOperand` (find keeps it). Completion follows the parse, as 159. The ssh test `a -- after the
+    destination is forwarded to the remote command` is restated: `ssh -G web1 -- -p 2222` gives port 22, so ssh
+    consumes that `--` (checked 2026-10-17). Pin it beside a non-final argument and with 159's change.
+
+  Done 2026-10-17: `public fun <T> Arg<T>.endsOptions(): Arg<T>`, one rule `Command.optionsEndAt` for `sift`,
+  `ArgvScan.walk` and completion; building refuses a second such slot, a `.multiple()` before it, a variadic one with
+  slots after it, and `.absentWhen()` or `dashLed(gather)` on it or before it. ssh declares
+  `remoteCommand.multiple().endsOptions()`; its `--` test is restated (`a -- after the destination ends the options and
+  is not forwarded`). `EndsOptionsTest` (11) added; the guide's switch section gains the call. Its test passes. Both
+  settings on one command: the switch wins, undocumented (item 168).
+- [x] **149. dd's operands bind as dd reads them.** The info page: "If this operand is given multiple times, the last
+  one takes precedence"; `dd if=in if=in2` reads in2, `dd count=1 count=2` copies two blocks; `bs=1K` is 1024 bytes.
+  The fixture declares one `argument("operand").multiple()` with a hand-written `key=value` grammar, and its record
+  is that list of strings (`DdInputs(operands: List<DdOperand>)`), every occurrence kept. Its KLAP-GAP comment says
+  klap has no named operand, so the 14 keys cannot be declared one by one. Targets: Projection: `a single value given
+  twice binds the later`, `a number operand binds the number dd reads`. klap core (a named `key=value` operand) or
+  fixture (typed fields projected from the list); owner call, and it decides how 151 to 158 are built.
+  - **Owner, 2026-10-17:** A. Fixture only: the one positional and its grammar stay, and the projection folds the
+    list into a typed `DdInputs`, the last occurrence of a key winning: named states rather than `null`
+    (`Stream.Standard`/`Stream.File(name)`, `Amount.All`/`Blocks(n)`/`Bytes(n)`, `Status.Default`/...), enums for
+    the conv and flag sets, numbers as dd reads them (`bs=1K` is 1024, `bs=` sets `ibs` and `obs`). The TDD agent
+    drafts the field names and reports them; no klap API.
+  Done 2026-10-17: `DdInputs(input: Stream, output: Stream, ibs: Long, obs: Long, cbs: Cbs, count: Amount, skip:
+  Amount, seek: Amount, conv: Set<Conv>, iflag: Set<Flag>, oflag: Set<Flag>, status: Status)`,
+  `Stream.Standard`/`File(name)`, `Amount.All`/`Blocks(n)`/`Bytes(n)`, `Cbs.None`/`Bytes(n)`, `enum Conv`, `enum Flag`,
+  `enum Status { Default, None, Noxfer, Progress }`, `NOTHING_BOUND = DdInputs()`; `DdOperand` is gone. The fold: a
+  key's last occurrence wins, `bs=` sets `ibs` and `obs` wherever it stands, the lists add up, a `B` anywhere in a
+  count or offset or the matching byte flag (`iflag=count_bytes`, `iflag=skip_bytes`, `oflag=seek_bytes`) counts bytes,
+  the byte flags on the other side change nothing (checked by the main session: `ibs=10 count=3 oflag=count_bytes` 30
+  bytes, `iflag=count_bytes` 3; `count=3B count=2` 20, `count=2 count=3B` 3). `skip` and `seek` default to `Blocks(0)`,
+  so `Amount.All` never reaches them. Its 2 targets pass.
+- [x] **150. dd has none of klap's built-ins, and `__complete` is an operand it refuses.** `dd --json if=in`, `--j`,
+  `--color=never`, `--col`, `--completion bash`, `--docs markdown`: "unrecognized option"; `dd __complete if=`:
+  "unrecognized operand '__complete'". Targets: Completion: `a dash offers exactly dd's two options`, `--color= offers
+  no values`, `the word after __complete is an operand`; Projection: `an option dd does not have is refused`,
+  `__complete is refused as an operand`; SuggestionList: `a built-in dd does not have is not offered`. Fixture
+  (`builtins { ... = Builtin.Off }`, as head's 138).
+  - **Owner, 2026-10-17:** A. `builtins { help = Help.ByCommand(...); json = Builtin.Off; color = Builtin.Off;
+    completion = Builtin.Off; docs = Builtin.Off }`: `__complete` is an operand dd refuses.
+  Done 2026-10-17: the four built-ins off and `Help.ByCommand(description = ...)`; its 6 targets pass.
+- [x] **151. Every key and symbol is described in `dd --help`'s words.** `dd --help`: `bs=BYTES` "read and write up
+  to BYTES bytes at a time (default: 512); overrides ibs and obs", `seek=N` "(or oseek=N) skip N obs sized output
+  blocks", `skip=N` "(or iseek=N) ...", `status=LEVEL` "The LEVEL of information to print to standard error; ...",
+  the CONV and FLAG tables, `--help` "display this help and exit", `--version` "output version information and
+  exit". The fixture cuts the rows short, gives symbols no description and uses klap's built-in words; its KDoc says
+  9.11. Targets: Completion: `--help and --version are described in dd's words`, `every key is described by its
+  whole row in dd's help`; SuggestionList: `a key's description is the text its help row shows`, `Tab offers dd's
+  words in dd's words and nothing else` (with 150); ValueCandidates: `every symbol is described in dd's words`.
+  Fixture.
+  - **Owner, 2026-10-17:** A. Each key its whole `--help` row joined into one line, each CONV and FLAG symbol its
+    table row, each status level the clause of the status row that names it, `Help.ByCommand(description = "display
+    this help and exit")`, `Version.Of(..., description = "output version information and exit")`, the KDoc at 9.12
+    and the help header with dd's closing period.
+  Done 2026-10-17: dd's words on every key, symbol, level, `--help` and `--version`; the epilogue is generated from the
+  same tables; its 5 targets pass.
+- [x] **152. `iseek=` and `oseek=` are offered.** `dd --help` names them beside `skip=` and `seek=`; `dd iseek=0
+  oseek=0 if=in of=o` runs. The fixture parses them but never offers them. Targets: Completion: `an empty operand
+  word offers every key dd takes`; LineContext: `every key dd takes is offered again after another`. Fixture.
+  - **Owner, 2026-10-17:** A. Tab offers `iseek=` and `oseek=`, each described by its twin's row (`skip=`'s and
+    `seek=`'s).
+  Done 2026-10-17: `oseek=` after `seek=` and `iseek=` after `skip=`, each with its twin's row; its 2 targets pass.
+- [x] **153. `oflag=` does not take `fullblock`.** `dd oflag=fullblock if=in of=o`: "invalid output flag:
+  'fullblock'"; `iflag=append`, `oflag=append` and `iflag=fullblock` run. The fixture shares one table. Targets:
+  ValueCandidates: `oflag offers every flag but fullblock`; Converter: `fullblock is refused as an output flag`.
+  Fixture.
+  - **Owner, 2026-10-17:** A. Two tables: `oflag=` is the flag table without `fullblock`, `iflag=` keeps every flag
+    (`append` included); the comment that dd rejects misplaced flags only at run time goes.
+  Done 2026-10-17: two tables; its 2 targets pass.
+- [x] **154. A comma continues a symbol list.** `dd conv=ucase,notrunc`, `iflag=direct,nocache`, `status=none,progress`
+  run; Tab after `conv=ucase,` offers nothing. Target: ValueCandidates: `a comma continues the list with every symbol
+  dd still takes`. Fixture (`.completeWith`).
+  - **Owner, 2026-10-17:** A, one decision for 154, 155 and 156. One rule in the fixture for the converter and the
+    provider: every `conv=` on the line counts toward one set; at most one of {ascii, ebcdic, ibm}, {lcase, ucase},
+    {excl, nocreat}, and once `cbs=` is on the line one of {block, unblock}, `ascii` counting as `unblock` and `ebcdic`
+    and `ibm` as `block` (run `conv=ebcdic,unblock cbs=4` first, an inference); after a comma Tab offers what the rule
+    still allows, a repeat included (`ucase,ucase` runs); `status=` takes a list, the last level bound.
+  Done 2026-10-17: with 155 and 156, `convConflict(convs, cbsGiven)` serves `validateInputs` and the provider; its
+  target passes.
+- [x] **155. conv symbols dd cannot combine are refused, and not offered.** "cannot combine any two of
+  {ascii,ebcdic,ibm}", "cannot combine lcase and ucase", "cannot combine excl and nocreat", in one word and across
+  words (`dd conv=ucase conv=lcase`). `block` and `unblock` conflict only once `cbs=` is given, and then `ascii`
+  counts as `unblock`: `dd conv=block,unblock` and `conv=ascii,block` run, `dd conv=block,unblock cbs=4` and
+  `conv=ascii,block cbs=4`: "cannot combine block and unblock" (checked by the main session; the tests' comment
+  that the info page's exclusivity does not hold needs restating). The fixture accepts and offers every pair.
+  Targets: Converter: `conv symbols dd cannot combine are refused`; LineContext: `conv offers no symbol another conv
+  on the line rules out`. Fixture.
+  - **Owner, 2026-10-17:** A, one decision for 154, 155 and 156. One rule in the fixture for the converter and the
+    provider: every `conv=` on the line counts toward one set; at most one of {ascii, ebcdic, ibm}, {lcase, ucase},
+    {excl, nocreat}, and once `cbs=` is on the line one of {block, unblock}, `ascii` counting as `unblock` and `ebcdic`
+    and `ibm` as `block` (run `conv=ebcdic,unblock cbs=4` first, an inference); after a comma Tab offers what the rule
+    still allows, a repeat included (`ucase,ucase` runs); `status=` takes a list, the last level bound.
+  Done 2026-10-17: checked on real dd: `ebcdic,unblock` and `ibm,unblock` under `cbs=4` refused, across words too;
+  `ebcdic,block`, `ibm,block`, `ascii,unblock` under `cbs=4` and `ebcdic,unblock` without it run. Two cbs tests added;
+  its 2 targets pass.
+- [x] **156. `status=` takes a list.** `dd status=none,noxfer` runs, the last level winning. The fixture refuses a
+  comma. Target: Converter: `a status list is accepted`. Fixture.
+  - **Owner, 2026-10-17:** A, one decision for 154, 155 and 156. One rule in the fixture for the converter and the
+    provider: every `conv=` on the line counts toward one set; at most one of {ascii, ebcdic, ibm}, {lcase, ucase},
+    {excl, nocreat}, and once `cbs=` is on the line one of {block, unblock}, `ascii` counting as `unblock` and `ebcdic`
+    and `ibm` as `block` (run `conv=ebcdic,unblock cbs=4` first, an inference); after a comma Tab offers what the rule
+    still allows, a repeat included (`ucase,ucase` runs); `status=` takes a list, the last level bound.
+  Done 2026-10-17: a status list binds its last level; its target passes.
+- [x] **157. The undocumented `count_bytes`, `skip_bytes` and `seek_bytes` flags.** They run in `iflag=` and `oflag=`
+  (`dd iflag=count_bytes count=2`, `oflag=count_bytes`, `iflag=seek_bytes`) with no warning; `--help` and info do not
+  list them. The fixture refuses them. Target: Converter: `the undocumented byte flags are accepted` (accepted, not
+  offered, as G35). Fixture.
+  - **Owner, 2026-10-17:** A. `count_bytes`, `skip_bytes` and `seek_bytes` are accepted in `iflag=` and `oflag=` and
+    never offered; run `oflag=skip_bytes` and `oflag=seek_bytes` first, which the main session did not.
+  Done 2026-10-17: accepted on both sides (`oflag=skip_bytes`, `oflag=seek_bytes` run), never offered; its target
+  passes.
+- [x] **158. N and BYTES are read as dd reads them.** dd takes every suffix spelling (`1k`, `1KB`, `1kiB`, `1KD`,
+  `1cB`, `1bB`, `1wB`), a suffix alone (`bs=K`), leading blanks and `+5`; it refuses a block size of zero (`bs=0`,
+  `bs=2x0`: "invalid number"), a value past 2^63-1 (`count=9223372036854775808`: "Value too large"), and other
+  digits (`count=١٢`). `ddNumberIsValid` is narrower on the first and looser on the second (Kotlin's `isDigit`
+  takes every Unicode digit). Targets: Converter: `a number takes every suffix spelling dd reads`, `a suffix alone
+  counts one`, `a number may open with blanks and a plus sign`, `a block size of zero is refused`, `a number too
+  large is refused`, `a number in other digits is refused`. Fixture.
+  - **Owner, 2026-10-17:** A. One reader for every number key, returning the value 149's record binds: optional
+    blanks and `+`, ASCII digits and/or a suffix (alone it counts one), suffixes `c w b`, `k`/`K` with optional `B`,
+    `iB` or `D`, `M G T P E Z Y R Q` with optional `B` or `iB`, `cB bB wB` (`m`, `g`, `kb` refused), `x` products;
+    block-size keys refuse zero, count keys take it; every key refuses past 2^63-1. Checked 2026-10-17: runs `1k 1KB
+    1kiB 1KD 1kD 1cB 1bB 1wB K c Kx2 2xK ' 5' +5 1M`, `count=0`, `count=0x10`, `count=9223372036854775807`,
+    `bs=2147483648`; refused `bs=0 0B 2x0 00x10 0x10`, `cbs=0`, `ibs=0`, `1x 1K2 2xx2 1e 1g 1m 1kb ١٢`,
+    `count=9223372036854775808`, `1Q 1Z 15E`, `bs=9223372036854775807`. dd's own block-size bound lies between 2^31
+    and 2^63-1 and is not probed (it allocates the buffer): a comment in the test says so.
+
+  Done 2026-10-17: `ddNumber`, dd's wording on refusal. Real dd decided what the owner line left: `D` after any
+  multiplier (`1MD`, `1GD` run), blanks and `+` per factor (`2x+3`, `2x 3` run), none before a bare suffix (`+K`, ` K`
+  refused), `1cD`, `1KiD`, `Bx2` refused; cells added. Its 6 targets pass.
+- [x] **138. head has none of klap's built-ins, and `__complete` is a file name.** `head --json f`, `head --j f`:
+  "unrecognized option"; `head __complete f`: "cannot open '__complete' for reading". The fixture accepts and offers
+  `--json`, `--color`, `--completion`, `--docs`, and runs klap's completion protocol on `__complete`. Targets:
+  Completion: `a dash offers exactly head's names`, `klap's built-ins head lacks are not offered`, `__complete as the
+  first word is a file`; SuggestionList: `a built-in head does not have is not offered`, `the built-ins come last and
+  are only head's`, `a completion script's call reaches head as its own words`; Projection: `an option head does not
+  have is refused`, `__complete is a file name`. Fixture (`builtins { json/color/completion/docs = Builtin.Off }`, as
+  rm's 114 and ls's 124).
+  - **Owner, 2026-10-16:** A. `builtins { json = Builtin.Off; color = Builtin.Off; completion = Builtin.Off; docs =
+    Builtin.Off }`, as rm and ls: head's `__complete` is a file name again.
+  Done 2026-10-16: `builtins { help = Help.ByCommand(...); json/color/completion/docs = Builtin.Off }`; its 8 targets
+  pass.
+- [x] **139. Every name is described in `head --help`'s words.** `head --help`: `-n` "print the first NUM lines
+  instead of the first 10; with the leading '-', print all but the last NUM lines of each file", `-c` the same for
+  bytes, `--help` "display this help and exit", `--version` "output version information and exit". The fixture cuts
+  `-n` and `-c` short and gives klap's "Show this help" and "Show the version"; its KDoc and comments say 9.11.
+  Targets: Completion: `every name and letter is described in head's words`; SuggestionList: `-n and -c are described
+  in head's words`, `the built-ins are described in head's words`, `a dash offers head's names in head's words and
+  nothing else` (with 138). Fixture.
+  - **Owner, 2026-10-16:** A. head's `--help` lines for `-n` and `-c`, `Help.ByCommand(description = "display this
+    help and exit")`, `Version.Of("9.12", description = "output version information and exit", ...)`, and the KDoc
+    and comments say 9.12.
+  Done 2026-10-16: head's `--help` lines on `-n` and `-c`, `Help.ByCommand(description = "display this help and
+  exit")`, `Version.Of("9.12", description = "output version information and exit", ...)`, the KDoc and comments at
+  9.12; its 4 targets pass.
+- [x] **140. The last of `-q` and `-v` decides the headers.** `head -vq f g` prints no headers, `head -qv f g` prints
+  them. The fixture binds both flags true. Target: Projection: `the last of -q and -v decides the header mode`.
+  Fixture (`lastWins(quiet, verbose)`, the record's shape is an owner call).
+  - **Owner, 2026-10-16:** A. `lastWins(quiet, verbose)`, and the record's `quiet` and `verbose` become one
+    `headers: Headers`, `enum class Headers { WhenSeveral, Never, Always }`, projected from the winner.
+  Done 2026-10-16: `lastWins(quiet, verbose)` and `HeadInputs.headers: Headers` (`WhenSeveral`, `Never`, `Always`); its
+  target passes.
+- [x] **141. NUM is read as head reads it.** `head -n +5 f`, `-n ' 5' f`, `-n 1m f`, `-n K f`, `-n 1kB f`, `-n 1KiB f`
+  and `-n -+2 f` run; `-n 1B f`, `-n 0x10 f`, `-n 5x f`, `-n 1e f` are refused ("invalid number of lines"). The
+  fixture's `HEAD_NUM` refuses a plus sign, leading blanks, a lower-case `m` and a multiplier alone. Targets:
+  Converter: `a NUM with a plus sign or leading blanks is taken`, `a NUM takes a lower-case m multiplier`, `a
+  multiplier alone is a NUM`. Fixture.
+  - **Owner, 2026-10-16:** A. One `HEAD_NUM` for `-n` and `-c` following head's `xstrtoumax` reader:
+    `-?[ \t\n\u000B\f\r]*\+?(?:[0-9]+UNIT?|UNIT)` with `UNIT = (?:b|[kKmMGTPEZYRQ](?:B|iB)?)`; the value stays the
+    string typed. The converter cells pin both lists checked 2026-10-16: runs `+5`, ` +5`, ` 5`, `\n5`, `\v5`, `- 5`,
+    `-+5`, `-0`, `00`, `1m`, `1mB`, `1kB`, `1kiB`, `1KB`, `1MB`, `1G`, `1E`, `1Q`, `1QiB`, `K`, `KiB`, `b`, a 23-digit
+    run; refused `1g`, `1e`, `1B`, `1bB`, `bB`, `iB`, `1Ki`, `+ 5`, `-- 5`, `+-5`, `1 K`, empty, `-`, `+`, ` `, `٥`,
+    `5x`, `0x10`, `5 `.
+  Done 2026-10-16: `HEAD_NUM` as decided, on `-n` and `-c`; both lists are converter cells, checked again on real head
+  with `-n` and `-c` (plus `\f5`, `\r5`); its 3 targets pass.
+- [x] **142. A line without `-n` or `-c` reads ten lines.** `head f` prints 10 lines; the record has `lines = null`.
+  Target: Projection: `a line without -n or -c binds ten lines`. Fixture; the record's shape is an owner call.
+  - **Owner, 2026-10-16:** A. The record's `lines` and `bytes` become one `count: Count`, `sealed interface Count {
+    Lines(num: String); Bytes(num: String) }`, projected as `bytes()?.let { Count.Bytes(it) } ?: Count.Lines(lines() ?:
+    "10")`; the target is restated as `count = Count.Lines("10")`.
+  Done 2026-10-16: `HeadInputs.count: Count` (`Lines(num)`, `Bytes(num)`, `Count.Lines("10")` when none is given).
+  Built as `-n` mapped to `Count.Lines`, `-c` to `Count.Bytes`, the number input through `obsoleteCount`, folded by one
+  `lastOf(lines, bytes, obsolete)`, which replaces `lastOf(named, direct)` plus `lastWins(lines, bytes)`: the owner's
+  `bytes()?.let ... ?: Lines(...)` could not make `-3b` bytes. Its target passes.
+- [x] **143. The obsolete count is read only as the first word.** `head -c 5 -3 f`, `head -v -3 f`, `head f -3`,
+  `head -n 2 f -3`: "invalid trailing option -- 3"; `head -v12 f`: "invalid trailing option -- 1". klap's
+  `numberOption` reads a digit run anywhere, in a cluster too (`-v12` binds 12). git's fixture also declares it
+  (`git log -3`), so this is not klap's default for every `numberOption`. Targets: Projection: `a count anywhere but
+  first is refused`; Completion: `a dash-led count anywhere but first offers nothing`. klap core.
+  - **Owner, 2026-10-16:** A, with 144: `numberOption(firstWordOnly = true)`, opt-in (git keeps the run anywhere). A
+    run in a later word or after a letter (`-v12`) stays an unknown option.
+  Done 2026-10-16: `numberOption(help, firstWordOnly: Boolean = false, suffixes: String = "")` (`OptionSpec.number:
+  NumberShape?` in place of `isNumber`); "first word" is the first word after the command's name, threaded through
+  every cluster reader, the arity walk and completion. klap tests: `NumberOptionFirstWordOnlyTest` (6). head declares
+  `firstWordOnly = true, suffixes = "bcklm"`; its 2 targets pass. git keeps the default.
+- [x] **144. The obsolete count takes head's letters after its digits.** `info coreutils 'head invocation'`:
+  `-[NUM][bkm][cqv]`; runs: `-3c f` 3 bytes, `-3b f` 1536 bytes, `-3l f` 3 lines, `-3bl f` 1536 lines, `-3k f` and
+  `-3m f` run, `-3v f` a header, `-3q f g` none, `-3z f` NUL lines, `-3cv f` 3 bytes with a header, `-5c -n 2 f` 2
+  lines; `-3n5 f`, `-5n 3 f`: "invalid trailing option -- n". klap reads the letters through getopt: `-3c f` makes
+  `-c` take `f`, `-3b` is refused, `-3n5` binds `-n 5`, and `head -2‸` offers `-2n`. Targets: Projection: `the
+  obsolete count takes head's unit letters after its digits`, `an n after the obsolete count is refused`; Completion:
+  `the obsolete count continues with head's own letters`, `the word after a count ending in n is an operand`. klap
+  core (no `numberOption` takes a letter grammar), or the fixture if klap gives it the first word.
+  - **Owner, 2026-10-16:** A, with 143: `numberOption(suffixes = "bcklm")`, opt-in. The suffix letters stay in the
+    value in the order typed (`-3bc` binds `"3bc"`); the run's other letters are the cluster's shorts (`-3vq` is 3,
+    `-v`, `-q`); a value-taking short there (`n`) is refused; Tab after `head -2‸` offers the suffixes and `q v z`,
+    never `n`. The fixture reads the value into `Count` in NUM's own spelling, as `-c 3b` binds (`-3b` is
+    `Count.Bytes("3b")`, `-3bl` `Count.Lines("3b")`, `-3bc` `Count.Bytes("3")`), the last unit letter winning, as checked 2026-10-16 on `seq
+    3000`: `b`, `k`, `m` set bytes with that multiplier (`-3b` 1536 bytes, `-3k` 3072), `c` bytes times one (`-3bc` 3
+    bytes, `-3cb` 1536 bytes), `l` lines keeping the multiplier (`-3bl` 1536 lines, `-3lb` 1536 bytes). Check first
+    that `numberRunAt` (`Parser.kt:101`, `Completion.kt:714`) takes the suffixes without breaking K16's other shapes;
+    stop and report if not.
+  Done 2026-10-16: with 143. A suffix letter may stand anywhere after the run (`-3vk` binds `"3k"` and `-v`, as head
+  reads it) and wins over a short spelled the same (`c`); Tab leaves out a suffix already typed; under
+  `ShortOptions.Alone` a run with its suffixes is one word. klap tests: `NumberOptionSuffixesTest` (9). The fixture's
+  `obsoleteCount` reads the value, checked on real head (`-3bk` 3072 bytes, `-3kb` 1536, `-3bcl` 3 lines, `-3lc` 3
+  bytes, `-3cl` 3 lines besides the owner's list), pinned by its own converter test; the 4 targets pass. The number
+  input's help now reads "same as -n NUM, or -c NUM after a b, c, k or m; ...".
+- [x] **145. head's undocumented `---presume-input-pipe`.** `head --=x f` lists it among the possibilities; `head
+  ---presume-input-pipe f`, `---p f` and `--- f` print f. klap refuses a long starting with `-`. Target: Projection:
+  `---presume-input-pipe is accepted`. Record, as rm's 121, or klap core.
+  - **Owner, 2026-10-16:** A. A record: `@Ignore("Will not do (todo 145): klap refuses a long starting with '-', and
+    head's ---presume-input-pipe is an undocumented test hook")`. No API change.
+  - **Owner, 2026-10-16:** asked whether `.hidden()` or a help-only variant settles it. No: `.hidden()` already
+    keeps an input out of help, Tab and the docs (`docs/guide.md:349`), and the blocker is the spelling, which
+    `requireValidSpelling` refuses (`internal/spec/HolderSpec.kt:324`). The record stands; no `hidden(helpOnly = true)`
+    is filed, as no tool needs one. Item 146 fixes the KDocs.
+  Done 2026-10-16: the record `@Ignore("Will not do (todo 145): ...")` in `HeadProjectionTargetsTest`.
+- [x] **146. The KDocs of `.hidden()` say less than it does.** `Arg<T>.hidden()`, `Opt<T>.hidden()` and
+  `Flag.hidden()` (`Converters.kt:465`, `:839`, `:975`) say "Omit this ... from `--help`", while it also leaves the
+  input out of completion and the generated docs (`docs/guide.md:349`, `render/Completion.kt:237`). Found in the head
+  walkthrough. klap core docs.
+  - **Owner, 2026-10-16:** A. Each says it is left out of `--help`, completion and the generated docs, and still parses
+    and binds; built in head's TDD pass.
+
+  Done 2026-10-16: the three KDocs say the input is left out of `--help`, completion and the generated docs, and still
+  parses and binds.
+- [x] **133. Drop the Android target from klap and the task-manager example.** From the kern/klap notes
+  (`~/Projects/kern/kern-klap-changes.md`, section 1, "Dropping Android from klap", 2026-10-12): the Kotlin `android`
+  target means Android apps, which have no terminal, so a CLI library has nothing to do there; kern keeps Android for
+  the logger. Today `klap/build.gradle.kts:3,15-17` and `example/task-manager/build.gradle.kts:3,35-37` declare it,
+  `klap/src/jvmAndroidMain` is the shared JVM and Android source set, the catalog carries `agp` and the
+  `android-*` versions, and the README lists Android among the targets (`README.md:9`). Termux is out of scope (it
+  runs the JVM artifact or needs `androidNativeArm64`). Build.
+  Done 2026-10-16: klap and task-manager declare no `android` target; the catalog loses `agp`, the `android-*`
+  versions and the `androidKotlinMultiplatformLibrary` plugin, the root build its `apply false`, `settings.gradle.kts`
+  its `google()` repositories and `gradle.properties` its `android.*` flags. `jvmAndroidMain` is gone and its one
+  file is `jvmMain/.../platform/Exit.jvm.kt`. task-manager is linuxX64 and mingwX64 only, so its `jvmToolchain`
+  went too. `README.md` (targets, toolchain floor without the build-tools note), `docs/guide.md:118,1831,1836` and
+  `example/README.md:247` no longer name Android. 4090 tests, 16 skipped, 0 failed, as before.
+- [x] **113. The help JSON keys `absentWith` and `optionalWith` still say "with".** After 112d the help text reads
+  "absent when" and "optional when", and the calls are `absentWhen` and `optionalWhen`, but `--help --json` emits
+  `absentWith` and `optionalWith` (`internal/render/HelpJson.kt:43-44`, `docs/guide.md:1505`, pinned in
+  `HelpJsonTest`). A key is a published format, so the 112 rename left them. Owner call: rename them to
+  `absentWhen` and `optionalWhen` (pre-1.0, as 112e), or keep them. klap core.
+  - **Owner, 2026-10-13:** A. The keys follow the calls and the help text: `absentWhen` and `optionalWhen`, pre-1.0
+    and at once, as 112e (this reverses the key names chosen 2026-10-03, kotoml FRICTION_LOG entry 60).
+  Done 2026-10-13: `ArgumentHelp`'s fields `absentWhen` and `optionalWhen` (`internal/render/HelpJson.kt:43-44`), so
+  `--help --json` emits `"absentWhen":"--target-directory"` and `"optionalWhen":"--force"`; `HelpJsonTest` and
+  `docs/guide.md:1530` follow. 3942 tests, 16 skipped, 0 failed.
+- [x] **114. rm has none of klap's built-ins, and `__complete` is a file name.** `rm --json a`, `--color a`, `--j a`,
+  `--c a`: "unrecognized option"; `rm --d ed` removes the directory (it is `--dir`); `rm __complete a`: "cannot remove
+  '__complete'", and a is removed. Targets: Completion: `klap's built-ins rm lacks are not offered`, `__complete as the
+  first word is a file`; ValueCandidates: `a built-in rm does not have takes no attached value`; SuggestionList: `a
+  built-in rm does not have is not offered`, `the built-ins come last and are only rm's`, `a completion script's call
+  reaches rm as its own words`; Projection: `an option rm does not have is refused`, `--d abbreviates --dir`,
+  `__complete is a file name`. Fixture (`builtins { }`, as mv's 103; items 102, 103a).
+  - **Owner, 2026-10-12:** A. `rmCli()` turns off json, color, completion and docs in `builtins { }` and gives
+    `--help` rm's description "display this help and exit", as `mvCli()`; `__complete` is a file name (item 102).
+  Done 2026-10-13: `rmCli()` turns json, color, completion and docs off and gives `--help` "display this help and exit";
+  `--d` is `--dir` and `__complete` a file name. Its 9 targets pass.
+- [x] **115. `-I` has no long name.** `rm --interactive-once a`: "unrecognized option"; `rm --i a` and `rm --inter a`
+  prompt, as `--interactive`. The fixture invents `--interactive-once`, so `--i` is ambiguous. Targets: Completion: `the
+  fixture's --interactive-once is not offered`, `an abbreviation of --interactive reaches its value`; ValueCandidates:
+  `an abbreviated --interactive keeps the typed spelling as its head`; LineContext: `an abbreviated --interactive
+  before the cursor claims no word`; Projection: `--interactive-once is no long of rm and --i abbreviates
+  --interactive`; SuggestionList: `a name rm does not have is not offered for --interactive`; Converter: `an
+  abbreviated --interactive reads its value`. Fixture.
+  - **Owner, 2026-10-12:** A. `-I` is declared short only (`flag(short = 'I', help = ...)`); `--interactive-once`
+    goes, so `--i` and `--inter` abbreviate `--interactive`.
+  Done 2026-10-13: `-I` is `flag(short = 'I', ...)`; `--interactive-once` is gone and `--i`, `--inter` abbreviate
+  `--interactive`. Its 7 targets pass.
+- [x] **116. `--interactive` reads rm's argmatch words: `never`, `no`, `none` / `once` / `always`, `yes`.**
+  `rm --interactive=bogus a` lists them in that order; `=no`, `=none`, `=non` and `=n` remove without asking (a prefix
+  of several words that mean one thing is accepted), `=yes`, `=y`, `=a` prompt. The fixture has `.choice("never",
+  "once", "always")`. The same shape recurs: `ls --color=n` and `=ye` are accepted, and mv and cp read `--backup`
+  through their own private `argmatch` (`Mv.kt:315`). Targets: Completion: `every value rm accepts after --interactive=
+  is offered`; ValueCandidates: `every word rm reads as a WHEN is offered after --interactive=`; SuggestionList: `the
+  values of --interactive come in rm's order`; Projection: `--interactive binds every word rm reads as a mode`;
+  Converter: `--interactive binds no none and yes and their prefixes`. klap core (an enum entry with several
+  spellings) or fixture; `.enum` per item 111.
+  - **Owner, 2026-10-12:** A. klap gains `.enum<E>(spellings = { it.words })`: each entry is typed as any of its
+    words, completion offers every word in declared order, and a prefix is accepted when every word it starts names
+    one entry (gnulib argmatch; `=n` is `Never`). rm declares `enum class Interactive(val words: List<String>) {
+    Never(never, no, none), Once(once), Always(always, yes) }` with `.optionalValue()` (bare is `Always`). To check
+    first in the build: the parameter name beside today's `spelling`, which word `--help` shows, and how an
+    ambiguous prefix across entries is refused. Follow-up: item 122.
+  Done 2026-10-13: klap: `.enum<E>(spellings = { it.words })` (`@JvmName("enumOfSpellings")`, the named argument
+  required), argmatch prefixes under `Abbreviation.Options`/`All` (a prefix whose words name one entry resolves, across
+  entries it is `AmbiguousValue`), `--help` shows each entry's first word, errors list every word; `EnumSpellingsTest`,
+  guide rows and snippets. rm: `enum class Interactive(val words: List<String>)` read with it,
+  `.placeholder("WHEN").optionalValue()`. Its 5 targets pass.
+- [x] **117. `--preserve-root` takes an optional `all`, beside `--no-preserve-root`.** `rm --preserve-root=all a` and
+  `rm --pre=all a` run; `=al`, `=ALL`: "unrecognized --preserve-root argument". The fixture has one negatable flag
+  (its KLAP-GAP note: one holder cannot be both negatable and optional-valued). Targets: Completion: `--preserve-root=
+  completes to all`; ValueCandidates: `--preserve-root offers all attached in every spelling`; SuggestionList:
+  `--preserve-root= offers all`; Projection: `--preserve-root=all binds in every spelling`, `--interactive and
+  --preserve-root show an optional value and no bare one`; Converter: `--preserve-root binds all`. Fixture.
+  - **Owner, 2026-10-12:** A. `--preserve-root` is `option(long = "preserve-root").enum<RootScope>().optionalValue()`
+    with `enum class RootScope { All }`, `--no-preserve-root` a flag of its own, and `lastWins(preserveRoot,
+    noPreserveRoot)`; the record's field is `enum class PreserveRoot { Off, Root, All }` (Off from
+    `--no-preserve-root`, All from `=all`, Root otherwise). Unverified: the order between the two, since
+    `--no-preserve-root` is never run; `lastWins` is getopt_long's default reading. The KLAP-GAP note goes.
+  - **117a, Owner, 2026-10-13:** A. Found in the TDD pass: `.enum<RootScope>()` under `Abbreviation.Options` takes
+    `--preserve-root=al` and `=a`, which rm refuses ("unrecognized --preserve-root argument: 'al'"; `=all` and
+    `--pre=all` run). klap gains an `abbreviates = false` parameter on both `.enum` overloads (name to confirm in the
+    build): that option's values match only whole, whatever the CLI's `abbreviation`, while its long still
+    abbreviates and other enums keep prefixes (`--interactive=nev`). rm's `--preserve-root` uses it. Targets:
+    Projection and Converter: `--preserve-root refuses a prefix of all`. klap core.
+  Done 2026-10-13: `--preserve-root` is `.enum<RootScope>(abbreviates = false).optionalValue()`, `--no-preserve-root`
+  its own flag, `lastWins` between them, the record field `PreserveRoot { Off, Root, All }`; the KLAP-GAP note is gone.
+  117a: klap gains `abbreviates: Boolean = true` on both `Opt` `.enum` overloads (values match only whole; the long
+  still abbreviates; Tab still completes a prefix; `EnumWholeValueTest`, guide). Its 6 targets and 117a's 2 pass.
+- [x] **118. `-f`, `-i`, `-I` and `--interactive` set one prompt mode, and the later one wins.** `rm -f -i a` and
+  `-fi a` prompt, `-if a` does not; `rm -f -i`, `-f -I`, `-f --interactive`: "missing operand"; `rm -i -f` exits 0.
+  But `rm -f --interactive=never` exits 0 and `rm -f --interactive=never nonexist` exits 0, while `rm -f -i nonexist`
+  and `rm --interactive=never nonexist` exit 1: `-f`'s "ignore missing" is undone by `-i`, `-I`, `=once`, `=always`
+  and kept by `=never`. The fixture binds the four independently and ORs them. Targets: Projection: `the later of -f
+  -i -I and --interactive decides the prompt`, `a prompt option after -f needs the operands again`, `each spelling of
+  a prompt mode binds one record`. Fixture, maybe klap API for the `=never` case.
+  - **Owner, 2026-10-12:** A. `lastWins(force, interactiveShort, interactiveOnce, interactive)` with the operands'
+    `.optionalWhen(force)`; the projection replays `inOrder(...)` as rm's option loop into two fields, `prompt:
+    Prompt` (`enum class Prompt { WriteProtected, Never, Once, Always }`, WriteProtected when none is given) and
+    `ignoreMissing: Boolean` (set by `-f`, cleared by `-i`, `-I`, `=once`, `=always`, kept by `=never`), replacing
+    `force`, `interactiveShort`, `interactive` and `interactiveOnce`. The passing Projection test `-f with a later
+    --interactive=never still lets the operand list go empty` becomes a record: `@Ignore("Will not do (todo 118): a
+    later --interactive=never takes -f's place under lastWins, so the operands are needed")`.
+  Done 2026-10-13: `lastWins(force, interactiveShort, interactiveOnce, interactive)`, the projection replays
+  `inOrder(...)` through a private `PromptReplay` into `prompt: Prompt` (`WriteProtected, Never, Once, Always`) and
+  `ignoreMissing`. Its 3 targets pass; `-f with a later --interactive=never still lets the operand list go empty` is the
+  record.
+- [x] **119. rm's help words, `-R` as a second short of `--recursive`, and rm's help page.** `rm --help`: "-r, -R,
+  --recursive"; `rm -R dd` and `rm -rR dd` remove dd. The fixture's `-R` is its own flag "same as --recursive", and
+  `-I`, `--one-file-system`, `--[no-]preserve-root`, `--help` and `--version` are worded otherwise. Targets: Projection:
+  `-R binds what -r binds in every spelling`, `the help page lists rm's options and nothing rm refuses`; Completion:
+  `a name is described in rm's words wherever the cursor sits`, `a dash offers exactly rm's names in rm's words`;
+  SuggestionList: `a long name is described in rm's words`, `a cluster continues with rm's letters in rm's words`, `a
+  dash offers rm's names in rm's words and nothing else`. Fixture.
+  - **Owner, 2026-10-12:** A. `-r` and `-R` are one flag, `flag(short = listOf('r', 'R'), long = listOf("recursive"),
+    ...)`, and `RmInputs` loses `recursiveUpper`; every description is `rm --help`'s text with its lines joined by
+    single spaces, `--version` through `Version.Of(..., description = "output version information and exit")`. The
+    help page target passes once 114, 115 and 117 are built too.
+  Done 2026-10-13: `flag(short = listOf('r', 'R'), long = "recursive", ...)`, `RmInputs` without `recursiveUpper`, every
+  description `rm --help`'s text, `Version.Of(..., description = "output version information and exit")`. Its 7 targets
+  pass.
+- [x] **120. `--no-preserve-root` refuses every abbreviation.** `strings /usr/bin/rm`: "you may not abbreviate the
+  --no-preserve-root option"; getopt reads `--no-p` and `--n` as that long. Not run. klap's abbreviation is one
+  setting for the whole CLI (`Abbreviation.kt`). Target: Projection: `--no-preserve-root refuses every abbreviation`.
+  klap core (a long that must be spelled in full), or record.
+  - **Owner, 2026-10-12:** A. klap gains `.spelledInFull()` on `Flag` and `Opt` (name to confirm in the build): that
+    input's longs are matched only whole, whatever the CLI's `abbreviation`, so `--no-p` and `--n` are refused while
+    the other longs still abbreviate; completion still offers the whole word. rm's `--no-preserve-root` uses it.
+  Done 2026-10-13: klap: `Opt<T>.spelledInFull()` and `Flag.spelledInFull()`: the input's longs (a negation included)
+  match only whole; a prefix shared with another long stays ambiguous, as getopt_long; Tab and did-you-mean still name
+  the whole word; `SpelledInFullTest`, guide. rm's `--no-preserve-root` uses it. Its target passes.
+- [x] **121. rm's undocumented `---presume-input-tty`.** `rm --=x a` lists it among the possibilities; `rm
+  ---presume-input-tty a` removes a. Target: Projection: `---presume-input-tty is accepted`. Fixture, if klap takes a
+  long starting with `-`, else klap core or record. Checked 2026-10-12: `flag(long = "-presume-input-tty")` throws at
+  build, "invalid flag spelling '-presume-input-tty': write it without dashes".
+  - **Owner, 2026-10-12:** A. A record: `@Ignore("Will not do (todo 121): klap refuses a long starting with '-', and
+    rm's ---presume-input-tty is an undocumented test hook")`. No API change.
+  Done 2026-10-13: the record `@Ignore("Will not do (todo 121): ...")` in `RmProjectionTargetsTest`.
+- [x] **123. A line holding an ambiguous long anywhere before the cursor completes nothing.** Real ls refuses the
+  whole line (`ls --re a`: "option '--re' is ambiguous"), so nothing Tab offers can run. klap checks only the word right
+  before the cursor and a long without `=x`: `ls --re a ‸`, `ls --s=x ‸` and `ls --re -l ‸` offer files, `ls --re
+  --format ‸` offers the format words. The open point under item 64. Target: LineContext: `nothing completes after an
+  ambiguous long earlier on the line`. klap core.
+  - **Owner, 2026-10-13:** A. klap stays as K34 and K47 have it: Tab answers the slot under the cursor, so only the
+    word right after an ambiguous long offers nothing. The target is restated as a passing test pinning today's
+    answers (`ls --re a ‸` and `ls --s=x ‸` offer files, `ls --re --format ‸` the format words). No klap change.
+  Done 2026-10-13: no klap change; LineContext's target is restated as the passing `an ambiguous long earlier on the
+  line leaves the slot under the cursor its own answer` (`ls --re a ‸` and `ls --s=x ‸` offer files, `ls --re --format
+  ‸` the format words).
+- [x] **124. The fixture lacks about 30 of ls's inputs.** `ls --=x` lists 44 longs; the fixture declares 26 names.
+  Missing: `--author`, `-b/--escape`, `--block-size`, `-B/--ignore-backups`, `-c`, `-D/--dired`, `-f`, `--file-type`,
+  `--full-time`, `-g`, `--group-directories-first`, `-G/--no-group`, `-H/--dereference-command-line`,
+  `--dereference-command-line-symlink-to-dir`, `--hyperlink[=WHEN]`, `--indicator-style`, `-k/--kibibytes`,
+  `-L/--dereference`, `-n/--numeric-uid-gid`, `-N/--literal`, `-o`, `-p`, `-q/--hide-control-chars`,
+  `--show-control-chars`, `-Q/--quote-name`, `--quoting-style`, `--time`, `--time-style`, `-u`, `-v`, `--zero`. The
+  missing longs also make prefixes ambiguous the fixture binds: `ls --di a` ("ambiguous; possibilities: '--directory'
+  '--dired'"), `--in` (`--inode`, `--indicator-style`), `--f` (`--full-time`, `--file-type`, `--format`). Targets:
+  Projection: `every input real ls has is accepted`, `a prefix one of the fixture's longs shares with a long it lacks is
+  refused`, `the help page lists ls's options and nothing ls refuses`; Completion: `every name and word real ls has is
+  offered`, `a cluster continues with every letter ls accepts after it`, `a dash offers exactly ls's names`, `nothing
+  completes after a long ls calls ambiguous through one the fixture lacks`; SuggestionList: `every long ls has is
+  offered after two dashes`, `a dash offers ls's names in ls's words and nothing else`; ValueCandidates: `every value
+  option ls has offers its words`. Several also need 125 or 131. Fixture.
+  - **Owner, 2026-10-13:** A. Declare every missing input with ls's help words. Each flag is one Boolean unless
+    127 to 129 fold it into a shared setting; the closed sets (`--time`, `--quoting-style`, `--indicator-style`,
+    `--hyperlink`) are enums as 126 decides; `--time-style` and `--block-size` stay strings with no validation, since
+    ls checks `--time-style` only beside `-l` (`ls --time-style=bogus a` runs) and SIZE is its own grammar; Tab
+    offers `--time-style`'s known words.
+  Done 2026-10-13: `Ls.kt` declares every input of `ls --help` in its words; `--time-style` is a `String?` whose Tab
+  offers `full-iso`, `long-iso`, `iso` and `locale`, `--block-size` a string inside `SizeUnits.Block`; `-F` short only
+  and `--classify` long only, as ls's short string has no optional value. Every prefix ls calls ambiguous is refused
+  (`--di`, `--in`, `--f`, `--t`, `--d`); `ls -d --dire‸` offers `--directory` and `--dired`. The ten targets pass;
+  three were renamed for the contract (`a prefix --directory --inode --format or --ignore shares with another long is
+  refused`, `nothing completes after a prefix --directory or --format shares with another long`, and the three
+  ambiguity tests folded into `every prefix ls calls ambiguous is refused`). The `group { }` help sections went, as ls
+  has none.
+- [x] **125. klap's `--json`, `--completion`, `--docs` and `__complete` are not ls's.** `ls --json a`: "unrecognized
+  option '--json'"; `ls __complete a`: "cannot access '__complete'". The fixture keeps them (only `color` is off).
+  Targets: Completion: `klap's built-ins ls lacks are not offered`, `__complete as the first word is a file`;
+  LineContext: `klap's --json is no name of ls`; Projection: `an option ls does not have is refused`, `__complete is a
+  file name`; SuggestionList: `a built-in ls does not have is not offered`, `the built-ins come last and are only
+  ls's`, `a completion script's call reaches ls as its own words`. Fixture.
+  - **Owner, 2026-10-13:** A. `builtins { json, color, completion, docs = Builtin.Off }`, as rm's; `__complete` is a
+    file name.
+  Done 2026-10-13: `builtins { json, color, completion, docs = Builtin.Off }`; `__complete` binds as a file. The eight
+  targets pass; E19 (`what a completion script reads back is the same list`) was deleted, as ls has no completion
+  protocol once completion is off.
+- [x] **126. ls's value options read every argmatch word.** `ls --color=bogus` lists `'always', 'yes', 'force'`,
+  `'never', 'no', 'none'`, `'auto', 'tty', 'if-tty'`; `--color=ye`, `=non`, `=t` run. `ls --format=bogus` lists
+  `'verbose', 'long'`, `'commas'`, `'horizontal', 'across'`, `'vertical'`, `'single-column'` in that order. The fixture
+  reads `--color` and `--classify` as `.choice("always", "auto", "never")` and `--format` as seven separate strings in
+  declared order. Items 111 and 122. Targets: Projection: `every word ls reads for one value binds that value`;
+  ValueCandidates: `every word ls reads as a WHEN is offered after the equals sign`; SuggestionList: `--format's values
+  come in ls's order`, `--color's values come in ls's order`. Fixture.
+  - **Owner, 2026-10-13:** A. Six enums read with `.enum<E>(spellings = { it.words })`, entries in ls's argmatch order:
+    `When` (Always: always yes force; Never: never no none; Auto: auto tty if-tty), shared by `--color`, `--classify`
+    and `--hyperlink`; `Format` (Long: verbose long; Commas; Across: horizontal across; Vertical; SingleColumn);
+    `Sort` (None, Size, Time, Version, Extension, Name, Width); `TimeWord` (Atime: atime access use; Ctime: ctime
+    status; Mtime: mtime modification; Birth: birth creation); `QuotingStyle` (literal, shell, shell-always,
+    shell-escape, shell-escape-always, c, c-maybe, escape, locale, clocale); `IndicatorStyle` (none, slash,
+    file-type, classify). A bare `--color` binds `When.Always`. Closes items 111 and 122 for ls.
+  Done 2026-10-13: `When`, `Format(words, layout)`, `Sort`, `TimeWord`, `QuotingStyle` and `IndicatorStyle`, each
+  `.enum<E>(spellings = { it.words })` in argmatch order; a bare `--color`, `--classify` or `--hyperlink` binds
+  `When.Always` through `.optionalValue("always")`. The four targets pass. Items 111 and 122 are done for ls.
+- [x] **127. A shorthand and its word are one value on the record.** `ls --help`: "long (-l)", "size (-S)",
+  "-F, --classify[=WHEN]". `ls -l -C a b` lists in columns, `ls -C -l a` lists long, `ls -l --format=single-column a`
+  lists one name, but `ls -l -1 a` and `ls -1 --format=long a` list long: `-1` never overrides a long format. The fixture
+  binds `-l -C -x -m -1` as booleans beside `format: String?`, `-t -S -U -X` beside `sort`, `-F` beside `classify`.
+  Targets: Projection: `each spelling of one value binds one record`, `the layout shorts and --format are one setting
+  the last given wins`. Fixture.
+  - **Owner, 2026-10-13:** A. `layout: Layout` (`ByTerminal, Long, Commas, Across, Vertical, SingleColumn`, a record
+    enum apart from `Format`, whose entries all carry words), one setting the last given wins over `-l -g -o -n
+    --full-time -C -x -m -1 --format`, replayed with `inOrder` as rm's prompt is, `-1` skipped while the layout so far
+    is Long; `-g`, `-o`, `-n` and `--full-time` keep their own fields too. `sort: Sort` (default `Name`) over `-t -S -U
+    -X -f --sort` under `lastWins`; `-f` also sets `all`. `-c` binds `time = Ctime` and `-u` `Atime`; their order
+    against `--time` and `--sort` is unverified: the TDD agent checks it against real ls first.
+  Done 2026-10-13: `layout: Layout` replayed with `inOrder` over `-l -g -o -n --full-time -C -x -m -1 --zero
+  --format`, `-1` and `--zero` leaving a Long layout as it is (`ls -C --zero` one per line, `-l --zero` long); `sort:
+  Sort` under `lastWins(-t, -S, -U, -X, -v, -f, --sort)` (`-v` added: `ls -m -S -v` sorts by version, `-v -S` by
+  size); `time: TimeWord` under `lastWins(-c, -u, --time)`. Seen on real ls: an explicit sort beats a timestamp in
+  either order, and a timestamp with no sort given sorts by it only when the final layout is not Long (`-l -c` by
+  name, `-l -c -C` by ctime), so `sort` falls back to `Time` exactly then. Both targets pass, plus `-c -u and --time
+  are one timestamp that sorts only where nothing else sorts and the listing is not long` (20 cells).
+- [x] **128. `-a` against `-A`, and `-h` against `--si`, are each one setting the last wins.** `ls -m -a -A` hides `.`
+  and `..`, `ls -m -A -a` shows them; `ls -s -h --si big` prints `8.2k`, `ls -s --si -h big` prints `8.0K`. The fixture
+  binds each pair side by side. Targets: Projection: `-a and -A are one setting the last given wins`, `-h and --si are
+  one setting the last given wins`. Fixture.
+  - **Owner, 2026-10-13:** A. `hidden: Hidden` (`Skip, AlmostAll, All`) over `-a -A -f`, the last given wins (`ls -m
+    -A -f` shows `.` and `..`, `-f -A` hides them); `units: SizeUnits`, a sealed interface (`Default`, `Human`, `Si`,
+    `Block(size: String)`), over `-h --si --block-size`, the last given wins (`-h --block-size=1` prints 5001216,
+    `--block-size=1 -h` 4.8M). `-k` stays its own `kibibytes` Boolean: it never overrides the three in either order.
+    `-f`, in both `hidden` and `sort`, is replayed with `inOrder`.
+  Done 2026-10-13: `hidden: Hidden` replayed over `-a -A -f`; `units: SizeUnits` under `lastWins(-h, --si,
+  --block-size)`; `kibibytes` its own field. Both targets pass, widened with `-f`, `--block-size` and `-k` cells.
+- [x] **129. A `--classify` WHEN that resolves to "no" leaves the indicator style as it was.** `ls -d --classify
+  --classify=never sub` prints `sub/`, `ls -d -p --classify=never sub` prints `sub/`, `ls -d -F --indicator-style=none
+  sub` prints `sub`. So `-p`, `--file-type`, `--indicator-style` and `-F[=WHEN]` share one setting, and a never (or
+  auto off a terminal) takes no part. The fixture keeps `--classify`'s last WHEN. Target: Projection: `--classify given
+  twice keeps the strongest value`. Fixture, with 124.
+  - **Owner, 2026-10-13:** A. One `indicator: IndicatorStyle` field (default `None`), replayed with `inOrder`: `-p`
+    Slash, `--file-type` FileType, `--indicator-style=W` W, `-F`, bare `--classify` and `=always` Classify,
+    `--classify=never` no part, `--classify=auto` Classify only on a terminal. `lsCli(terminal: Boolean = false)`
+    stands in for isatty, as mv's `environment` map does. `--color=auto` stays `When.Auto` on the record.
+  Done 2026-10-13: `indicator: IndicatorStyle` replayed over `-p --file-type --indicator-style -F --classify`, a WHEN
+  taking part only when `When.appliesOn(terminal)`; `lsCli(terminal: Boolean = false)`. The target passes as `a
+  --classify WHEN that resolves to no leaves the indicator style as it was`, plus `--classify=auto appends indicators
+  on a terminal and --color=auto stays auto`.
+- [x] **130. `-w` and `-T` read COLS in base 0.** `ls -x -w 021` lays out differently from `-w 21`; `-w 080`: "invalid
+  line width"; `-w 0x11` and `-w 99999999999999999999` run; `-w -1`: "invalid line width". The fixture reads decimal
+  `.int()`. Targets: Converter: `-w and -T read octal and hex`, `a width past the largest number is accepted`, `-w and
+  -T refuse a negative number`. Fixture.
+  - **Owner, 2026-10-13:** A. A fixture-local strtoumax base 0 reader through `.convert { }`: octal after `0`, hex
+    after `0x`, leading blanks and `+` taken, a minus refused on 0 too, trailing text refused; `-w` saturates past
+    2^64-1, `-T` refuses it ("Value too large for defined data type"). `width` and `tabSize` become `ULong?`.
+  Done 2026-10-13: a private `cols()` reads strtoumax base 0 through `.convert { }` (`ConversionError.Domain`);
+  `width` and `tabSize` are `ULong?`. `-w` saturates past 2^64-1; `-T` refuses past 2^63-1, not 2^64-1 as the decision
+  said: `ls -T 9223372036854775807` runs and `-T 9223372036854775808` is "Value too large for defined data type"
+  (checked by the main session). The three targets pass.
+- [x] **131. Help words differ from `ls --help`.** For `--hide`, `--format`, `-t`, `--sort`, `-h`, `-w`, `--color`,
+  `-F`, `--help` and `--version`. The fixture's header also says coreutils 9.11. Targets: Completion: `a name is
+  described in ls's words wherever the cursor sits`; ValueCandidates: `an attached value is described by its option's
+  ls help`; SuggestionList: `the built-ins are described in ls's words`, `an attached value is described by its
+  option's help`. Fixture.
+  - **Owner, 2026-10-13:** A. Every input takes `ls --help`'s words verbatim, a wrapped entry joined into one line
+    (`-w`'s two spaces after the full stop kept); `--help` and `--version` say "display this help and exit" and
+    "output version information and exit" through `Help.ByCommand(description = )` and `Version.Of(description = )`,
+    as rm's; the header says 9.12.
+  Done 2026-10-13: every help text verbatim from `ls --help`, `--help` and `--version` in ls's words, the header at
+  9.12. The four targets pass.
+- [x] **132. Three testing-matrix notes are stale.** X14 (`X.md:115`) says `.int()` accepts non-ASCII digits and X15
+  (`X.md:118`) that it refuses a leading space; klap refuses `١٢` and accepts `-w ' 17'`, as ls does, and both ls tests
+  pass. P46 (`P.md:190`) and `K.md:233` say `ls --so` is ambiguous with `--show-control-chars`; `ls --so=size a` runs,
+  as `--show` starts `--sh`. Skill reference.
+  - **Owner, 2026-10-13:** A. The main session restated X14 and X15 (`X.md`) as klap reads numbers since item 72, and
+    moved P46 (`P.md`) and K34 (`K.md`) to `ls --di` (`--directory`, `--dired`). Done with the walkthrough.
+  Done 2026-10-13 by the main session, as the owner line says.
 - [x] **112. The rule declarations follow one naming grammar.** Owner, 2026-10-12: A, file it and decide the names one
   at a time. Today (`CommandBuilder.kt:182-207`, `Converters.kt:379-411`, `Converters.kt:633`):
   - `lastWins(a, b)` declares an override rule and returns Unit; `lastOneWins(a, b)` folds spellings into a new
@@ -290,7 +1011,7 @@ Decided against, with the reason, so they are not proposed again.
   internal `ArgumentSpec.relaxedWhen` is `optionalWhen`, and the test classes follow (`LastOfTest`, `ExactlyOneTest`,
   `AtMostOneTest`, `RequiredWhenTest`). Every fixture, task-manager, `docs/guide.md`, `example/README.md` and the
   fixture-parity skill's references moved. 3743 tests, 14 skipped, 0 failed, the count before the rename. The help
-  JSON keys `absentWith` and `optionalWith` keep "with" (item 113).
+  JSON keys `absentWith` and `optionalWith` kept "with" until item 113 renamed them.
 - [x] **103a. Does klap turn on `--json`, `--color`, `--completion` and `--docs` by default?** Every fixture turns all
   four off (`Cp.kt:45`, `Chmod.kt:89`, `Find.kt:258`, `Pacman.kt:60`), and mv would be the fifth; no GNU tool has any of
   them (`mv --json a b`: "unrecognized option '--json'"). kotoml's app relies on json and completion and turns only

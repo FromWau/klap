@@ -33,7 +33,9 @@ private val YIELDING_LONGS: Map<String, String> = mapOf("help-all" to "help")
  * The exact half always runs; [infer] gates only the prefix half, so a tree that infers nothing still binds
  * every full spelling. The exact-first rule is what makes a pool containing both `--sort` and `--sort-by`
  * usable at all, and it is the same reasoning that keeps `list` reachable beside `listen`. A blank [typed]
- * matches only where [blankIsPrefix], since every candidate carries it as a prefix.
+ * matches only where [blankIsPrefix], since every candidate carries it as a prefix. A prefix reaching only a
+ * candidate in [whole] reaches nothing, as rm refuses `--no-p` for `--no-preserve-root`; among others it still
+ * makes the prefix ambiguous, as getopt_long reports it before rm's own check runs.
  *
  * Duplicates are collapsed before the count, because one spelling can reach the pool from two sources and
  * two entries naming ONE candidate are not two possibilities.
@@ -44,6 +46,7 @@ internal fun resolveName(
     infer: Boolean,
     yielding: Map<String, String> = emptyMap(),
     blankIsPrefix: Boolean = false,
+    whole: Set<String> = emptySet(),
 ): NameMatch {
     if (typed.isEmpty() && !blankIsPrefix) return NameMatch.None
     if (candidates.any { it == typed }) return NameMatch.Exact(typed)
@@ -53,7 +56,7 @@ internal fun resolveName(
         .distinct()
     return when (hits.size) {
         0 -> NameMatch.None
-        1 -> NameMatch.Prefix(hits.first())
+        1 -> if (hits.first() in whole) NameMatch.None else NameMatch.Prefix(hits.first())
         else -> NameMatch.Ambiguous(hits)
     }
 }
@@ -62,12 +65,15 @@ internal fun resolveName(
 private fun yields(candidate: String, typed: String, yielding: Map<String, String>): Boolean =
     typed.isNotEmpty() && yielding[candidate]?.startsWith(typed) == true
 
+/** The longs a token resolves against, dashes stripped; a `.spelledInFull()` input's longs are also in [whole]. */
+internal class LongPool(names: List<String>, val whole: Set<String> = emptySet()) : List<String> by names
+
 /**
  * [resolveName] over a long-option pool, where klap's own injected names yield, and where the empty name of
  * `--=x` is a prefix of every long, as getopt_long reads it (`ls --=x` is ambiguous among all of ls's longs).
  */
-internal fun resolveLong(typed: String, candidates: List<String>, infer: Boolean): NameMatch =
-    resolveName(typed, candidates, infer, YIELDING_LONGS, blankIsPrefix = true)
+internal fun resolveLong(typed: String, candidates: LongPool, infer: Boolean): NameMatch =
+    resolveName(typed, candidates, infer, YIELDING_LONGS, blankIsPrefix = true, whole = candidates.whole)
 
 /**
  * The [candidates] entry the `--`-led [token] names, exactly or as an unambiguous abbreviation, or null.
@@ -77,7 +83,7 @@ internal fun resolveLong(typed: String, candidates: List<String>, infer: Boolean
  * scans that run before the walk knows which command it reaches, and answering there would short-circuit
  * past the full-pool diagnostic that command's own sift raises for the same token.
  */
-internal fun matchedLong(token: String, candidates: List<String>, infer: Boolean): String? {
+internal fun matchedLong(token: String, candidates: LongPool, infer: Boolean): String? {
     if (!token.startsWith("--")) return null
     return when (val match = resolveLong(token.removePrefix("--").substringBefore('='), candidates, infer)) {
         is NameMatch.Exact -> match.name

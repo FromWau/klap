@@ -3,6 +3,7 @@ package com.fromwau.klap.testing
 import com.fromwau.klap.COMPLETE_FILES
 import com.fromwau.klap.Cli
 import com.fromwau.klap.internal.render.completeCandidates
+import com.fromwau.klap.internal.render.forShell
 
 /**
  * One thing Tab offers for a line: [value] is the word that replaces the one under the cursor, and
@@ -33,7 +34,9 @@ public fun Cli.suggestionsFor(
     val before = line.take(start).split(' ', '\t').filter { it.isNotEmpty() }
     val after = line.drop(cursor).dropWhile { !it.isWhitespace() }.split(' ', '\t').filter { it.isNotEmpty() }
     val words = before.drop(1) + line.substring(start, cursor) + after
-    return completeCandidates(words, before.size - 1).map { Suggestion(it.value, it.description) }
+    return completeCandidates(words, before.size - 1)
+        .mapNotNull { it.forShell() }
+        .map { Suggestion(it.value, it.description) }
 }
 
 /**

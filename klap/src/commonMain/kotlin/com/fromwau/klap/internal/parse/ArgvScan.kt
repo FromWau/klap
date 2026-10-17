@@ -31,7 +31,7 @@ import com.fromwau.klap.takesNextWord
  * prefix here.
  */
 internal class ArgvScan(
-    private val pools: (position: Int) -> List<String>,
+    private val pools: (position: Int) -> LongPool,
     val infer: Boolean,
     val valueSlots: Set<Int>,
     val tokens: List<String>,
@@ -45,11 +45,8 @@ internal class ArgvScan(
     /** The indices a scan may act on: before the end-of-options marker and outside every value slot. */
     private val open: List<Int> = (0 until headSize).filter { isOpen(it) }
 
-    /** The tokens a scan may act on, in argv order. */
-    val openTokens: List<String> get() = open.map { tokens[it] }
-
     /** The long pool a spelling at the original argv [position] resolves against. */
-    fun poolAt(position: Int): List<String> = pools(position)
+    fun poolAt(position: Int): LongPool = pools(position)
 
     /** The pool entry the token at [i] names, exactly or as an unambiguous abbreviation; null when it names none. */
     fun matched(i: Int): String? = matched(tokens[i], positions[i])
@@ -66,6 +63,9 @@ internal class ArgvScan(
 
     /** Where the first token a scan may act on that passes [test] stands, for ordering two built-ins; null if none. */
     fun firstOpen(test: (String) -> Boolean): Int? = open.firstOrNull { test(tokens[it]) }
+
+    /** [firstOpen], handing [test] each token's index in [tokens] beside it. */
+    fun firstOpenIndexed(test: (Int, String) -> Boolean): Int? = open.firstOrNull { test(it, tokens[it]) }
 
     /** Where the first bare token naming one of [longs] stands; see [firstOpen]. */
     fun firstNaming(vararg longs: String): Int? = open.firstOrNull { '=' !in tokens[it] && matched(it) in longs }
@@ -162,8 +162,8 @@ private class ArityWalk(private val cli: Cli) {
     private val globalFlagShorts = globals.flagSpecs.flatMapTo(mutableSetOf()) { it.shorts }
 
     private var cmd: Command = cli
-    private var pool: List<String> = cli.longMatchPool(globals)
-    private val pools = mutableMapOf<Command, List<String>>(cli to pool)
+    private var pool: LongPool = cli.longMatchPool(globals)
+    private val pools = mutableMapOf<Command, LongPool>(cli to pool)
 
     // The command in scope at each argv index the walk read; every later index is in [cmd]'s.
     private val scopes = mutableListOf<Command>()
@@ -171,12 +171,18 @@ private class ArityWalk(private val cli: Cli) {
     val slots = mutableSetOf<Int>()
 
     /** The long pool of the command in scope at argv [position]. */
-    fun poolAt(position: Int): List<String> = pools.getValue(scopes.getOrNull(position) ?: cmd)
+    fun poolAt(position: Int): LongPool = pools.getValue(scopes.getOrNull(position) ?: cmd)
 
     // The subcommand walk stops at the first token klap cannot strip as a global before it, and every token
     // after that belongs to `cmd`'s own segment; descending past one would resolve later options against a
     // command the parse never reaches.
     private var routing = true
+
+    // The index of [cmd]'s first word, the one place a first-word-only number may stand.
+    private var firstWordAt = 0
+
+    // How many of [cmd]'s operands the walk has passed, to find the one that ends its options.
+    private var operands = 0
 
     fun walk(head: List<String>) {
         var i = 0
@@ -194,11 +200,14 @@ private class ArityWalk(private val cli: Cli) {
                 }
                 if (child == null) {
                     routing = false
-                    // `optionsEndAtFirstOperand` deliberately does not reach klap's position-independent
-                    // built-ins, so past the operand that fires it the scans see argv as they always did.
-                    if (cmd.optionsEndAtFirstOperand) return
+                    operands += 1
+                    // The operand that ends a command's options deliberately does not reach klap's
+                    // position-independent built-ins, so past it the scans see argv as they always did.
+                    if (cmd.optionsEndAt?.let { operands > it } == true) return
                 } else {
                     enter(child)
+                    firstWordAt = i + 1
+                    operands = 0
                 }
                 i += 1
                 continue
@@ -209,7 +218,11 @@ private class ArityWalk(private val cli: Cli) {
                 continue
             }
             val next = head.getOrNull(i + 1)
-            val claim = if (token.startsWith("--")) longClaim(token, next) else clusterClaim(token, next)
+            val claim = if (token.startsWith("--")) {
+                longClaim(token, next)
+            } else {
+                clusterClaim(token, next, firstWord = i == firstWordAt)
+            }
             if (claim.takesNext) {
                 slots += i + 1
                 scopes += cmd
@@ -259,19 +272,23 @@ private class ArityWalk(private val cli: Cli) {
         else -> CLAIMS_NOTHING
     }
 
-    private fun clusterClaim(token: String, next: String?): Claim {
+    private fun clusterClaim(
+        token: String,
+        next: String?,
+        firstWord: Boolean,
+    ): Claim {
         val chars = token.removePrefix("-")
-        if (cmd.refusesCluster(chars, globals)) return CLAIMS_NOTHING
+        if (cmd.refusesCluster(chars, globals, firstWord)) return CLAIMS_NOTHING
         // A cluster is pre-stripped only when EVERY char is a global; one local char leaves it whole for
         // the reached command's own sift, exactly as siftGlobals does.
         var allGlobal = true
         var j = 0
         while (j < chars.length) {
-            val read = cmd.readShort(chars, j, globals)
+            val read = cmd.readShort(chars, j, globals, firstWord)
             when (read) {
                 // The number input is the command's own, and siftGlobals cannot strip a cluster carrying klap's
                 // own short either, so either one leaves the token whole for the walk, where it stops the routing.
-                is ShortRead.NumberRun, ShortRead.Builtin -> allGlobal = false
+                is ShortRead.NumberRun, ShortRead.NumberSuffix, ShortRead.Builtin -> allGlobal = false
                 is ShortRead.Flag -> if (read.hit.globals == null) allGlobal = false
                 is ShortRead.Option -> {
                     val attached = chars.length > j + 1

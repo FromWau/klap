@@ -1,8 +1,8 @@
 ---
 name: fixture-parity
 description: >-
-  Bring one klap example fixture (example/<tool>: chmod, cp, find, pacman, dd, head, ls, mkdir, mv, rm, tar, git,
-  curl, rsync, ssh) to the same behaviour as the real installed tool, end to end: a QA subagent writes the
+  Bring one klap example fixture (example/<tool>: chmod, cp, find, pacman, dd, head, ls, mv, rm, tar, git,
+  curl, ssh) to the same behaviour as the real installed tool, end to end: a QA subagent writes the
   testing-matrix tests against the real binary (projection, help, completion, every cursor column and the words
   after it), failing ones become TDD targets, the main session proves them and files them in todo.md, walks the
   owner through each decision, then TDD subagents in worktrees build the fixture and klap changes, and the main
@@ -52,9 +52,9 @@ are sometimes confidently wrong.
 
 - Always safe: `--help`, `-h`, `--version`, man and info pages, `/usr/share/doc`, and shell completion files (read).
 - Read-only tools (`ls`, `find`, `head`): real runs in a throwaway directory.
-- Tools that change files (`chmod`, `cp`, `mv`, `rm`, `mkdir`, `dd`, `tar`): only inside a throwaway directory made
+- Tools that change files (`chmod`, `cp`, `mv`, `rm`, `dd`, `tar`): only inside a throwaway directory made
   with `mktemp -d -p <base>/oracle`, on files made there, relative paths only, never `..`, `/` or an absolute path.
-- Network or system tools (`curl`, `ssh`, remote `rsync`, `git` remotes, `pacman -S/-R/-U`): no real runs; help, man
+- Network or system tools (`curl`, `ssh`, `git` remotes, `pacman -S/-R/-U`): no real runs; help, man
   page, and lines the tool refuses while parsing, only when that is certain.
 - util-linux `getopt -o <shorts> -l <longs> -- <argv...>` shows how glibc getopt_long reads a line; give `-o ''` when
   there are no shorts, or it reads the first word as the short spec.

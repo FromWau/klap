@@ -7,6 +7,7 @@ import com.fromwau.klap.internal.parse.sift
 import com.fromwau.klap.internal.render.BuiltinOptionHelp
 import com.fromwau.klap.internal.render.Candidate
 import com.fromwau.klap.internal.render.completeCandidates
+import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -468,8 +469,9 @@ class MixedClusterRoutingCompletionTest {
             }
             action { Ok("root") }
         }
-        // The root's own first-operand view, subcommand names and all, is what proves the walk stopped there.
-        assertEquals(listOf("list"), tree.completeCandidates(listOf("-po", "list", "")).map { it.value })
+        // The root's own view proves the walk stopped there: past its own option it routes to no subcommand and
+        // has no operand, where list would have offered its environments.
+        assertEquals(emptyList(), tree.completeCandidates(listOf("-po", "list", "")).map { it.value })
         assertEquals(listOf("x", "y"), tree.completeCandidates(listOf("list", "-po", "")).map { it.value })
     }
 }
@@ -949,6 +951,20 @@ class ProviderFailureTest {
     }
 
     @Test
+    fun `an error thrown by another input's converter leaves a provider the inputs it reads`() {
+        val tree = cli("app") {
+            command("run") {
+                option(long = "later").map<Int> { throw NotImplementedError("converter not written yet") }
+                val name = option(long = "name").default("x")
+                argument("a").completeWith { candidate("name=${name()}") }
+                action { Ok("") }
+            }
+        }
+        assertEquals(listOf("name=x"), tree.offered("run", ""))
+        assertEquals(listOf("name=x"), tree.offered("run", "--later", "z", ""))
+    }
+
+    @Test
     fun `complete subcommand through hidden complete builtin ignores a leading global flag`() {
         // Reproduces the real `myapp __complete -- -v issue show ""` shell-completion path (see
         // `complete subcommand returns provider candidates` for the no-global baseline of this same builtin).
@@ -1248,10 +1264,11 @@ class ColorAbbreviationCompletionTest {
 
     @Test
     fun `an abbreviated color option does not offer color modes under abbreviation none`() {
-        // Abbreviation.None turns off scan.matched's prefix half, so "--col" resolves to nothing here,
-        // exactly as the parser itself refuses the abbreviation.
+        // Abbreviation.None turns off scan.matched's prefix half, so "--col" resolves to nothing here, exactly
+        // as the parser itself refuses the abbreviation: an unknown option, after which no word routes either.
         val tree = colorAbbreviationDispatcherTree(Abbreviation.None)
-        assertEquals(listOf("add", "completion", "docs"), tree.candidateValuesFor("--col", ""))
+        tree.parse(listOf("--col", "add")).assertError<CliError.UnknownOption>()
+        assertEquals(emptyList(), tree.candidateValuesFor("--col", ""))
     }
 
     @Test
@@ -1794,5 +1811,48 @@ class AmbiguousLongCompletionTest {
             action { Ok("") }
         }
         assertEquals(listOf(COMPLETE_FILES), tree.offered("--zzz", ""))
+    }
+}
+
+/** A subcommand name is offered only where the parse would route the word to it. */
+class UnroutedSubcommandCompletionTest {
+
+    private val git = cli("git") {
+        command("status") {
+            flag(short = 's', long = "short")
+            action { Ok("") }
+        }
+        command("remote") {
+            flag(short = 'v', long = "verbose")
+            command("add") {
+                argument("name")
+                action { Ok("") }
+            }
+            action { Ok("") }
+        }
+    }
+
+    @Test
+    fun `no subcommand name is offered after the end of options`() {
+        assertEquals(
+            CliError.SubcommandAfterSeparator("status", "git"),
+            git.parse(listOf("--", "status")).assertError<CliError.SubcommandAfterSeparator>(),
+        )
+        assertEquals(emptyList(), git.offered("--", ""))
+    }
+
+    @Test
+    fun `no subcommand name is offered after an option of the parent`() {
+        assertEquals(
+            CliError.UnroutedSubcommand("add", "git remote"),
+            git.parse(listOf("remote", "-v", "add", "o")).assertError<CliError.UnroutedSubcommand>(),
+        )
+        assertEquals(emptyList(), git.offered("remote", "-v", ""))
+    }
+
+    @Test
+    fun `no subcommand name is offered after an option the parent does not have`() {
+        git.parse(listOf("-s", "status")).assertError<CliError.UnknownOption>()
+        assertEquals(emptyList(), git.offered("-s", ""))
     }
 }
