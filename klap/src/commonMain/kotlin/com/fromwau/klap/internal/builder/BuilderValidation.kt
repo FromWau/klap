@@ -19,11 +19,14 @@ import com.fromwau.klap.internal.spec.requireValidName
 import com.fromwau.klap.internal.spec.shorts
 import com.fromwau.klap.internal.spec.token
 
-/** Long names klap's own built-ins answer to at every command level; a declined built-in frees its name. */
-private fun reservedLongNames(builtins: Builtins): Set<String> = buildSet {
+/**
+ * Long names klap's own built-ins answer to on a command, the root when [atRoot]; a declined built-in frees its name,
+ * and a `rootOnly` version frees its own below the root.
+ */
+private fun reservedLongNames(builtins: Builtins, atRoot: Boolean): Set<String> = buildSet {
     if (builtins.help) add("help")
     if (builtins.helpAll) add("help-all")
-    builtins.versionLong?.let(::add)
+    if (atRoot || !builtins.versionRootOnly) builtins.versionLong?.let(::add)
     if (builtins.json) add("json")
     if (builtins.completion) add("completion")
     if (builtins.docs) add("docs")
@@ -31,9 +34,9 @@ private fun reservedLongNames(builtins: Builtins): Set<String> = buildSet {
 }
 
 /** Short names klap's own built-ins consume: `-h` while it is offered, and the version short a tool set. */
-private fun reservedShortNames(builtins: Builtins): Set<String> = setOfNotNull(
+private fun reservedShortNames(builtins: Builtins, atRoot: Boolean): Set<String> = setOfNotNull(
     builtins.helpShort?.toString(),
-    builtins.versionShort?.toString(),
+    builtins.versionShort?.takeIf { atRoot || !builtins.versionRootOnly }?.toString(),
 )
 
 /** Section headings `--help` emits on its own (see `Help.kt`); a group titled with one renders a duplicate heading. */
@@ -437,27 +440,17 @@ internal fun validateCanActOrDispatch(
 }
 
 /**
- * A command with no action only routes to subcommands or renders `--help`; it never reads its own
- * inputs. A locally declared option/flag on such a command would render in `--help` yet stay forever
- * unparseable, and reading its accessor would crash at runtime ("holder read before parse"). A declared
- * positional is just as unreadable: a group's argument slot is consumed as a subcommand token, so the
- * positional could never bind. Globals stay exempt — they are shared across the whole tree and read
- * from a descendant's action instead.
+ * A command with no action only routes to subcommands or renders `--help`. Its options and flags stand on its own
+ * segment and its children read them, as git's root options are read by every git command, but a positional could
+ * never bind: a group's argument slot is consumed as a subcommand token.
  */
-internal fun validateActionlessLocalOptions(
+internal fun validateActionlessOperands(
     name: String,
     specs: List<HolderSpec>,
     hasAction: Boolean,
     isBuiltin: Boolean = false,
 ) {
     if (hasAction) return
-    val locals = specs.filterIsInstance<NamedSpec>()
-    require(locals.isEmpty()) {
-        val offender = locals.first()
-        "command '$name': option/flag '${offender.token()}' is declared but '$name' has no action to " +
-                "read it; give '$name' an action, or declare '${offender.token()}' via globalOption/globalFlag " +
-                "if it should be shared across subcommands"
-    }
     // A klap builtin (completion/docs/__complete) is action-less by design and routes its positional
     // through routeBuiltin rather than binding it via an action, so the "positional can never bind" rule
     // below does not apply to it.
@@ -575,13 +568,21 @@ internal fun validateReservedNames(
     globalSpecs: List<NamedSpec>,
     builtins: Builtins,
 ) {
-    val reservedLong = reservedLongNames(builtins)
-    val reservedShort = reservedShortNames(builtins)
+    val rootLong = reservedLongNames(builtins, atRoot = true)
+    val rootShort = reservedShortNames(builtins, atRoot = true)
+    val belowLong = reservedLongNames(builtins, atRoot = false)
+    val belowShort = reservedShortNames(builtins, atRoot = false)
 
     fun ownerOf(short: String): String =
         if (short == builtins.helpShort?.toString()) "--help" else builtins.versionLong?.let { "--$it" } ?: "version"
 
-    fun check(commandName: String, specs: List<HolderSpec>, globals: List<NamedSpec>) {
+    fun check(
+        commandName: String,
+        specs: List<HolderSpec>,
+        globals: List<NamedSpec>,
+        reservedLong: Set<String>,
+        reservedShort: Set<String>,
+    ) {
         for (spec in specs.filterIsInstance<NamedSpec>() + globals) {
             for (long in spec.longs) {
                 require(long !in reservedLong) {
@@ -610,21 +611,23 @@ internal fun validateReservedNames(
         }
     }
 
-    fun walk(command: Command) {
+    // A flag-spelled command stands among its parent's options, so its spelling is checked against the parent's names.
+    fun walk(command: Command, parentLong: Set<String>, parentShort: Set<String>) {
         for (spelling in command.flagSpellings) {
             val reserved = if (spelling.startsWith("--")) {
-                spelling.drop(2) in reservedLong
+                spelling.drop(2) in parentLong
             } else {
-                spelling.drop(1) in reservedShort
+                spelling.drop(1) in parentShort
             }
             require(!reserved) { "command '${command.token}': its spelling '$spelling' is reserved by a klap built-in" }
         }
-        check(command.name, command.specs, emptyList())
-        command.subcommands.forEach(::walk)
+        check(command.name, command.specs, emptyList(), belowLong, belowShort)
+        command.subcommands.forEach { walk(it, belowLong, belowShort) }
     }
 
-    check(root.name, root.specs, globalSpecs)
-    root.subcommands.forEach(::walk)
+    // The root's names hold every name reserved below it, so a global, which binds at every depth, is checked here.
+    check(root.name, root.specs, globalSpecs, rootLong, rootShort)
+    root.subcommands.forEach { walk(it, rootLong, rootShort) }
 }
 
 /**

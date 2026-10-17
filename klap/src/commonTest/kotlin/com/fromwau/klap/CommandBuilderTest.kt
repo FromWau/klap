@@ -2,6 +2,7 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.spec.shorts
@@ -782,30 +783,28 @@ class InputNameValidationTest {
     }
 }
 
-/** A command with no action can read nothing, so a local option, flag or positional on one is rejected. */
+/**
+ * A group's own options and flags are its children's to read, as git's root options are, while a positional on a
+ * command with no action could never bind and is rejected.
+ */
 class ActionlessCommandInputTest {
 
-    @Test
-    fun `actionless root with local option fails at build`() {
-        val ex = assertFailsWith<IllegalArgumentException> {
-            cli("app") {
-                option(short = 'c', long = "color")
-                command("build") { action { Ok("") } }
-            }
-        }
-        assertTrue("color" in ex.message.orEmpty(), ex.message)
-        assertTrue("globalOption" in ex.message.orEmpty(), ex.message)
-        assertTrue("action" in ex.message.orEmpty(), ex.message)
+    private val app = cli("app") {
+        val tint = option(short = 'c', long = "tint")
+        val verbose = flag(short = 'v', long = "verbose")
+        command("build") { action { Ok("built tint=${tint()} verbose=${verbose()}") } }
     }
 
     @Test
-    fun `actionless root with local flag fails at build`() {
-        assertFailsWith<IllegalArgumentException> {
-            cli("app") {
-                flag(short = 'v', long = "verbose")
-                command("build") { action { Ok("") } }
-            }
-        }
+    fun `a group's own option and flag are read by its child`() {
+        assertEquals("built tint=red verbose=true", app.bindText("-c", "red", "-v", "build"))
+        assertEquals("built tint=null verbose=false", app.bindText("build"))
+    }
+
+    @Test
+    fun `a group given only its own options shows its help`() {
+        assertIs<Invocation.ShowHelp>(app.parse(listOf("-c", "red")).assertSuccess())
+        assertEquals(CliError.UnknownOption("-x"), app.parse(listOf("-x")).assertError())
     }
 
     @Test
@@ -837,16 +836,14 @@ class ActionlessCommandInputTest {
     }
 
     @Test
-    fun `actionless nested command with local option fails at build`() {
-        // The check applies at every level, not just the root.
-        assertFailsWith<IllegalArgumentException> {
-            cli("app") {
-                command("outer") {
-                    option(long = "verbose")
-                    command("inner") { action { Ok("") } }
-                }
+    fun `a nested group's own option is read by its child`() {
+        val tree = cli("app") {
+            command("outer") {
+                val verbose = flag(long = "verbose")
+                command("inner") { action { Ok("inner verbose=${verbose()}") } }
             }
         }
+        assertEquals("inner verbose=true", tree.bindText("outer", "--verbose", "inner"))
     }
 
     // --- reject an action-less command that declares a positional argument ---
@@ -893,9 +890,7 @@ class ReservedSectionTitleTest {
 
     @Test
     fun `group title colliding with reserved section fails at build`() {
-        // The exact scenario from the spec. NOTE: an action-less root with a local flag ALSO trips
-        // validateActionlessLocalOptions, so this fails at build even so; the two isolating tests below
-        // exercise the reserved-section check on its own.
+        // The exact scenario from the spec; the two isolating tests below exercise the check on its own.
         assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 group("Global options") { flag(short = 'f') }

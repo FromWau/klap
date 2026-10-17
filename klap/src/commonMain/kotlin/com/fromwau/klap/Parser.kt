@@ -8,22 +8,25 @@ import com.fromwau.klap.internal.parse.ClusterPosition
 import com.fromwau.klap.internal.parse.END_OF_OPTIONS
 import com.fromwau.klap.internal.parse.GlobalAccumulator
 import com.fromwau.klap.internal.parse.Refusal
-import com.fromwau.klap.internal.parse.accumulator
 import com.fromwau.klap.internal.parse.bind
+import com.fromwau.klap.internal.parse.bindOwnOptions
 import com.fromwau.klap.internal.parse.bindGlobals
 import com.fromwau.klap.internal.parse.builtinScan
 import com.fromwau.klap.internal.parse.firstBadValue
 import com.fromwau.klap.internal.parse.globalLookup
+import com.fromwau.klap.internal.parse.globalsFrom
 import com.fromwau.klap.internal.parse.hoistCommands
 import com.fromwau.klap.internal.parse.isFlagLike
 import com.fromwau.klap.internal.parse.LongPool
 import com.fromwau.klap.internal.parse.longMatchPool
 import com.fromwau.klap.internal.parse.namesHelpShort
 import com.fromwau.klap.internal.parse.namesVersionShort
+import com.fromwau.klap.internal.parse.refusals
 import com.fromwau.klap.internal.parse.resolveChoice
 import com.fromwau.klap.internal.parse.sift
 import com.fromwau.klap.internal.parse.siftGlobals
 import com.fromwau.klap.internal.parse.subcommandCandidates
+import com.fromwau.klap.internal.parse.walkSubcommands
 import com.fromwau.klap.internal.spec.BuiltinKind
 import com.fromwau.klap.internal.spec.FlagSpec
 import com.fromwau.klap.internal.spec.HolderSpec
@@ -200,12 +203,17 @@ private fun Cli.helpLongs(): List<String> =
  * Exact long spellings only. An abbreviation resolves against the pool of the command the walk reaches,
  * which is precisely what is not known yet here.
  */
-internal fun Cli.routesTransparently(token: String, globalFlagShorts: Set<String>): Boolean = when {
+internal fun Cli.routesTransparently(
+    token: String,
+    globalFlagShorts: Set<String>,
+    cmd: Command,
+): Boolean = when {
     (token == "--help" && builtins.help) || (token == "--help-all" && builtins.helpAll) -> true
     token.startsWith("--") || !token.startsWith("-") || token.length < 2 -> false
-    shortOptions == ShortOptions.Alone && token.length > 2 -> false
-    else -> token.drop(1).all {
-        it.toString() in globalFlagShorts || it == builtins.helpShort || it == builtins.versionShort
+    shortOptionsAt(cmd) == ShortOptions.Alone && token.length > 2 -> false
+    else -> {
+        val versionShort = builtins.versionShort.takeIf { cmd === this || !builtins.versionRootOnly }
+        token.drop(1).all { it.toString() in globalFlagShorts || it == builtins.helpShort || it == versionShort }
     }
 }
 
@@ -217,9 +225,9 @@ private fun Cli.unknownSubcommandBeforeHelp(
 ): CliError.UnknownSubcommand? {
     // Past whatever the walk stepped over, since those tokens survive into [rest]: the name the user meant
     // as a subcommand sits behind the help request in `app --help bogus`.
-    val leadingToken = rest.firstOrNull { !routesTransparently(it, globalFlagShorts) } ?: return null
+    val leadingToken = rest.firstOrNull { !routesTransparently(it, globalFlagShorts, cmd) } ?: return null
     if (!cmd.isGroup || leadingToken.isFlagLike()) return null
-    if (cmd.resolveSubcommand(leadingToken, abbreviation == Abbreviation.All) !is SubcommandMatch.None) return null
+    if (cmd.resolveSubcommand(leadingToken, abbreviationAt(cmd) == Abbreviation.All) !is SubcommandMatch.None) return null
     return CliError.UnknownSubcommand(
         qualifiedName,
         leadingToken,
@@ -282,7 +290,10 @@ private fun Cli.parseTokens(typed: List<String>): Result<Invocation, CliError> {
     } else {
         listOfNotNull(
             builtins.versionLong?.let { scan.firstNaming(it) },
-            scan.firstOpenIndexed { i, token -> namesVersionShort(token, globalLookup(), firstWord = i == 0) },
+            scan.firstOpenIndexed { i, token ->
+                (!builtins.versionRootOnly || scan.atRoot(i)) &&
+                    namesVersionShort(token, globalLookup(), firstWord = i == 0)
+            },
         ).minOrNull()
     }
     // Answered after the walk, which tells whether a bad option or value stands ahead of it.
@@ -358,57 +369,35 @@ private fun Cli.parseTokens(typed: List<String>): Result<Invocation, CliError> {
     // name, so stepping over one would misread the token after it.
     val globalFlagShorts = globalSpecs.filterIsInstance<FlagSpec>().flatMap { it.shorts }.toSet()
 
-    var cmd: Command = this
-    val path = mutableListOf(name)
-    // Indices into `preStrip.cleaned` this walk consumes as subcommand-name tokens. Every other index
-    // survives into `rest` untouched and in argv order, including a help token the walk below steps over
-    // without ever removing.
-    val consumed = mutableSetOf<Int>()
-    var idx = 0
-    while (idx < preStrip.cleaned.size) {
-        val token = preStrip.cleaned[idx]
-        when (val match = cmd.resolveSubcommand(token, abbreviation == Abbreviation.All)) {
-            is SubcommandMatch.One -> {
-                cmd = match.command
-                path += match.command.token
-                consumed += idx
-                idx += 1
-            }
-
-            is SubcommandMatch.Ambiguous ->
-                return Result.Error(CliError.AmbiguousSubcommand(cmd.name, token, match.candidates))
-
-            // Stepped over only when every part of the token already resolves HERE, so stepping cannot
-            // change what the tokens after it mean: `app --help build` and `app -vh build` both document
-            // build, the way `git --help commit` documents commit. A local short stops the walk, since
-            // apart it is an option of a command not yet reached.
-            SubcommandMatch.None -> {
-                if (!routesTransparently(token, globalFlagShorts)) break
-                idx += 1
-            }
-        }
+    val walk = walkSubcommands(preStrip.cleaned) { globalsFrom(globalSift) }
+    walk.ambiguous?.let { (token, match) ->
+        return Result.Error(CliError.AmbiguousSubcommand(walk.cmd.name, token, match.candidates))
     }
+    val cmd = walk.cmd
     // Filtered together so a surviving token and its original argv index stay paired: the strips above
-    // removed some tokens outright, so no index into `rest` alone can say where a kept one sat.
-    val rest = preStrip.cleaned.filterIndexed { i, _ -> i !in consumed }
-    val restPositions = preStrip.positions.filterIndexed { i, _ -> i !in consumed }
-    val qualifiedName = path.joinToString(" ")
+    // removed some tokens outright, so no index into `rest` alone can say where a kept one sat. A help token
+    // the walk stepped over stays in `rest`, in argv order.
+    val kept = walk.kept(preStrip.cleaned.size)
+    val rest = preStrip.cleaned.slice(kept)
+    val restPositions = preStrip.positions.slice(kept)
+    val qualifiedName = (listOf(name) + (walk.passed.map { it.command } + cmd).drop(1).map { it.token })
+        .joinToString(" ")
 
     // A global buried in a mixed short cluster (`-fv`, where `f` is local) survives the pre-strip, since the
     // cluster is left whole for the resolved command's own sift. That sift is global-aware and tops up this
     // accumulator, so globals are bound AFTER the command bind, over the pre-strip occurrences plus any the
     // segment added. A Required-but-absent global is deferred: whether it matters depends on where the walk
     // ended up (a bare group that only shows help doesn't need it; a leaf that executes does).
-    val globalAcc = globalSift.accumulator(
-        globalSpecs,
-        version,
-        builtins,
-        metaOptions,
-        abbreviation,
-        repeatedOptions,
-        shortOptions,
-        sharedLongs,
-    )
+    val tally = globalsFrom(globalSift)
+    val globalAcc = tally.at(cmd)
+    // Each command the walk passed reads its own option words, in line order, ahead of the one it reached.
+    val passedSifts = walk.passed.map { passed ->
+        passed.command to passed.command.sift(
+            preStrip.cleaned.slice(passed.words),
+            tally.at(passed.command),
+            preStrip.positions.slice(passed.words),
+        )
+    }
 
     // --help and --help-all are the only built-ins resolved after the walk, against the pool of the command it
     // reached. The value slots come along unchanged, keyed on the original argv, so `sub -e --help f` is still
@@ -443,13 +432,14 @@ private fun Cli.parseTokens(typed: List<String>): Result<Invocation, CliError> {
             listOfNotNull(helpAllAt, plainHelpAt).minOrNull()?.let { segment.positions[it] }
         }
         val sifted = cmd.sift(rest, globalAcc, restPositions)
+        val passedRefusals = passedSifts.flatMap { (_, passed) -> passed.refusals(globalAcc.inferValues) }
         val refusal = listOfNotNull(
             builtinRefusal,
             sifted.refusal,
             globalSift.refusal,
             globalAcc.repeatRefusal(),
             firstBadValue(sifted, globalAcc.toGlobalSift(), globalAcc.inferValues),
-        ).minByOrNull { it.at }
+        ).plus(passedRefusals).minByOrNull { it.at }
         // Token by token: the built-in's own token refuses it only when the cluster is refused whole, as one
         // mixing it with a local short past the first operand is; otherwise a short cluster can only carry a
         // refusal behind the built-in's character, since one ahead of it leaves the cluster no help request.
@@ -491,6 +481,9 @@ private fun Cli.parseTokens(typed: List<String>): Result<Invocation, CliError> {
     // immutable during parsing (concurrent parses each own their own sink). It is frozen into the Execute's
     // ActionScope once the command and its globals are both bound.
     val sink = mutableMapOf<HolderSpec, Any?>()
+    for ((passed, sifted) in passedSifts) {
+        passed.bindOwnOptions(sifted, sink, tally.at(passed))?.let { return Result.Error(it) }
+    }
     return when (val outcome = cmd.bind(rest, Globals(json), qualifiedName, globalAcc, sink, restPositions)) {
         is Result.Error -> outcome
         is Result.Success -> {

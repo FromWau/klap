@@ -125,6 +125,20 @@ public class ParitySuite<T>(private val typed: TypedCli<T>) {
         return terminal.out.toString()
     }
 
+    /**
+     * [argv] resolves to help, and the qualified name of the command whose page it shows is returned (`git remote
+     * add`), for a claim about which command's help a request reaches from where it stands on the line.
+     */
+    public fun helpFor(vararg argv: String, because: String): String {
+        val line = argv.toList()
+        return when (val parsed = typed.cli.parse(line)) {
+            is Result.Error ->
+                fail("${expected(line)} to print help ($because), but it was rejected: ${parsed.error}")
+            is Result.Success -> (parsed.value as? Invocation.ShowHelp)?.qualifiedName
+                ?: fail("${expected(line)} to print help ($because), but ${outcome(line)}")
+        }
+    }
+
     /** [argv] resolves to the version, rather than to a command, an error, or any other built-in. */
     public fun showsVersion(vararg argv: String, because: String) {
         val line = argv.toList()

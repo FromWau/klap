@@ -47,6 +47,15 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
     public abstract var optionsEndAtFirstOperand: Boolean
 
     /**
+     * Reads this command's own options, those before its child's name, by [shortOptions] and [abbreviation] instead
+     * of the tree's settings, as git's root reads each word as a whole option while its commands cluster and
+     * abbreviate: `ownOptions(shortOptions = ShortOptions.Alone, abbreviation = Abbreviation.None)` refuses `git
+     * -Csub` and `git --git-d=x` and leaves `git status -sb` and `git status --bran` alone. [abbreviation] also
+     * decides whether this command's children are reached by a prefix of their names.
+     */
+    public abstract fun ownOptions(shortOptions: ShortOptions, abbreviation: Abbreviation)
+
+    /**
      * Declares a positional operand, bound by where it sits on the command line rather than by a name.
      * [name] is never a token your user types: it labels the operand in error messages and stands in for it
      * in `--help`. Operands bind in declaration order, each a required `String` until `.optional()`,

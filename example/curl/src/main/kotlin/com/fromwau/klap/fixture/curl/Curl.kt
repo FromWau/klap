@@ -13,7 +13,7 @@ import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
 
 /**
- * A dry reproduction of curl(1)'s command-line surface (measured against curl 8.21.0):
+ * A dry reproduction of curl(1)'s command-line surface (measured against curl 8.23.0):
  *
  *     curl [-X METHOD] [-H HEADER]... [-d DATA] [-o FILE] [-L] [-s] [--max-time SECONDS] URL...
  *
@@ -28,7 +28,7 @@ public fun curlCli(): TypedCli<CurlInputs> = cliOf("curl") {
     // curl matches long options exactly: `--loc` and `--sil` really do answer "option --loc: is unknown".
     abbreviation = Abbreviation.None
     help = "Transfer a URL"
-    version = Version.Of("8.22.0", long = "version", short = 'V', text = CURL_VERSION_TEXT)
+    version = Version.Of("8.23.0", long = "version", short = 'V', text = CURL_VERSION_TEXT)
     epilogue = "This is a parsing-surface study: no request is ever sent."
 
     example("curl https://example.com", "GET a URL to stdout")
@@ -51,7 +51,7 @@ public fun curlCli(): TypedCli<CurlInputs> = cliOf("curl") {
 
         // curl's `-d` is repeatable too (occurrences are joined with '&'), so `.multiple()` is the
         // faithful shape rather than the single-valued `[-d DATA]` of the sketch.
-        postData = option(short = 'd', long = "data", help = "HTTP POST data").multiple()
+        postData = option(short = 'd', long = "data", help = "Post data").multiple()
 
         user = option(short = 'u', long = "user", help = "Server user and password")
 
@@ -200,10 +200,10 @@ public val NOTHING_BOUND: CurlInputs = CurlInputs(
 )
 
 /**
- * What `curl --version` prints for curl 8.22.0, the version installed when it was pinned
- * (2026-10-10).
+ * What `curl --version` prints for curl 8.23.0, the version installed when it was pinned
+ * (2026-10-17).
  */
-internal val CURL_VERSION_TEXT: String = """curl 8.22.0 (x86_64-pc-linux-gnu) libcurl/8.22.0 OpenSSL/3.6.5 zlib/1.3.2 brotli/1.2.0 zstd/1.5.7 libidn2/2.3.8 libpsl/0.21.5 libssh2/1.11.1 nghttp2/1.70.0 ngtcp2/1.25.0 nghttp3/1.18.0 mit-krb5/1.22.2
-Release-Date: 2026-09-02
+internal val CURL_VERSION_TEXT: String = """curl 8.23.0 (x86_64-pc-linux-gnu) libcurl/8.23.0 OpenSSL/3.6.5 zlib/1.3.2 brotli/1.2.0 zstd/1.5.7 libidn2/2.3.8 libpsl/0.21.5 libssh2/1.11.1 nghttp2/1.70.0 ngtcp2/1.25.0 nghttp3/1.18.0 mit-krb5/1.22.2
+Release-Date: 2026-10-14
 Protocols: dict file ftp ftps gopher gophers http https imap imaps ipfs ipns mqtt mqtts pop3 pop3s rtsp scp sftp smtp smtps telnet tftp ws wss
 Features: alt-svc AsynchDNS brotli GSS-API HSTS HTTP2 HTTP3 HTTPS-proxy IDN IPv6 Kerberos Largefile libz PSL SPNEGO SSL threadsafe UnixSockets zstd"""

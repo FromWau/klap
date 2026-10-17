@@ -45,6 +45,8 @@ public open class Command internal constructor(
     // Set by `prio = true`: given, this command runs ahead of its parent's required globals and of
     // `--completion` and `--docs`.
     internal val prio: Boolean = false,
+    // Set by `ownOptions(...)`: how this command's own segment reads, in place of the tree's settings.
+    internal val ownReading: OwnReading? = null,
 ) {
     internal val arguments: List<ArgumentSpec> get() = specs.filterIsInstance<ArgumentSpec>()
     internal val options: List<OptionSpec> get() = specs.filterIsInstance<OptionSpec>()
@@ -102,6 +104,15 @@ internal sealed interface SubcommandMatch {
     data object None : SubcommandMatch
 }
 
+/** The rules one command's own segment reads by, set by [CommandBuilder.ownOptions]. */
+internal class OwnReading(val shortOptions: ShortOptions, val abbreviation: Abbreviation)
+
+/** How [cmd]'s own segment reads long names and subcommand names: its own call, or the tree's setting. */
+internal fun Cli.abbreviationAt(cmd: Command): Abbreviation = cmd.ownReading?.abbreviation ?: abbreviation
+
+/** How [cmd]'s own segment reads a one-dash word: its own call, or the tree's setting. */
+internal fun Cli.shortOptionsAt(cmd: Command): ShortOptions = cmd.ownReading?.shortOptions ?: shortOptions
+
 /**
  * The child [token] names, exactly or — when [infer] — as an unambiguous abbreviation of a name or alias.
  *
@@ -158,6 +169,7 @@ public class Cli internal constructor(
     // Root-only too: whether a one-dash word may hold several shorts.
     internal val shortOptions: ShortOptions = ShortOptions.Clustered,
     optionsEndAtFirstOperand: Boolean = false,
+    ownReading: OwnReading? = null,
 ) : Command(
     name = name,
     aliases = emptyList(),
@@ -168,6 +180,7 @@ public class Cli internal constructor(
     action = action,
     display = display,
     optionsEndAtFirstOperand = optionsEndAtFirstOperand,
+    ownReading = ownReading,
 ) {
     init {
         val reserved = subcommands

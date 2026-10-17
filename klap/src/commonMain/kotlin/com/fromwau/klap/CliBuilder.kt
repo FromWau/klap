@@ -295,6 +295,7 @@ private fun <T> build(name: String, block: CliBuilder.() -> T): Pair<Cli, T> {
         repeatedOptions = builder.repeatedOptions,
         shortOptions = builder.shortOptions,
         optionsEndAtFirstOperand = base.optionsEndAtFirstOperand,
+        ownReading = base.ownReading,
         validations = base.validations,
     ) to handles
 }

@@ -8,6 +8,7 @@ import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Command
 import com.fromwau.klap.SubcommandMatch
+import com.fromwau.klap.abbreviationAt
 import com.fromwau.klap.builtinLongTable
 import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.shorts
@@ -28,7 +29,7 @@ import com.fromwau.klap.takesNextWord
  * [pools] gives, for an original argv index, the long surface a spelling there resolves against: the pool of
  * the command in scope at that token ([builtinScan]), which is the one that command's own sift resolves against
  * too. [infer] is the root's own mode reduced to the one question a scan asks: may a long spelling resolve by
- * prefix here.
+ * prefix here. [roots] tells whether an original argv index stands on the root's own segment.
  */
 internal class ArgvScan(
     private val pools: (position: Int) -> LongPool,
@@ -36,6 +37,7 @@ internal class ArgvScan(
     val valueSlots: Set<Int>,
     val tokens: List<String>,
     val positions: List<Int> = tokens.indices.toList(),
+    private val roots: (position: Int) -> Boolean = { true },
 ) {
     /** Where the options end: the marker's index, or the whole list when the line carries none. */
     private val headSize: Int = tokens.endOfOptions(positions, valueSlots).let { if (it < 0) tokens.size else it }
@@ -47,6 +49,9 @@ internal class ArgvScan(
 
     /** The long pool a spelling at the original argv [position] resolves against. */
     fun poolAt(position: Int): LongPool = pools(position)
+
+    /** Whether the token at [i] stands on the root's own segment, before the first subcommand's name. */
+    fun atRoot(i: Int): Boolean = roots(positions[i])
 
     /** The pool entry the token at [i] names, exactly or as an unambiguous abbreviation; null when it names none. */
     fun matched(i: Int): String? = matched(tokens[i], positions[i])
@@ -121,7 +126,7 @@ internal class ArgvScan(
 
     private fun keeping(dropped: Set<Int>): ArgvScan {
         val kept = tokens.indices.filterNot { it in dropped }
-        return ArgvScan(pools, infer, valueSlots, kept.map { tokens[it] }, kept.map { positions[it] })
+        return ArgvScan(pools, infer, valueSlots, kept.map { tokens[it] }, kept.map { positions[it] }, roots)
     }
 }
 
@@ -131,17 +136,17 @@ internal class ArgvScan(
  */
 internal fun Cli.builtinScan(argv: List<String>): ArgvScan {
     val walk = ArityWalk(this).apply { walk(argv) }
-    return ArgvScan(walk::poolAt, abbreviation != Abbreviation.None, walk.slots, argv)
+    return ArgvScan(walk::poolAt, abbreviation != Abbreviation.None, walk.slots, argv, roots = walk::atRoot)
 }
 
 /**
- * What a scanned token does: whether it claims the token after it as a value ([takesNext]), and whether it
- * is one of the tokens klap removes before the subcommand walk ([preStripped]). Only a pre-stripped token
- * lets routing carry on past it, since every other spelling is one the subcommand walk stops at.
+ * What a scanned token does: whether it claims the token after it as a value ([takesNext]), and whether the
+ * subcommand walk carries on past it ([routesOn]): a global, `--json` or `--color`, which klap strips before
+ * the walk, or an option of the command in scope, which stays on that command's segment ([walkSubcommands]).
  */
-private class Claim(val takesNext: Boolean, val preStripped: Boolean)
+private class Claim(val takesNext: Boolean, val routesOn: Boolean)
 
-private val CLAIMS_NOTHING = Claim(takesNext = false, preStripped = false)
+private val CLAIMS_NOTHING = Claim(takesNext = false, routesOn = false)
 
 /**
  * The left-to-right walk behind [builtinScan]. It tracks the command the tokens belong to as it goes, routing
@@ -162,7 +167,7 @@ private class ArityWalk(private val cli: Cli) {
     private val globalFlagShorts = globals.flagSpecs.flatMapTo(mutableSetOf()) { it.shorts }
 
     private var cmd: Command = cli
-    private var pool: LongPool = cli.longMatchPool(globals)
+    private var pool: LongPool = cli.longMatchPool(globals.at(cli))
     private val pools = mutableMapOf<Command, LongPool>(cli to pool)
 
     // The command in scope at each argv index the walk read; every later index is in [cmd]'s.
@@ -173,9 +178,12 @@ private class ArityWalk(private val cli: Cli) {
     /** The long pool of the command in scope at argv [position]. */
     fun poolAt(position: Int): LongPool = pools.getValue(scopes.getOrNull(position) ?: cmd)
 
-    // The subcommand walk stops at the first token klap cannot strip as a global before it, and every token
-    // after that belongs to `cmd`'s own segment; descending past one would resolve later options against a
-    // command the parse never reaches.
+    /** Whether argv [position] stands on the root's own segment. */
+    fun atRoot(position: Int): Boolean = (scopes.getOrNull(position) ?: cmd) === cli
+
+    // The subcommand walk stops at the first token that is neither a global nor an option of `cmd`, and every
+    // token after that belongs to `cmd`'s own segment; descending past one would resolve later options against
+    // a command the parse never reaches.
     private var routing = true
 
     // The index of [cmd]'s first word, the one place a first-word-only number may stand.
@@ -193,7 +201,7 @@ private class ArityWalk(private val cli: Cli) {
             if (token == END_OF_OPTIONS) return
             if (!token.isFlagLike()) {
                 val child = if (routing) {
-                    val match = cmd.resolveSubcommand(token, cli.abbreviation == Abbreviation.All)
+                    val match = cmd.resolveSubcommand(token, cli.abbreviationAt(cmd) == Abbreviation.All)
                     (match as? SubcommandMatch.One)?.command
                 } else {
                     null
@@ -213,7 +221,7 @@ private class ArityWalk(private val cli: Cli) {
                 continue
             }
             // The subcommand walk steps over these, so the tokens after them belong to the command it reaches.
-            if (routing && cli.routesTransparently(token, globalFlagShorts)) {
+            if (routing && cli.routesTransparently(token, globalFlagShorts, cmd)) {
                 i += 1
                 continue
             }
@@ -227,33 +235,35 @@ private class ArityWalk(private val cli: Cli) {
                 slots += i + 1
                 scopes += cmd
             }
-            routing = routing && claim.preStripped
+            routing = routing && claim.routesOn
             i += if (claim.takesNext) 2 else 1
         }
     }
 
     private fun enter(child: Command) {
         cmd = child
-        pool = pools.getOrPut(child) { child.longMatchPool(globals) }
+        pool = pools.getOrPut(child) { child.longMatchPool(globals.at(child)) }
     }
 
     private fun longClaim(token: String, next: String?): Claim {
         val typed = token.removePrefix("--").substringBefore('=')
         val inline = '=' in token
-        val long = when (val resolved = resolveLong(typed, pool, globals.inferNames)) {
+        val long = when (val resolved = resolveLong(typed, pool, globals.at(cmd).inferNames)) {
             is NameMatch.Exact -> resolved.name
             is NameMatch.Prefix -> resolved.name
             is NameMatch.Ambiguous, NameMatch.None -> return CLAIMS_NOTHING
         }
         // A declared spec always outranks a built-in of the same name: a reserved long is only free to be
         // declared once the tree has declined the built-in behind it (validateReservedNames).
-        cmd.options.findOption(long, null)?.let { return Claim(takesValue(it, inline, next), preStripped = false) }
+        cmd.options.findOption(long, null)?.let { return Claim(takesValue(it, inline, next), routesOn = true) }
         globals.optionSpecs.findOption(long, null)
-            ?.let { return Claim(takesValue(it, inline, next), preStripped = true) }
-        if (cmd.flags.findFlag("--$long") != null || cmd.flags.findNegatedFlag(long) != null) return CLAIMS_NOTHING
+            ?.let { return Claim(takesValue(it, inline, next), routesOn = true) }
+        if (cmd.flags.findFlag("--$long") != null || cmd.flags.findNegatedFlag(long) != null) {
+            return Claim(takesNext = false, routesOn = true)
+        }
         val globalFlags = globals.flagSpecs
         if (globalFlags.findFlag("--$long") != null || globalFlags.findNegatedFlag(long) != null) {
-            return Claim(takesNext = false, preStripped = true)
+            return Claim(takesNext = false, routesOn = true)
         }
         return builtinClaim(long, inline, next)
     }
@@ -265,9 +275,9 @@ private class ArityWalk(private val cli: Cli) {
      * `--color`'s value is optional, so it takes none.
      */
     private fun builtinClaim(long: String, inline: Boolean, next: String?): Claim = when {
-        long == "json" && cli.builtins.json -> Claim(takesNext = false, preStripped = true)
-        long == "color" && cli.builtins.color -> Claim(takesNext = false, preStripped = true)
-        cli.builtinLongTable().takesNextWord(long) -> Claim(takesNext = !inline && next != null, preStripped = false)
+        long == "json" && cli.builtins.json -> Claim(takesNext = false, routesOn = true)
+        long == "color" && cli.builtins.color -> Claim(takesNext = false, routesOn = true)
+        cli.builtinLongTable().takesNextWord(long) -> Claim(takesNext = !inline && next != null, routesOn = false)
 
         else -> CLAIMS_NOTHING
     }
@@ -278,29 +288,27 @@ private class ArityWalk(private val cli: Cli) {
         firstWord: Boolean,
     ): Claim {
         val chars = token.removePrefix("-")
-        if (cmd.refusesCluster(chars, globals, firstWord)) return CLAIMS_NOTHING
-        // A cluster is pre-stripped only when EVERY char is a global; one local char leaves it whole for
-        // the reached command's own sift, exactly as siftGlobals does.
-        var allGlobal = true
+        val here = globals.at(cmd)
+        if (cmd.refusesCluster(chars, here, firstWord)) return CLAIMS_NOTHING
+        var routesOn = true
         var j = 0
         while (j < chars.length) {
-            val read = cmd.readShort(chars, j, globals, firstWord)
+            val read = cmd.readShort(chars, j, here, firstWord)
             when (read) {
-                // The number input is the command's own, and siftGlobals cannot strip a cluster carrying klap's
-                // own short either, so either one leaves the token whole for the walk, where it stops the routing.
-                is ShortRead.NumberRun, ShortRead.NumberSuffix, ShortRead.Builtin -> allGlobal = false
-                is ShortRead.Flag -> if (read.hit.globals == null) allGlobal = false
+                // The number input and klap's own short both stop the routing, as the subcommand walk stops there,
+                // while a value-taking short later in the word still claims the next one.
+                is ShortRead.NumberRun, ShortRead.NumberSuffix, ShortRead.Builtin -> routesOn = false
+                is ShortRead.Flag -> Unit
                 is ShortRead.Option -> {
                     val attached = chars.length > j + 1
-                    val takesNext = takesValue(read.hit.spec, inline = attached, next = next)
-                    return Claim(takesNext, preStripped = allGlobal && read.hit.globals != null)
+                    return Claim(takesValue(read.hit.spec, inline = attached, next = next), routesOn)
                 }
 
                 ShortRead.Unresolved -> return CLAIMS_NOTHING
             }
             j += read.width
         }
-        return Claim(takesNext = false, preStripped = allGlobal)
+        return Claim(takesNext = false, routesOn)
     }
 
     /**

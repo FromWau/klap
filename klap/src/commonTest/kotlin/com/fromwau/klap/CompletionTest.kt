@@ -11,6 +11,7 @@ import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -453,9 +454,9 @@ class MixedClusterRoutingCompletionTest {
     }
 
     /**
-     * A shadowed short is where a planner that routed further than the parse would go visibly wrong: `-o`
-     * resolves against the ROOT here, taking `list` as its value, so the cursor after it is the root's
-     * first operand slot — not the CHILD's `-o` value, which only the routed spelling reaches.
+     * A shadowed short is where a planner reading the cluster against the wrong command would go visibly wrong:
+     * `-o` resolves against the ROOT here, taking `list` as its value, so the cursor after it is the root's next
+     * word, a subcommand name, and not the CHILD's `-o` value, which only the routed spelling reaches.
      */
     @Test
     fun `a shadowed short in a mixed cluster is completed against the command that owns the token`() {
@@ -469,9 +470,9 @@ class MixedClusterRoutingCompletionTest {
             }
             action { Ok("root") }
         }
-        // The root's own view proves the walk stopped there: past its own option it routes to no subcommand and
-        // has no operand, where list would have offered its environments.
-        assertEquals(emptyList(), tree.completeCandidates(listOf("-po", "list", "")).map { it.value })
+        // The root's own view proves `list` went to the root's `-o`: past its own option the next word names a
+        // subcommand, where list would have offered its environments.
+        assertEquals(listOf("list"), tree.completeCandidates(listOf("-po", "list", "")).map { it.value })
         assertEquals(listOf("x", "y"), tree.completeCandidates(listOf("list", "-po", "")).map { it.value })
     }
 }
@@ -1842,12 +1843,9 @@ class UnroutedSubcommandCompletionTest {
     }
 
     @Test
-    fun `no subcommand name is offered after an option of the parent`() {
-        assertEquals(
-            CliError.UnroutedSubcommand("add", "git remote"),
-            git.parse(listOf("remote", "-v", "add", "o")).assertError<CliError.UnroutedSubcommand>(),
-        )
-        assertEquals(emptyList(), git.offered("remote", "-v", ""))
+    fun `a subcommand name is offered after an option of the parent`() {
+        assertIs<Invocation.Execute>(git.parse(listOf("remote", "-v", "add", "o")).assertSuccess())
+        assertEquals(listOf("add"), git.offered("remote", "-v", ""))
     }
 
     @Test

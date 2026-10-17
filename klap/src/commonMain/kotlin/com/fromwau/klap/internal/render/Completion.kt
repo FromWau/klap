@@ -16,7 +16,7 @@ import com.fromwau.klap.internal.parse.GlobalAccumulator
 import com.fromwau.klap.internal.parse.isBuiltinShort
 import com.fromwau.klap.internal.parse.NameMatch
 import com.fromwau.klap.internal.parse.Sifted
-import com.fromwau.klap.internal.parse.accumulator
+import com.fromwau.klap.internal.parse.globalsFrom
 import com.fromwau.klap.internal.parse.activeArguments
 import com.fromwau.klap.internal.parse.completionValues
 import com.fromwau.klap.internal.parse.flagCommandsNamed
@@ -41,6 +41,7 @@ import com.fromwau.klap.internal.parse.refusesCluster
 import com.fromwau.klap.internal.parse.refusesRepeat
 import com.fromwau.klap.internal.parse.resolveLong
 import com.fromwau.klap.internal.parse.sift
+import com.fromwau.klap.internal.parse.walkSubcommands
 import com.fromwau.klap.internal.parse.siftGlobals
 import com.fromwau.klap.internal.parse.supplied
 import com.fromwau.klap.internal.spec.ArgumentSpec
@@ -382,7 +383,7 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
     if (positionalCandidates.isNativeFileRequest()) return positionalCandidates
 
     // A subcommand name is offered only where the parse would route the word to it: a `--`, an operand or an
-    // option of [cmd] before the cursor stops the walk. Each visible subcommand contributes its name AND its
+    // option [cmd] does not have before the cursor stops the walk. Each visible subcommand contributes its name AND its
     // aliases, so `myapp l<TAB>` also offers `ls`; both carry that command's own `help` as their description.
     val subcommands = if (line.routing) {
         cmd.wordSubcommands
@@ -502,30 +503,19 @@ private fun Cli.walkLine(typed: List<String>): WalkedLine {
     // Its positions are read only to place `prev` in the planner, never to order one global against another:
     // the command's own sift is the only pass that records an order, so its observations win unconditionally.
     val preStrip = globalSpecs.siftGlobals(withoutColor, shortOptions)
-    val (cmd, kept, routing) = walkTo(preStrip.cleaned)
-    val segment = preStrip.cleaned.slice(kept)
-    // Built via accumulator() to stay in lockstep with parse(), but only its spec lists are read here: they
-    // are what lets the segment sift recognize a global hiding in a mixed short cluster (`-fr`).
-    val globalAcc = preStrip.sift.accumulator(
-        globalSpecs,
-        version,
-        builtins,
-        metaOptions,
-        abbreviation,
-        repeatedOptions,
-        shortOptions,
-        sharedLongs,
-    )
-    val segmentPositions = preStrip.positions.slice(kept)
+    val walk = walkSubcommands(preStrip.cleaned) { globalsFrom(preStrip.sift) }
+    val kept = walk.kept(preStrip.cleaned.size)
     return WalkedLine(
         scan,
-        cmd,
-        segment,
-        globalAcc,
+        walk.cmd,
+        preStrip.cleaned.slice(kept),
+        // Built as parse() builds it, but only its spec lists are read here: they are what lets the segment sift
+        // recognize a global hiding in a mixed short cluster (`-fr`).
+        globalsFrom(preStrip.sift).at(walk.cmd),
         preStrip.positions.lastOrNull(),
-        segmentPositions,
+        preStrip.positions.slice(kept),
         line.size,
-        routing,
+        walk.routing,
     )
 }
 
@@ -647,35 +637,6 @@ private fun List<ArgumentSpec>.slotForOperand(
         filled += take
     }
     return null
-}
-
-/** Where [walkTo] stopped: the deepest [cmd] reached, the indices of the tokens [kept] for it, and [routing]. */
-private data class Walk(val cmd: Command, val kept: List<Int>, val routing: Boolean)
-
-/**
- * Walks [argv] down the subcommand tree as parse() walks it, stepping over the words [routesTransparently] lets
- * it pass (`g --help build` reaches build). It is still [Walk.routing] when no word stopped it, which a `--`, an
- * operand or an option of the command reached does.
- */
-private fun Cli.walkTo(argv: List<String>): Walk {
-    val infer = abbreviation == Abbreviation.All
-    val globalFlagShorts = globalSpecs.filterIsInstance<FlagSpec>().flatMap { it.shorts }.toSet()
-    // Keep the while form: a for/withIndex loop reassigning `cmd` miscompiles on Kotlin/Native 2.4.10 debug
-    // builds (KT-87261, fixed in 2.4.20-Beta2) and passes on the JVM; retest before converting.
-    var cmd: Command = this
-    val kept = argv.indices.toMutableList()
-    var idx = 0
-    while (idx < argv.size) {
-        val child = (cmd.resolveSubcommand(argv[idx], infer) as? SubcommandMatch.One)?.command
-        if (child != null) {
-            cmd = child
-            kept -= idx
-        } else if (!routesTransparently(argv[idx], globalFlagShorts)) {
-            return Walk(cmd, kept, routing = false)
-        }
-        idx += 1
-    }
-    return Walk(cmd, kept, routing = true)
 }
 
 /**

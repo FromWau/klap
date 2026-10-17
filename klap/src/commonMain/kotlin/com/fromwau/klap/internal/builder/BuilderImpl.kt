@@ -17,6 +17,7 @@ import com.fromwau.klap.Input
 import com.fromwau.klap.Opt
 import com.fromwau.klap.Projection
 import com.fromwau.klap.RepeatedOptions
+import com.fromwau.klap.OwnReading
 import com.fromwau.klap.ShortOptions
 import com.fromwau.klap.Version
 import com.fromwau.klap.holderSpec
@@ -71,6 +72,12 @@ internal class BuilderImpl(
     override var hidden: Boolean = false
     override var prio: Boolean = false
     override var optionsEndAtFirstOperand: Boolean = false
+    internal var ownReading: OwnReading? = null
+        private set
+
+    override fun ownOptions(shortOptions: ShortOptions, abbreviation: Abbreviation) {
+        ownReading = OwnReading(shortOptions, abbreviation)
+    }
 
     private val specs = mutableListOf<HolderSpec>()
     private val globalSpecs = mutableListOf<NamedSpec>()
@@ -267,7 +274,7 @@ internal class BuilderImpl(
         validateGlobalCollisions(name, specs, globalSpecs, subs)
         validateSubcommands(name, subs)
         validateFlagSpelledCommands(name, specs, reachableGlobalSpecs, subs)
-        validateActionlessLocalOptions(
+        validateActionlessOperands(
             name,
             specs,
             hasAction = actionSpec != null,
@@ -291,6 +298,7 @@ internal class BuilderImpl(
             subcommands = subs.toList(),
             action = actionSpec,
             optionsEndAtFirstOperand = optionsEndAtFirstOperand,
+            ownReading = ownReading,
             display = Display(
                 description = help,
                 examples = examples.toList(),
