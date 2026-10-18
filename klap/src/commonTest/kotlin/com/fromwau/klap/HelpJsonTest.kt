@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -99,14 +100,64 @@ class HelpJsonTest {
             return Json.parseToJsonElement(t.out.toString()).jsonObject.getValue("arguments").toString()
         }
         assertEquals(
-            """[{"name":"source","help":"what to copy","required":true,"repeatable":true},""" +
+            """[{"name":"source","help":"what to copy","required":true,"repeatable":true,"min":1},""" +
                 """{"name":"dest","help":"where to copy it","required":true,"repeatable":false,""" +
                 """"absentWhen":"--target-directory"}]""",
             arguments("cp"),
         )
         assertEquals(
-            """[{"name":"file","help":"what to remove","required":true,"repeatable":true,"optionalWhen":"--force"}]""",
+            """[{"name":"file","help":"what to remove","required":true,"repeatable":true,"min":1,""" +
+                """"optionalWhen":"--force"}]""",
             arguments("rm"),
         )
+    }
+
+    private fun page(command: String, tool: Cli): JsonObject {
+        val t = RecordingTerminal()
+        tool.run(arrayOf(command, "--help", "--json"), t)
+        return Json.parseToJsonElement(t.out.toString()).jsonObject
+    }
+
+    @Test
+    fun `an operand states its count bounds and the inputs that cap it`() {
+        val tool = cli("tool") {
+            command("cp") {
+                val noTarget = flag(short = 'T', long = "no-target-directory", help = "treat DEST as a normal file")
+                argument("source", "what to copy").multiple(min = 1).atMostWhen(noTarget, 1)
+                argument("dest", "where to copy it")
+                action { Ok("") }
+            }
+            command("pick") {
+                argument("item", "what to pick").multiple(max = 3)
+                action { Ok("") }
+            }
+        }
+        assertEquals(
+            """{"name":"source","help":"what to copy","required":true,"repeatable":true,"min":1,""" +
+                """"atMostWhen":[{"input":"--no-target-directory","max":1}]}""",
+            page("cp", tool).getValue("arguments").jsonArray.first().toString(),
+        )
+        assertEquals(
+            """{"name":"item","help":"what to pick","required":false,"repeatable":true,"max":3}""",
+            page("pick", tool).getValue("arguments").jsonArray.single().toString(),
+        )
+    }
+
+    @Test
+    fun `a repeatable option states its minimum`() {
+        val tool = cli("tool") {
+            command("tag") {
+                option(short = 't', long = "tag", help = "a tag to add").multiple(min = 2)
+                option(long = "label", help = "a label").multiple()
+                action { Ok("") }
+            }
+        }
+        val options = page("tag", tool).getValue("options").jsonArray.map { it.toString() }
+        assertEquals(
+            """{"names":["-t","--tag"],"help":"a tag to add","value":"value","required":true,"repeatable":true,""" +
+                """"min":2}""",
+            options[0],
+        )
+        assertEquals("""{"names":["--label"],"help":"a label","value":"value","repeatable":true}""", options[1])
     }
 }

@@ -80,7 +80,7 @@ class MetavarTest {
                 action { Ok("") }
             }
         }.subcommand("run")!!
-        assertContains(cmd.helpText("app run"), "--out <FILE>")
+        assertContains(cmd.helpText("app run"), "--out=FILE")
     }
 
     @Test
@@ -98,7 +98,7 @@ class MetavarTest {
             }
         }.subcommand("run")!!
         val help = cmd.helpText("app run")
-        assertContains(help, "--level <LEVEL>")
+        assertContains(help, "--level=LEVEL")
         // The choices are still discoverable, just not in the signature column.
         assertContains(help, "trace")
     }
@@ -124,7 +124,7 @@ class MetavarTest {
                 action { Ok("") }
             }
         }.subcommand("run")!!
-        assertContains(cmd.helpText("app run"), "--out <value>")
+        assertContains(cmd.helpText("app run"), "--out=value")
         assertEquals("<path>", cmd.argSummary())
     }
 }

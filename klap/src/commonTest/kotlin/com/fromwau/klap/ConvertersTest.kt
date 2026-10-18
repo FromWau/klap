@@ -11,6 +11,7 @@ import com.fromwau.klap.internal.spec.HolderSpec
 import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.ValueSpec
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
@@ -683,10 +684,57 @@ class ConvertersTest : ConverterScope() {
         val ex = assertFailsWith<IllegalArgumentException> { a.long() }
         assertEquals(
             "argument 'x': cannot add another converter after a type-changing converter " +
-                "(.int()/.long()/.double()/.boolean()/.enum<E>()) has already run; this usually means a " +
-                "converter was called through an Arg<String>/Opt<String?> handle kept alive past that point",
+                "(.int()/.long()/.double()/.boolean()/.duration()/.instant()/.uuid()/.enum<E>(), or a " +
+                ".convert { }/.map { } to a type other than String) has already run; " +
+                "this usually means a converter was called through an Arg<String>/Opt<String?> handle kept alive " +
+                "past that point",
             ex.message,
         )
+    }
+
+    @Test
+    fun `a converter through an arg handle kept past a convert to another type is refused at construction`() {
+        val a = Arg<String>(argSpec())
+        a.convert { Ok(it.length) }
+        val ex = assertFailsWith<IllegalArgumentException> { a.int() }
+        assertContains(ex.message.orEmpty(), "argument 'x': cannot add another converter after a type-changing")
+    }
+
+    @Test
+    fun `a converter through an arg handle kept past a map to another type is refused at construction`() {
+        val a = Arg<String>(argSpec())
+        a.map { it.length }
+        assertFailsWith<IllegalArgumentException> { a.map { it.trim() } }
+    }
+
+    @Test
+    fun `a converter through an opt handle kept past a convert to another type is refused at construction`() {
+        val o = Opt<String?>(optSpec())
+        o.convert { Ok(it.length) }
+        val ex = assertFailsWith<IllegalArgumentException> { o.choice("a") }
+        assertContains(ex.message.orEmpty(), "option '--opt': cannot add another converter after a type-changing")
+    }
+
+    @Test
+    fun `a converter through an opt handle kept past a map to another type is refused at construction`() {
+        val o = Opt<String?>(optSpec())
+        o.map { it.length }
+        assertFailsWith<IllegalArgumentException> { o.convert { Ok(it.trim()) } }
+    }
+
+    @Test
+    fun `a convert from string to string still chains a choice`() {
+        val spec = argSpec()
+        Arg<String>(spec).convert { Ok(it.trim()) }.choice("a", "b")
+        assertEquals(Result.Success("a"), spec.convert(" a "))
+        spec.convert(" z ").assertError<ConversionError.NotOneOf>()
+    }
+
+    @Test
+    fun `an opt map from string to string still chains another map`() {
+        val spec = optSpec()
+        Opt<String?>(spec).map { it.lowercase() }.map { it.length }
+        assertEquals(Result.Success(2), spec.convert("Hi"))
     }
 
     @Test
@@ -701,8 +749,7 @@ class ConvertersTest : ConverterScope() {
 
     @Test
     fun `map then map is not treated as a type changing stack`() {
-        // Neither .map() call sets the type-changing marker, so the guard above must not fire here even
-        // though the two stack, proving it targets only .int()/.long()/.double()/.boolean()/.enum<E>().
+        // The first .map() returns a String, so it leaves the chain open for the second.
         val spec = argSpec()
         Arg<String>(spec).map { it.trim() }.map { it.length }
         assertEquals(Result.Success(2), spec.convert("  hi  "))

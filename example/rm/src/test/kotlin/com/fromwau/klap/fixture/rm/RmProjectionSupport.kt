@@ -3,6 +3,7 @@ package com.fromwau.klap.fixture.rm
 import com.fromwau.kern.result.Result
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.parse
 import kotlin.test.fail
 
@@ -169,7 +170,7 @@ internal object RmProjectionSupport {
             key,
             AFTER_END,
             listOf("--", word, "b"),
-            NOTHING_BOUND.copy(files = listOf(word, "b")),
+            NOTHING_BOUND.copy(files = listOf(CliPath(word), CliPath("b"))),
             "`rm a -- -v`: cannot remove '-v'",
         ),
     )
@@ -191,7 +192,7 @@ internal object RmProjectionSupport {
                 long,
                 BARE_THEN_WORD,
                 listOf(long, sample) + AB,
-                kind.bare(NOTHING_BOUND.copy(files = listOf(sample, "a", "b"))),
+                kind.bare(NOTHING_BOUND.copy(files = listOf(CliPath(sample), CliPath("a"), CliPath("b")))),
                 "`rm --interactive never a` prompts for never, `rm --preserve-root all` removes all",
             ),
         )

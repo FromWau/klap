@@ -141,7 +141,7 @@ class BareOptionalValueTest {
     fun `help shows the optional value with no bare hint`() {
         val help = cp().cli.helpText()
         val row = help.lines().single { "--backup" in it }
-        assertTrue("--backup[=<CONTROL>]" in row, help)
+        assertTrue("--backup[=CONTROL]" in row, help)
         assertFalse("bare:" in row, help)
     }
 

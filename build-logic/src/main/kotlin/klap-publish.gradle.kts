@@ -1,6 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 
-// Publishes the module applying it as com.fromwau:<project name>, at the catalog's klapVersion.
+// Publishes the module applying it as com.fromwau:<project name>, at the catalog's klapVersion, described by its
+// own `description`.
 
 plugins {
     id("com.fromwau.dotenv")
@@ -39,10 +40,8 @@ val mavenToken = dotEnv["MAVEN_TOKEN"]
 publishing {
     publications.withType<MavenPublication>().configureEach {
         pom {
-            name = "klap"
-            description = "A reflection-free Kotlin Multiplatform command-line framework: a builder DSL " +
-                "for commands and subcommands, typed and validated arguments, generated help, " +
-                "shell completion, and typed Result errors."
+            name = moduleName
+            description = provider { project.description }
             url = repoUrl
             licenses {
                 license {

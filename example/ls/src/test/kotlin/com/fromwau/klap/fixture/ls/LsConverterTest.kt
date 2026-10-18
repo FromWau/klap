@@ -3,6 +3,7 @@ package com.fromwau.klap.fixture.ls
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.ls.LsProjectionSupport.Cell
 import com.fromwau.klap.fixture.ls.LsProjectionSupport.checkAll
+import com.fromwau.klap.io.CliPath
 import kotlin.test.Test
 
 /*
@@ -25,7 +26,7 @@ private fun refused(
     because: String,
 ) = Cell("value", "a converted value", argv.toList(), Outcome.Rejects, because)
 
-private val A: LsInputs = NOTHING_BOUND.copy(files = listOf("a"))
+private val A: LsInputs = NOTHING_BOUND.copy(files = listOf(CliPath("a")))
 
 private fun width(
     typed: String,
@@ -142,7 +143,7 @@ class LsConverterTest {
             bound(
                 "--color", "-",
                 because = "cannot access '-'",
-                expected = NOTHING_BOUND.copy(color = When.Always, files = listOf("-")),
+                expected = NOTHING_BOUND.copy(color = When.Always, files = listOf(CliPath("-"))),
             ),
             bound("--color=never", "--color", "a", because = "coloured", expected = A.copy(color = When.Always)),
             bound("--cl", "a", because = "sub/", expected = A.copy(indicator = IndicatorStyle.Classify)),

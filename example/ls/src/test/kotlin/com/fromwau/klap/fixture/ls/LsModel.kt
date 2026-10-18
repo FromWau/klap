@@ -1,5 +1,6 @@
 package com.fromwau.klap.fixture.ls
 
+import com.fromwau.klap.io.CliPath
 import kotlin.test.fail
 
 /*
@@ -344,4 +345,4 @@ internal fun argmatch(
 }
 
 /** What a line listing `a` and `b` binds before any option: the record every cell starts from. */
-internal val A_AND_B: LsInputs = NOTHING_BOUND.copy(files = listOf("a", "b"))
+internal val A_AND_B: LsInputs = NOTHING_BOUND.copy(files = listOf(CliPath("a"), CliPath("b")))

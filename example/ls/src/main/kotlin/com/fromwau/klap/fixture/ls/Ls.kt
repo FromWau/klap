@@ -8,6 +8,8 @@ import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Builtin
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.Help
+import com.fromwau.klap.io.CliPath
+import com.fromwau.klap.io.path
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.ValueScope
 import com.fromwau.klap.Version
@@ -197,7 +199,7 @@ public fun lsCli(terminal: Boolean = false): TypedCli<LsInputs> = cliOf("ls") {
     lastWins(human, si, blockSize)
 
     // `[FILE]...` is zero or more: bare `ls` lists the current directory.
-    val files = argument("file", "the files or directories to list").file().multiple()
+    val files = argument("file", "the files or directories to list").path().multiple()
 
     // ls's option loop sets the layout one option at a time, and -1 or --zero leaves a long format as it is.
     fun ValueScope.replayLayout(): Layout {
@@ -488,7 +490,7 @@ public data class LsInputs(
     val width: ULong?,
     val context: Boolean,
     val zero: Boolean,
-    val files: List<String>,
+    val files: List<CliPath>,
 )
 
 /** `ls` with no arguments at all: every field at the default ls gives it. */

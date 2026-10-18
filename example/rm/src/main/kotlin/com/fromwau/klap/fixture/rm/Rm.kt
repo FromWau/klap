@@ -4,6 +4,8 @@ import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Builtin
 import com.fromwau.klap.Help
+import com.fromwau.klap.io.CliPath
+import com.fromwau.klap.io.path
 import com.fromwau.klap.OptionalValue
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.ValueScope
@@ -92,7 +94,7 @@ public fun rmCli(): TypedCli<RmInputs> = cliOf("rm") {
     val verbose = flag(short = 'v', long = "verbose", help = "explain what is being done")
 
     // Bare `rm` is "missing operand", `rm -f` exits 0, and `rm -f -i` needs an operand again.
-    val files = argument("file", "the files to remove").file().multiple(min = 1).optionalWhen(force)
+    val files = argument("file", "the files to remove").path().multiple(min = 1).optionalWhen(force)
 
     fun ValueScope.preserveRootScope(): PreserveRoot = when {
         noPreserveRoot() -> PreserveRoot.Off
@@ -191,7 +193,7 @@ public data class RmInputs(
     val verbose: Boolean,
     val oneFileSystem: Boolean,
     val preserveRoot: PreserveRoot,
-    val files: List<String>,
+    val files: List<CliPath>,
 )
 
 /** `rm` with no arguments at all: every field at the default rm gives it. */

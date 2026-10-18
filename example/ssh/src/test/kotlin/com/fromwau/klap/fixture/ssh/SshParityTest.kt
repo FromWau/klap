@@ -1,6 +1,7 @@
 package com.fromwau.klap.fixture.ssh
 
 import com.fromwau.klap.fixture.ParitySuite
+import com.fromwau.klap.io.CliPath
 import kotlin.test.Test
 
 class SshParityTest {
@@ -13,7 +14,7 @@ class SshParityTest {
             "-p", "2222", "-i", "/home/u/.ssh/id_ed25519", "admin@web1",
             expected = NOTHING_BOUND.copy(
                 port = 2222,
-                identity = listOf("/home/u/.ssh/id_ed25519"),
+                identity = listOf(CliPath("/home/u/.ssh/id_ed25519")),
                 destination = "admin@web1",
             ),
         )

@@ -9,8 +9,11 @@ import com.fromwau.klap.Help
 import com.fromwau.klap.Opt
 import com.fromwau.klap.ShortOptions
 import com.fromwau.klap.TypedCli
+import com.fromwau.klap.ValueScope
 import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
+import com.fromwau.klap.io.CliPath
+import com.fromwau.klap.io.path
 import com.fromwau.klap.projection
 
 /**
@@ -41,8 +44,16 @@ public data class FindSize(val comparison: Char, val value: ULong, val unit: Cha
 /** `-perm 644` (exact) / `-perm -644` (all bits) / `-perm /644` (any bit). */
 public data class FindPerm(val match: Char, val mode: String)
 
-/** `-newermt DATE`, `-newerac FILE`: which [times] compare (`mt`, `ac`, ...) and the [reference] they read. */
-public data class FindNewer(val times: String, val reference: String)
+/** `-newerac FILE`, `-newermt DATE`: which [times] compare (`ac`, `mt`, ...) and what they compare against. */
+public sealed interface FindNewer {
+    public val times: String
+
+    /** `-newerXY FILE`, Y of `a`, `c` or `m`: a time of the [reference] file. */
+    public data class ThanFile(override val times: String, val reference: CliPath) : FindNewer
+
+    /** `-newerXt DATE`: the [date] itself, free text find reads as a time. */
+    public data class ThanDate(override val times: String, val date: String) : FindNewer
+}
 
 /** The comparison a leading `+` or `-` names, `=` without one, and the rest of the word. */
 private fun comparisonOf(raw: String): Pair<Char, String> {
@@ -224,11 +235,22 @@ private val DEBUG_KEYS: List<String> = listOf("exec", "opt", "rates", "search", 
 private fun debugKeys(raw: String): List<String> =
     raw.split(",").filter { it.isNotEmpty() }.ifEmpty { throw IllegalArgumentException("empty argument to -D") }
 
-/** find's regular expression types, in the order `find . -regextype help` lists them. */
-private val REGEX_TYPES: Array<String> = arrayOf(
-    "findutils-default", "awk", "ed", "egrep", "emacs", "gnu-awk", "grep", "posix-awk", "posix-basic",
-    "posix-egrep", "posix-extended", "posix-minimal-basic", "sed",
-)
+/** find's regular expression types, each typed as its [cli] name, in the order `find . -regextype help` lists. */
+public enum class RegexType(public val cli: String) {
+    FindutilsDefault("findutils-default"),
+    Awk("awk"),
+    Ed("ed"),
+    Egrep("egrep"),
+    Emacs("emacs"),
+    GnuAwk("gnu-awk"),
+    Grep("grep"),
+    PosixAwk("posix-awk"),
+    PosixBasic("posix-basic"),
+    PosixEgrep("posix-egrep"),
+    PosixExtended("posix-extended"),
+    PosixMinimalBasic("posix-minimal-basic"),
+    Sed("sed"),
+}
 
 /** The times `-newerXY` compares: X of the file, Y of the reference, `t` naming a date instead of a file. */
 private val NEWER_TIMES: List<String> = "acm".flatMap { x -> "acmt".map { y -> "$x$y" } }
@@ -315,7 +337,7 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
     val noleaf: Flag
     val ignoreReaddirRace: Flag
     val noignoreReaddirRace: Flag
-    val files0From: Opt<String?>
+    val files0From: Opt<CliPath?>
     group("Traversal options (find's own position-independent set)") {
         maxDepth = option(long = "maxdepth", help = "descend at most N directory levels").map(::findDepth)
         minDepth = option(long = "mindepth", help = "do not apply any tests at levels less than N").map(::findDepth)
@@ -338,13 +360,13 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
 
         // `find -files0-from ''`: "cannot open '' for reading".
         files0From = option(long = "files0-from", help = "read NUL-separated starting points from FILE")
-            .file()
-            .validate("must name a file") { it.isNotEmpty() }
+            .path()
+            .validate("must name a file") { it.text.isNotEmpty() }
     }
 
     // KLAP-GAP (order): find's positional options act on the tests after them (`-daystart` on the later time
     // tests, `-follow` on the later -newer, `-regextype` on the later -regex); klap binds them unordered.
-    val regextype = option(long = "regextype", help = "syntax used by --regex").choice(*REGEX_TYPES)
+    val regextype = option(long = "regextype", help = "syntax used by --regex").enum<RegexType>(spelling = { it.cli })
     val daystart = flag(long = "daystart", help = "measure times from the beginning of today")
     val follow = flag(long = "follow", help = "deprecated; dereference symbolic links, as -L does")
     val warn = flag(long = "warn", help = "turn warning messages on")
@@ -403,8 +425,8 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
 
     // `find . -newer ''` is "'': No such file or directory", refused while parsing, as every reference file is.
     fun reference(long: String, help: String) = option(long = long, help = help)
-        .file()
-        .validate("must name a file") { it.isNotEmpty() }
+        .path()
+        .validate("must name a file") { it.text.isNotEmpty() }
         .multiple()
 
     val newerThan = reference("newer", "modified more recently than FILE")
@@ -412,13 +434,14 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
     val cnewer = reference("cnewer", "status changed more recently than FILE was modified")
     val samefile = reference("samefile", "file refers to the same inode as FILE")
     // `-newermt ''` runs, a date find reads as now, so a date is free text; `-newerBt` and the other birth-time
-    // forms are left out, as this system's find refuses them.
-    val newer = NEWER_TIMES.associateWith { times ->
+    // forms are left out, as this system's find refuses them. One list keeps the forms in find's order for help.
+    val newer = NEWER_TIMES.map<String, ValueScope.() -> List<FindNewer>> { times ->
         if (times[1] == 't') {
-            option(long = "newer$times", help = newerHelp(times)).multiple()
-        } else {
-            reference("newer$times", newerHelp(times))
+            val dates = option(long = "newer$times", help = newerHelp(times)).multiple()
+            return@map { dates().map { FindNewer.ThanDate(times, it) } }
         }
+        val files = reference("newer$times", newerHelp(times))
+        return@map { files().map { FindNewer.ThanFile(times, it) } }
     }
 
     // `find . -user ''` is "invalid user name or UID argument", whatever the password database holds.
@@ -492,11 +515,8 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
         // find's own code: `-D help` lists the keys and exits before reading the rest of the line.
         if ("help" in debug().flatten()) return@action Ok(DEBUG_HELP_TEXT)
 
-        // The cost the escape hatch imposes: split find's PATH... from its expression by
-        // hand, because klap handed both to the same variadic slot. A lone `-` is a path to find.
-        val boundStartingPoints = operand().takeWhile { !(it.startsWith("-") && it != "-") && it != "(" && it != "!" }
-        val startingPoints = boundStartingPoints.ifEmpty { listOf(".") }
-        val rawExpression = operand().drop(boundStartingPoints.size)
+        val (boundStartingPoints, rawExpression) = splitOperands(operand())
+        val startingPoints = boundStartingPoints.map { it.text }.ifEmpty { listOf(".") }
 
         // `lastWins` already collapsed the set to its winner, so this reads one true flag at most and
         // needs no precedence of its own: the rule find documents is the rule the handles carry.
@@ -512,7 +532,7 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
             sizeTest(), mtime(), mmin(), ctime(), cmin(), atime(), amin(), used(), linkCount(), inum(), uid(),
             gid(), permTest(), newerThan(), anewer(), cnewer(), samefile(), ownerUser(), ownerGroup(),
         ).sumOf { it.size } +
-            newer.values.sumOf { it().size } +
+            newer.sumOf { it().size } +
             listOf(
                 emptyTest(), readableTest(), writableTest(), executableTest(), nouserTest(), nogroupTest(),
                 trueTest(), falseTest(),
@@ -534,6 +554,7 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
     }
 
     projection {
+        val (startingPoints, expression) = splitOperands(operand())
         FindInputs(
             physical = physical(),
             logical = logical(),
@@ -584,7 +605,7 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
             anewer = anewer(),
             cnewer = cnewer(),
             samefile = samefile(),
-            newerXY = newer.flatMap { (times, opt) -> opt().map { FindNewer(times, it) } },
+            newerXY = newer.flatMap { it() },
             ownerUser = ownerUser(),
             ownerGroup = ownerGroup(),
             emptyTest = emptyTest(),
@@ -609,7 +630,8 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
             execdirAction = execdirAction(),
             okAction = okAction(),
             okdirAction = okdirAction(),
-            operand = operand(),
+            startingPoints = startingPoints,
+            expression = expression,
         )
     }
 }
@@ -634,8 +656,8 @@ public data class FindInputs(
     val noleaf: Boolean,
     val ignoreReaddirRace: Boolean,
     val noignoreReaddirRace: Boolean,
-    val regextype: String?,
-    val files0From: String?,
+    val regextype: RegexType?,
+    val files0From: CliPath?,
     val daystart: Boolean,
     val follow: Boolean,
     val warn: Boolean,
@@ -666,10 +688,10 @@ public data class FindInputs(
     val uid: List<FindNumber>,
     val gid: List<FindNumber>,
     val permTest: List<FindPerm>,
-    val newerThan: List<String>,
-    val anewer: List<String>,
-    val cnewer: List<String>,
-    val samefile: List<String>,
+    val newerThan: List<CliPath>,
+    val anewer: List<CliPath>,
+    val cnewer: List<CliPath>,
+    val samefile: List<CliPath>,
     val newerXY: List<FindNewer>,
     val ownerUser: List<String>,
     val ownerGroup: List<String>,
@@ -684,9 +706,9 @@ public data class FindInputs(
     val printAction: Boolean,
     val print0Action: Boolean,
     val printfAction: List<String>,
-    val fprintAction: List<String>,
-    val fprint0Action: List<String>,
-    val flsAction: List<String>,
+    val fprintAction: List<CliPath>,
+    val fprint0Action: List<CliPath>,
+    val flsAction: List<CliPath>,
     val lsAction: Boolean,
     val deleteAction: Boolean,
     val pruneAction: Boolean,
@@ -695,8 +717,20 @@ public data class FindInputs(
     val execdirAction: List<String>,
     val okAction: List<String>,
     val okdirAction: List<String>,
-    val operand: List<String>,
+    val startingPoints: List<CliPath>,
+    val expression: List<String>,
 )
+
+/**
+ * find's operands as find reads them: its starting points, then from the first word that opens an expression (one
+ * led by a dash but a lone `-`, or `(` or `!`) the expression. klap hands both to one variadic slot, so the fixture
+ * splits them here. `find link/` walks the directory, `find link` names the link alone, so a starting point keeps
+ * its text as typed.
+ */
+internal fun splitOperands(words: List<String>): Pair<List<CliPath>, List<String>> {
+    val points = words.takeWhile { !(it.startsWith("-") && it != "-") && it != "(" && it != "!" }
+    return points.map(::CliPath) to words.drop(points.size)
+}
 
 /** `find` with no arguments at all: every field at the default its declaration gives it. */
 public val NOTHING_BOUND: FindInputs = FindInputs(
@@ -774,7 +808,8 @@ public val NOTHING_BOUND: FindInputs = FindInputs(
     execdirAction = emptyList(),
     okAction = emptyList(),
     okdirAction = emptyList(),
-    operand = emptyList(),
+    startingPoints = emptyList(),
+    expression = emptyList(),
 )
 
 /** What `find -D help` prints. */

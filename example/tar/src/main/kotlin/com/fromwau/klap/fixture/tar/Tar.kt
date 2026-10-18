@@ -5,6 +5,8 @@ import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
+import com.fromwau.klap.io.CliPath
+import com.fromwau.klap.io.path
 import com.fromwau.klap.projection
 
 /**
@@ -50,7 +52,7 @@ public fun tarCli(): TypedCli<TarInputs> = cliOf("tar") {
 
     // Real tar falls back to $TAPE/stdin when -f is absent; the studied surface declares it mandatory.
     val archive = option(short = 'f', long = "file", help = "use archive file ARCHIVE ('-' for stdin/stdout)")
-        .file()
+        .path()
         .required()
 
     val exclude = option(long = "exclude", help = "exclude files matching PATTERN").multiple()
@@ -58,7 +60,7 @@ public fun tarCli(): TypedCli<TarInputs> = cliOf("tar") {
     // tar's trailing operands are zero-or-more, so `tar -tf a.tar` and `tar -xf a.tar` — the tool's two
     // most common invocations, both naming no FILE — bind an empty list rather than failing.
     val files = argument("file", "file or archive member to operate on")
-        .file()
+        .path()
         .multiple()
 
     action {
@@ -99,9 +101,9 @@ public data class TarInputs(
     val verbose: Int,
     val gzip: Boolean,
     val bzip2: Boolean,
-    val archive: String,
+    val archive: CliPath,
     val exclude: List<String>,
-    val files: List<String>,
+    val files: List<CliPath>,
 )
 
 /**
@@ -115,7 +117,7 @@ public val NOTHING_BOUND: TarInputs = TarInputs(
     verbose = 0,
     gzip = false,
     bzip2 = false,
-    archive = "",
+    archive = CliPath(""),
     exclude = emptyList(),
     files = emptyList(),
 )

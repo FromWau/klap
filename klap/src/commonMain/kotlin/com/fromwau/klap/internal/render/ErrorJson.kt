@@ -101,6 +101,9 @@ internal fun ConversionError.toJson(): JsonElement = when (this) {
     ConversionError.NotALong -> typed("NotALong") {}
     ConversionError.NotADouble -> typed("NotADouble") {}
     ConversionError.NotABoolean -> typed("NotABoolean") {}
+    ConversionError.NotADuration -> typed("NotADuration") {}
+    ConversionError.NotAnInstant -> typed("NotAnInstant") {}
+    ConversionError.NotAUuid -> typed("NotAUuid") {}
     is ConversionError.NotOneOf -> typed("NotOneOf") { putStrings("choices", choices) }
     // The throwable's own account is the only data a crashed transform leaves behind.
     is ConversionError.Threw -> typed("Threw") { putIfPresent("message", thrown.message) }

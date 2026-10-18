@@ -169,6 +169,9 @@ internal fun ConversionError.reason(): String = when (this) {
     ConversionError.NotALong -> "not a long"
     ConversionError.NotADouble -> "not a number"
     ConversionError.NotABoolean -> "not a boolean (true/false)"
+    ConversionError.NotADuration -> "not a duration of zero or more, such as 90, 1h30m or PT1H30M"
+    ConversionError.NotAnInstant -> "not an ISO 8601 instant with an offset, such as 2026-01-31T12:00:00Z"
+    ConversionError.NotAUuid -> "not a UUID (32 hex digits, dashed as 8-4-4-4-12 or not)"
     is ConversionError.NotOneOf -> "not one of ${choices.joinToString(", ")}"
     // Kotlin/Native's toInt() throws with a null message; the fallback must not say "invalid value"
     // again, since BadValue's rendering above already prefixes it.

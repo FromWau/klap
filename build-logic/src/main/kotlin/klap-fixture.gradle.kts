@@ -15,6 +15,7 @@ tasks.test {
 
 dependencies {
     implementation(project(":klap"))
+    implementation(project(":klap-io"))
     testImplementation(kotlin("test"))
     testImplementation(project(":example:parity"))
 }

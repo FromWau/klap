@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.rm
 
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.io.CliPath
 import kotlin.test.Test
 
 /*
@@ -43,7 +44,7 @@ private fun ParitySuite<RmInputs>.checkValues(cells: List<ConverterCell>) = chec
     }
 }
 
-private val A: RmInputs = NOTHING_BOUND.copy(files = listOf("a"))
+private val A: RmInputs = NOTHING_BOUND.copy(files = listOf(CliPath("a")))
 
 /** `--preserve-root=all` on `a`. */
 private val ALL_ROOTS: RmInputs = A.copy(preserveRoot = PreserveRoot.All)
@@ -103,13 +104,15 @@ class RmConverterTest {
             bound(
                 "--interactive", "never", "a",
                 because = "asks for never",
-                expected = NOTHING_BOUND.copy(files = listOf("never", "a")).promptingBy(Prompt.Always),
+                expected = NOTHING_BOUND
+                    .copy(files = listOf(CliPath("never"), CliPath("a")))
+                    .promptingBy(Prompt.Always),
             ),
             bound("--interactive", "--", "a", because = "asks for a", expected = A.promptingBy(Prompt.Always)),
             bound(
                 "--interactive", "-",
                 because = "cannot remove '-'",
-                expected = NOTHING_BOUND.copy(files = listOf("-")).promptingBy(Prompt.Always),
+                expected = NOTHING_BOUND.copy(files = listOf(CliPath("-"))).promptingBy(Prompt.Always),
             ),
         ),
     )
@@ -161,11 +164,11 @@ class RmConverterTest {
         // X7b, X8, X53, X60: `rm a//`: "cannot remove 'a/': Not a directory"; `rm -r dd/` and `rm -d ed//` remove the
         // directory; `rm b a` removes both.
         listOf(
-            bound("a//", because = "cannot remove 'a/'", expected = NOTHING_BOUND.copy(files = listOf("a//"))),
-            bound("-r", "dd/", expected = NOTHING_BOUND.copy(recursive = true, files = listOf("dd/"))),
-            bound("-d", "ed//", expected = NOTHING_BOUND.copy(dir = true, files = listOf("ed//"))),
-            bound("b", "a", expected = NOTHING_BOUND.copy(files = listOf("b", "a"))),
-            bound(" a", because = "cannot remove ' a'", expected = NOTHING_BOUND.copy(files = listOf(" a"))),
+            bound("a//", because = "cannot remove 'a/'", expected = NOTHING_BOUND.copy(files = listOf(CliPath("a//")))),
+            bound("-r", "dd/", expected = NOTHING_BOUND.copy(recursive = true, files = listOf(CliPath("dd/")))),
+            bound("-d", "ed//", expected = NOTHING_BOUND.copy(dir = true, files = listOf(CliPath("ed//")))),
+            bound("b", "a", expected = NOTHING_BOUND.copy(files = listOf(CliPath("b"), CliPath("a")))),
+            bound(" a", because = "cannot remove ' a'", expected = NOTHING_BOUND.copy(files = listOf(CliPath(" a")))),
             bound("-f", because = "-f lets the list go empty", expected = NOTHING_BOUND.forcing()),
             refused(because = "rm: missing operand"),
         ),

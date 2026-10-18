@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.cp
 
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.io.CliPath
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -44,12 +45,12 @@ private fun ParitySuite<CpInputs>.checkValues(cells: List<ConverterCell>) = chec
 private fun ab(change: CpInputs.() -> CpInputs): CpInputs = A_TO_B.change()
 
 /** A choice of cp: each typed word cp reads and the value it reads it as, and each word argmatch refuses. */
-private class ChoiceTable(
+private class ChoiceTable<T>(
     val long: String,
-    val reads: List<Pair<String, String>>,
+    val reads: List<Pair<String, T>>,
     val ambiguous: List<String>,
     val invalid: List<String>,
-    val bind: CpInputs.(String) -> CpInputs,
+    val bind: CpInputs.(T) -> CpInputs,
 ) {
     fun accepted(): List<ConverterCell> = reads.map { (typed, value) ->
         bound("$long=$typed", "a", "b", because = "`cp $long=$typed a b` reads $value", expected = ab { bind(value) })
@@ -63,10 +64,13 @@ private class ChoiceTable(
 private val BACKUP = ChoiceTable(
     long = "--backup",
     reads = listOf(
-        "none" to "none", "off" to "none", "numbered" to "numbered", "t" to "numbered", "existing" to "existing",
-        "nil" to "existing", "simple" to "simple", "never" to "simple", "nu" to "numbered", "no" to "none",
-        "ni" to "existing", "e" to "existing", "ex" to "existing", "s" to "simple", "si" to "simple",
-        "o" to "none", "of" to "none", "ne" to "simple", "nev" to "simple",
+        "none" to BackupControl.None, "off" to BackupControl.None, "numbered" to BackupControl.Numbered,
+        "t" to BackupControl.Numbered, "existing" to BackupControl.Existing, "nil" to BackupControl.Existing,
+        "simple" to BackupControl.Simple, "never" to BackupControl.Simple, "nu" to BackupControl.Numbered,
+        "no" to BackupControl.None, "ni" to BackupControl.Existing, "e" to BackupControl.Existing,
+        "ex" to BackupControl.Existing, "s" to BackupControl.Simple, "si" to BackupControl.Simple,
+        "o" to BackupControl.None, "of" to BackupControl.None, "ne" to BackupControl.Simple,
+        "nev" to BackupControl.Simple,
     ),
     ambiguous = listOf("n"),
     invalid = listOf("NONE", "None", "T", "bogus", " none", "none ", "none,simple", "nil,t", "-x"),
@@ -75,8 +79,8 @@ private val BACKUP = ChoiceTable(
 private val SPARSE = ChoiceTable(
     long = "--sparse",
     reads = listOf(
-        "auto" to "auto", "always" to "always", "never" to "never", "al" to "always", "au" to "auto",
-        "n" to "never", "nev" to "never",
+        "auto" to When.Auto, "always" to When.Always, "never" to When.Never, "al" to When.Always, "au" to When.Auto,
+        "n" to When.Never, "nev" to When.Never,
     ),
     ambiguous = listOf("a", ""),
     invalid = listOf("AUTO", "bogus", " auto"),
@@ -85,8 +89,8 @@ private val SPARSE = ChoiceTable(
 private val REFLINK = ChoiceTable(
     long = "--reflink",
     reads = listOf(
-        "auto" to "auto", "always" to "always", "never" to "never", "al" to "always", "au" to "auto",
-        "n" to "never", "nev" to "never",
+        "auto" to When.Auto, "always" to When.Always, "never" to When.Never, "al" to When.Always, "au" to When.Auto,
+        "n" to When.Never, "nev" to When.Never,
     ),
     ambiguous = listOf("a", ""),
     invalid = listOf("ALWAYS", "bogus"),
@@ -95,8 +99,9 @@ private val REFLINK = ChoiceTable(
 private val UPDATE = ChoiceTable(
     long = "--update",
     reads = listOf(
-        "all" to "all", "none" to "none", "none-fail" to "none-fail", "older" to "older", "a" to "all",
-        "al" to "all", "o" to "older", "ol" to "older", "none-" to "none-fail", "none-f" to "none-fail",
+        "all" to Update.All, "none" to Update.None, "none-fail" to Update.NoneFail, "older" to Update.Older,
+        "a" to Update.All, "al" to Update.All, "o" to Update.Older, "ol" to Update.Older, "none-" to Update.NoneFail,
+        "none-f" to Update.NoneFail,
     ),
     ambiguous = listOf("n", "no", "non", ""),
     invalid = listOf("ALL", "Older", "NONE", "None-Fail", "bogus", "none,all"),
@@ -142,10 +147,10 @@ private val ATTRIBUTE_REFUSALS: List<String> = listOf(
 private fun intoD(
     dir: String,
     vararg sources: String,
-): CpInputs = NOTHING_BOUND.copy(targetDirectory = dir, sources = sources.toList())
+): CpInputs = NOTHING_BOUND.copy(targetDirectory = CliPath(dir), sources = sources.map(::CliPath))
 
 /** A backup under cp's default control named with [suffix]: `cp -S .x a b` makes b.x without -b. */
-private fun CpInputs.suffixed(suffix: String): CpInputs = copy(backup = "existing", suffix = suffix)
+private fun CpInputs.suffixed(suffix: String): CpInputs = copy(backup = BackupControl.Existing, suffix = suffix)
 
 /** The suffixes cp names a backup with, each typed as one word and bound as typed. */
 private val SUFFIXES = listOf(".bak", "", "-x", "--", "-", " .s", "x y", "a\nb", ".ä", "/x", "a=b")
@@ -173,8 +178,8 @@ class CpConverterTest {
     @Test
     fun `a required choice takes the next word as its value`() = parity.checkValues(
         listOf(
-            bound("--sparse", "always", "a", "b", expected = ab { copy(sparse = "always") }),
-            bound("--sp=al", "a", "b", expected = ab { copy(sparse = "always") }),
+            bound("--sparse", "always", "a", "b", expected = ab { copy(sparse = When.Always) }),
+            bound("--sp=al", "a", "b", expected = ab { copy(sparse = When.Always) }),
             refused("--sparse", "-x", "a", "b", because = "cp: invalid argument '-x' for '--sparse'"),
             refused("--sparse", "", "a", "b", because = "cp: ambiguous argument '' for '--sparse'"),
             refused("a", "b", "--sparse", because = "cp: option '--sparse' requires an argument"),
@@ -184,15 +189,19 @@ class CpConverterTest {
     @Test
     fun `an optional choice left out binds cp's default for it`() = parity.checkValues(
         listOf(
-            bound("--backup", "a", "b", because = "makes b~", expected = ab { copy(backup = "existing") }),
-            bound("--b", "a", "b", because = "makes b~", expected = ab { copy(backup = "existing") }),
-            bound("--b=t", "a", "b", because = "makes b.~1~", expected = ab { copy(backup = "numbered") }),
-            bound("--back=nu", "a", "b", because = "makes b.~1~", expected = ab { copy(backup = "numbered") }),
-            bound("--reflink", "a", "b", because = "failed to clone", expected = ab { copy(reflink = "always") }),
-            bound("--ref", "a", "b", because = "failed to clone", expected = ab { copy(reflink = "always") }),
-            bound("--ref=au", "a", "b", expected = ab { copy(reflink = "auto") }),
-            bound("--update", "a", "b", because = "replaces the older b", expected = ab { copy(update = "older") }),
-            bound("--upd", "a", "b", because = "replaces the older b", expected = ab { copy(update = "older") }),
+            bound("--backup", "a", "b", because = "makes b~", expected = ab { copy(backup = BackupControl.Existing) }),
+            bound("--b", "a", "b", because = "makes b~", expected = ab { copy(backup = BackupControl.Existing) }),
+            bound("--b=t", "a", "b", because = "makes b.~1~", expected = ab { copy(backup = BackupControl.Numbered) }),
+            bound("--back=nu", "a", "b", because = "makes b.~1~", expected = ab {
+                copy(backup = BackupControl.Numbered)
+            }),
+            bound("--reflink", "a", "b", because = "failed to clone", expected = ab { copy(reflink = When.Always) }),
+            bound("--ref", "a", "b", because = "failed to clone", expected = ab { copy(reflink = When.Always) }),
+            bound("--ref=au", "a", "b", expected = ab { copy(reflink = When.Auto) }),
+            bound("--update", "a", "b", because = "replaces the older b", expected = ab {
+                copy(update = Update.Older)
+            }),
+            bound("--upd", "a", "b", because = "replaces the older b", expected = ab { copy(update = Update.Older) }),
         ),
     )
 
@@ -202,19 +211,23 @@ class CpConverterTest {
             // `cp --reflink auto a b` and `cp --update all a b`: target 'b': Not a directory, so the word was a source.
             bound(
                 "--reflink", "auto", "a", "b",
-                expected = NOTHING_BOUND.copy(reflink = "always", sources = listOf("auto", "a"), dest = "b"),
+                expected = operands("auto", "a", "b").copy(reflink = When.Always),
             ),
             bound(
                 "--update", "all", "a", "b",
-                expected = NOTHING_BOUND.copy(update = "older", sources = listOf("all", "a"), dest = "b"),
+                expected = operands("all", "a", "b").copy(update = Update.Older),
             ),
-            bound("--backup", "--", "a", "b", because = "makes b~", expected = ab { copy(backup = "existing") }),
-            bound("--reflink", "--", "a", "b", because = "failed to clone", expected = ab { copy(reflink = "always") }),
-            bound("--update", "--", "a", "b", because = "replaces b", expected = ab { copy(update = "older") }),
+            bound("--backup", "--", "a", "b", because = "makes b~", expected = ab {
+                copy(backup = BackupControl.Existing)
+            }),
+            bound("--reflink", "--", "a", "b", because = "failed to clone", expected = ab {
+                copy(reflink = When.Always)
+            }),
+            bound("--update", "--", "a", "b", because = "replaces b", expected = ab { copy(update = Update.Older) }),
             bound(
                 "--backup", "-", "b",
                 because = "cannot stat '-'",
-                expected = NOTHING_BOUND.copy(backup = "existing", sources = listOf("-"), dest = "b"),
+                expected = operands("-", "b").copy(backup = BackupControl.Existing),
             ),
         ),
     )
@@ -223,33 +236,33 @@ class CpConverterTest {
     fun `a choice given twice binds the later value`() = parity.checkValues(
         listOf(
             bound("--backup=numbered", "--backup=simple", "a", "b", because = "makes b~", expected = ab {
-                copy(backup = "simple")
+                copy(backup = BackupControl.Simple)
             }),
             bound("--backup=numbered", "--backup=s", "a", "b", because = "makes b~", expected = ab {
-                copy(backup = "simple")
+                copy(backup = BackupControl.Simple)
             }),
             bound("--backup", "--backup=never", "a", "b", because = "makes b~", expected = ab {
-                copy(backup = "simple")
+                copy(backup = BackupControl.Simple)
             }),
-            bound("--sparse=auto", "--sparse=never", "a", "b", expected = ab { copy(sparse = "never") }),
-            bound("--reflink=auto", "--reflink=never", "a", "b", expected = ab { copy(reflink = "never") }),
+            bound("--sparse=auto", "--sparse=never", "a", "b", expected = ab { copy(sparse = When.Never) }),
+            bound("--reflink=auto", "--reflink=never", "a", "b", expected = ab { copy(reflink = When.Never) }),
             bound("--reflink=au", "--reflink=al", "a", "b", because = "failed to clone", expected = ab {
-                copy(reflink = "always")
+                copy(reflink = When.Always)
             }),
             bound("--reflink=never", "--reflink", "a", "b", because = "failed to clone", expected = ab {
-                copy(reflink = "always")
+                copy(reflink = When.Always)
             }),
             bound("--update=all", "--update=none", "a", "b", because = "keeps the older b", expected = ab {
-                copy(update = "none")
+                copy(update = Update.None)
             }),
             bound("--update", "--update=none", "a", "b", because = "keeps the older b", expected = ab {
-                copy(update = "none")
+                copy(update = Update.None)
             }),
             bound("--update=none", "--update", "a", "b", because = "replaces the older b", expected = ab {
-                copy(update = "older")
+                copy(update = Update.Older)
             }),
             bound("--update=none-fail", "--update=none", "a", "b", because = "keeps b, exit 0", expected = ab {
-                copy(update = "none")
+                copy(update = Update.None)
             }),
         ),
     )
@@ -274,15 +287,17 @@ class CpConverterTest {
     fun `an invalid earlier --backup is never read`() = parity.checkValues(
         // cp keeps the last --backup word and reads it once, after the options: `cp --backup=bogus --backup=never a b`
         // makes b~ and exits 0.
-        listOf(bound("--backup=bogus", "--backup=never", "a", "b", expected = ab { copy(backup = "simple") })),
+        listOf(bound("--backup=bogus", "--backup=never", "a", "b", expected = ab {
+            copy(backup = BackupControl.Simple)
+        })),
     )
 
     @Test
     fun `-b beside --backup keeps the control --backup names`() = parity.checkValues(
         // `cp -b --backup=numbered a b` and `cp --backup=numbered -b a b` both make b.~1~.
         listOf(
-            bound("-b", "--backup=numbered", "a", "b", expected = ab { copy(backup = "numbered") }),
-            bound("--backup=numbered", "-b", "a", "b", expected = ab { copy(backup = "numbered") }),
+            bound("-b", "--backup=numbered", "a", "b", expected = ab { copy(backup = BackupControl.Numbered) }),
+            bound("--backup=numbered", "-b", "a", "b", expected = ab { copy(backup = BackupControl.Numbered) }),
         ),
     )
 
@@ -396,16 +411,10 @@ class CpConverterTest {
     @Test
     fun `the operands bind verbatim and need a source and a destination`() = parity.checkValues(
         listOf(
-            bound("a", "d/", expected = NOTHING_BOUND.copy(sources = listOf("a"), dest = "d/")),
-            bound("a//", "b", because = "cannot stat 'a//'", expected = NOTHING_BOUND.copy(
-                sources = listOf("a//"),
-                dest = "b",
-            )),
-            bound("~", "b", expected = NOTHING_BOUND.copy(sources = listOf("~"), dest = "b")),
-            bound("a", "b", "c", because = "target 'c'", expected = NOTHING_BOUND.copy(
-                sources = listOf("a", "b"),
-                dest = "c",
-            )),
+            bound("a", "d/", expected = operands("a", "d/")),
+            bound("a//", "b", because = "cannot stat 'a//'", expected = operands("a//", "b")),
+            bound("~", "b", expected = operands("~", "b")),
+            bound("a", "b", "c", because = "target 'c'", expected = operands("a", "b", "c")),
             bound("-t", "d", "a", "b", expected = intoD("d", "a", "b")),
             refused("a", because = "cp: missing destination file operand after 'a'"),
             refused(because = "cp: missing file operand"),

@@ -1,6 +1,7 @@
 package com.fromwau.klap.fixture.pacman
 
 import com.fromwau.klap.fixture.ParitySuite
+import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 import kotlin.test.fail
@@ -105,20 +106,27 @@ private fun values(
     bind: PacmanInputs.(List<String>) -> PacmanInputs,
 ) = Input(long, null, help, kind.copy(multiple = true)) { bind(it as List<String>) }
 
+/** `--color`'s words, as pacman(8) lists them, each with the value it binds. */
+private val COLOR_WORDS: Map<String, ColorWhen> = mapOf(
+    "always" to ColorWhen.Always,
+    "never" to ColorWhen.Never,
+    "auto" to ColorWhen.Auto,
+)
+
 private val PATH = Kind.Value(path = true)
 private val TEXT = Kind.Value()
 
 /** Every input of `pacmanCli()` other than the operations, `-V` and the targets, as the fixture declares it. */
 internal val INPUTS: List<Input> = listOf(
-    value("--dbpath", 'b', "set an alternate database location", PATH) { copy(dbPath = it) },
-    value("--root", 'r', "set an alternate installation root", PATH) { copy(root = it) },
+    value("--dbpath", 'b', "set an alternate database location", PATH) { copy(dbPath = CliPath(it)) },
+    value("--root", 'r', "set an alternate installation root", PATH) { copy(root = CliPath(it)) },
     flag("--verbose", 'v', "be verbose") { copy(verbose = it) },
     value("--arch", null, "set an alternate architecture", TEXT) { copy(arch = it) },
-    values("--cachedir", "set an alternate package cache location", PATH) { copy(cacheDirs = it) },
-    value("--color", null, "colorize the output", Kind.Value(choices = listOf("always", "never", "auto"))) {
-        copy(color = it)
+    values("--cachedir", "set an alternate package cache location", PATH) { copy(cacheDirs = it.map(::CliPath)) },
+    value("--color", null, "colorize the output", Kind.Value(choices = COLOR_WORDS.keys.toList())) {
+        copy(color = COLOR_WORDS.getValue(it))
     },
-    value("--config", null, "set an alternate configuration file", PATH) { copy(config = it) },
+    value("--config", null, "set an alternate configuration file", PATH) { copy(config = CliPath(it)) },
     // `--confirm` turns `--noconfirm` off again, so alone it binds what no word binds.
     flag("--confirm", null, "always ask for confirmation") { copy(noConfirm = noConfirm && !it) },
     value("--debug", null, "display debug messages", Kind.Value(choices = listOf("1", "2"), bare = "1")) {
@@ -136,11 +144,11 @@ internal val INPUTS: List<Input> = listOf(
     flag("--disable-sandbox-syscalls", null, "disables the syscalls part of the downloader process sandbox") {
         copy(disableSandboxSyscalls = it)
     },
-    value("--gpgdir", null, "set an alternate home directory for GnuPG", PATH) { copy(gpgDir = it) },
-    values("--hookdir", "set an alternate hook location", PATH) { copy(hookDirs = it) },
-    value("--logfile", null, "set an alternate log file", PATH) { copy(logFile = it) },
+    value("--gpgdir", null, "set an alternate home directory for GnuPG", PATH) { copy(gpgDir = CliPath(it)) },
+    values("--hookdir", "set an alternate hook location", PATH) { copy(hookDirs = it.map(::CliPath)) },
+    value("--logfile", null, "set an alternate log file", PATH) { copy(logFile = CliPath(it)) },
     flag("--noconfirm", null, "do not ask for any confirmation") { copy(noConfirm = it) },
-    value("--sysroot", null, "operate on a mounted guest system (root-only)", PATH) { copy(sysroot = it) },
+    value("--sysroot", null, "operate on a mounted guest system (root-only)", PATH) { copy(sysroot = CliPath(it)) },
     count("--nodeps", 'd', "skip dependency version checks (-dd to skip all checks)") { copy(noDeps = it) },
     flag("--print", 'p', "print the targets instead of performing the operation") { copy(printOnly = it) },
     values("--assume-installed", "add a virtual package to satisfy dependencies", TEXT) {

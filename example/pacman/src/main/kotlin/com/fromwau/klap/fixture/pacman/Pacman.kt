@@ -15,6 +15,8 @@ import com.fromwau.klap.ValueScope
 import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.dispatch
+import com.fromwau.klap.io.CliPath
+import com.fromwau.klap.io.path
 import com.fromwau.klap.projection
 
 /**
@@ -73,23 +75,23 @@ public fun pacmanCli(): TypedCli<PacmanInputs> = cliOf("pacman") {
 
     // The options every operation's page lists, so they bind wherever they stand.
     // A path pacman resolves before it starts, so an empty one is refused ("failed to resolve path ''").
-    fun Opt<String?>.path(): Opt<String?> = file().validate("must not be empty") { it.isNotEmpty() }
+    fun Opt<String?>.nonEmptyPath(): Opt<CliPath?> = path().validate("must not be empty") { it.text.isNotEmpty() }
 
     val dbPath = globalOption(short = 'b', long = "dbpath", help = "set an alternate database location")
-        .path()
+        .nonEmptyPath()
         .placeholder("path")
     val root = globalOption(short = 'r', long = "root", help = "set an alternate installation root")
-        .path()
+        .nonEmptyPath()
         .placeholder("path")
     val verbose = globalFlag(short = 'v', long = "verbose", help = "be verbose")
     val arch = globalOption(long = "arch", help = "set an alternate architecture").placeholder("arch")
     val cacheDirs = globalOption(long = "cachedir", help = "set an alternate package cache location")
-        .path()
+        .nonEmptyPath()
         .placeholder("dir")
         .multiple()
-    val color = globalOption(long = "color", help = "colorize the output").choice("always", "never", "auto")
+    val color = globalOption(long = "color", help = "colorize the output").enum<ColorWhen>()
     val config = globalOption(long = "config", help = "set an alternate configuration file")
-        .path()
+        .nonEmptyPath()
         .placeholder("path")
     // pacman reads the attached level as a decimal number, so `--debug=01` and `--debug=+2` are levels 1 and 2,
     // and only those two are valid (`--debug=3` is "not a valid debug level"); the bare form is level 1. Every
@@ -122,19 +124,19 @@ public fun pacmanCli(): TypedCli<PacmanInputs> = cliOf("pacman") {
         help = "disables the syscalls part of the downloader process sandbox",
     )
     val gpgDir = globalOption(long = "gpgdir", help = "set an alternate home directory for GnuPG")
-        .path()
+        .nonEmptyPath()
         .placeholder("path")
     val hookDirs = globalOption(long = "hookdir", help = "set an alternate hook location")
-        .path()
+        .nonEmptyPath()
         .placeholder("dir")
         .multiple()
-    val logFile = globalOption(long = "logfile", help = "set an alternate log file").file().placeholder("path")
+    val logFile = globalOption(long = "logfile", help = "set an alternate log file").path().placeholder("path")
     // The man page: "--confirm  Cancels the effects of a previous --noconfirm", so the two are one setting and the
     // later one given wins.
     val noConfirm = globalFlag(long = "noconfirm", help = "do not ask for any confirmation")
         .negatable(long = "confirm", default = false, help = "always ask for confirmation")
     val sysroot = globalOption(long = "sysroot", help = "operate on a mounted guest system (root-only)")
-        .path()
+        .nonEmptyPath()
         .placeholder("dir")
 
     // What every operation's record holds from the globals.
@@ -551,23 +553,23 @@ public data class PacmanInputs(
     val sync: Boolean,
     val deptest: Boolean,
     val upgrade: Boolean,
-    val dbPath: String?,
-    val root: String?,
+    val dbPath: CliPath?,
+    val root: CliPath?,
     val verbose: Boolean,
     val arch: String?,
-    val cacheDirs: List<String>,
-    val color: String?,
-    val config: String?,
+    val cacheDirs: List<CliPath>,
+    val color: ColorWhen?,
+    val config: CliPath?,
     val debug: String?,
     val disableDownloadTimeout: Boolean,
     val disableSandbox: Boolean,
     val disableSandboxFilesystem: Boolean,
     val disableSandboxSyscalls: Boolean,
-    val gpgDir: String?,
-    val hookDirs: List<String>,
-    val logFile: String?,
+    val gpgDir: CliPath?,
+    val hookDirs: List<CliPath>,
+    val logFile: CliPath?,
     val noConfirm: Boolean,
-    val sysroot: String?,
+    val sysroot: CliPath?,
     val noDeps: Int,
     val printOnly: Boolean,
     val assumeInstalled: List<String>,
@@ -608,6 +610,13 @@ public data class PacmanInputs(
     val machineReadable: Boolean,
     val targets: List<String>,
 )
+
+/** When `--color` colors the output: pacman(8) lists always, never or auto. */
+public enum class ColorWhen {
+    Always,
+    Never,
+    Auto,
+}
 
 /** `pacman` with no arguments at all: every field at the default the declaration gives it. */
 public val NOTHING_BOUND: PacmanInputs = PacmanInputs(

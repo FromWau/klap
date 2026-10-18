@@ -1,5 +1,6 @@
 package com.fromwau.klap.fixture.rm
 
+import com.fromwau.klap.io.CliPath
 import kotlin.test.fail
 
 /*
@@ -195,4 +196,4 @@ internal fun inputOfLong(spelled: String): Input? = resolveLong(spelled)
     ?.takeIf { it.abbreviates || it.long == spelled }
 
 /** What a line removing `a` and `b` binds before any option: the record every cell starts from. */
-internal val A_AND_B: RmInputs = NOTHING_BOUND.copy(files = listOf("a", "b"))
+internal val A_AND_B: RmInputs = NOTHING_BOUND.copy(files = listOf(CliPath("a"), CliPath("b")))

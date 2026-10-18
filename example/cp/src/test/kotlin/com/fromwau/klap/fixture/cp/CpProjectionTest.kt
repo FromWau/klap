@@ -45,6 +45,8 @@ import com.fromwau.klap.fixture.cp.CpProjectionSupport.checkDiffer
 import com.fromwau.klap.fixture.cp.CpProjectionSupport.checkSame
 import com.fromwau.klap.fixture.cp.CpProjectionSupport.checkUnder
 import com.fromwau.klap.fixture.cp.CpProjectionSupport.cells
+import com.fromwau.klap.io.CliPath
+import kotlin.test.assertEquals
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -64,7 +66,7 @@ private fun cell(
     because: String,
 ) = Cell("line", "whole line", argv, expected, because)
 
-private val TO_DIR: CpInputs = NOTHING_BOUND.copy(targetDirectory = "d", sources = listOf("a"))
+private val TO_DIR: CpInputs = NOTHING_BOUND.copy(targetDirectory = CliPath("d"), sources = listOf(CliPath("a")))
 
 /**
  * The record a cp line binds in the fixture, or its refusal, as real cp 9.12 reads the line (P of the testing matrix):
@@ -165,23 +167,23 @@ class CpProjectionTest {
     fun `the operands bind as each of cp's three usage shapes reads them`() = parity.checkAll(
         listOf(
             cell(listOf("a", "b"), A_TO_B, "cp a b copies a to b"),
-            cell(listOf("a", "b", "d"), NOTHING_BOUND.copy(sources = listOf("a", "b"), dest = "d"), "into d"),
+            cell(listOf("a", "b", "d"), operands("a", "b", "d"), "into d"),
             cell(listOf("-t", "d", "a"), TO_DIR, "`cp -t d a` copies a into d"),
             cell(listOf("a", "-t", "d"), TO_DIR, "`cp a -t d` copies a into d"),
-            cell(listOf("a", "b", "-t", "d"), TO_DIR.copy(sources = listOf("a", "b")), "`cp a b -t d`: both into d"),
-            cell(listOf("a", "-t", "d", "b"), TO_DIR.copy(sources = listOf("a", "b")), "`cp a -t d b`: both into d"),
+            cell(listOf("a", "b", "-t", "d"), TO_DIR.copy(sources = AB.map(::CliPath)), "`cp a b -t d`: both into d"),
+            cell(listOf("a", "-t", "d", "b"), TO_DIR.copy(sources = AB.map(::CliPath)), "`cp a -t d b`: both into d"),
             cell(listOf("-T", "a", "b"), A_TO_B.copy(noTargetDirectory = true), "cp -T a b"),
             cell(listOf("a", "b", "-T"), A_TO_B.copy(noTargetDirectory = true), "`cp a b -T` exits 0"),
-            cell(listOf("--", "-foo", "bar"), NOTHING_BOUND.copy(sources = listOf("-foo"), dest = "bar"), "--"),
-            cell(listOf("a", "--", "-v"), NOTHING_BOUND.copy(sources = listOf("a"), dest = "-v"), "makes a file -v"),
-            cell(listOf("--", "a", "--"), NOTHING_BOUND.copy(sources = listOf("a"), dest = "--"), "makes a file --"),
-            cell(listOf("-t", "d", "--", "-x"), TO_DIR.copy(sources = listOf("-x")), "cp: cannot stat '-x'"),
-            cell(listOf("--", "-5", "b"), NOTHING_BOUND.copy(sources = listOf("-5"), dest = "b"), "`cp a -- -5`"),
-            cell(listOf("-", "b"), NOTHING_BOUND.copy(sources = listOf("-"), dest = "b"), "cp: cannot stat '-'"),
-            cell(listOf("", "b"), NOTHING_BOUND.copy(sources = listOf(""), dest = "b"), "cp: cannot stat ''"),
-            cell(listOf("a b", "b"), NOTHING_BOUND.copy(sources = listOf("a b"), dest = "b"), "cannot stat 'a b'"),
+            cell(listOf("--", "-foo", "bar"), operands("-foo", "bar"), "--"),
+            cell(listOf("a", "--", "-v"), operands("a", "-v"), "makes a file -v"),
+            cell(listOf("--", "a", "--"), operands("a", "--"), "makes a file --"),
+            cell(listOf("-t", "d", "--", "-x"), TO_DIR.copy(sources = listOf(CliPath("-x"))), "cp: cannot stat '-x'"),
+            cell(listOf("--", "-5", "b"), operands("-5", "b"), "`cp a -- -5`"),
+            cell(listOf("-", "b"), operands("-", "b"), "cp: cannot stat '-'"),
+            cell(listOf("", "b"), operands("", "b"), "cp: cannot stat ''"),
+            cell(listOf("a b", "b"), operands("a b", "b"), "cannot stat 'a b'"),
             // `~/x` was not run, as the oracle's safety rule forbids a `~` path; cp gets the word as the shell left it.
-            cell(listOf("ü*", "~/x"), NOTHING_BOUND.copy(sources = listOf("ü*"), dest = "~/x"), "`cp 'ü*' b` exits 0"),
+            cell(listOf("ü*", "~/x"), operands("ü*", "~/x"), "`cp 'ü*' b` exits 0"),
             cell(emptyList(), null, "cp: missing file operand"),
             cell(listOf("-i"), null, "cp: missing file operand"),
             cell(listOf("a"), null, "cp: missing destination file operand after 'a'"),
@@ -206,7 +208,7 @@ class CpProjectionTest {
                 TO_DIR.copy(
                     archive = true,
                     attributesOnly = true,
-                    backup = "numbered",
+                    backup = BackupControl.Numbered,
                     copyContents = true,
                     debug = true,
                     force = true,
@@ -219,12 +221,12 @@ class CpProjectionTest {
                     noPreserve = listOf("timestamps"),
                     parents = true,
                     recursive = true,
-                    reflink = "auto",
+                    reflink = When.Auto,
                     removeDestination = true,
-                    sparse = "auto",
+                    sparse = When.Auto,
                     stripTrailingSlashes = true,
                     suffix = ".bak",
-                    update = "older",
+                    update = Update.Older,
                     verbose = true,
                     oneFileSystem = true,
                     selinuxDefault = true,
@@ -240,8 +242,8 @@ class CpProjectionTest {
                     symbolicLink = true,
                     noTargetDirectory = true,
                     noClobber = true,
-                    sources = listOf("a"),
-                    dest = "s",
+                    sources = listOf(CliPath("a")),
+                    dest = CliPath("s"),
                 ),
                 "cp exits 0",
             ),
@@ -255,15 +257,15 @@ class CpProjectionTest {
             expected = NOTHING_BOUND.copy(
                 interactive = true,
                 verbose = true,
-                sources = listOf("a.txt", "b.txt"),
-                dest = "archive",
+                sources = listOf(CliPath("a.txt"), CliPath("b.txt")),
+                dest = CliPath("archive"),
             ),
         )
         // Five of cp's flags are short-only, so this cluster is the whole spelling each offers.
         parity.binds(
             "-dbHpZ", "a", "b",
             expected = A_TO_B.copy(
-                backup = "existing",
+                backup = BackupControl.Existing,
                 dereference = Dereference.COMMAND_LINE,
                 preserve = listOf("mode", "ownership", "timestamps", "links"),
                 selinuxDefault = true,
@@ -271,16 +273,16 @@ class CpProjectionTest {
         )
         parity.binds(
             "--backup=numbered", "-S", ".bak", "a", "b",
-            expected = A_TO_B.copy(backup = "numbered", suffix = ".bak"),
+            expected = A_TO_B.copy(backup = BackupControl.Numbered, suffix = ".bak"),
         )
         parity.binds("-vbS.bak", "a", "b", expected = A_TO_B.copy(
             verbose = true,
-            backup = "existing",
+            backup = BackupControl.Existing,
             suffix = ".bak",
         ))
         parity.binds(
             "--no-preserve=mode", "--sparse=always", "--reflink=auto", "a", "b",
-            expected = A_TO_B.copy(noPreserve = listOf("mode"), sparse = "always", reflink = "auto"),
+            expected = A_TO_B.copy(noPreserve = listOf("mode"), sparse = When.Always, reflink = When.Auto),
         )
         parity.binds(
             "--context=unconfined_u:object_r:user_home_t:s0", "a", "b",
@@ -294,8 +296,8 @@ class CpProjectionTest {
         parity.binds(
             "-dbuHpZ", "a", "b",
             expected = A_TO_B.copy(
-                backup = "existing",
-                update = "older",
+                backup = BackupControl.Existing,
+                update = Update.Older,
                 dereference = Dereference.COMMAND_LINE,
                 preserve = listOf("mode", "ownership", "timestamps", "links"),
                 selinuxDefault = true,
@@ -320,10 +322,10 @@ class CpProjectionTest {
         // `cp -n --update=all` both leave the destination alone, so neither setting clears the other.
         parity.binds("-f", "-i", "a", "b", expected = A_TO_B.copy(force = true, interactive = true))
         parity.binds("-i", "-f", "a", "b", expected = A_TO_B.copy(force = true, interactive = true))
-        parity.binds("-i", "--update=none", "a", "b", expected = A_TO_B.copy(interactive = true, update = "none"))
-        parity.binds("--update=none", "-i", "a", "b", expected = A_TO_B.copy(interactive = true, update = "none"))
+        parity.binds("-i", "--update=none", "a", "b", expected = A_TO_B.copy(interactive = true, update = Update.None))
+        parity.binds("--update=none", "-i", "a", "b", expected = A_TO_B.copy(interactive = true, update = Update.None))
         parity.binds("-n", "-f", "a", "b", expected = A_TO_B.copy(noClobber = true, force = true))
-        parity.binds("-n", "--update=all", "a", "b", expected = A_TO_B.copy(noClobber = true, update = "all"))
+        parity.binds("-n", "--update=all", "a", "b", expected = A_TO_B.copy(noClobber = true, update = Update.All))
     }
 
     @Test
@@ -356,12 +358,12 @@ class CpProjectionTest {
         parity.binds("--verb", "a", "b", expected = A_TO_B.copy(verbose = true))
         parity.binds("--no-p=mode", "a", "b", expected = A_TO_B.copy(noPreserve = listOf("mode")))
         parity.binds("--tar=d", "a", expected = TO_DIR)
-        parity.binds("--upd=old", "a", "b", expected = A_TO_B.copy(update = "older"))
-        parity.binds("--update=none-", "a", "b", expected = A_TO_B.copy(update = "none-fail"))
+        parity.binds("--upd=old", "a", "b", expected = A_TO_B.copy(update = Update.Older))
+        parity.binds("--update=none-", "a", "b", expected = A_TO_B.copy(update = Update.NoneFail))
         parity.binds("--strip", "a/", "d", expected = NOTHING_BOUND.copy(
             stripTrailingSlashes = true,
-            sources = listOf("a/"),
-            dest = "d",
+            sources = listOf(CliPath("a/")),
+            dest = CliPath("d"),
         ))
     }
 
@@ -476,10 +478,10 @@ class CpProjectionTest {
     fun `a word naming a klap built-in is an operand`() = parity.checkAll(
         // `cp a completion`, `cp a docs` and `cp a __complete` each make a file of that name.
         listOf(
-            cell(listOf("completion", "b"), NOTHING_BOUND.copy(sources = listOf("completion"), dest = "b"), "a file"),
-            cell(listOf("docs", "b"), NOTHING_BOUND.copy(sources = listOf("docs"), dest = "b"), "a file"),
-            cell(listOf("a", "__complete"), NOTHING_BOUND.copy(sources = listOf("a"), dest = "__complete"), "a file"),
-            cell(listOf("--", "--help", "b"), NOTHING_BOUND.copy(sources = listOf("--help"), dest = "b"), "copies it"),
+            cell(listOf("completion", "b"), operands("completion", "b"), "a file"),
+            cell(listOf("docs", "b"), operands("docs", "b"), "a file"),
+            cell(listOf("a", "__complete"), operands("a", "__complete"), "a file"),
+            cell(listOf("--", "--help", "b"), operands("--help", "b"), "copies it"),
         ),
     )
 
@@ -487,20 +489,24 @@ class CpProjectionTest {
     fun `options cp accepts together bind`() = parity.checkAll(
         listOf(
             // `cp -n -i -b a b` prompts, so -i won over -n and the backup stands.
-            cell(listOf("-n", "-i", "-b", "a", "b"), A_TO_B.copy(interactive = true, backup = "existing"), "prompts"),
+            cell(
+                listOf("-n", "-i", "-b", "a", "b"),
+                A_TO_B.copy(interactive = true, backup = BackupControl.Existing),
+                "prompts",
+            ),
             cell(
                 listOf("--update=none", "--update=all", "-b", "a", "b"),
-                A_TO_B.copy(update = "all", backup = "existing"),
+                A_TO_B.copy(update = Update.All, backup = BackupControl.Existing),
                 "cp exits 0",
             ),
             cell(
                 listOf("--reflink=auto", "--sparse=never", "a", "b"),
-                A_TO_B.copy(reflink = "auto", sparse = "never"),
+                A_TO_B.copy(reflink = When.Auto, sparse = When.Never),
                 "cp exits 0",
             ),
             cell(
                 listOf("--sparse=never", "--reflink=always", "--reflink=auto", "a", "b"),
-                A_TO_B.copy(reflink = "auto", sparse = "never"),
+                A_TO_B.copy(reflink = When.Auto, sparse = When.Never),
                 "cp exits 0",
             ),
             cell(listOf("--context=x", "-Z", "a", "b"), A_TO_B.copy(context = "x", selinuxDefault = true), "0"),
@@ -525,8 +531,8 @@ class CpProjectionTest {
     @Test
     fun `-u is --update without a value and the later of the two wins`() {
         // With b older than a: `cp --update=none -u a b` replaces b; `cp -u --update=none a b` leaves it.
-        parity.binds("--update=none", "-u", "a", "b", expected = A_TO_B.copy(update = "older"))
-        parity.binds("-u", "--update=none", "a", "b", expected = A_TO_B.copy(update = "none"))
+        parity.binds("--update=none", "-u", "a", "b", expected = A_TO_B.copy(update = Update.Older))
+        parity.binds("-u", "--update=none", "a", "b", expected = A_TO_B.copy(update = Update.None))
         checkSame(
             listOf(
                 Same(listOf("-u", "a", "b"), listOf("--update", "a", "b"), "cp --help: equivalent to --update[=older]"),
@@ -675,8 +681,36 @@ class CpProjectionTest {
         // the placeholder in angle brackets.
         val page = parity.helpPage("--help", because = "cp --help")
         val rows = page.lines().filter { "--backup" in it || "--context" in it }
-        assertTrue(rows.any { "--backup[=<CONTROL>]" in it } && rows.any { "--context[=<CTX>]" in it }, page)
+        assertTrue(rows.any { "--backup[=CONTROL]" in it } && rows.any { "--context[=CTX]" in it }, page)
         assertTrue(rows.none { "bare:" in it }, rows.joinToString("\n"))
+    }
+
+    @Test
+    fun `a source and a destination keep a trailing slash`() {
+        // GNU cp 9.12, link -> dir: `cp -r link/ c1` copies the directory and `cp -r link c2` the link; `cp a nd/` is
+        // "cannot create regular file 'nd/': Not a directory" where `cp a nd` makes the file nd.
+        parity.binds("-r", "link/", "c1", expected = operands("link/", "c1").copy(recursive = true))
+        parity.binds("-r", "link", "c2", expected = operands("link", "c2").copy(recursive = true))
+        parity.binds("a", "nd/", expected = operands("a", "nd/"))
+        parity.binds("a", "nd", expected = operands("a", "nd"))
+    }
+
+    @Test
+    fun `a value option's row names its value as cp --help does`() {
+        // `cp --help` (GNU coreutils 9.12) writes each of these spellings at the head of its row.
+        val signatures = listOf(
+            "--backup[=CONTROL]",
+            "--context[=CTX]",
+            "--no-preserve=ATTR_LIST",
+            "--preserve[=ATTR_LIST]",
+            "--reflink[=WHEN]",
+            "--sparse=WHEN",
+            "-S, --suffix=SUFFIX",
+            "-t, --target-directory=DIRECTORY",
+            "--update[=UPDATE]",
+        )
+        val heads = parity.helpPage("--help", because = "cp --help").lines().map { it.trim().substringBefore("  ") }
+        assertEquals(signatures, signatures.filter { it in heads }, heads.joinToString("\n"))
     }
 
     @Test
@@ -724,7 +758,7 @@ class CpProjectionTest {
     @Test
     fun `__complete is a source file name`() {
         // `cp __complete a`: cannot stat '__complete', so it was a source like any other word.
-        parity.binds("__complete", "a", expected = NOTHING_BOUND.copy(sources = listOf("__complete"), dest = "a"))
+        parity.binds("__complete", "a", expected = operands("__complete", "a"))
     }
 }
 

@@ -102,7 +102,7 @@ class EnumSpellingsTest {
     @Test
     fun `help names each entry by its first word`() {
         val help = rm().helpText()
-        assertTrue("--interactive <never|once|always>" in help, help)
+        assertTrue("--interactive=never|once|always" in help, help)
     }
 
     @Test

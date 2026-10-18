@@ -463,13 +463,13 @@ class ConstraintUsageLineTest {
 
     @Test
     fun `both arities render in declaration order`() {
-        assertEquals("usage: tar run (-c|-x|-t) [-z|-j] --file <value> [options]", tarTree().runUsage())
+        assertEquals("usage: tar run (-c|-x|-t) [-z|-j] --file=value [options]", tarTree().runUsage())
     }
 
     @Test
     fun `the usage line still heads the help page`() {
         val help = tarTree().subcommand("run")!!.helpText("tar run")
-        assertEquals("usage: tar run (-c|-x|-t) [-z|-j] --file <value> [options]", help.lineSequence().first())
+        assertEquals("usage: tar run (-c|-x|-t) [-z|-j] --file=value [options]", help.lineSequence().first())
     }
 
     @Test

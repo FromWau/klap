@@ -3,6 +3,7 @@ package com.fromwau.klap.fixture.chmod
 import com.fromwau.kern.result.Result
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.parse
 import kotlin.test.fail
 
@@ -116,7 +117,7 @@ internal object ChmodProjectionSupport {
             add(
                 AFTER_END,
                 MODE_AND_FILE + listOf("--", long),
-                expected = U_X_F.copy(files = listOf("f", long)),
+                expected = U_X_F.copy(files = listOf(CliPath("f"), CliPath(long))),
                 because = "chmod: cannot access '$long'",
             )
         }
@@ -132,7 +133,7 @@ internal object ChmodProjectionSupport {
             add(
                 AFTER_END,
                 MODE_AND_FILE + listOf("--", short),
-                expected = U_X_F.copy(files = listOf("f", short)),
+                expected = U_X_F.copy(files = listOf(CliPath("f"), CliPath(short))),
                 because = "chmod: cannot access '$short'",
             )
         }
@@ -142,7 +143,7 @@ internal object ChmodProjectionSupport {
         val long = input.longs.single()
         val abbreviation = abbreviationOf(long)!!
         fun referencing(value: String, vararg files: String) =
-            NOTHING_BOUND.copy(reference = value, files = files.toList())
+            NOTHING_BOUND.copy(reference = CliPath(value), files = files.map(::CliPath))
         fun add(form: String, argv: List<String>, expected: ChmodInputs?, because: String) =
             add(Cell(input.name, form, argv, expected, because))
         add(ATTACHED, listOf("$long=r", "f"), referencing("r", "f"), "f takes r's mode 600")
@@ -155,7 +156,7 @@ internal object ChmodProjectionSupport {
         add(
             AFTER_END,
             MODE_AND_FILE + listOf("--", "$long=r"),
-            U_X_F.copy(files = listOf("f", "$long=r")),
+            U_X_F.copy(files = listOf(CliPath("f"), CliPath("$long=r"))),
             "chmod: cannot access '$long=r'",
         )
         add(DASH_VALUE, listOf(long, "-w", "f"), referencing("-w", "f"), "chmod: failed to get attributes of '-w'")

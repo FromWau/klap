@@ -3,7 +3,11 @@ package com.fromwau.klap.fixture.find
 import com.fromwau.kern.result.Result
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.io.CliPath
 import kotlin.test.fail
+
+/** find run with nothing but these starting points: `find a .` walks a, then the current directory. */
+internal fun walking(vararg points: String): FindInputs = NOTHING_BOUND.copy(startingPoints = points.map(::CliPath))
 
 /*
  * The cells of the projection tests, generated from the inputs real find 4.11.0 has (GNU findutils), read through the
@@ -184,15 +188,22 @@ internal object FindProjectionSupport {
         flag("--xdev") { it.copy(xdev = true) },
         flag("--mount") { it.copy(mount = true) },
         flag("--noleaf") { it.copy(noleaf = true) },
-        text(
+        Input(
             "--regextype",
-            Kind.Value("posix-egrep", "posix-egrep", "posix-basic", "posix-basic", Repeat.LAST, bad = "bogus"),
-        ) { inputs, value -> inputs.copy(regextype = value) },
-        text(
+            Kind.Value(
+                "posix-egrep",
+                RegexType.PosixEgrep,
+                "posix-basic",
+                RegexType.PosixBasic,
+                Repeat.LAST,
+                bad = "bogus",
+            ),
+        ) { inputs, value -> inputs.copy(regextype = value as RegexType) },
+        Input(
             "--files0-from",
-            Kind.Value("b", "b", "c", "c", Repeat.LAST),
+            Kind.Value("b", CliPath("b"), "c", CliPath("c"), Repeat.LAST),
             operands = emptyList(),
-        ) { inputs, value -> inputs.copy(files0From = value) },
+        ) { inputs, value -> inputs.copy(files0From = value as CliPath) },
         list("--name") { inputs, value -> inputs.copy(namePattern = value) },
         list("--iname") { inputs, value -> inputs.copy(inamePattern = value) },
         list("--path") { inputs, value -> inputs.copy(pathPattern = value) },
@@ -240,8 +251,8 @@ internal object FindProjectionSupport {
                 dash = "-u+w" to FindPerm('-', "u+w"),
             ),
         ) { inputs, value -> inputs.copy(permTest = listOf(value as FindPerm)) },
-        text("--newer", Kind.Value("b", "b", "a", "a", Repeat.BOTH_APPLY)) { inputs, value ->
-            inputs.copy(newerThan = listOf(value))
+        Input("--newer", Kind.Value("b", CliPath("b"), "a", CliPath("a"), Repeat.BOTH_APPLY)) { inputs, value ->
+            inputs.copy(newerThan = listOf(value as CliPath))
         },
         text("--user", Kind.Value("root", "root", "0", "0", Repeat.BOTH_APPLY)) { inputs, value ->
             inputs.copy(ownerUser = listOf(value))
@@ -278,7 +289,7 @@ internal object FindProjectionSupport {
         loose: Boolean = false,
     ) = Cell(long, form, argv, expected, because, loose)
 
-    private fun Input.bound(value: Any = true): FindInputs = bind(NOTHING_BOUND.copy(operand = operands), value)
+    private fun Input.bound(value: Any = true): FindInputs = bind(walking(*operands.toTypedArray()), value)
 
     /** The longest prefix of [long] that is not itself a declared long, which find, matching whole words, refuses. */
     private fun prefixOf(long: String): String? = long.dropLast(1).takeIf { it.length > 2 && it !in DECLARED_LONGS }
@@ -304,7 +315,7 @@ internal object FindProjectionSupport {
             input.cell(
                 AFTER,
                 listOf("a", "b", long),
-                input.bind(NOTHING_BOUND.copy(operand = listOf("a", "b")), true),
+                input.bind(walking("a", "b"), true),
                 "`find a b $real` walks both",
             ),
         )
@@ -333,7 +344,7 @@ internal object FindProjectionSupport {
                 input.cell(
                     AFTER,
                     listOf("a", "b", long, sample),
-                    input.bind(NOTHING_BOUND.copy(operand = listOf("a", "b")), kind.value),
+                    input.bind(walking("a", "b"), kind.value),
                     "`find a b $real $sample` walks both",
                 ),
             )
@@ -390,7 +401,7 @@ internal object FindProjectionSupport {
             input.cell(
                 AFTER_END,
                 listOf(".", "--", word),
-                NOTHING_BOUND.copy(operand = listOf(".", word)),
+                walking(".").copy(expression = listOf(word)),
                 "find: unknown predicate `--' (the fixture's raw expression tail)",
                 loose = true,
             ),

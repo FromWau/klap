@@ -27,6 +27,7 @@ import com.fromwau.klap.fixture.rm.RmProjectionSupport.Same
 import com.fromwau.klap.fixture.rm.RmProjectionSupport.checkAll
 import com.fromwau.klap.fixture.rm.RmProjectionSupport.checkSame
 import com.fromwau.klap.fixture.rm.RmProjectionSupport.cells
+import com.fromwau.klap.io.CliPath
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -54,7 +55,7 @@ private fun cell(
     because: String,
 ) = Cell("line", "whole line", argv, expected, because)
 
-private fun files(vararg names: String): RmInputs = NOTHING_BOUND.copy(files = names.toList())
+private fun files(vararg names: String): RmInputs = NOTHING_BOUND.copy(files = names.map(::CliPath))
 
 private val AB = listOf("a", "b")
 
@@ -160,7 +161,7 @@ class RmProjectionTest {
             cell(listOf("-f", "-f"), NOTHING_BOUND.forcing(), "rm -f -f exits 0"),
             cell(listOf("-f", "--one-file-system"), NOTHING_BOUND.forcing().copy(oneFileSystem = true), "exit 0"),
             cell(listOf("-f", "--preserve-root"), NOTHING_BOUND.forcing(), "rm -f --preserve-root exits 0"),
-            cell(listOf("-f", "nofile"), NOTHING_BOUND.forcing().copy(files = listOf("nofile")), "exit 0"),
+            cell(listOf("-f", "nofile"), NOTHING_BOUND.forcing().copy(files = listOf(CliPath("nofile"))), "exit 0"),
             cell(listOf("--", "-f"), files("-f"), "rm -- -f: cannot remove '-f'"),
         ),
     )
@@ -176,7 +177,7 @@ class RmProjectionTest {
                     recursive = true,
                     dir = true,
                     verbose = true,
-                    files = listOf("a", "dd"),
+                    files = listOf(CliPath("a"), CliPath("dd")),
                 ),
                 "rm exits 0",
             ),

@@ -315,18 +315,24 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
 
 ## Candidate work
 
-- [ ] **111. A closed set of values is `.enum`, and `.choice` is the escape hatch.** Owner, 2026-10-12: "we always
+- [x] **111. A closed set of values is `.enum`, and `.choice` is the escape hatch.** Owner, 2026-10-12: "we always
   prefer .enum and not .choice(). that is an escape hatch." Fixture main sources still call `.choice(` (a grep, comments
   not told apart): ls 4, cp 3, git 3, curl 2, dd, find, pacman and rm 1 each; mv's two go with item 109. The guide's
   converter table (`docs/guide.md:327-328`) lists `.choice` beside `.enum` as a peer. Each fixture's next pass moves its
   closed sets to enums (cp's `--update` and resolved backup as mv's 109); the guide says when `.choice` is the right
   hatch (a set not known until runtime, a spelling an enum cannot carry). Owner, 2026-10-13: `.choice` stays in klap
   as the string-only escape hatch for a user who cannot use an enum; nothing removes it.  Done for ls 2026-10-13 by item 126 (no `.choice` left in `Ls.kt`). Fixtures and docs.
+  Done 2026-10-17 by a sweep (two agents, merged): cp's `--update` (`Update`), `--sparse` and `--reflink` (`When`), git's
+  `--chmod` (`ExecutableBit`, spelled `+x`/`-x`), `--cleanup` (`Cleanup`) and `--mirror` (`Mirror`), find's
+  `-regextype` (`RegexType`, 13 entries in `find . -regextype help` order) and pacman's `--color` (`ColorWhen`) are
+  enums, their records typed; cp's resolved backup is `BackupControl`, as mv's. Every test unchanged but for records
+  moving from strings to constants. The guide's `.choice` row says a closed set is `.enum<E>()` and `.choice` the hatch
+  for a set known at runtime or a spelling an enum cannot carry; its `NotOneOf` and `--color[=WHEN]` examples use
+  enums. curl's `-X`: curl takes any word (curl(1): "curl passes on the verbatim string you give it"). **Owner,
+  2026-10-18:** "-X should work like origin". It is a plain option with `.completeWith` offering the eight common
+  methods; `-X post`, `-X PURGE` and `-X PROPFIND` bind verbatim (`CurlParityTest`), the KLAP-GAP note is gone. No
+  `.choice` is left in a fixture; task-manager's is an example app's.
 
-- [ ] **122. mv's and cp's `--backup` and ls's `--color` read their words through `.enum<E>(spellings = )`.** After
-  item 116, mv's private `argmatch` (`Mv.kt:315`) and its `.completeWith { candidates(...) }`, cp's same reading, and
-  ls's `--color` choice (`ls --color=n` and `=ye` are accepted) move onto the klap API. Each
-  fixture's next pass, with item 111. Done for ls 2026-10-13 by item 126; mv and cp remain. Fixtures.
 
 - [ ] **134. klap targets JDK 17 while building with 25.** From the notes, section 5: split the catalog's `jdk = "25"`
   into `jdk-build` (25, the toolchain) and `jdk-target` (17); set `jvmTarget`, `-Xjdk-release=17` and the published
@@ -344,9 +350,9 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
   (`gradle/libs.versions.toml:10`) while kern is at 0.5.1, and kern's 0.6.0 (logger API, result's smart casts,
   `toResult` and combining, the two terminal fixes of `2d1a924`) is not yet in Maven Local. Kotlin is 2.4.21 in klap,
   2.4.20 in kern; the notes want kern raised to match. klap uses only `result`, `terminal`, `fuzzy` and `result-test`,
-  so kern's `dirs`/`fs` split does not touch it; kern 0.6.0 has no `fuzzy` (item 175). Waits on kern 0.6.0 being
+  so kern's `dirs`/`fs` split does not touch it; kern keeps `fuzzy` (item 175). Waits on kern 0.6.0 being
   published. Build.
-- [ ] **175. `didYouMean` and `editDistance` move into klap.** Owner, 2026-10-17 (kern notes, section 6, F2 A): kern's
+- [x] **175. `didYouMean` and `editDistance` move into klap.** Owner, 2026-10-17 (kern notes, section 6, F2 A): kern's
   "two real projects" rule, and klap is fuzzy's only user. kern 0.6.0 drops the module; the source is in kern at
   `3c5b4bb` (`fuzzy/`). Both become public in `com.fromwau.klap` (the guide's "Did-you-mean, in your own messages"
   changes its import); `fuzzyRank` and natural order are not moved. Lands with 135. Then, test-first, from kern's
@@ -360,19 +366,16 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
     equal to a candidate is never suggested back.
   Corpus: 88 shared cases plus three held-out sets (224) where kmatch 0.3.1 with a one-swap scorer (`Scorers.Ratio`,
   `defaultProcess`, cutoff 70) made no mistakes and kern 9; kern notes, section 6, have the numbers.
-- [ ] **136. Mordant for help layout.** From the notes, section 1 (kern:terminal kept, revised 2026-10-13): Mordant
-  3.1.0 would give Unicode-aware wrapping, aligned option columns and the real JVM terminal width; kern keeps the
-  colour policy (passed to Mordant as `ansiLevel`, since Mordant ignores `CLICOLOR*` and lets `TERM=dumb` beat
-  `FORCE_COLOR`), the Windows VT and UTF-8 setup (Mordant enables neither) and `writeResult()` (Mordant's
-  `System.out` swallows write errors). A klap-owned output interface stays, Mordant behind it. Open: whether to adopt
-  it at all; which JVM backend (FFM needs JDK 22 and `--enable-native-access` and steps aside silently below 22, so it
-  needs JNA beside it, or the omnibus `mordant`). Owner call.
-- [ ] **137. Markdown as a third output mode.** From the notes, section 1: next to plain text and `--json`, rendered
-  on a terminal and raw when piped (`tool --markdown > report.md`), as an opt-in artifact (`klap-markdown`) so tools
-  without it skip the parser; actions could return Markdown, and help text written in Markdown could drive terminal
-  help, generated docs and man pages from one source. Depends on 136. Idea.
+  - **Owner, 2026-10-17 (175a):** A, replacing the move. The premise "klap is fuzzy's only user" is false: kotoml's
+    `core` (`DecodeScalar.kt:474`, guessing true, false, inf or nan) and `serialization` (`NodeDecoder.kt:438`, with
+    `preferred` for the keywords a field reads) depend on `kern.fuzzy` too, so two real projects use it and kern's
+    rule keeps it. kern keeps `fuzzy` (`didYouMean` with its `preferred` tier, and `editDistance`); `61a6ae5`, which
+    removed it, is reverted in kern by the kern session; klap stays on `kern.fuzzy`, and the QA points above become
+    kern work. kmatch 0.3.1 was probed on kotoml's 45 keyword cases
+    (`~/.claude/jobs/028c4674/tmp/kmatch-probe`): kern's rule gets all 45, kmatch's best setting (`Ratio`, one-swap
+    scorer, cutoff 67 to 75) 42, missing `tr` and `fa` and guessing `inf` for `in_fo`. Nothing to do in klap.
 
-- [ ] **24. Opt-in converter modules for types klap core does not convert to.**
+- [x] **24. Opt-in converter modules for types klap core does not convert to.**
   Agreed with the owner 2026-10-09: klap core keeps converting only to plain types; a fixture or app that wants
   a richer type opts into a module by dependency. `klap-io` (kotlinx-io) adds `.path()` on `Opt<String?>` and
   `Arg<String>`, returning `kotlinx.io.files.Path` and implying `.file()`; `klap-datetime` (kotlinx-datetime)
@@ -393,6 +396,64 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
   `Infinity`, `-(1h 30m)` and `1h30m`, so decide which of them klap accepts; `Instant.parse` takes an offset of
   just `+02` and refuses `12:00Z` without seconds; whether `.uuid()` takes a UUID without dashes depends on
   which `Uuid` parse it calls.
+  - Probed 2026-10-17 on Kotlin 2.4.21, kotlinx-io 0.9.1, kotlinx-datetime 0.8.0 (`~/.claude/jobs/028c4674/tmp/
+    conv-probe`): `Path("a/")` is `a` and equals `Path("a")`, `a//b` is `a/b`; `Duration.parse` takes `PT1H30M`, `1s`,
+    `5h 31m 2s 123ms`, `1h30m`, `1.5h`, `1d`, `P1D`, `Infinity`, `-1h`, `-(1h 30m)`, refuses `30m 1h`, `1 h`, `1H`,
+    `pt1h` and blank; `kotlin.time.Instant.parse` takes `...Z`, `+02:00`, `+02`, lowercase `t`/`z` and nanoseconds,
+    refuses `12:00Z`, no offset, and a space for `T`; `Uuid.parse` takes dashed, plain 32-digit hex and upper case,
+    `parseHexDash` dashed only, `parseHex` plain only, none takes braces.
+  - **Owner, 2026-10-17 (24a):** A. kotlinx-datetime 0.8.0 uses the standard library's `kotlin.time.Instant` (no
+    opt-in), so `.instant()` goes into core with `.duration()` and `.uuid()`; `klap-datetime` keeps `.localDate()`,
+    `.localDateTime()` and `.timeZone()`.
+  - **Owner, 2026-10-17 (24b, revised):** `.path()` carries the trailing slash: "a good UX and needed often in a CLI",
+    as GNU cp tells `cp -r link/` (the directory) from `cp -r link` (the symlink). `kotlinx.io.files.Path` drops it
+    (`Path("a/")` is `a`), so `.path()` returns a klap type around the `Path`; its shape is 24b2.
+  - **Owner, 2026-10-18 (24b2):** A. `class CliPath(val text: String)` in `klap-io`, the text as typed, with `path`
+    (`kotlinx.io.files.Path`) and `endsWithSlash` derived from it; equality by text, so a doubled slash survives too.
+  - **Owner, 2026-10-18 (24c):** A. `.duration()` reads Kotlin's format (`Duration.parse`: ISO `PT1H30M`, `1s`,
+    `1h30m`, `1.5h`, `5h 31m 2s 123ms`, `2d 3h`, units in decreasing order) plus a bare number as seconds, as GNU's
+    `timeout` and `sleep` read one (`5`, `5.5`, `0`); a negative or infinite duration is refused (`-1h`, `-(1h 30m)`,
+    `Infinity`), and so are `inf`, `1H`, `1 h`, `30m 1h`.
+  - **Owner, 2026-10-18 (24d):** A. `.instant()` is exactly `kotlin.time.Instant.parse`: ISO 8601 with an offset
+    (`Z`, `+02:00`, `+02`, lowercase `t`/`z`, fractions); no seconds, no offset or a space for the `T` is refused.
+  - **Owner, 2026-10-18 (24e):** A. `.uuid()` is `Uuid.parse`: dashed or plain 32-digit hex, either case; braces and
+    anything else refused; the value shows dashed.
+  Done 2026-10-18 (one agent, merged): core's `.duration()`, `.instant()` and `.uuid()` on `Arg<String>` and
+  `Opt<String?>`, refused as `ConversionError.NotADuration`, `NotAnInstant` and `NotAUuid` (new subtypes of a public
+  sealed interface); a bare number reads as `.double()` reads one. `klap-io` (`com.fromwau:klap-io`, package
+  `com.fromwau.klap.io`): `CliPath` and `.path()`, which implies `.file()`. `klap-datetime`: `.localDate()`,
+  `.localDateTime()`, `.timeZone()`, refused as `ConversionError.Domain(DateTimeError.*)`. Both modules are top-level
+  extensions with `context(scope: ConverterScope)` (no flag needed on 2.4.21) and expose klap and their kotlinx library
+  as `api`. A `klap-library` convention in `build-logic` carries the targets for all three; `klap-publish` names each
+  POM after its module. `StdlibConvertersTest` (15), `PathConverterTest` (12), `DateTimeConvertersTest` (7), each seen
+  failing against stubs, on the JVM and linuxX64. linuxX64 keeps `a//b` where the JVM's `Path` collapses it, so the
+  docs say "on the JVM". The guide has the rows and a "Converters from other modules" section. The fixtures opt in
+  later (`pacman -U <file>` and the other path fields, still `String`).
+  - Fixtures opted in 2026-10-18 (three agents, merged): every path input of chmod, cp, head, ls, mv, rm, curl, ssh,
+    tar, find, git and pacman's options reads `.path()` and binds `CliPath`; cp's and mv's sources and destination and
+    find's `-samefile`/`-newer` keep a trailing slash, tested (`cp -r link/ c` copies the directory, `find dir link
+    -samefile link/` prints `dir`); cp's value rows read as `cp --help` writes them (`--sparse=WHEN`,
+    `-t, --target-directory=DIRECTORY`). Not paths, left as `.file()`: git's pathspecs and remote URL.
+  - **Owner, 2026-10-18 (P1):** A. find's projection splits its operand slot into `startingPoints: List<CliPath>` and
+    `expression: List<String>`, by the split the action already makes (`Find.kt:520`); `find link/` prints `link/`
+    and `link/a`, `find link` only `link`. Done 2026-10-18: `splitOperands` in `Find.kt` is the one rule, used by the
+    action and the projection; `FindProjectionTest` pins `find link/` binding `CliPath("link/")`, and the starting-point
+    cells fail when the split drops the slash. A test helper `walking(...)` builds a record of starting points only.
+  - **Owner, 2026-10-18 (P2):** A. pacman's `-U` targets stay strings in the shared `targets` field: `man pacman` on
+    `-U`: "Either a URL or file path can be specified", and a URL is no `CliPath`; item 24's pacman example does not
+    apply. pacman's eight path options (`--dbpath`, `--root`, `--cachedir`, `--config`, `--gpgdir`, `--hookdir`,
+    `--sysroot`, `--logfile`) read `.path()`.
+  - Open: a module converter goes through the public `.convert { }`, so it cannot set core's internal type-changing
+    marker; `.int()` through a leaked `Arg<String>` handle after `.path()` fails at parse with a ClassCastException
+    instead of core's build-time refusal. Needs a public or `@PublishedApi` hook in core. Owner call.
+    **Owner, 2026-10-18 (24-hook):** A. `.convert { }` and `.map { }` read their result type (`reified T`) and close
+    the chain when it is not `String`, so users', modules' and core's converters are all covered; a `String` to
+    `String` step (`.convert { Ok(it.trim()) }.choice(...)`) still chains. To build, test-first.
+    Done 2026-10-18: `.convert` and `.map` on `Arg<String>` and `Opt<String?>` are `inline` with `reified T`; a result
+    class other than `String` closes the chain (`String?` keeps it open, as `NeverThrowContractTest` pins), which
+    covers `.path()` and the datetime converters unchanged. A lambda that only fails now names its type
+    (`.convert<Int> { Err(...) }`), as `action { }` does. Tests in `ConvertersTest`, `PathConverterTest` and
+    `DateTimeConvertersTest`, seen failing, and again with the type check off.
 - [x] **27. An option of the root that stays before the subcommand, as git's are.**
   A `globalOption` is persistent: it binds at any depth, the way task-manager's `--file` is meant to. git's
   options before the subcommand are not: `git remote add -C . o u` ("unknown switch `C'"), `git status
@@ -410,18 +471,53 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
     segment), 170 (git's root reads whole words), 173 (version at the root only) and 174 (the fixture's surface);
     closes with them. Closed 2026-10-17 with the git fixture pass.
 
+- [x] **178. Help measures text by display width.** `wrap` (`Help.kt:469`) and the signature column's `padEnd`
+  (`Help.kt:487`) count UTF-16 units: a wide or full-width character (日) is 1 unit but 2 columns, so the line runs past
+  the edge, and a combining mark (U+0301) is 1 unit but 0 columns, so it wraps early; ASCII help is right. Owner,
+  2026-10-18 (with 136): a display-width function (East Asian wide and full-width 2, combining and zero-width 0), no
+  dependency, used by both. Test-first, with wide, combining and emoji cells. klap core (or kern:terminal, if kern
+  wants it beside its width).
+  Done 2026-10-18: `internal/render/DisplayWidth.kt` (`displayWidth`, `padToWidth`; Unicode 16.0 tables, binary
+  search), used by `wrap` and the signature column. `DisplayWidthTest` (11). Chosen: Hangul medial and final jamo 1, a
+  soft hyphen 0, an emoji ZWJ sequence or skin tone measured per code point (👍🏽 is 4 where a terminal shows 2).
+
 ## Owner calls
 
-- [ ] **64. Open points from the cp API pass (2026-10-11).** Each is a small call on what was built for 21, 57 and 63:
+- [x] **64. Open points from the cp API pass (2026-10-11).** Each is a small call on what was built for 21, 57 and 63:
   - `Flag.repeated(...)` exists beside the option form, so a `Refuse` app can let one flag repeat; 21a named options
     only. Keep or drop.
+    **Owner, 2026-10-18 (64a):** A, keep it (first B, changed once the example showed that a `.count()` flag such as
+    `-vvv` is untouched either way): a `Refuse` CLI may still exempt one on/off flag, as it may an option. Done.
   - `Occurrence.input` is typed `Any`, so `when (occurrence.input) { archive -> ... }` needs no `else`; typed
     `Input`, every `when` needs `else -> Unit`. `Occurrence.value` is `Any?`, so a caller casts.
+    **Owner, 2026-10-18 (64b):** A. `input: Any` and `value: Any?` stay, so a `when` over the handles needs no `else`
+    (`Cp.kt:284`, `Ls.kt`, `Rm.kt:106`) and a caller casts the value it knows. Done.
   - JSON help does not show `.multiple(max)` or `.atMostWhen` caps; adding them changes the help JSON schema.
+    **Owner, 2026-10-18 (64c):** A. `ArgumentHelp` and `OptionHelp` gain optional `min`, `max` and `atMostWhen`
+    (`[{"input": "--no-target-directory", "max": 1}]`), absent when no cap is set, so the JSON states what the text help
+    does. To build, test-first.
+    Done 2026-10-18: `ArgumentHelp` gains `min`, `max`, `atMostWhen` and `OptionHelp` `min` and `max` (an option has
+    no `.atMostWhen` and `Opt.multiple()` no max, so those stay absent); `min` shows when above 0. `HelpJsonTest`.
   - klap writes an optional value's placeholder as `--backup[=<CONTROL>]`; cp's help writes `--backup[=CONTROL]`.
+    **Owner, 2026-10-18 (64d):** A. An option's value placeholder follows GNU by default: `-S, --suffix=SUFFIX`,
+    `--backup[=CONTROL]`, `--sparse=WHEN` (cp --help, coreutils 9.12), in help, docs and their pinned tests
+    (`HelpTest.kt:878`, `BareOptionalValueTest.kt:144`, the fixtures' help cells); how an operand is written is not part
+    of this. To build, test-first.
+    Done 2026-10-18 as GNU writes them (checked on cp, head, xargs, od, date, sed, pr): a value after the long with
+    `=` (`-S, --suffix=SUFFIX`), an optional one bracketed on both spellings (`-w[BYTES], --width[=BYTES]`), a
+    short-only one after a space (`-E END`) or glued in brackets (`-l[MAX-LINES]`); usage lines and the built-ins
+    likewise (`--color[=auto|always|never]`). The default placeholder word stays `value` and there is no opt-in for the
+    old `<V>` form. `ValuePlaceholderHelpTest`; every pinned help cell restated. The cp fixture declares no placeholder
+    for `-S`, `--sparse` or `-t`, so its rows read `--suffix=value`, not cp's `SUFFIX`: fixture work, open.
   - Done 2026-10-12 by item 105: mv's `mv -T a b c` is refused through `.atMostWhen(noTargetDirectory, 1)`.
   - Completion after an ambiguous long (item 60) does not cover one carrying `=x`, or one earlier than the word
     before the cursor.
+    **Owner, 2026-10-18 (64e):** A, not a bug. `cp --re=x ‸`, `cp --re a ‸` and `cp --re=x a ‸` offer files, the word
+    being an operand under every reading of `--re`, as K47 offers operands after a refused unknown option and as
+    bash-completion's `_comp_complete_longopt` offers them on all four lines (`cp --re ‸` too, where klap offers
+    nothing by item 60). Pin the three in `AmbiguousLongCompletionTest`. To build.
+    Done 2026-10-18: four cells in `CompletionTest.kt`'s `AmbiguousLongCompletionTest` class, each seen failing
+    under a mutation of the check.
 
 ## Release
 
@@ -432,6 +528,20 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
 
 ## Will not do
 
+- **137. Markdown as a third output mode.** Owner, 2026-10-18: not now. It needs a Markdown-to-terminal renderer
+  (Mordant was ruled out under 136) and a `--markdown` built-in no GNU tool has, and no app asks for it; `docs markdown`
+  stays for reference docs. Reopen when an app needs report output.
+- **136. Mordant for help layout.** Owner, 2026-10-18: no. It would give display-width wrapping and alignment, the
+  real terminal width on the JVM and a Markdown renderer, but every klap CLI would carry it; `mordant-jvm-ffm` needs JDK
+  22 and `--enable-native-access` (against 134's JDK 17), `mordant-jvm-jna` bundles a native library, `mordant-core`
+  detects no size; kern already gets colour, `NO_COLOR`/`FORCE_COLOR`, the Windows console and write errors right,
+  which Mordant does not; iOS support unconfirmed. The width gap is item 178; the JVM width stays `COLUMNS`, else 80.
+  Mordant's Markdown renderer may come back as an opt-in module with 137.
+- **122. cp's and mv's `--backup` through `.enum`.** GNU keeps only the last `--backup` word and reads it after the
+  options, an empty word meaning the default (`cp --backup=bogus --backup=t a b` and `cp --backup= a b` exit 0), as
+  `ls --time-style` does; most options are read per occurrence (`cp --sparse=bogus --sparse=auto` and `ls
+  --color=bogus --color=auto` are refused), and klap's `.enum` checks every occurrence. Owner, 2026-10-18: A. No klap
+  change: klap's default is GNU's usual rule, and cp and mv keep their private `argmatch` for the exception.
 - **172. A bare `--exec-path` that prints and exits.** git pass 2026-10-17: `git --exec-path status` prints
   `/usr/lib/git-core` and exits 0 without running status; klap binds the optional value's default and routes on
   (`Git.kt:71`). getopt_long has no such form; a tool acts on it in its own code. Owner A: nothing in klap; an app

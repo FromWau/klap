@@ -11,6 +11,7 @@ import com.fromwau.klap.fixture.mv.MvLineContext.at
 import com.fromwau.klap.fixture.mv.MvLineContext.checkContext
 import com.fromwau.klap.fixture.mv.MvLineContext.mvHelp
 import com.fromwau.klap.fixture.mv.MvLineContext.name
+import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 import com.fromwau.klap.testing.suggestionsFor
@@ -286,7 +287,7 @@ class MvSuggestionListTest {
             Triple(
                 "mv --targ| d a",
                 "mv --target-directory d a",
-                NOTHING_BOUND.copy(targetDirectory = "d", sources = listOf("a")),
+                NOTHING_BOUND.copy(targetDirectory = CliPath("d"), sources = listOf(CliPath("a"))),
             ),
         )
         checkCells(cells) { (typed, accepted, expected) ->
@@ -305,7 +306,7 @@ class MvSuggestionListTest {
         assertEquals(listOf(FILES), mv.suggestionsFor("mv --target-directory "), "E16 `mv --target-directory |`")
         parity.binds(
             "--target-directory", "d", "a",
-            expected = NOTHING_BOUND.copy(targetDirectory = "d", sources = listOf("a")),
+            expected = NOTHING_BOUND.copy(targetDirectory = CliPath("d"), sources = listOf(CliPath("a"))),
             because = "E16 `mv --target-directory d a`",
         )
     }

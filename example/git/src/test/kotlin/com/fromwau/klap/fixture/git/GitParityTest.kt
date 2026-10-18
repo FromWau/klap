@@ -1,6 +1,7 @@
 package com.fromwau.klap.fixture.git
 
 import com.fromwau.klap.fixture.ParitySuite
+import com.fromwau.klap.io.CliPath
 import kotlin.test.Test
 
 class GitParityTest {
@@ -11,14 +12,17 @@ class GitParityTest {
     fun `binds two level routing and the root options a command reads`() {
         parity.binds(
             "-C", "/tmp/repo", "status", "--short",
-            expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(directory = listOf("/tmp/repo")), short = true),
+            expected = NOTHING_STATUS.copy(
+                globals = NO_GLOBALS.copy(directory = listOf(CliPath("/tmp/repo"))),
+                short = true,
+            ),
         )
         parity.binds("status", "-sb", expected = NOTHING_STATUS.copy(short = true, branch = true))
         // Root options read two levels down, and the `=` spelling of one.
         parity.binds(
             "--git-dir=/tmp/g", "--bare", "-c", "user.name=x", "remote", "add", "o", "u",
             expected = NOTHING_REMOTE_ADD.copy(
-                globals = NO_GLOBALS.copy(gitDir = "/tmp/g", bare = true, config = listOf("user.name=x")),
+                globals = NO_GLOBALS.copy(gitDir = CliPath("/tmp/g"), bare = true, config = listOf("user.name=x")),
                 name = "o",
                 url = "u",
             ),
@@ -27,7 +31,7 @@ class GitParityTest {
         // value and routes to `status` normally (verified against 2.56.0).
         parity.binds(
             "--exec-path=/opt/gitcore", "status",
-            expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(execPath = "/opt/gitcore")),
+            expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(execPath = CliPath("/opt/gitcore"))),
         )
     }
 
@@ -63,13 +67,13 @@ class GitParityTest {
         parity.binds("add", expected = NOTHING_ADD)
         parity.binds(
             "add", "--chmod=+x", "s.sh",
-            expected = NOTHING_ADD.copy(chmod = "+x", pathspec = listOf("s.sh")),
+            expected = NOTHING_ADD.copy(chmod = ExecutableBit.Set, pathspec = listOf("s.sh")),
         )
         // Both spellings of `--chmod`'s value bind: real git's parse-options hands a required-value option
         // the next token regardless of its shape, so the space-separated `-x` is read as the value here too.
         parity.binds(
             "add", "--chmod", "-x", "f",
-            expected = NOTHING_ADD.copy(chmod = "-x", pathspec = listOf("f")),
+            expected = NOTHING_ADD.copy(chmod = ExecutableBit.Clear, pathspec = listOf("f")),
         )
     }
 
@@ -108,7 +112,7 @@ class GitParityTest {
         )
         parity.binds(
             "commit", "-F", "msg.txt", "--author=A U Thor",
-            expected = NOTHING_COMMIT.copy(messageFile = "msg.txt", author = "A U Thor"),
+            expected = NOTHING_COMMIT.copy(messageFile = CliPath("msg.txt"), author = "A U Thor"),
         )
         // `Abbreviation.Options` reaches a subcommand's long options, which is the shape real git itself has:
         // `git commit --am` resolves to `--amend` (verified against 2.56.0), and `--am` is unambiguous
@@ -145,7 +149,7 @@ class GitParityTest {
             "remote", "add", "-f", "--mirror=push", "-t", "main", "origin", "https://x/y.git",
             expected = NOTHING_REMOTE_ADD.copy(
                 fetch = true,
-                mirror = "push",
+                mirror = Mirror.Push,
                 track = listOf("main"),
                 name = "origin",
                 url = "https://x/y.git",

@@ -69,7 +69,7 @@ class JsonErrorTest {
         val (_, err) = stderr("--size", "huge", "--json") {
             val size = option(
                 long = "size",
-            ).convert { Err(ConversionError.Domain(DiskFull, "too big", JsonPrimitive(1))) }
+            ).convert<Int> { Err(ConversionError.Domain(DiskFull, "too big", JsonPrimitive(1))) }
             action { Ok("${size()}") }
         }
         assertEquals("""{"error":{"type":"BadValue","name":"--size","value":"huge","cause":1},"code":2}""" + "\n", err)

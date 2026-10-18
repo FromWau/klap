@@ -36,6 +36,7 @@ import com.fromwau.klap.fixture.ls.LsProjectionSupport.SYNONYM_ABBREVIATED
 import com.fromwau.klap.fixture.ls.LsProjectionSupport.checkAll
 import com.fromwau.klap.fixture.ls.LsProjectionSupport.cells
 import com.fromwau.klap.fixture.ls.LsProjectionSupport.cellsIn
+import com.fromwau.klap.io.CliPath
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -70,7 +71,7 @@ private fun refused(
     because: String,
 ) = cell(argv.toList(), Outcome.Rejects, because)
 
-private fun files(vararg names: String): LsInputs = NOTHING_BOUND.copy(files = names.toList())
+private fun files(vararg names: String): LsInputs = NOTHING_BOUND.copy(files = names.map(::CliPath))
 
 /** `ls a` with [time] and the [sort] ls reads. */
 private fun timed(

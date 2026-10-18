@@ -342,8 +342,15 @@ val files   = argument("files").file().multiple(min = 1)                       /
 |--------------------------------|---------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `.int()` `.long()` `.double()` | argument, option                | the parsed primitive, read as GNU tools read a number: `.int()` and `.long()` take leading blanks, a sign and ASCII digits, and `.double()` takes what `strtod` reads whole (a decimal or hex float, `inf`, `nan`), so `1.5f` and `1 ` are refused                                                                                                              |
 | `.boolean()`                   | argument, option                | `Boolean`, accepting only the exact lowercase literals `true` / `false` (case-sensitive: `True`, `TRUE`, `yes`, `no`, `1`, `0`, and `""` are all rejected)                                                                                                                                                                                                      |
+| `.duration()`                  | argument, option                | `kotlin.time.Duration` of zero or more: Kotlin's format (`PT1H30M`, `1h30m`, `1.5h`, `5h 31m 2s 123ms`, units in decreasing order), or a bare number of seconds read as `.double()` reads one (`5`, `5.5`, `0`), as GNU `sleep` does. A negative or infinite duration (`-1h`, `Infinity`, `inf`) is refused, and so are `1H`, `1 h` and `30m 1h`                |
+| `.instant()`                   | argument, option                | `kotlin.time.Instant` through `Instant.parse`: ISO 8601 with seconds and an offset (`2026-01-31T12:00:00Z`, `+02:00`, `+02`, a fraction, a lowercase `t` or `z`). No seconds, no offset, or a space for the `T` is refused                                                                                                                                      |
+| `.uuid()`                      | argument, option                | `kotlin.uuid.Uuid` through `Uuid.parse`: 32 hex digits in either case, dashed or plain. Braces and anything else are refused; the value prints dashed in lower case                                                                                                                                                                                             |
+| `.path()`                      | argument, option                | `CliPath`, from `klap-io`: the word as typed, its trailing slash kept, plus the kotlinx-io `Path`. Completes as a file, as `.file()` does, and refuses nothing (see [Converters from other modules](#converters-from-other-modules))                                                                                                                            |
+| `.localDate()`                 | argument, option                | `kotlinx.datetime.LocalDate`, from `klap-datetime`, through `LocalDate.parse`: `2026-01-31`. Another form, or a day the calendar lacks, is refused                                                                                                                                                                                                              |
+| `.localDateTime()`             | argument, option                | `kotlinx.datetime.LocalDateTime`, from `klap-datetime`, through `LocalDateTime.parse`: `2026-01-31T12:00`, seconds and a fraction optional. A date alone, an offset, or a space for the `T` is refused                                                                                                                                                          |
+| `.timeZone()`                  | argument, option                | `kotlinx.datetime.TimeZone`, from `klap-datetime`, through `TimeZone.of`: `Europe/Vienna`, `UTC`, `+02:00`. An id the time zone database lacks is refused                                                                                                                                                                                                       |
 | `.enum<E>()`                   | argument, option                | `E`, matched in exact case (`ignoreCase = true` opts out); each entry spelled as its lowercase name, or as `spelling = { }` gives it. On an option, `spellings = { it.words }` types an entry as any of several words, `--help` naming it by the first, and `abbreviates = false` takes only whole values in every mode (see [Abbreviation](#abbreviation)) |
-| `.choice("a", "b")`            | argument, option                | the raw string, restricted to the given set (matched in exact case unless `ignoreCase = true`, returns the declared spelling)                                                                                                                                                                                                                                   |
+| `.choice("a", "b")`            | argument, option                | the raw string, restricted to the given set (matched in exact case unless `ignoreCase = true`, returns the declared spelling). A closed set of values is `.enum<E>()`; `.choice` is the escape hatch for a set known only at runtime (`.choice(*names)`) or a spelling an enum cannot carry                                                               |
 | `.map { raw -> T }`            | argument, option                | any type; a thrown exception becomes a clean parse error                                                                                                                                                                                                                                                                                                        |
 | `.convert { raw -> Result }`   | argument, option                | any type, failing with a case of your own                                                                                                                                                                                                                                                                                                                       |
 | `.validate("msg") { it > 0 }`  | argument, option                | same type; fails with `BadValue` when the predicate is false. The predicate always runs per element, so declare it *before* `.multiple()`: a chain that puts it after fails at parse instead of validating                                                                                                                                                      |
@@ -362,7 +369,7 @@ val files   = argument("files").file().multiple(min = 1)                       /
 | `.absentWhen(input)`           | argument                        | removes this operand slot entirely whenever `input` was supplied, so the operands after it keep their own positions (see [Operands that depend on an option](#operands-that-depend-on-an-option))                                                                                                                                                               |
 | `.optionalWhen(input)`         | argument                        | drops this operand's declared minimum to zero whenever `input` was supplied; the slot itself stays, so nothing shifts. Only a `.multiple()` operand carries a minimum to relax, so any other cardinality is rejected when the tree is constructed (reach for `.absentWhen()` to remove a slot instead)                                                          |
 | `.atMostWhen(input, n)`        | argument                        | caps a `.multiple()` operand at `n` values whenever `input` was supplied, beside `.absentWhen()` (see [Operands that depend on an option](#operands-that-depend-on-an-option))                                                                                                                                                                                  |
-| `.placeholder(name)`           | argument, option                | the word help and usage show in the value slot: `--out <FILE>` instead of `--out <value>`. On an option it also replaces the choice list, which keeps a long one from widening every other row                                                                                                                                                                  |
+| `.placeholder(name)`           | argument, option                | the word help and usage show in the value slot: `--out=FILE` instead of `--out=value`. On an option it also replaces the choice list, which keeps a long one from widening every other row                                                                                                                                                                      |
 | `.file()`                      | argument, option                | marks a path for shell file-completion (completion only; does not check the path exists or is a file)                                                                                                                                                                                                                                                           |
 | `.hidden()`                    | argument, option, flag          | still parses, but omitted from help, completion, and docs                                                                                                                                                                                                                                                                                                       |
 | `.completeWith { ... }`        | argument, option                | supply completion candidates at runtime via `candidate()` / `candidates()` / `completeFiles()` (see below)                                                                                                                                                                                                                                                      |
@@ -419,21 +426,31 @@ when (val own = (cause as? ConversionError.Domain)?.error) {
 ```
 
 klap's own converters report their own cases rather than a `Domain`, so `.int()` on `"abc"` yields
-`ConversionError.NotAnInteger` and `.choice("a", "b")` on `"c"` yields `ConversionError.NotOneOf(["a", "b"])`.
+`ConversionError.NotAnInteger` and `.enum<Temp>()` on `"x"` yields `ConversionError.NotOneOf(["c", "f", "k"])`.
 The English for those lives in klap's renderer, which is why the cases carry no message. `cause` is null
 for the errors klap raises without running a converter, notably a `.validate()` or `.range()` rejection:
 those take a message string from you at declaration, so there is no error object to keep.
 
 `example/dd` is the worked example: four cases of its operand grammar, each mapped to dd's words in one `when`.
 
+klap's own `.duration()`, `.instant()` and `.uuid()` refuse a value with `ConversionError.NotADuration`,
+`NotAnInstant` and `NotAUuid`, printed as `invalid value '-1h' for --timeout: not a duration of zero or more,
+such as 90, 1h30m or PT1H30M`.
+
 `.map` is for total transforms; reach for `.convert { }` (or a thrown exception) when a value can be
 *invalid*, so the user sees a parse error instead of a silent fallback. A `.map { }` lambda that returns
 `null` for a present value is treated like absence: `.default(v)` substitutes `v` (so
 `.map { it.toIntOrNull() }.default(0)` yields `0` on bad input), and with no default the accessor simply
 reads back `null`. A converter that *errors* (e.g. `.int()` on `"abc"`) is never masked by a default; it
-still surfaces as `BadValue`. Converters also chain by composition, so
-`.choice("a", "b").map { it.uppercase() }` validates the choice first and then transforms, and
-`.map { }.map { }` runs the stages in order.
+still surfaces as `BadValue`.
+
+Converters chain by composition while the value is still a `String`: `.choice("a", "b").map { it.uppercase() }`
+validates the choice first and then transforms, `.convert { Ok(it.trim()) }.choice("a", "b")` trims before it
+matches, and `.map { }.map { }` runs the stages in order. A converter to any other type ends the chain, `.int()`,
+`.path()` and `.map { it.length }` alike. A converter called afterwards through an `argument(...)` or
+`option(...)` handle you kept from before it fails when the CLI is built, naming the input. `.convert { }` and
+`.map { }` tell the two apart by the type they return, so one whose lambda only ever fails or throws needs that
+type spelled out, as `action { }` does: `.convert<Int> { Err(...) }`.
 
 Validation runs at parse time and renders like any other input error:
 
@@ -462,7 +479,7 @@ klap appends its own hint to a help row based on the input's shape, so you do no
 text: `(required)`, `(optional)` (any nullable input, not only `.optional()`), `(default: v)`,
 `(repeatable)` (from `.multiple()` / `.count()`, shown as `(repeatable, min N)` when a minimum is set),
 and the range from `.range(a..b)`. A choice-backed argument shows `(one of: a, b)`, while a choice-backed
-option shows its choices inside the value placeholder instead (`--fmt <a|b|c>`). Write only the plain
+option shows its choices in its value instead (`--fmt=a|b|c`). Write only the plain
 description.
 
 On an option, `.required()` narrows `Opt<T?>` to `Opt<T>`, so it has to run last in the chain:
@@ -491,6 +508,43 @@ rule saying which of the two it feeds, and klap rejects that at construction.
 un-narrowed `Arg<T>` receiver, but `.multiple()` already returns a non-nullable `List<T>`-typed holder
 that defaults to an empty list on its own. Reach for `.multiple(min = 1)` (or any `min > 0`) instead if
 you want a required, non-empty list.
+
+### Converters from other modules
+
+Converters to the types of a kotlinx library live in modules of their own, one per library, so a tool
+depends on that library only when it asks for one. Both are published beside klap at its version:
+
+```kotlin
+dependencies {
+    implementation("com.fromwau:klap-io:$klapVersion")        // .path(), kotlinx-io
+    implementation("com.fromwau:klap-datetime:$klapVersion")  // .localDate(), .localDateTime(), .timeZone()
+}
+```
+
+Each brings klap and its library with it as `api`, so neither needs a `klap` line of its own. Import the
+converter (`com.fromwau.klap.io.path`, `com.fromwau.klap.datetime.localDate`) and chain it as you would
+`.int()`, inside any builder block: `argument("source").path().multiple(min = 1)`,
+`option(long = "since").localDate().required()`.
+
+`.path()` keeps the word as the user typed it, since a trailing slash means something to many tools: GNU
+`cp -r link/` copies the directory a symlink points to, and `cp -r link` copies the link. A kotlinx-io `Path`
+drops it (`Path("a/")` is `a`, and on the JVM `a//b` is `a/b`), so `.path()` binds a `CliPath` holding both:
+
+```kotlin
+val source = argument("source").path()
+action {
+    val from = source()          // CliPath("link/")
+    from.text                    // "link/", exactly as typed
+    from.endsWithSlash           // true; a backslash does not count
+    from.path                    // Path("link"), for SystemFileSystem
+    Ok("")
+}
+```
+
+Two `CliPath`s are equal when their text is, so `a/` and `a` differ, and one prints as its text.
+
+The datetime converters refuse a value with a `ConversionError.Domain` whose `error` is a `DateTimeError`
+(`NotALocalDate`, `NotALocalDateTime`, `NotATimeZone`), so a `parse` caller can match on it.
 
 ### Operands that depend on an option
 
@@ -534,11 +588,13 @@ counting the words after the cursor too.
 
 ### Options whose value is optional
 
-`ls --color[=<WHEN>]`, `git commit -S[<keyid>]`: the option may be given bare or with an attached value.
+`ls --color[=WHEN]`, `git commit -S[<keyid>]`: the option may be given bare or with an attached value.
 
 ```kotlin
+enum class When { Always, Auto, Never }
+
 val color = option(long = "color").placeholder("WHEN")
-    .choice("always", "auto", "never")
+    .enum<When>()
     .optionalValue("always")     // bare --color means --color=always
 ```
 
@@ -549,7 +605,7 @@ option cannot tell its own value from the next operand.
 It is getopt_long's optional argument. Reach for `.negatable()` first if the tool's real shape is a two-state
 switch: it gives you `--no-opt` as well.
 
-`--help` renders the row as `--color[=<WHEN>]` with a trailing `bare: always` note. Combined with
+`--help` renders the row as `--color[=WHEN]` with a trailing `bare: always` note. Combined with
 `.multiple()`, in either call order, each occurrence binds its own value and a bare one binds `whenBare`, in
 line order: `--debug=2 --debug` binds `["2", "1"]`, for an action that reduces them (the highest level, say).
 Tab completion matches the parser: the word after a bare occurrence completes as an operand, not as this
@@ -576,7 +632,7 @@ A bare occurrence binds `OptionalValue.Bare`, an attached value `OptionalValue.G
 option `null`, so `--context=-Z` is the context `-Z` and never reads as bare. Converters and choices declared
 before it read the attached value: `.int().optionalValue()` binds `Given(5)` for `--depth=5`. `.multiple()`
 after it keeps every occurrence in line order, `[Bare, Given("x")]` for `--context --context=x`. Help shows
-`--backup[=<CONTROL>]` with no `bare:` note, and completion follows the same rules as above.
+`--backup[=CONTROL]` with no `bare:` note, and completion follows the same rules as above.
 
 ### Options whose value must be glued
 
@@ -595,8 +651,8 @@ value (`O::`) takes a bare `-O`; reach for `.gluedValue()` only to match a tool 
 glued to the short or attached to the long with `=` (`--optimise=3`), and the option without one is
 `MissingOptionValue`. The option binds the plain value, not an `OptionalValue`, so converters, `.multiple()` and
 `.completeWith { }` chain as on any option. A glued value may end a short cluster (`-vO3`) as a required value
-does, and under [`ShortOptions.Alone`](#short-options) the short keeps its value glued. Help shows `-O<LEVEL>`,
-or `-O, --optimise=<LEVEL>` with a long name. Completion offers the candidates glued, as for an optional value
+does, and under [`ShortOptions.Alone`](#short-options) the short keeps its value glued. Help shows `-OLEVEL`,
+or `-O, --optimise=LEVEL` with a long name. Completion offers the candidates glued, as for an optional value
 (`-O<TAB>` offers `-O0 -O1 -O2 -O3`), and nothing after a bare `-O`, since the line is refused there. It cannot
 be combined with `.optionalValue()`.
 
@@ -886,7 +942,7 @@ required set, brackets for an optional one, each member named by its short form 
 whose members are all `.hidden()` is left out; a partly hidden one lists only what help shows.
 
 ```
-usage: tar (-c|-x|-t) [-z|-j] --file <value> [options]
+usage: tar (-c|-x|-t) [-z|-j] --file=value [options]
 ```
 
 A **required option** joins it for the same reason: the command will not run without it, and folding it
@@ -1582,9 +1638,10 @@ requires the `kotlin("plugin.serialization")` plugin in the consuming module.
 
 `--json` shapes an action's result (and its errors), and `--help --json` prints the help as data: the
 command, its usage line, and each argument, option, subcommand, global option and example as fields
-(`names`, `help`, `value`, `required`, `repeatable`, `default`, `choices`, and for an argument
-`absentWhen` or `optionalWhen`, the input that removes it or makes it optional), leaving out what does not
-apply.
+(`names`, `help`, `value`, `required`, `repeatable`, `min` and `max` from `.multiple()`, `default`, `choices`, and
+for an argument `absentWhen` or `optionalWhen`, the input that removes it or makes it optional, and `atMostWhen`,
+each input that caps it with its cap: `[{"input": "--no-target-directory", "max": 1}]`), leaving out what does
+not apply.
 Where help covers the tree (`--help-all` under `Help.ByTree`, `--help` under `Help.All`), `--json` prints an array of
 that, one per command.
 
@@ -1732,7 +1789,7 @@ A built-in, position-independent option recognized on every command like `--json
 GNU's `--color[=WHEN]`, as ls, grep and diff declare it: `--color=auto|always|never`, or a bare `--color`, which
 means `always` ("The WHEN argument defaults to 'always'", `ls --help`). Its value is optional, so it is only ever
 attached: the word after a bare `--color` is no value of it (`mytool --color never` colors and reads `never` as an
-operand, as `ls --color always` lists the file `always`). Help shows it as `--color[=<auto|always|never>]` with a
+operand, as `ls --color always` lists the file `always`). Help shows it as `--color[=auto|always|never]` with a
 `bare: always` note, the row a declared `.optionalValue()` option gets. It is reserved, so you cannot declare
 your own `option`/`flag` named `color` unless you decline it with `builtins { color = Builtin.Off }`. An
 unrecognized value is an `InvalidChoice`, which refuses the line ahead of completion and docs, and ahead of a
@@ -1922,6 +1979,15 @@ renders the current command and every descendant, each as its own help block, sc
 (`mytool --help-all` for the whole tree, `mytool remote --help-all` for just that subtree), and is advertised under
 Global options on any command that has subcommands. `Help.All` gives `--help` itself that reach. Either way,
 `docs markdown` / `docs man` give the full tree as a document.
+
+An option's value is written the way GNU's `--help` writes it, as in `cp --help`: after the long name with `=`
+(`-S, --suffix=SUFFIX`, `--sparse=WHEN`), or after a space when there is no long name (`-E END`, as in
+`xargs --help`). An optional value is bracketed (`--backup[=CONTROL]`). If the option also has a short name,
+the short gets the brackets as well (`-w[BYTES], --width[=BYTES]`, as in `od --help`), because a short name
+takes its value only glued on. The word is the option's `.placeholder()`, else its choices joined by `|`, else
+`value`. The usage line writes a required option the same way, and the generated docs repeat the help rows.
+Help measures text in terminal columns. A wide or full-width character (日, Ａ, most emoji) takes two
+columns and a combining mark takes none, so rows stay aligned and wrap at the width.
 
 `group(title) { }` returns its block's value, so a holder declared inside is captured by a plain `val`
 with its type inferred — no `lateinit var`, no hand-written type. The block runs synchronously during

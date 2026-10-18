@@ -12,6 +12,7 @@ import com.fromwau.klap.fixture.find.FindCompletionSupport.PREDICATES
 import com.fromwau.klap.fixture.find.FindCompletionSupport.REGEX_TYPES
 import com.fromwau.klap.fixture.find.FindCompletionSupport.SHORTS
 import com.fromwau.klap.fixture.find.FindLineContext.assertOffersNone
+import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.acceptSuggestion
 import com.fromwau.klap.testing.filesAfter
@@ -190,9 +191,13 @@ class FindSuggestionListTest {
             Triple("find . --xd|", "--xdev", AT_DOT.copy(xdev = true)),
             Triple("find . --print|", "--print0", AT_DOT.copy(print0Action = true)),
             Triple("find . --nouse|", "--nouser", AT_DOT.copy(nouserTest = true)),
-            Triple("find . --regextype=posix-e|", "--regextype=posix-egrep", AT_DOT.copy(regextype = "posix-egrep")),
+            Triple(
+                "find . --regextype=posix-e|",
+                "--regextype=posix-egrep",
+                AT_DOT.copy(regextype = RegexType.PosixEgrep),
+            ),
             Triple("find . --maxd| 2", "--maxdepth", AT_DOT.copy(maxDepth = 2)),
-            Triple("find . --newe| a", "--newer", AT_DOT.copy(newerThan = listOf("a"))),
+            Triple("find . --newe| a", "--newer", AT_DOT.copy(newerThan = listOf(CliPath("a")))),
         )
         checkCells(cells) { (typed, value, expected) ->
             val line = typed.replace("|", "")
@@ -393,7 +398,7 @@ private val POSIX_REGEX_TYPES = REGEX_TYPES.filter { it.startsWith("posix-") }.t
 
 private const val TRAVERSAL_GROUP = "Traversal options (find's own position-independent set)"
 
-private val AT_DOT: FindInputs = NOTHING_BOUND.copy(operand = listOf("."))
+private val AT_DOT: FindInputs = walking(".")
 
 /** Every long find accepts, respelled. */
 private val FIND_LONGS: List<String> = LONGS.map { it.name }

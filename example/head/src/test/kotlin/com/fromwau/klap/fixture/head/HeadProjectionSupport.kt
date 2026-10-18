@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.head
 
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.io.CliPath
 
 /*
  * The cells of the projection and converter tests, generated from the inputs real head 9.12 documents (`INPUTS` in
@@ -139,7 +140,7 @@ internal object HeadProjectionSupport {
             key,
             AFTER_END,
             listOf("--", word, "b"),
-            Outcome.Binds(NOTHING_BOUND.copy(files = listOf(word, "b"))),
+            Outcome.Binds(NOTHING_BOUND.copy(files = listOf(CliPath(word), CliPath("b")))),
             "`head -- -x` prints the file -x",
         ),
     )

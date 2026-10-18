@@ -13,6 +13,8 @@ import com.fromwau.klap.CompletionScope
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.Flag
 import com.fromwau.klap.Help
+import com.fromwau.klap.io.CliPath
+import com.fromwau.klap.io.path
 import com.fromwau.klap.Opt
 import com.fromwau.klap.OptionalValue
 import com.fromwau.klap.RepeatedOptions
@@ -129,7 +131,8 @@ public fun cpCli(environment: Map<String, String> = emptyMap()): TypedCli<CpInpu
         long = "update",
         help = "control which existing files are updated; UPDATE={all,none,none-fail,older(default)}",
     )
-        .choice("all", "none", "none-fail", "older")
+        .enum<Update>(spelling = { it.cli })
+        .placeholder("UPDATE")
         .optionalValue("older")
 
     val updateOlder = flag(short = 'u', help = "equivalent to --update[=older].  See below")
@@ -174,7 +177,7 @@ public fun cpCli(environment: Map<String, String> = emptyMap()): TypedCli<CpInpu
 
         backupDefault = flag(short = 'b', help = "like --backup but does not accept an argument")
 
-        suffix = option(short = 'S', long = "suffix", help = "override the usual backup suffix")
+        suffix = option(short = 'S', long = "suffix", help = "override the usual backup suffix").placeholder("SUFFIX")
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -187,12 +190,14 @@ public fun cpCli(environment: Map<String, String> = emptyMap()): TypedCli<CpInpu
 
     val preserve = option(long = "preserve", help = "preserve the specified attributes")
         .convert(::attributeList)
+        .placeholder("ATTR_LIST")
         .optionalValue(DEFAULT_ATTRIBUTES.joinToString(","))
         .multiple()
         .completeWith(provider = completeAttributes)
 
     val noPreserve = option(long = "no-preserve", help = "don't preserve the specified attributes")
         .convert(::attributeList)
+        .placeholder("ATTR_LIST")
         .multiple()
         .completeWith(provider = completeAttributes)
 
@@ -201,10 +206,12 @@ public fun cpCli(environment: Map<String, String> = emptyMap()): TypedCli<CpInpu
     val preserveDefaults = flag(short = 'p', help = "same as --preserve=mode,ownership,timestamps")
 
     val sparse = option(long = "sparse", help = "control creation of sparse files. See below")
-        .choice("auto", "always", "never")
+        .enum<When>()
+        .placeholder("WHEN")
 
     val reflink = option(long = "reflink", help = "control clone/CoW copies. See below")
-        .choice("auto", "always", "never")
+        .enum<When>()
+        .placeholder("WHEN")
         .optionalValue("always")
 
     val selinuxDefault = flag(short = 'Z', help = "set SELinux security context of destination file to default type")
@@ -226,7 +233,8 @@ public fun cpCli(environment: Map<String, String> = emptyMap()): TypedCli<CpInpu
         long = "target-directory",
         help = "copy all SOURCE arguments into DIRECTORY",
     )
-        .file()
+        .path()
+        .placeholder("DIRECTORY")
         .repeated(RepeatedOptions.Refuse)
 
     val noTargetDirectory = flag(short = 'T', long = "no-target-directory", help = "treat DEST as a normal file")
@@ -242,16 +250,16 @@ public fun cpCli(environment: Map<String, String> = emptyMap()): TypedCli<CpInpu
     // operand, `-T` leaves one SOURCE so `cp -T a b c` is an extra operand, and `cp a` is a parse-level
     // "missing required argument <source>" rather than a rule the action re-implements.
     //
-    // KLAP-GAP: `.file()` on DEST can't restrict to directories-only once more than one SOURCE is given.
+    // KLAP-GAP: `.path()` on DEST can't restrict to directories-only once more than one SOURCE is given.
     val sources = argument("source", "the files to copy")
         .placeholder("SOURCE")
-        .file()
+        .path()
         .multiple(min = 1)
         .atMostWhen(noTargetDirectory, 1)
 
     val dest = argument("dest", "where to copy them")
         .placeholder("DEST")
-        .file()
+        .path()
         .absentWhen(targetDirectory)
 
     fun ValueScope.backupMade(): Result<Backup?, CliError> = resolveBackup(
@@ -264,14 +272,14 @@ public fun cpCli(environment: Map<String, String> = emptyMap()): TypedCli<CpInpu
     validateInputs { backupMade().errorOrNull() }
 
     validateInputs {
-        val skips = noClobber() || update() == "none" || update() == "none-fail"
+        val skips = noClobber() || update() == Update.None || update() == Update.NoneFail
         val backs = backupMade().getOrNull() != null
         if (backs && skips) CliError.Usage("--backup is mutually exclusive with -n or --update=none-fail") else null
     }
 
     validateInputs {
-        val sparseOther = sparse() != null && sparse() != "auto"
-        if (reflink() == "always" && sparseOther) {
+        val sparseOther = sparse() != null && sparse() != When.Auto
+        if (reflink() == When.Always && sparseOther) {
             CliError.Usage("--reflink can be used only with --sparse=auto")
         } else {
             null
@@ -326,7 +334,7 @@ public fun cpCli(environment: Map<String, String> = emptyMap()): TypedCli<CpInpu
             interactive = interactive(),
             noClobber = noClobber(),
             removeDestination = removeDestination(),
-            update = update() ?: "older".takeIf { updateOlder() },
+            update = update() ?: Update.Older.takeIf { updateOlder() },
             dereference = replayed.dereference,
             keepDirectorySymlink = keepDirectorySymlink(),
             backup = made?.control,
@@ -355,6 +363,29 @@ public fun cpCli(environment: Map<String, String> = emptyMap()): TypedCli<CpInpu
 /** How cp follows symbolic links in SOURCE, as the last of `-L`, `-P` and `-H` on the line says. */
 public enum class Dereference { ALWAYS, NEVER, COMMAND_LINE }
 
+/** cp's `--update` modes, each typed as its [cli] name: `cp --help` lists UPDATE={all,none,none-fail,older}. */
+public enum class Update(public val cli: String) {
+    All("all"),
+    None("none"),
+    NoneFail("none-fail"),
+    Older("older"),
+}
+
+/** A WHEN of `--sparse` and `--reflink`, typed as its lowercase name. */
+public enum class When {
+    Auto,
+    Always,
+    Never,
+}
+
+/** The backup cp makes: `cp --help` pairs "none, off / numbered, t / existing, nil / simple, never". */
+public enum class BackupControl {
+    None,
+    Numbered,
+    Existing,
+    Simple,
+}
+
 /**
  * What one `cp` line binds, as cp reads it rather than as the inputs that spell it: `-r` and `-R` are one
  * [recursive], `-u` is an [update], and `-b`, `--backup` and `-S` are one [backup] with its [suffix]. The
@@ -381,12 +412,12 @@ public data class CpInputs(
     val interactive: Boolean,
     val noClobber: Boolean,
     val removeDestination: Boolean,
-    val update: String?,
+    val update: Update?,
     /** Null when the line names none of `-L`, `-P`, `-H`, `-a` and `-d`. */
     val dereference: Dereference?,
     val keepDirectorySymlink: Boolean,
-    /** The control cp backs up with, by its first name (`numbered` for `t`), or null when it makes no backup. */
-    val backup: String?,
+    /** The control cp backs up with, or null when it makes no backup. */
+    val backup: BackupControl?,
     /** The suffix a simple backup takes, from `-S` or `SIMPLE_BACKUP_SUFFIX`, or null for cp's `~`. */
     val suffix: String?,
     /**
@@ -396,14 +427,14 @@ public data class CpInputs(
     val preserve: List<String>?,
     /** The attributes the line explicitly does not preserve, which for the mode is not cp's default either. */
     val noPreserve: List<String>?,
-    val sparse: String?,
-    val reflink: String?,
+    val sparse: When?,
+    val reflink: When?,
     val selinuxDefault: Boolean,
     val context: String?,
-    val targetDirectory: String?,
+    val targetDirectory: CliPath?,
     val noTargetDirectory: Boolean,
-    val sources: List<String>,
-    val dest: String?,
+    val sources: List<CliPath>,
+    val dest: CliPath?,
 )
 
 /** `cp` with no arguments at all: every field at the default the declaration gives it. */
@@ -440,16 +471,16 @@ public val NOTHING_BOUND: CpInputs = CpInputs(
     dest = null,
 )
 
-/** Every spelling of a backup control `cp --help` lists, with the control's first name. */
-private val BACKUP_CONTROLS: Map<String, String> = mapOf(
-    "none" to "none",
-    "off" to "none",
-    "numbered" to "numbered",
-    "t" to "numbered",
-    "existing" to "existing",
-    "nil" to "existing",
-    "simple" to "simple",
-    "never" to "simple",
+/** Every spelling of a backup control `cp --help` lists, with the control it names. */
+private val BACKUP_CONTROLS: Map<String, BackupControl> = mapOf(
+    "none" to BackupControl.None,
+    "off" to BackupControl.None,
+    "numbered" to BackupControl.Numbered,
+    "t" to BackupControl.Numbered,
+    "existing" to BackupControl.Existing,
+    "nil" to BackupControl.Existing,
+    "simple" to BackupControl.Simple,
+    "never" to BackupControl.Simple,
 )
 
 /** cp's ATTR_LIST names, from the paragraph under `cp --help`. */
@@ -496,7 +527,7 @@ private fun List<OptionalValue<String>>.lastGiven(): String? =
 
 /** The backup a line makes: its [control] and the [suffix] a simple one takes. */
 private data class Backup(
-    val control: String,
+    val control: BackupControl,
     val suffix: String?,
 )
 
@@ -517,7 +548,7 @@ private fun resolveBackup(
     val control = when {
         typed.isNotEmpty() -> argmatch("backup type", typed, BACKUP_CONTROLS)
         fromEnvironment.isNotEmpty() -> argmatch("\$VERSION_CONTROL", fromEnvironment, BACKUP_CONTROLS)
-        else -> Ok("existing")
+        else -> Ok(BackupControl.Existing)
     }
     val environmentSuffix = environment["SIMPLE_BACKUP_SUFFIX"]?.takeIf { it.isNotEmpty() && '/' !in it }
     return control.map { Backup(it, suffix ?: environmentSuffix) }
@@ -527,8 +558,8 @@ private fun resolveBackup(
 private fun argmatch(
     context: String,
     word: String,
-    names: Map<String, String>,
-): Result<String, CliError> {
+    names: Map<String, BackupControl>,
+): Result<BackupControl, CliError> {
     names[word]?.let { return Ok(it) }
     val reached = names.filterKeys { it.startsWith(word) }
     return when (reached.values.toSet().size) {

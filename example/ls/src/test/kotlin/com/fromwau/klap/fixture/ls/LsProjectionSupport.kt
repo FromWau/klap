@@ -3,6 +3,7 @@ package com.fromwau.klap.fixture.ls
 import com.fromwau.kern.result.Result
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.parse
 import kotlin.test.fail
 
@@ -167,7 +168,7 @@ internal object LsProjectionSupport {
             key,
             AFTER_END,
             listOf("--", word, "b"),
-            Outcome.Binds(NOTHING_BOUND.copy(files = listOf(word, "b"))),
+            Outcome.Binds(NOTHING_BOUND.copy(files = listOf(CliPath(word), CliPath("b")))),
             "`ls -- -a`: cannot access '-a'",
         ),
     )
@@ -205,7 +206,9 @@ internal object LsProjectionSupport {
                     long,
                     BARE_THEN_WORD,
                     listOf(long, "never") + AB,
-                    Outcome.Binds(input.bind(NOTHING_BOUND.copy(files = listOf("never") + AB), "always")),
+                    Outcome.Binds(
+                        input.bind(NOTHING_BOUND.copy(files = listOf("never", "a", "b").map(::CliPath)), "always"),
+                    ),
                     "`ls --color always`: cannot access 'always'",
                 ),
             )

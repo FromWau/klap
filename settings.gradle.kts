@@ -35,6 +35,8 @@ gradle.lifecycle.beforeProject {
 }
 
 include(":klap")
+include(":klap-datetime")
+include(":klap-io")
 include(":example:chmod")
 include(":example:cp")
 include(":example:curl")
