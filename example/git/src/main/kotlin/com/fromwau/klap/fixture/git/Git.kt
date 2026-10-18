@@ -11,6 +11,8 @@ import com.fromwau.klap.ValueScope
 import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.dispatch
+import com.fromwau.klap.io.CliPath
+import com.fromwau.klap.io.path
 import com.fromwau.klap.projection
 
 /**
@@ -72,7 +74,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         short = 'C',
         help = "Run as if git was started in <path> instead of the current working directory",
     )
-        .file()
+        .path()
         .multiple()
 
     val config = option(short = 'c', help = "Pass a configuration parameter to the command").multiple()
@@ -83,15 +85,15 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         help = "Pipe all output into less (or if set, \$PAGER) if standard output is a terminal",
     ).negatable(short = 'P', long = "no-pager", help = "Do not pipe Git output into a pager")
 
-    val gitDir = option(long = "git-dir", help = "Set the path to the repository (\".git\" directory)").file()
-    val workTree = option(long = "work-tree", help = "Set the path to the working tree").file()
+    val gitDir = option(long = "git-dir", help = "Set the path to the repository (\".git\" directory)").path()
+    val workTree = option(long = "work-tree", help = "Set the path to the working tree").path()
     val namespace = option(long = "namespace", help = "Set the Git namespace")
     val bare = flag(long = "bare", help = "Treat the repository as a bare repository")
 
     // A bare `--exec-path` binds the default below and routes on, where real git prints the path and exits without
     // running the command: an app acts on the bare value before it dispatches.
     val execPath = option(long = "exec-path", help = "Path to wherever your core Git programs are installed")
-        .file()
+        .path()
         .optionalValue("/usr/lib/git-core")
 
     // Negative-only in git: there is no `--replace-objects`, so each is a plain flag spelled with its `no-`.
@@ -111,7 +113,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         val branch = flag(short = 'b', long = "branch", help = "show branch information")
 
         action {
-            val where = directory().lastOrNull() ?: "."
+            val where = directory().lastOrNull()?.text ?: "."
             Ok(
                 "would show status in $where (short=${short()}, " +
                     "branch=${branch()}, bare=${bare()})",
@@ -146,9 +148,9 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         // token whatever it looks like (verified against 2.56.0), so the space-separated `-x` binds as the
         // value here too, same as the attached `--chmod=-x` form.
         val chmod = option(long = "chmod", help = "override the executable bit of the listed files")
-            .choice("+x", "-x")
+            .enum<ExecutableBit>(spelling = { it.cli })
 
-        val pathspecFromFile = option(long = "pathspec-from-file", help = "read pathspec from file").file()
+        val pathspecFromFile = option(long = "pathspec-from-file", help = "read pathspec from file").path()
 
         // git's usage line writes `<pathspec>...` as mandatory, but real `git add` with zero operands
         // exits 0 with "Nothing specified, nothing added." (verified against 2.56.0), so min = 0 is the
@@ -168,7 +170,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
                 "-A".takeIf { addAll() },
                 "-N".takeIf { intentToAdd() },
                 "--ignore-errors".takeIf { ignoreErrors() },
-                chmod()?.let { "--chmod=$it" },
+                chmod()?.let { "--chmod=${it.cli}" },
                 pathspecFromFile()?.let { "--pathspec-from-file=$it" },
             )
             if (paths.isEmpty()) Ok("Nothing specified, nothing added.")
@@ -188,7 +190,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         // group(...) returns Unit, so a holder declared inside it needs the lateinit dance the README
         // documents; the block runs synchronously, so these are set before any action runs.
         val message: Opt<List<String>>
-        val messageFile: Opt<String?>
+        val messageFile: Opt<CliPath?>
         val author: Opt<String?>
         val date: Opt<String?>
         val reeditMessage: Opt<String?>
@@ -196,7 +198,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
 
         group("Commit message options") {
             message = option(short = 'm', long = "message", help = "commit message").multiple()
-            messageFile = option(short = 'F', long = "file", help = "read message from file").file()
+            messageFile = option(short = 'F', long = "file", help = "read message from file").path()
             author = option(long = "author", help = "override author for commit")
             date = option(long = "date", help = "override date for commit")
             reeditMessage = option(
@@ -220,7 +222,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
         val quiet = flag(short = 'q', long = "quiet", help = "suppress summary after successful commit")
 
         val cleanup = option(long = "cleanup", help = "how to strip spaces and #comments from message")
-            .choice("strip", "whitespace", "verbatim", "scissors", "default")
+            .enum<Cleanup>()
 
         val verify = flag(long = "verify", help = "opposite of --no-verify")
             .negatable(short = 'n', long = "no-verify", help = "bypass pre-commit and commit-msg hooks")
@@ -260,7 +262,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
                 "-q".takeIf { quiet() },
                 "--no-verify".takeIf { !verify() },
                 gpgSign()?.let { "-S=$it" },
-                cleanup()?.let { "--cleanup=$it" },
+                cleanup()?.let { "--cleanup=${it.name.lowercase()}" },
                 author()?.let { "--author=$it" },
                 date()?.let { "--date=$it" },
                 reeditMessage()?.let { "--reedit-message=$it" },
@@ -377,7 +379,7 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
                 long = "mirror",
                 help = "set up remote as a mirror to push to or fetch from",
             )
-                .choice("fetch", "push")
+                .enum<Mirror>()
 
             val name = argument("name", "the remote's short name")
             val url = argument("url", "the remote's URL").file()
@@ -388,10 +390,10 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
                     "--no-tags".takeIf { !tags() },
                     track().joinToString(" ") { "-t $it" }.takeIf { track().isNotEmpty() },
                     master()?.let { "-m $it" },
-                    mirror()?.let { "--mirror=$it" },
+                    mirror()?.let { "--mirror=${it.name.lowercase()}" },
                 )
                 // Reads root options two levels down from where they were declared.
-                val where = directory().lastOrNull() ?: "."
+                val where = directory().lastOrNull()?.text ?: "."
                 Ok(
                     "would add remote ${name()} -> ${url()} in $where " +
                         "${opts.joinToString(" ")} ${config().size} config override(s)",
@@ -451,14 +453,14 @@ public fun gitCli(): TypedCli<GitInputs> = cliOf("git") {
 
 /** Every root option a `git` invocation carries, read by whichever command it routes to. */
 public data class GitGlobals(
-    val directory: List<String>,
+    val directory: List<CliPath>,
     val config: List<String>,
     val paginate: Boolean,
-    val gitDir: String?,
-    val workTree: String?,
+    val gitDir: CliPath?,
+    val workTree: CliPath?,
     val namespace: String?,
     val bare: Boolean,
-    val execPath: String?,
+    val execPath: CliPath?,
     val noReplaceObjects: Boolean,
     val noOptionalLocks: Boolean,
 )
@@ -491,8 +493,8 @@ public sealed interface GitInputs {
         val addAll: Boolean,
         val intentToAdd: Boolean,
         val ignoreErrors: Boolean,
-        val chmod: String?,
-        val pathspecFromFile: String?,
+        val chmod: ExecutableBit?,
+        val pathspecFromFile: CliPath?,
         val pathspec: List<String>,
     ) : GitInputs
 
@@ -500,7 +502,7 @@ public sealed interface GitInputs {
     public data class Commit(
         override val globals: GitGlobals,
         val message: List<String>,
-        val messageFile: String?,
+        val messageFile: CliPath?,
         val author: String?,
         val date: String?,
         val reeditMessage: String?,
@@ -512,7 +514,7 @@ public sealed interface GitInputs {
         val allowEmpty: Boolean,
         val dryRun: Boolean,
         val quiet: Boolean,
-        val cleanup: String?,
+        val cleanup: Cleanup?,
         val verify: Boolean,
         val gpgSign: String?,
         val pathspec: List<String>,
@@ -549,7 +551,7 @@ public sealed interface GitInputs {
         val tags: Boolean,
         val track: List<String>,
         val master: String?,
-        val mirror: String?,
+        val mirror: Mirror?,
         val name: String,
         val url: String,
     ) : GitInputs
@@ -559,6 +561,27 @@ public sealed interface GitInputs {
 
     /** `git var`, hidden: proves the root's options really are readable from a command below it. */
     public data class Var(override val globals: GitGlobals, val list: Boolean, val variable: String?) : GitInputs
+}
+
+/** `git add --chmod`'s values, each typed as its [cli] word: git-add(1) writes `--chmod=(+|-)x`. */
+public enum class ExecutableBit(public val cli: String) {
+    Set("+x"),
+    Clear("-x"),
+}
+
+/** `git commit --cleanup`'s modes, in git-commit(1)'s order: strip, whitespace, verbatim, scissors or default. */
+public enum class Cleanup {
+    Strip,
+    Whitespace,
+    Verbatim,
+    Scissors,
+    Default,
+}
+
+/** `git remote add --mirror`'s kinds: git-remote(1) writes `--mirror=(fetch|push)`. */
+public enum class Mirror {
+    Fetch,
+    Push,
 }
 
 /** Every root option at its declared default: no directories, no config overrides, pager on and bare off. */

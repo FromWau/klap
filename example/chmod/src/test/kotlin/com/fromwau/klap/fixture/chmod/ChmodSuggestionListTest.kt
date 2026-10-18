@@ -9,6 +9,7 @@ import com.fromwau.klap.fixture.chmod.ChmodTab.checkTab
 import com.fromwau.klap.fixture.chmod.ChmodTab.modes
 import com.fromwau.klap.fixture.chmod.ChmodTab.name
 import com.fromwau.klap.fixture.chmod.ChmodTab.names
+import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 import com.fromwau.klap.testing.suggestionsFor
@@ -129,10 +130,11 @@ class ChmodSuggestionListTest {
         )
         parity.binds(
             "--recursive", "u+x", "d",
-            expected = NOTHING_BOUND.copy(recursive = true, mode = symbolic("u+x"), files = listOf("d")),
+            expected = NOTHING_BOUND.copy(recursive = true, mode = symbolic("u+x"), files = listOf(CliPath("d"))),
         )
-        parity.binds("755", "f", expected = NOTHING_BOUND.copy(mode = octal("755"), files = listOf("f")))
-        parity.binds("--reference", "r", "f", expected = NOTHING_BOUND.copy(reference = "r", files = listOf("f")))
+        parity.binds("755", "f", expected = NOTHING_BOUND.copy(mode = octal("755"), files = listOf(CliPath("f"))))
+        val byReference = NOTHING_BOUND.copy(reference = CliPath("r"), files = listOf(CliPath("f")))
+        parity.binds("--reference", "r", "f", expected = byReference)
     }
 
     @Test

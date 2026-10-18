@@ -53,7 +53,7 @@ internal sealed interface ValueSpec : HolderSpec {
     var validate: ((Any?) -> String?)?
 
     // Set by .placeholder(): the name shown in place of the generic `value` in help and usage, e.g.
-    // `--output <FILE>`. Display-only; it never affects parsing.
+    // `--output=FILE`. Display-only; it never affects parsing.
     var placeholder: String?
 
     // Extra help note (e.g. a range) rendered by metaHint alongside choices/cardinality.

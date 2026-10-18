@@ -1,6 +1,7 @@
 package com.fromwau.klap.fixture.pacman
 
 import com.fromwau.klap.fixture.ParitySuite
+import com.fromwau.klap.io.CliPath
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -76,11 +77,11 @@ class PacmanProjectionTest {
         )
         parity.binds(
             "-Q", "-b", "/var/lib/pacman",
-            expected = NOTHING_BOUND.copy(query = true, dbPath = "/var/lib/pacman"),
+            expected = NOTHING_BOUND.copy(query = true, dbPath = CliPath("/var/lib/pacman")),
         )
-        parity.binds("-Q", "--root=/mnt", expected = NOTHING_BOUND.copy(query = true, root = "/mnt"))
+        parity.binds("-Q", "--root=/mnt", expected = NOTHING_BOUND.copy(query = true, root = CliPath("/mnt")))
         // `--color` reaches pacman's own option rather than klap's built-in rendering switch.
-        parity.binds("--color=never", "-Q", expected = NOTHING_BOUND.copy(color = "never", query = true))
+        parity.binds("--color=never", "-Q", expected = NOTHING_BOUND.copy(color = ColorWhen.Never, query = true))
         parity.binds(
             "--noconfirm", "-U", "./pkg.tar.zst",
             expected = NOTHING_BOUND.copy(upgrade = true, noConfirm = true, targets = listOf("./pkg.tar.zst")),
@@ -203,7 +204,11 @@ class PacmanProjectionTest {
                 QUERY.copy(info = 1, targets = listOf("pacman", "glibc")),
                 "pacman -Q pacman -i glibc: info on both",
             ),
-            cell(q("pacman", "--dbpath", "a"), QUERY.copy(dbPath = "a", targets = listOf("pacman")), "DB Path: .../a/"),
+            cell(
+                q("pacman", "--dbpath", "a"),
+                QUERY.copy(dbPath = CliPath("a"), targets = listOf("pacman")),
+                "DB Path: .../a/",
+            ),
         ),
     )
 
@@ -220,11 +225,11 @@ class PacmanProjectionTest {
     @Test
     fun `a value-taking letter takes the rest of its cluster or the next word`() = parity.checkAll(
         listOf(
-            cell(listOf("-Qvb", "a"), QUERY.copy(verbose = true, dbPath = "a"), "-Qvb a: DB Path: .../a/"),
-            cell(listOf("-Qvr", "a"), QUERY.copy(verbose = true, root = "a"), "-r takes a value like -b"),
+            cell(listOf("-Qvb", "a"), QUERY.copy(verbose = true, dbPath = CliPath("a")), "-Qvb a: DB Path: .../a/"),
+            cell(listOf("-Qvr", "a"), QUERY.copy(verbose = true, root = CliPath("a")), "-r takes a value like -b"),
             // `pacman -Qbv` prints no -v paths: the v was the database path.
-            cell(listOf("-Qbv"), QUERY.copy(dbPath = "v"), "-Qbv: no Root/DB Path lines, so -v was the value"),
-            cell(q("-b=a"), QUERY.copy(dbPath = "=a"), "-Qv -b=a: DB Path: .../=a/"),
+            cell(listOf("-Qbv"), QUERY.copy(dbPath = CliPath("v")), "-Qbv: no Root/DB Path lines, so -v was the value"),
+            cell(q("-b=a"), QUERY.copy(dbPath = CliPath("=a")), "-Qv -b=a: DB Path: .../=a/"),
             cell(listOf("-Qb"), null, "pacman: option requires an argument -- 'b'"),
             cell(q("-b"), null, "pacman: option requires an argument -- 'b'"),
         ),
@@ -233,16 +238,24 @@ class PacmanProjectionTest {
     @Test
     fun `a long value keeps everything after the first equals sign`() = parity.checkAll(
         listOf(
-            cell(q("--dbpath=a=b"), QUERY.copy(dbPath = "a=b"), "-Qv --dbpath=a=b: DB Path: .../a=b/"),
-            cell(q("--dbpath==a"), QUERY.copy(dbPath = "=a"), "-Qv --dbpath==a: DB Path: .../=a/"),
+            cell(q("--dbpath=a=b"), QUERY.copy(dbPath = CliPath("a=b")), "-Qv --dbpath=a=b: DB Path: .../a=b/"),
+            cell(q("--dbpath==a"), QUERY.copy(dbPath = CliPath("=a")), "-Qv --dbpath==a: DB Path: .../=a/"),
         ),
     )
 
     @Test
     fun `a value word that looks like an option is the value`() = parity.checkAll(
         listOf(
-            cell(q("--dbpath", "-i"), QUERY.copy(dbPath = "-i"), "-Qv --dbpath -i: DB Path: .../-i/, Targets: None"),
-            cell(q("--dbpath", "-S"), QUERY.copy(dbPath = "-S"), "failed to resolve path '-S' passed to '--dbpath'"),
+            cell(
+                q("--dbpath", "-i"),
+                QUERY.copy(dbPath = CliPath("-i")),
+                "-Qv --dbpath -i: DB Path: .../-i/, Targets: None",
+            ),
+            cell(
+                q("--dbpath", "-S"),
+                QUERY.copy(dbPath = CliPath("-S")),
+                "failed to resolve path '-S' passed to '--dbpath'",
+            ),
             cell(q("--arch=-x", "pacman"), QUERY.copy(arch = "-x", targets = listOf("pacman")), "exit 0"),
             cell(q("--arch", "--help", "pacman"), QUERY.copy(arch = "--help", targets = listOf("pacman")), "exit 0"),
             cell(
@@ -259,7 +272,7 @@ class PacmanProjectionTest {
             cell(q("--arch=", "pacman"), QUERY.copy(arch = "", targets = listOf("pacman")), "exit 0"),
             cell(q("--arch", "", "pacman"), QUERY.copy(arch = "", targets = listOf("pacman")), "exit 0"),
             cell(q("--arch=x", "--arch=", "pacman"), QUERY.copy(arch = "", targets = listOf("pacman")), "exit 0"),
-            cell(q("--logfile=", "pacman"), QUERY.copy(logFile = "", targets = listOf("pacman")), "exit 0"),
+            cell(q("--logfile=", "pacman"), QUERY.copy(logFile = CliPath(""), targets = listOf("pacman")), "exit 0"),
             // `pacman -Q ""`: "error: package '' was not found", so the empty word was a target.
             cell(q(""), QUERY.copy(targets = listOf("")), "error: package '' was not found"),
         ),
@@ -273,7 +286,7 @@ class PacmanProjectionTest {
                 QUERY.copy(targets = listOf("a b", "~/x")),
                 "error: package 'a b' was not found, error: package '~/x' was not found",
             ),
-            cell(q("--dbpath", "~"), QUERY.copy(dbPath = "~"), "-Qv --dbpath '~': DB Path: <cwd>/~/"),
+            cell(q("--dbpath", "~"), QUERY.copy(dbPath = CliPath("~")), "-Qv --dbpath '~': DB Path: <cwd>/~/"),
             cell(q("--arch", "x y", "pacman"), QUERY.copy(arch = "x y", targets = listOf("pacman")), "exit 0"),
         ),
     )
@@ -281,38 +294,62 @@ class PacmanProjectionTest {
     @Test
     fun `a single-valued option given twice keeps the later value`() = parity.checkAll(
         listOf(
-            cell(q("--dbpath=a", "-b", "b"), QUERY.copy(dbPath = "b"), "-Qv: DB Path: .../b/"),
-            cell(q("-b", "a", "--dbpath", "b"), QUERY.copy(dbPath = "b"), "-Qv: DB Path: .../b/"),
-            cell(q("-r", "a", "-r", "b"), QUERY.copy(root = "b"), "failed to initialize alpm library: (root: .../b"),
-            cell(q("--root=a", "--root=b"), QUERY.copy(root = "b"), "(root: .../b, dbpath: .../b/var/lib/pacman/)"),
-            cell(q("--logfile=a", "--logfile=b"), QUERY.copy(logFile = "b"), "-Qv: Log File: .../b/log"),
-            cell(q("--gpgdir=g1", "--gpgdir", "g2"), QUERY.copy(gpgDir = "g2"), "-Qv: GPG Dir: .../g2/"),
+            cell(q("--dbpath=a", "-b", "b"), QUERY.copy(dbPath = CliPath("b")), "-Qv: DB Path: .../b/"),
+            cell(q("-b", "a", "--dbpath", "b"), QUERY.copy(dbPath = CliPath("b")), "-Qv: DB Path: .../b/"),
+            cell(
+                q("-r", "a", "-r", "b"),
+                QUERY.copy(root = CliPath("b")),
+                "failed to initialize alpm library: (root: .../b",
+            ),
+            cell(
+                q("--root=a", "--root=b"),
+                QUERY.copy(root = CliPath("b")),
+                "(root: .../b, dbpath: .../b/var/lib/pacman/)",
+            ),
+            cell(q("--logfile=a", "--logfile=b"), QUERY.copy(logFile = CliPath("b")), "-Qv: Log File: .../b/log"),
+            cell(q("--gpgdir=g1", "--gpgdir", "g2"), QUERY.copy(gpgDir = CliPath("g2")), "-Qv: GPG Dir: .../g2/"),
             cell(
                 q("--config", "nope", "--config=/etc/pacman.conf"),
-                QUERY.copy(config = "/etc/pacman.conf"),
+                QUERY.copy(config = CliPath("/etc/pacman.conf")),
                 "-Qv: Conf File: /etc/pacman.conf",
             ),
             cell(
                 q("--config=/etc/pacman.conf", "--config", "nope"),
-                QUERY.copy(config = "nope"),
+                QUERY.copy(config = CliPath("nope")),
                 "error: config file nope could not be read, so the later one was read",
             ),
             // `pacman -Qi --color=never --color=always pacman` prints escape codes into a pipe, the reverse none.
-            cell(q("--color=never", "--color=always"), QUERY.copy(color = "always"), "escape codes in the output"),
-            cell(q("--color=always", "--color=never"), QUERY.copy(color = "never"), "no escape codes"),
-            cell(q("--color=auto", "--color=always"), QUERY.copy(color = "always"), "escape codes in the output"),
-            cell(q("--color", "never", "--color=always"), QUERY.copy(color = "always"), "escape codes"),
+            cell(
+                q("--color=never", "--color=always"),
+                QUERY.copy(color = ColorWhen.Always),
+                "escape codes in the output",
+            ),
+            cell(q("--color=always", "--color=never"), QUERY.copy(color = ColorWhen.Never), "no escape codes"),
+            cell(
+                q("--color=auto", "--color=always"),
+                QUERY.copy(color = ColorWhen.Always),
+                "escape codes in the output",
+            ),
+            cell(q("--color", "never", "--color=always"), QUERY.copy(color = ColorWhen.Always), "escape codes"),
         ),
     )
 
     @Test
     fun `a repeatable directory keeps every occurrence in order`() = parity.checkAll(
         listOf(
-            cell(q("--cachedir=b", "--cachedir", "a"), QUERY.copy(cacheDirs = listOf("b", "a")), "Cache Dirs: b/ a/"),
-            cell(q("--cachedir=a", "--cachedir=a"), QUERY.copy(cacheDirs = listOf("a", "a")), "Cache Dirs: a/ a/"),
+            cell(
+                q("--cachedir=b", "--cachedir", "a"),
+                QUERY.copy(cacheDirs = listOf(CliPath("b"), CliPath("a"))),
+                "Cache Dirs: b/ a/",
+            ),
+            cell(
+                q("--cachedir=a", "--cachedir=a"),
+                QUERY.copy(cacheDirs = listOf(CliPath("a"), CliPath("a"))),
+                "Cache Dirs: a/ a/",
+            ),
             cell(
                 q("--hookdir=b", "--hookdir=a"),
-                QUERY.copy(hookDirs = listOf("b", "a")),
+                QUERY.copy(hookDirs = listOf(CliPath("b"), CliPath("a"))),
                 "Hook Dirs: /usr/share/libalpm/hooks/ b/ a/",
             ),
         ),
@@ -358,21 +395,21 @@ class PacmanProjectionTest {
         )
         val generalRecord: PacmanInputs.() -> PacmanInputs = {
             copy(
-                root = "/",
+                root = CliPath("/"),
                 verbose = true,
                 arch = "x",
-                cacheDirs = listOf("a"),
-                color = "never",
-                config = "/etc/pacman.conf",
+                cacheDirs = listOf(CliPath("a")),
+                color = ColorWhen.Never,
+                config = CliPath("/etc/pacman.conf"),
                 noConfirm = true,
                 debug = "1",
                 disableDownloadTimeout = true,
                 disableSandbox = true,
                 disableSandboxFilesystem = true,
                 disableSandboxSyscalls = true,
-                hookDirs = listOf("a"),
-                logFile = "log",
-                dbPath = "a",
+                hookDirs = listOf(CliPath("a")),
+                logFile = CliPath("log"),
+                dbPath = CliPath("a"),
                 targets = listOf("pacman"),
             )
         }
@@ -441,10 +478,13 @@ class PacmanProjectionTest {
     fun `binds every general option pacman documents`() {
         parity.binds("-Q", "--arch=x86_64", expected = query.copy(arch = "x86_64"))
         parity.binds("-Q", "--arch", "x86_64", expected = query.copy(arch = "x86_64"))
-        parity.binds("-Q", "--config=/etc/pacman.conf", expected = query.copy(config = "/etc/pacman.conf"))
-        parity.binds("-Q", "--gpgdir", "/etc/pacman.d/gnupg", expected = query.copy(gpgDir = "/etc/pacman.d/gnupg"))
-        parity.binds("-Q", "--logfile=/dev/null", expected = query.copy(logFile = "/dev/null"))
-        parity.binds("-Q", "--sysroot", "/mnt", expected = query.copy(sysroot = "/mnt"))
+        parity.binds("-Q", "--config=/etc/pacman.conf", expected = query.copy(config = CliPath("/etc/pacman.conf")))
+        parity.binds(
+            "-Q", "--gpgdir", "/etc/pacman.d/gnupg",
+            expected = query.copy(gpgDir = CliPath("/etc/pacman.d/gnupg")),
+        )
+        parity.binds("-Q", "--logfile=/dev/null", expected = query.copy(logFile = CliPath("/dev/null")))
+        parity.binds("-Q", "--sysroot", "/mnt", expected = query.copy(sysroot = CliPath("/mnt")))
         parity.binds(
             "-Q", "--disable-download-timeout", "--disable-sandbox", "--disable-sandbox-filesystem",
             "--disable-sandbox-syscalls",
@@ -463,10 +503,16 @@ class PacmanProjectionTest {
     fun `binds each repeat of a directory pacman tries in turn`() {
         // The man page: "Multiple cache directories can be specified" and "Multiple hook directories can be
         // specified"; `pacman -Q --cachedir=/tmp --cachedir=/var/cache/pacman/pkg pacman` exits 0.
-        parity.binds("-Q", "--cachedir=/a", "--cachedir", "/b", expected = query.copy(cacheDirs = listOf("/a", "/b")))
-        parity.binds("-Q", "--hookdir=/a", "--hookdir=/b", expected = query.copy(hookDirs = listOf("/a", "/b")))
+        parity.binds(
+            "-Q", "--cachedir=/a", "--cachedir", "/b",
+            expected = query.copy(cacheDirs = listOf(CliPath("/a"), CliPath("/b"))),
+        )
+        parity.binds(
+            "-Q", "--hookdir=/a", "--hookdir=/b",
+            expected = query.copy(hookDirs = listOf(CliPath("/a"), CliPath("/b"))),
+        )
         // A repeated single-valued option is accepted by pacman too; the later one binds here.
-        parity.binds("-Q", "--dbpath=/a", "--dbpath=/b", expected = query.copy(dbPath = "/b"))
+        parity.binds("-Q", "--dbpath=/a", "--dbpath=/b", expected = query.copy(dbPath = CliPath("/b")))
     }
 
     @Test
@@ -553,11 +599,11 @@ class PacmanProjectionTest {
 
     @Test
     fun `binds unambiguous abbreviations and rejects ambiguous ones as getopt does`() {
-        parity.binds("-Q", "--col=never", expected = query.copy(color = "never"))
+        parity.binds("-Q", "--col=never", expected = query.copy(color = ColorWhen.Never))
         parity.binds("-Q", "--deb", expected = query.copy(debug = "1"))
         parity.binds("-Q", "--verb", expected = query.copy(verbose = true))
         parity.binds("-Q", "--nocon", expected = query.copy(noConfirm = true))
-        parity.binds("-Q", "--color", "always", expected = query.copy(color = "always"))
+        parity.binds("-Q", "--color", "always", expected = query.copy(color = ColorWhen.Always))
         parity.rejects("-Q", "--re", because = "real pacman: --re is ambiguous, --remove --recursive --regex --refresh")
         parity.rejects("-Q", "--qu", because = "real pacman: option '--qu' is ambiguous: '--query' '--quiet'")
         parity.rejects("-Q", "--conf=x", because = "real pacman: '--conf=x' is ambiguous: '--confirm' '--config'")
@@ -812,7 +858,7 @@ class PacmanProjectionTest {
 
     @Test
     fun `a value word that is exactly the end of options is the value`() = parity.checkAll(
-        listOf(ParseCell(q("--dbpath", "--"), QUERY.copy(dbPath = "--"), "-Qv --dbpath --: DB Path: .../--/")),
+        listOf(ParseCell(q("--dbpath", "--"), QUERY.copy(dbPath = CliPath("--")), "-Qv --dbpath --: DB Path: .../--/")),
     )
 
     @Test

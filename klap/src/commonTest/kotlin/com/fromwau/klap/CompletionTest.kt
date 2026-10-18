@@ -1788,6 +1788,35 @@ class CompletionLineRulesTest {
 
 class AmbiguousLongCompletionTest {
 
+    private val cp = cli("cp") {
+        abbreviation = Abbreviation.Options
+        flag(long = "recursive")
+        flag(long = "remove-destination")
+        option(long = "reflink").choice("always", "auto", "never").optionalValue("always")
+        argument("source").file().multiple()
+        action { Ok("") }
+    }
+
+    @Test
+    fun `the word after an ambiguous long carrying a value completes as an operand`() {
+        assertEquals(listOf(COMPLETE_FILES), cp.offered("--re=x", ""))
+    }
+
+    @Test
+    fun `the word after an operand following an ambiguous long completes as an operand`() {
+        assertEquals(listOf(COMPLETE_FILES), cp.offered("--re", "a", ""))
+    }
+
+    @Test
+    fun `the word after an operand following an ambiguous long carrying a value completes as an operand`() {
+        assertEquals(listOf(COMPLETE_FILES), cp.offered("--re=x", "a", ""))
+    }
+
+    @Test
+    fun `the word right after a bare ambiguous long offers nothing though every reading makes it an operand`() {
+        assertEquals(emptyList(), cp.offered("--re", ""))
+    }
+
     @Test
     fun `nothing completes after an ambiguous long`() {
         // getopt refuses `copy --re a b` as ambiguous, so the word after it is neither a value nor an operand.

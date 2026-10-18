@@ -27,6 +27,7 @@ import com.fromwau.klap.fixture.find.FindProjectionSupport.SPACED
 import com.fromwau.klap.fixture.find.FindProjectionSupport.checkAll
 import com.fromwau.klap.fixture.find.FindProjectionSupport.checkDiffer
 import com.fromwau.klap.fixture.find.FindProjectionSupport.cells
+import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.run
 import kotlin.test.Ignore
 import kotlin.test.Test
@@ -46,10 +47,10 @@ private fun cell(
     loose: Boolean = false,
 ) = Cell("line", "whole line", argv, expected, because, loose)
 
-private val HERE: FindInputs = NOTHING_BOUND.copy(operand = listOf("."))
+private val HERE: FindInputs = walking(".")
 
 /** The line walks `.` alone: an operator word is part of the expression, never a starting point. */
-private fun walksHere(inputs: FindInputs) = assertEquals(listOf("."), inputs.operand)
+private fun walksHere(inputs: FindInputs) = assertEquals(listOf(CliPath(".")), inputs.startingPoints)
 
 /**
  * The record a find line binds in the fixture, or its refusal, as real find 4.11.0 reads the line (P of the testing
@@ -178,17 +179,36 @@ class FindProjectionTest {
         listOf(
             cell(emptyList(), NOTHING_BOUND, "`find` walks ."),
             cell(listOf("."), HERE, "`find .`"),
-            cell(listOf("a", "."), NOTHING_BOUND.copy(operand = listOf("a", ".")), "`find a .` walks a, then ."),
-            cell(listOf(".", "."), NOTHING_BOUND.copy(operand = listOf(".", ".")), "`find . .` walks . twice"),
-            cell(listOf(""), NOTHING_BOUND.copy(operand = listOf("")), "find: '': No such file or directory"),
-            cell(listOf("-"), NOTHING_BOUND.copy(operand = listOf("-")), "find: '-': No such file or directory"),
-            cell(listOf("a b"), NOTHING_BOUND.copy(operand = listOf("a b")), "find: 'a b': No such file or directory"),
-            cell(listOf("~"), NOTHING_BOUND.copy(operand = listOf("~")), "find: '~': No such file or directory"),
-            cell(listOf("ü*"), NOTHING_BOUND.copy(operand = listOf("ü*")), "find: 'ü*': No such file or directory"),
-            cell(listOf("--", "-x"), NOTHING_BOUND.copy(operand = listOf("-x")), "find: unknown predicate `-x'", true),
+            cell(listOf("a", "."), walking("a", "."), "`find a .` walks a, then ."),
+            // With link -> dir, `find link` prints link alone and `find link/` prints link/ and link/a.
+            cell(listOf("link/"), walking("link/"), "`find link/` walks the directory link names"),
+            cell(listOf(".", "."), walking(".", "."), "`find . .` walks . twice"),
+            cell(listOf(""), walking(""), "find: '': No such file or directory"),
+            cell(listOf("-"), walking("-"), "find: '-': No such file or directory"),
+            cell(listOf("a b"), walking("a b"), "find: 'a b': No such file or directory"),
+            cell(listOf("~"), walking("~"), "find: '~': No such file or directory"),
+            cell(listOf("ü*"), walking("ü*"), "find: 'ü*': No such file or directory"),
+            cell(
+                listOf("--", "-x"),
+                NOTHING_BOUND.copy(expression = listOf("-x")),
+                "find: unknown predicate `-x'",
+                true,
+            ),
             cell(listOf("-5"), null, "find: unknown predicate `-5'"),
             cell(listOf(".", "-5"), null, "find: unknown predicate `-5'"),
             cell(listOf(".", "--zzz"), null, "find: unknown predicate `--zzz'"),
+        ),
+    )
+
+    @Test
+    fun `a reference file keeps the trailing slash that makes find follow a link`() = parity.checkAll(
+        // With link a symlink to dir: `find dir link -samefile link` prints link and `-samefile link/` prints dir;
+        // `find f -newer link` reads the link's own time and `-newer link/` the directory's.
+        listOf(
+            cell(listOf(".", "--samefile", "link/"), HERE.copy(samefile = listOf(CliPath("link/"))), "matches dir"),
+            cell(listOf(".", "--samefile", "link"), HERE.copy(samefile = listOf(CliPath("link"))), "matches link"),
+            cell(listOf(".", "--newer", "link/"), HERE.copy(newerThan = listOf(CliPath("link/"))), "dir's time"),
+            cell(listOf(".", "--newer", "link"), HERE.copy(newerThan = listOf(CliPath("link"))), "the link's time"),
         ),
     )
 
@@ -212,9 +232,9 @@ class FindProjectionTest {
     @Test
     fun `a word naming a klap built-in is a starting point`() = parity.checkAll(
         listOf(
-            cell(listOf("completion"), NOTHING_BOUND.copy(operand = listOf("completion")), "No such file"),
-            cell(listOf("docs"), NOTHING_BOUND.copy(operand = listOf("docs")), "find: 'docs': No such file"),
-            cell(listOf(".", "completion"), NOTHING_BOUND.copy(operand = listOf(".", "completion")), "No such file"),
+            cell(listOf("completion"), walking("completion"), "No such file"),
+            cell(listOf("docs"), walking("docs"), "find: 'docs': No such file"),
+            cell(listOf(".", "completion"), walking(".", "completion"), "No such file"),
         ),
     )
 
@@ -278,7 +298,7 @@ class FindProjectionTest {
                     logical = true,
                     debug = listOf("tree"),
                     optimise = 2,
-                    files0From = "e",
+                    files0From = CliPath("e"),
                     maxDepth = 2,
                     minDepth = 1,
                     depth = true,
@@ -286,7 +306,7 @@ class FindProjectionTest {
                     mount = true,
                     noleaf = true,
                     ignoreReaddirRace = true,
-                    regextype = "posix-egrep",
+                    regextype = RegexType.PosixEgrep,
                     daystart = true,
                     follow = true,
                     warn = true,
@@ -316,11 +336,11 @@ class FindProjectionTest {
                     uid = listOf(FindNumber('=', 0u)),
                     gid = listOf(FindNumber('=', 0u)),
                     permTest = listOf(FindPerm('-', "u+r")),
-                    newerThan = listOf("b"),
-                    anewer = listOf("b"),
-                    cnewer = listOf("b"),
-                    samefile = listOf("b"),
-                    newerXY = listOf(FindNewer("ma", "b"), FindNewer("mt", "2020-01-01")),
+                    newerThan = listOf(CliPath("b")),
+                    anewer = listOf(CliPath("b")),
+                    cnewer = listOf(CliPath("b")),
+                    samefile = listOf(CliPath("b")),
+                    newerXY = listOf(FindNewer.ThanFile("ma", CliPath("b")), FindNewer.ThanDate("mt", "2020-01-01")),
                     ownerUser = listOf("root"),
                     ownerGroup = listOf("root"),
                     emptyTest = true,
@@ -334,9 +354,9 @@ class FindProjectionTest {
                     printAction = true,
                     print0Action = true,
                     printfAction = listOf("%p"),
-                    fprintAction = listOf("out"),
-                    fprint0Action = listOf("out0"),
-                    flsAction = listOf("outl"),
+                    fprintAction = listOf(CliPath("out")),
+                    fprint0Action = listOf(CliPath("out0")),
+                    flsAction = listOf(CliPath("outl")),
                     lsAction = true,
                     deleteAction = true,
                     pruneAction = true,
@@ -409,13 +429,13 @@ class FindProjectionTest {
         listOf(
             cell(
                 listOf(".", "--", "-name", "*.kt", "-o", "-size", "+1M", "-print"),
-                NOTHING_BOUND.copy(operand = listOf(".", "-name", "*.kt", "-o", "-size", "+1M", "-print")),
+                walking(".").copy(expression = listOf("-name", "*.kt", "-o", "-size", "+1M", "-print")),
                 "find: unknown predicate `--'",
                 loose = true,
             ),
             cell(
                 listOf("--", "-name", "*.kt", "-o", "-print"),
-                NOTHING_BOUND.copy(operand = listOf("-name", "*.kt", "-o", "-print")),
+                NOTHING_BOUND.copy(expression = listOf("-name", "*.kt", "-o", "-print")),
                 "`find -- -name '*.kt' -o -print` exits 0, the words are find's expression, not starting points",
             ),
         ),
@@ -500,7 +520,7 @@ class FindProjectionTest {
     @Test
     fun `__complete is a starting point`() {
         // `find __complete .`: '__complete': No such file or directory, then `.` is walked.
-        parity.binds("__complete", ".", expected = NOTHING_BOUND.copy(operand = listOf("__complete", ".")))
+        parity.binds("__complete", ".", expected = walking("__complete", "."))
     }
 }
 

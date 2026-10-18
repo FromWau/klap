@@ -27,6 +27,18 @@ public sealed interface ConversionError : IError {
     public data object NotABoolean : ConversionError
 
     /**
+     * `.duration()` was given something that is neither Kotlin's duration format nor a bare number of seconds,
+     * or a duration that is negative or infinite.
+     */
+    public data object NotADuration : ConversionError
+
+    /** `.instant()` was given something `kotlin.time.Instant.parse` refuses: no ISO 8601 instant with an offset. */
+    public data object NotAnInstant : ConversionError
+
+    /** `.uuid()` was given something `kotlin.uuid.Uuid.parse` refuses: no 32 hex digits, dashed or plain. */
+    public data object NotAUuid : ConversionError
+
+    /**
      * `.choice(...)` or `.enum<E>()` was given a value outside its set. [choices] are the declared spellings
      * in declaration order, lowercased for an enum, and matching ignores case.
      */

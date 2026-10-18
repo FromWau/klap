@@ -5,6 +5,7 @@ import com.fromwau.klap.fixture.checkCells
 import com.fromwau.klap.fixture.mv.BackupControl.Existing
 import com.fromwau.klap.fixture.mv.BackupControl.Numbered
 import com.fromwau.klap.fixture.mv.BackupControl.Simple
+import com.fromwau.klap.io.CliPath
 import kotlin.test.Test
 
 /*
@@ -88,7 +89,7 @@ private val CHOICES = listOf(BACKUP, UPDATE)
 private fun intoD(
     dir: String,
     vararg sources: String,
-): MvInputs = NOTHING_BOUND.copy(targetDirectory = dir, sources = sources.toList())
+): MvInputs = NOTHING_BOUND.copy(targetDirectory = CliPath(dir), sources = sources.map(::CliPath))
 
 /** A backup with mv's default control, named with [suffix]. */
 private fun MvInputs.suffixed(suffix: String): MvInputs = copy(backup = Existing, suffix = suffix)
@@ -133,14 +134,14 @@ class MvConverterTest {
             // `mv --update all a b`: target 'b': Not a directory, so the word was a source.
             bound(
                 "--update", "all", "a", "b",
-                expected = NOTHING_BOUND.copy(update = Update.Older, sources = listOf("all", "a"), dest = "b"),
+                expected = operands("all", "a", "b").copy(update = Update.Older),
             ),
             bound("--backup", "--", "a", "b", because = "made b~", expected = ab { copy(backup = Existing) }),
             bound("--update", "--", "a", "b", because = "kept b", expected = ab { copy(update = Update.Older) }),
             bound(
                 "--backup", "-", "b",
                 because = "cannot stat '-'",
-                expected = NOTHING_BOUND.copy(backup = Existing, sources = listOf("-"), dest = "b"),
+                expected = NOTHING_BOUND.copy(backup = Existing, sources = listOf(CliPath("-")), dest = CliPath("b")),
             ),
         ),
     )
@@ -228,15 +229,9 @@ class MvConverterTest {
     @Test
     fun `the operands bind verbatim and need a source and a destination`() = parity.checkValues(
         listOf(
-            bound("a", "d/", expected = NOTHING_BOUND.copy(sources = listOf("a"), dest = "d/")),
-            bound("a//", "b", because = "cannot stat 'a//'", expected = NOTHING_BOUND.copy(
-                sources = listOf("a//"),
-                dest = "b",
-            )),
-            bound("a", "b", "c", because = "target 'c'", expected = NOTHING_BOUND.copy(
-                sources = listOf("a", "b"),
-                dest = "c",
-            )),
+            bound("a", "d/", expected = operands("a", "d/")),
+            bound("a//", "b", because = "cannot stat 'a//'", expected = operands("a//", "b")),
+            bound("a", "b", "c", because = "target 'c'", expected = operands("a", "b", "c")),
             bound("-t", "d", "a", "b", expected = intoD("d", "a", "b")),
             refused("a", because = "mv: missing destination file operand after 'a'"),
             refused(because = "mv: missing file operand"),

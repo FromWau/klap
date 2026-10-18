@@ -27,6 +27,7 @@ import com.fromwau.klap.fixture.head.HeadProjectionSupport.SHORT_SPACED
 import com.fromwau.klap.fixture.head.HeadProjectionSupport.SPACED
 import com.fromwau.klap.fixture.head.HeadProjectionSupport.checkAll
 import com.fromwau.klap.fixture.head.HeadProjectionSupport.cellsIn
+import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.parse
 import kotlin.test.Ignore
 import kotlin.test.Test
@@ -59,7 +60,7 @@ private fun refused(
     differs: String? = null,
 ) = cell(argv.toList(), Outcome.Rejects(differs), because)
 
-private fun files(vararg names: String): HeadInputs = NOTHING_BOUND.copy(files = names.toList())
+private fun files(vararg names: String): HeadInputs = NOTHING_BOUND.copy(files = names.map(::CliPath))
 
 private val FLAG_KEYS: List<String> =
     INPUTS.filter { it.kind == Kind.Flag }.flatMap { it.longs + "-${it.short}" }

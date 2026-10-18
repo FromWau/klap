@@ -32,6 +32,7 @@ import com.fromwau.klap.fixture.chmod.ChmodProjectionSupport.SPACED
 import com.fromwau.klap.fixture.chmod.ChmodProjectionSupport.checkAll
 import com.fromwau.klap.fixture.chmod.ChmodProjectionSupport.checkDiffer
 import com.fromwau.klap.fixture.chmod.ChmodProjectionSupport.cells
+import com.fromwau.klap.io.CliPath
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -60,12 +61,12 @@ private val VALUES: List<Input> = INPUTS.filter { it.value }
 private fun modeOn(
     mode: ChmodMode,
     vararg files: String,
-): ChmodInputs = NOTHING_BOUND.copy(mode = mode, files = files.toList())
+): ChmodInputs = NOTHING_BOUND.copy(mode = mode, files = files.map(::CliPath))
 
 private fun referencing(
     reference: String,
     vararg files: String,
-): ChmodInputs = NOTHING_BOUND.copy(reference = reference, files = files.toList())
+): ChmodInputs = NOTHING_BOUND.copy(reference = CliPath(reference), files = files.map(::CliPath))
 
 private val TO_D: ChmodInputs = modeOn(symbolic("u+x"), "d")
 

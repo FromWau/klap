@@ -141,7 +141,7 @@ class GluedValueTest {
     @Test
     fun `help shows the value glued to the long`() {
         val help = cc().cli.helpText()
-        assertTrue("-O, --optimise=<LEVEL>" in help, help)
+        assertTrue("-O, --optimise=LEVEL" in help, help)
     }
 
     @Test
@@ -151,8 +151,8 @@ class GluedValueTest {
             action { Ok("") }
         }
         val help = tree.helpText()
-        assertTrue("-O<LEVEL>" in help, help)
-        assertTrue("-O <LEVEL>" !in help, help)
+        assertTrue("-OLEVEL" in help, help)
+        assertTrue("-O LEVEL" !in help, help)
     }
 
     @Test
@@ -161,7 +161,7 @@ class GluedValueTest {
             option(long = "level").placeholder("N").gluedValue().required()
             action { Ok("") }
         }
-        assertTrue("usage: cc --level=<N>" in tree.helpText(), tree.helpText())
+        assertTrue("usage: cc --level=N" in tree.helpText(), tree.helpText())
     }
 
     @Test

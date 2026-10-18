@@ -1,5 +1,6 @@
 package com.fromwau.klap.fixture.mv
 
+import com.fromwau.klap.io.CliPath
 import kotlin.test.fail
 
 /*
@@ -132,7 +133,7 @@ internal val INPUTS: List<Input> = listOf(
         't',
         help = "move all SOURCE arguments into DIRECTORY",
         kind = Kind.Value(sample = "dir", path = true),
-    ) { copy(targetDirectory = it, sources = sources + listOfNotNull(dest), dest = null) },
+    ) { copy(targetDirectory = CliPath(it), sources = sources + listOfNotNull(dest), dest = null) },
     flag("--no-target-directory", 'T', help = "treat DEST as a normal file") { copy(noTargetDirectory = true) },
     value(
         "--update",
@@ -190,5 +191,9 @@ internal fun ambiguousChoice(choices: List<String>): String? = choices
     .map { it.take(1) }
     .firstOrNull { prefix -> prefix !in choices && choices.count { it.startsWith(prefix) } > 1 }
 
+/** What a line moving its [operands], the last one the destination, binds before any option. */
+internal fun operands(vararg operands: String): MvInputs =
+    NOTHING_BOUND.copy(sources = operands.dropLast(1).map(::CliPath), dest = CliPath(operands.last()))
+
 /** What a line moving `a` to `b` binds before any option: the record every cell starts from. */
-internal val A_TO_B: MvInputs = NOTHING_BOUND.copy(sources = listOf("a"), dest = "b")
+internal val A_TO_B: MvInputs = operands("a", "b")

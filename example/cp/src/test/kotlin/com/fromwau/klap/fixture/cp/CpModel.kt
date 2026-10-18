@@ -1,5 +1,6 @@
 package com.fromwau.klap.fixture.cp
 
+import com.fromwau.klap.io.CliPath
 import kotlin.test.fail
 
 /*
@@ -88,22 +89,25 @@ internal fun CpInputs.preserving(
 }
 
 /**
- * Each backup control `cp --help` lists, by its every name, as the record holds it: by its first name. `--backup=t`
- * made b.~1~, `--backup=nil` and `--backup=never` made b~, `--backup=off` made none.
+ * Each backup control `cp --help` lists, by its every name, with the control it names. `--backup=t` made b.~1~,
+ * `--backup=nil` and `--backup=never` made b~, `--backup=off` made none.
  */
-private val CONTROLS: Map<String, String> = mapOf(
-    "none" to "none",
-    "off" to "none",
-    "numbered" to "numbered",
-    "t" to "numbered",
-    "existing" to "existing",
-    "nil" to "existing",
-    "simple" to "simple",
-    "never" to "simple",
+private val CONTROLS: Map<String, BackupControl> = mapOf(
+    "none" to BackupControl.None,
+    "off" to BackupControl.None,
+    "numbered" to BackupControl.Numbered,
+    "t" to BackupControl.Numbered,
+    "existing" to BackupControl.Existing,
+    "nil" to BackupControl.Existing,
+    "simple" to BackupControl.Simple,
+    "never" to BackupControl.Simple,
 )
 
 /** Every name of a backup control, in `cp --help` order. */
 internal val BACKUP_CONTROLS: List<String> = CONTROLS.keys.toList()
+
+/** The WHEN of `--sparse` and `--reflink` that cp's [word] names. */
+private fun whenOf(word: String): When = When.entries.single { it.name.lowercase() == word }
 
 /** Every input of real cp other than `--help` and `--version`, in `cp --help` order. */
 internal val INPUTS: List<Input> = listOf(
@@ -119,10 +123,12 @@ internal val INPUTS: List<Input> = listOf(
         kind = Kind.Value(
             sample = "numbered",
             choices = BACKUP_CONTROLS,
-            bare = { copy(backup = backup ?: "existing") },
+            bare = { copy(backup = backup ?: BackupControl.Existing) },
         ),
     ) { copy(backup = CONTROLS.getValue(it)) },
-    flag(null, 'b', help = "like --backup but does not accept an argument") { copy(backup = backup ?: "existing") },
+    flag(null, 'b', help = "like --backup but does not accept an argument") {
+        copy(backup = backup ?: BackupControl.Existing)
+    },
     flag("--copy-contents", help = "copy contents of special files when recursive") { copy(copyContents = true) },
     flag(null, 'd', help = "same as --no-dereference --preserve=links") {
         copy(dereference = Dereference.NEVER).preserving(listOf("links"))
@@ -177,9 +183,9 @@ internal val INPUTS: List<Input> = listOf(
         kind = Kind.Value(
             sample = "auto",
             choices = listOf("auto", "always", "never"),
-            bare = { copy(reflink = "always") },
+            bare = { copy(reflink = When.Always) },
         ),
-    ) { copy(reflink = it) },
+    ) { copy(reflink = whenOf(it)) },
     flag(
         "--remove-destination",
         help = "remove each existing destination file before attempting to open it (contrast with --force)",
@@ -188,21 +194,21 @@ internal val INPUTS: List<Input> = listOf(
         "--sparse",
         help = "control creation of sparse files. See below",
         kind = Kind.Value(sample = "always", choices = listOf("auto", "always", "never")),
-    ) { copy(sparse = it) },
+    ) { copy(sparse = whenOf(it)) },
     flag("--strip-trailing-slashes", help = "remove any trailing slashes from each SOURCE argument") {
         copy(stripTrailingSlashes = true)
     },
     flag("--symbolic-link", 's', help = "make symbolic links instead of copying") { copy(symbolicLink = true) },
     // `cp -S .x a b` makes b.x: a suffix asks for a backup, as -b does.
     value("--suffix", 'S', help = "override the usual backup suffix", kind = Kind.Value(sample = ".bak")) {
-        copy(suffix = it, backup = backup ?: "existing")
+        copy(suffix = it, backup = backup ?: BackupControl.Existing)
     },
     value(
         "--target-directory",
         't',
         help = "copy all SOURCE arguments into DIRECTORY",
         kind = Kind.Value(sample = "dir", path = true),
-    ) { copy(targetDirectory = it, sources = sources + listOfNotNull(dest), dest = null) },
+    ) { copy(targetDirectory = CliPath(it), sources = sources + listOfNotNull(dest), dest = null) },
     flag("--no-target-directory", 'T', help = "treat DEST as a normal file") { copy(noTargetDirectory = true) },
     value(
         "--update",
@@ -210,10 +216,10 @@ internal val INPUTS: List<Input> = listOf(
         kind = Kind.Value(
             sample = "all",
             choices = listOf("all", "none", "none-fail", "older"),
-            bare = { copy(update = "older") },
+            bare = { copy(update = Update.Older) },
         ),
-    ) { copy(update = it) },
-    flag(null, 'u', help = "equivalent to --update[=older].  See below") { copy(update = "older") },
+    ) { copy(update = Update.entries.single { mode -> mode.cli == it }) },
+    flag(null, 'u', help = "equivalent to --update[=older].  See below") { copy(update = Update.Older) },
     flag("--verbose", 'v', help = "explain what is being done") { copy(verbose = true) },
     flag("--one-file-system", 'x', help = "stay on this file system") { copy(oneFileSystem = true) },
     flag(null, 'Z', help = "set SELinux security context of destination file to default type") {
@@ -266,5 +272,9 @@ internal fun ambiguousChoice(choices: List<String>): String? = choices
     .map { it.take(1) }
     .firstOrNull { prefix -> prefix !in choices && choices.count { it.startsWith(prefix) } > 1 }
 
+/** What a line copying its [operands], the last one the destination, binds before any option. */
+internal fun operands(vararg operands: String): CpInputs =
+    NOTHING_BOUND.copy(sources = operands.dropLast(1).map(::CliPath), dest = CliPath(operands.last()))
+
 /** What a line copying `a` to `b` binds before any option: the record every cell starts from. */
-internal val A_TO_B: CpInputs = NOTHING_BOUND.copy(sources = listOf("a"), dest = "b")
+internal val A_TO_B: CpInputs = operands("a", "b")

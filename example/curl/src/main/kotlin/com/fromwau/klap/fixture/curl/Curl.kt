@@ -10,6 +10,8 @@ import com.fromwau.klap.Opt
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
+import com.fromwau.klap.io.CliPath
+import com.fromwau.klap.io.path
 import com.fromwau.klap.projection
 
 /**
@@ -41,10 +43,9 @@ public fun curlCli(): TypedCli<CurlInputs> = cliOf("curl") {
     val user: Opt<String?>
     val urlOption: Opt<List<String>>
     group("Request") {
-        // KLAP-GAP: real curl's `-X` takes an arbitrary method token; declaring it via `.choice()` gains
-        // validation but rejects custom verbs, and a known one in lower case (`-X post`).
+        // Any word, as curl sends it verbatim (`-X post`, `-X PURGE`); Tab offers the common methods only.
         method = option(short = 'X', long = "request", help = "Specify request method to use")
-            .choice("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE")
+            .completeWith { candidates(listOf("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE")) }
 
         // The clean case: repeatable option -> List<String>, in occurrence order.
         headers = option(short = 'H', long = "header", help = "Pass custom header(s) to server").multiple()
@@ -60,14 +61,14 @@ public fun curlCli(): TypedCli<CurlInputs> = cliOf("curl") {
         urlOption = option(long = "url", help = "URL(s) to work with").multiple()
     }
 
-    val output: Opt<List<String>>
+    val output: Opt<List<CliPath>>
     val remoteName: Flag
     val silent: Flag
     val progressBar: Flag
     group("Output") {
         // KLAP-GAP: curl pairs each `-o` (and every other per-URL option) with the URL at the same
         // ordinal; klap's `sift` keeps options and positionals as two independent lists, losing that pairing.
-        output = option(short = 'o', long = "output", help = "Write to file instead of stdout").file().multiple()
+        output = option(short = 'o', long = "output", help = "Write to file instead of stdout").path().multiple()
 
         // Same per-URL problem, one step worse: `-O` is a boolean, so klap collapses N occurrences
         // to a single Boolean (Parser.kt) and the per-URL pairing is gone entirely. `.count()`
@@ -120,7 +121,7 @@ public fun curlCli(): TypedCli<CurlInputs> = cliOf("curl") {
         val effectiveUrls = urls() + urlOption()
         if (effectiveUrls.isEmpty()) return@action Err(CliError.MissingArgument("curl", "url"))
         val verb = method() ?: if (postData().isEmpty()) "GET" else "POST"
-        val sink = output().firstOrNull() ?: if (remoteName()) "<remote-name>" else "stdout"
+        val sink = output().firstOrNull()?.text ?: if (remoteName()) "<remote-name>" else "stdout"
         val notes = buildList {
             if (location()) add("following redirects")
             if (silent()) add("silent")
@@ -168,7 +169,7 @@ public data class CurlInputs(
     val postData: List<String>,
     val user: String?,
     val urlOption: List<String>,
-    val output: List<String>,
+    val output: List<CliPath>,
     val remoteName: Boolean,
     val silent: Boolean,
     val progressBar: Boolean,

@@ -12,6 +12,7 @@ import com.fromwau.klap.fixture.rm.RmLineContext.attached
 import com.fromwau.klap.fixture.rm.RmLineContext.checkContext
 import com.fromwau.klap.fixture.rm.RmLineContext.name
 import com.fromwau.klap.fixture.rm.RmLineContext.whenValues
+import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.suggestionsFor
 import kotlin.test.Test
@@ -262,7 +263,7 @@ class RmSuggestionListTest {
         // --verbose a` printed "removed 'a'".
         assertEquals(listOf(name("--verbose")), rm.suggestionsFor("rm --verb"), "E16 `rm --verb|`")
         assertEquals(listOf(FILES), rm.suggestionsFor("rm --verbose "), "E16 `rm --verbose |`")
-        parity.binds("--verbose", "a", expected = NOTHING_BOUND.copy(verbose = true, files = listOf("a")))
+        parity.binds("--verbose", "a", expected = NOTHING_BOUND.copy(verbose = true, files = listOf(CliPath("a"))))
     }
 
     @Test

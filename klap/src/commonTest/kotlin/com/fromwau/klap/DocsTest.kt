@@ -89,9 +89,7 @@ class DocsTest {
     fun `markdown shows command options with help`() {
         val docs = sampleTree().renderMarkdownDocs()
         assertTrue("add" in docs, docs)
-        // The table cell escapes the <value> placeholder's angle brackets (see mdCell); a raw <value>
-        // would be read as an unclosed HTML tag and swallowed by a real CommonMark/GFM renderer.
-        assertTrue("-p, --priority &lt;value&gt;" in docs, docs)
+        assertTrue("-p, --priority=value" in docs, docs)
         assertTrue("priority level" in docs, docs)
         assertTrue("the task text" in docs, docs)
     }
@@ -562,7 +560,6 @@ class DocsTest {
     fun `markdown table cell has no leading alignment padding for option without short`() {
         // --help pads a short-less option's signature with leading spaces to align "--long" under
         // "-s, --long"; that alignment padding is --help-only and must not leak into the raw doc source.
-        // <value> comes out angle-bracket-escaped (mdCell), same as every other table cell placeholder.
         val tree = cli("app") {
             command("run") {
                 option(long = "verbose", help = "be noisy")
@@ -570,8 +567,8 @@ class DocsTest {
             }
         }
         val md = tree.renderMarkdownDocs()
-        assertTrue("| --verbose &lt;value&gt; |" in md, md)
-        assertTrue("|     --verbose &lt;value&gt; |" !in md, md)
+        assertTrue("| --verbose=value |" in md, md)
+        assertTrue("|     --verbose=value |" !in md, md)
     }
 
     @Test
@@ -584,13 +581,13 @@ class DocsTest {
         }
         val man = tree.renderManPage()
         // roff escapes each '-' as the minus escape (see manPage_escapesRoffSpecialCharacterInCommandName).
-        assertTrue(".B \\-\\-verbose <value>" in man, man)
-        assertTrue(".B     \\-\\-verbose <value>" !in man, man)
+        assertTrue(".B \\-\\-verbose=value" in man, man)
+        assertTrue(".B     \\-\\-verbose=value" !in man, man)
     }
 
     @Test
     fun `docs signature with a short renders both forms unpadded`() {
-        // An option WITH a short still renders "-v, --verbose <value>" (no padding to begin with); the
+        // An option WITH a short still renders "-v, --verbose=value" (no padding to begin with); the
         // markdown table cell additionally escapes the placeholder's angle brackets, the man page does not.
         val tree = cli("app") {
             command("run") {
@@ -600,8 +597,8 @@ class DocsTest {
         }
         val md = tree.renderMarkdownDocs()
         val man = tree.renderManPage()
-        assertTrue("| -v, --verbose &lt;value&gt; |" in md, md)
-        assertTrue(".B \\-v, \\-\\-verbose <value>" in man, man)
+        assertTrue("| -v, --verbose=value |" in md, md)
+        assertTrue(".B \\-v, \\-\\-verbose=value" in man, man)
     }
 
     @Test
@@ -619,22 +616,22 @@ class DocsTest {
 
     @Test
     fun `markdown table cell escapes angle brackets in option value placeholder`() {
-        // A real CommonMark/GFM renderer reads a raw <value> as an unclosed HTML tag and swallows it,
+        // A real CommonMark/GFM renderer reads a raw <port> as an unclosed HTML tag and swallows it,
         // so the placeholder vanishes from the rendered doc. The table cell must escape it instead.
         val tree = cli("app") {
             command("serve") {
-                option(long = "port").int()
+                option(long = "port").placeholder("<port>").int()
                 action { Ok("") }
             }
         }
         val md = tree.renderMarkdownDocs()
-        assertTrue("| --port &lt;value&gt; |" in md, md)
-        assertTrue("<value>" !in md, md)
+        assertTrue("| --port=&lt;port&gt; |" in md, md)
+        assertTrue("<port>" !in md, md)
 
         // roff has no HTML-swallowing hazard, so the man page keeps the placeholder unescaped (only its
         // own roff-specific escapes, e.g. the dash, apply).
         val man = tree.renderManPage()
-        assertTrue(".B \\-\\-port <value>" in man, man)
+        assertTrue(".B \\-\\-port=<port>" in man, man)
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.git
 
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.io.CliPath
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,9 +20,9 @@ private val ADD_SPELLINGS: List<Pair<List<String>, GitInputs.Add>> = listOf(
     listOf("--dry-run", "f") to NOTHING_ADD.copy(dryRun = true, pathspec = listOf("f")),
     listOf("-Anv", "f") to NOTHING_ADD.copy(addAll = true, dryRun = true, verbose = true, pathspec = listOf("f")),
     listOf("-N", "f") to NOTHING_ADD.copy(intentToAdd = true, pathspec = listOf("f")),
-    listOf("--chmod=+x", "f") to NOTHING_ADD.copy(chmod = "+x", pathspec = listOf("f")),
-    listOf("--chmod", "-x", "f") to NOTHING_ADD.copy(chmod = "-x", pathspec = listOf("f")),
-    listOf("--pathspec-from-file=p") to NOTHING_ADD.copy(pathspecFromFile = "p"),
+    listOf("--chmod=+x", "f") to NOTHING_ADD.copy(chmod = ExecutableBit.Set, pathspec = listOf("f")),
+    listOf("--chmod", "-x", "f") to NOTHING_ADD.copy(chmod = ExecutableBit.Clear, pathspec = listOf("f")),
+    listOf("--pathspec-from-file=p") to NOTHING_ADD.copy(pathspecFromFile = CliPath("p")),
     listOf("--", "-n") to NOTHING_ADD.copy(pathspec = listOf("-n")),
 )
 
@@ -105,7 +106,9 @@ class GitProjectionTest {
             cell(
                 "P22",
                 "-C", "sub", "-C", "..", "status",
-                expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(directory = listOf("sub", ".."))),
+                expected = NOTHING_STATUS.copy(
+                    globals = NO_GLOBALS.copy(directory = listOf(CliPath("sub"), CliPath(".."))),
+                ),
                 because = "both apply in order",
             ),
             // P23: git accepts both polarities before the subcommand; which one holds shows only on a terminal, so
@@ -133,13 +136,13 @@ class GitProjectionTest {
             cell(
                 "P26",
                 "-C", "status", "status",
-                expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(directory = listOf("status"))),
+                expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(directory = listOf(CliPath("status")))),
                 because = "-C takes status",
             ),
             cell(
                 "P26",
                 "-C", "--bare", "status",
-                expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(directory = listOf("--bare"))),
+                expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(directory = listOf(CliPath("--bare")))),
                 because = "-C takes --bare",
             ),
             // P25: after `--` a root spelling is a pathspec: `git add -- --bare` ran.
@@ -287,7 +290,7 @@ class GitProjectionTest {
                 "P29",
                 "-C", "d", "commit", "-C", "HEAD",
                 expected = NOTHING_COMMIT.copy(
-                    globals = NO_GLOBALS.copy(directory = listOf("d")),
+                    globals = NO_GLOBALS.copy(directory = listOf(CliPath("d"))),
                     reuseMessage = "HEAD",
                 ),
                 because = "the root's -C, then commit's",

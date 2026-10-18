@@ -271,10 +271,10 @@ class CpSuggestionListTest {
     fun `a line once a suggestion is taken binds as cp reads it`() {
         // Each accepted line run against real cp in a throwaway directory exits 0.
         val cells = listOf(
-            Triple("cp --backup=nu| a b", "--backup=numbered", A_TO_B.copy(backup = "numbered")),
-            Triple("cp --spa=al| a b", "--spa=always", A_TO_B.copy(sparse = "always")),
+            Triple("cp --backup=nu| a b", "--backup=numbered", A_TO_B.copy(backup = BackupControl.Numbered)),
+            Triple("cp --spa=al| a b", "--spa=always", A_TO_B.copy(sparse = When.Always)),
             // `cp --suffix .bak a b` makes b.bak: a suffix asks for a backup under cp's default control.
-            Triple("cp --suf| .bak a b", "--suffix", A_TO_B.copy(backup = "existing", suffix = ".bak")),
+            Triple("cp --suf| .bak a b", "--suffix", A_TO_B.copy(backup = BackupControl.Existing, suffix = ".bak")),
             Triple("cp --verb| a b", "--verbose", A_TO_B.copy(verbose = true)),
             Triple("cp --keep| a b", "--keep-directory-symlink", A_TO_B.copy(keepDirectorySymlink = true)),
             Triple("cp --st| a b", "--strip-trailing-slashes", A_TO_B.copy(stripTrailingSlashes = true)),
@@ -300,7 +300,7 @@ class CpSuggestionListTest {
         val chosen = acceptSuggestion(line, values[2]) + " a b"
         parity.binds(
             *chosen.split(' ').drop(1).toTypedArray(),
-            expected = A_TO_B.copy(sparse = "never"),
+            expected = A_TO_B.copy(sparse = When.Never),
             because = "E16 `$chosen`",
         )
     }

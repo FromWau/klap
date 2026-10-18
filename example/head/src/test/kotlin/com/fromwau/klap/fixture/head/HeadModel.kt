@@ -1,5 +1,6 @@
 package com.fromwau.klap.fixture.head
 
+import com.fromwau.klap.io.CliPath
 import kotlin.test.fail
 
 /*
@@ -102,10 +103,10 @@ internal fun inputOfLong(spelled: String): Input? {
 }
 
 /** What a line printing `a` and `b` binds before any option: the record most cells start from. */
-internal val A_AND_B: HeadInputs = NOTHING_BOUND.copy(files = listOf("a", "b"))
+internal val A_AND_B: HeadInputs = NOTHING_BOUND.copy(files = listOf(CliPath("a"), CliPath("b")))
 
 /** What a line printing `f` binds before any option. */
-internal val F: HeadInputs = NOTHING_BOUND.copy(files = listOf("f"))
+internal val F: HeadInputs = NOTHING_BOUND.copy(files = listOf(CliPath("f")))
 
 /** This record with head printing [num] lines of each file, as `-n` spells it. */
 internal fun HeadInputs.lines(num: String): HeadInputs = copy(count = Count.Lines(num))

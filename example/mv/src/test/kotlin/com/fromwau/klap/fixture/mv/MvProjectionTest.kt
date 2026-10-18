@@ -41,6 +41,8 @@ import com.fromwau.klap.fixture.mv.MvProjectionSupport.checkAll
 import com.fromwau.klap.fixture.mv.MvProjectionSupport.checkSame
 import com.fromwau.klap.fixture.mv.MvProjectionSupport.checkUnder
 import com.fromwau.klap.fixture.mv.MvProjectionSupport.cells
+import com.fromwau.klap.io.CliPath
+import kotlin.test.assertEquals
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -61,7 +63,7 @@ private fun cell(
     because: String,
 ) = Cell("line", "whole line", argv, expected, because)
 
-private val TO_DIR: MvInputs = NOTHING_BOUND.copy(targetDirectory = "d", sources = listOf("a"))
+private val TO_DIR: MvInputs = NOTHING_BOUND.copy(targetDirectory = CliPath("d"), sources = listOf(CliPath("a")))
 
 private val AB = listOf("a", "b")
 
@@ -148,24 +150,24 @@ class MvProjectionTest {
     fun `the operands bind as each of mv's three usage shapes reads them`() = parity.checkAll(
         listOf(
             cell(AB, A_TO_B, "mv a b renames a to b"),
-            cell(listOf("a", "b", "d"), NOTHING_BOUND.copy(sources = listOf("a", "b"), dest = "d"), "into d"),
+            cell(listOf("a", "b", "d"), operands("a", "b", "d"), "into d"),
             cell(listOf("-t", "d", "a"), TO_DIR, "`mv -t d a` moves a into d"),
             cell(listOf("a", "-t", "d"), TO_DIR, "`mv a -t d` moves a into d"),
-            cell(listOf("a", "b", "-t", "d"), TO_DIR.copy(sources = AB), "`mv a b -t d`: both into d"),
-            cell(listOf("a", "-t", "d", "b"), TO_DIR.copy(sources = AB), "`mv a -t d b`: both into d"),
+            cell(listOf("a", "b", "-t", "d"), TO_DIR.copy(sources = AB.map(::CliPath)), "`mv a b -t d`: both into d"),
+            cell(listOf("a", "-t", "d", "b"), TO_DIR.copy(sources = AB.map(::CliPath)), "`mv a -t d b`: both into d"),
             cell(listOf("--target-directory=d", "a"), TO_DIR, "`mv --target-directory=d a`"),
             cell(listOf("-T", "a", "b"), A_TO_B.copy(noTargetDirectory = true), "mv -T a b"),
             cell(listOf("a", "b", "-T"), A_TO_B.copy(noTargetDirectory = true), "`mv a b -T` runs"),
-            cell(listOf("--", "-foo", "bar"), NOTHING_BOUND.copy(sources = listOf("-foo"), dest = "bar"), "--"),
-            cell(listOf("a", "--", "-v"), NOTHING_BOUND.copy(sources = listOf("a"), dest = "-v"), "makes a file -v"),
-            cell(listOf("--", "a", "--"), NOTHING_BOUND.copy(sources = listOf("a"), dest = "--"), "makes a file --"),
-            cell(listOf("-t", "d", "--", "-x"), TO_DIR.copy(sources = listOf("-x")), "getopt: an operand"),
-            cell(listOf("--", "-5", "b"), NOTHING_BOUND.copy(sources = listOf("-5"), dest = "b"), "cannot stat '-5'"),
-            cell(listOf("-", "b"), NOTHING_BOUND.copy(sources = listOf("-"), dest = "b"), "mv: cannot stat '-'"),
-            cell(listOf("", "b"), NOTHING_BOUND.copy(sources = listOf(""), dest = "b"), "mv: cannot stat ''"),
-            cell(listOf("a b", "c"), NOTHING_BOUND.copy(sources = listOf("a b"), dest = "c"), "cannot stat 'a b'"),
+            cell(listOf("--", "-foo", "bar"), operands("-foo", "bar"), "--"),
+            cell(listOf("a", "--", "-v"), operands("a", "-v"), "makes a file -v"),
+            cell(listOf("--", "a", "--"), operands("a", "--"), "makes a file --"),
+            cell(listOf("-t", "d", "--", "-x"), TO_DIR.copy(sources = listOf(CliPath("-x"))), "getopt: an operand"),
+            cell(listOf("--", "-5", "b"), operands("-5", "b"), "cannot stat '-5'"),
+            cell(listOf("-", "b"), operands("-", "b"), "mv: cannot stat '-'"),
+            cell(listOf("", "b"), operands("", "b"), "mv: cannot stat ''"),
+            cell(listOf("a b", "c"), operands("a b", "c"), "cannot stat 'a b'"),
             // `~/x` was not run, as the oracle's safety rule forbids a `~` path; mv gets the word as the shell left it.
-            cell(listOf("ü*", "~/x"), NOTHING_BOUND.copy(sources = listOf("ü*"), dest = "~/x"), "mv reads the word"),
+            cell(listOf("ü*", "~/x"), operands("ü*", "~/x"), "mv reads the word"),
             cell(emptyList(), null, "mv: missing file operand"),
             cell(listOf("-i"), null, "mv: missing file operand"),
             cell(listOf("a"), null, "mv: missing destination file operand after 'a'"),
@@ -244,8 +246,8 @@ class MvProjectionTest {
         parity.binds("--back=nu", "a", "b", expected = A_TO_B.copy(backup = BackupControl.Numbered))
         parity.binds("--strip", "a/", "c", expected = NOTHING_BOUND.copy(
             stripTrailingSlashes = true,
-            sources = listOf("a/"),
-            dest = "c",
+            sources = listOf(CliPath("a/")),
+            dest = CliPath("c"),
         ))
     }
 
@@ -342,10 +344,10 @@ class MvProjectionTest {
     fun `a word naming a klap built-in is an operand`() = parity.checkAll(
         // `mv a completion` and `mv a __complete` each make a file of that name.
         listOf(
-            cell(listOf("completion", "b"), NOTHING_BOUND.copy(sources = listOf("completion"), dest = "b"), "a file"),
-            cell(listOf("docs", "b"), NOTHING_BOUND.copy(sources = listOf("docs"), dest = "b"), "a file"),
-            cell(listOf("a", "__complete"), NOTHING_BOUND.copy(sources = listOf("a"), dest = "__complete"), "a file"),
-            cell(listOf("--", "--help", "b"), NOTHING_BOUND.copy(sources = listOf("--help"), dest = "b"), "an operand"),
+            cell(listOf("completion", "b"), operands("completion", "b"), "a file"),
+            cell(listOf("docs", "b"), operands("docs", "b"), "a file"),
+            cell(listOf("a", "__complete"), operands("a", "__complete"), "a file"),
+            cell(listOf("--", "--help", "b"), operands("--help", "b"), "an operand"),
         ),
     )
 
@@ -557,16 +559,39 @@ class MvProjectionTest {
     @Test
     fun `__complete is a source file name`() {
         // `mv __complete a`: "cannot stat '__complete'", so it was a source like any other word.
-        parity.binds("__complete", "a", expected = NOTHING_BOUND.copy(sources = listOf("__complete"), dest = "a"))
+        parity.binds("__complete", "a", expected = operands("__complete", "a"))
     }
 
     @Test
     fun `--backup and --update show an optional value and no bare one`() {
-        // `mv --help`: "--backup[=CONTROL]" and "--update[=UPDATE]". klap writes the placeholder in angle brackets.
+        // `mv --help`: "--backup[=CONTROL]" and "--update[=UPDATE]".
         val page = parity.helpPage("--help", because = "mv --help")
         val rows = page.lines().filter { "--backup" in it || "--update" in it }
-        assertTrue(rows.any { "--backup[=<CONTROL>]" in it } && rows.any { "--update[=<UPDATE>]" in it }, page)
+        assertTrue(rows.any { "--backup[=CONTROL]" in it } && rows.any { "--update[=UPDATE]" in it }, page)
         assertTrue(rows.none { "bare:" in it }, rows.joinToString("\n"))
+    }
+
+    @Test
+    fun `a source and a destination keep a trailing slash`() {
+        // GNU mv 9.12, link -> dir: `mv link/ m1` is "cannot move 'link/' to 'm1': Not a directory" where `mv link m2`
+        // renames the link; `mv a nd/` is "cannot move 'a' to 'nd/': Not a directory" where `mv a nd` renames a.
+        parity.binds("link/", "m1", expected = operands("link/", "m1"))
+        parity.binds("link", "m2", expected = operands("link", "m2"))
+        parity.binds("a", "nd/", expected = operands("a", "nd/"))
+        parity.binds("a", "nd", expected = operands("a", "nd"))
+    }
+
+    @Test
+    fun `a value option's row names its value as mv --help does`() {
+        // `mv --help` (GNU coreutils 9.12) writes each of these spellings at the head of its row.
+        val signatures = listOf(
+            "--backup[=CONTROL]",
+            "-S, --suffix=SUFFIX",
+            "-t, --target-directory=DIRECTORY",
+            "--update[=UPDATE]",
+        )
+        val heads = parity.helpPage("--help", because = "mv --help").lines().map { it.trim().substringBefore("  ") }
+        assertEquals(signatures, signatures.filter { it in heads }, heads.joinToString("\n"))
     }
 
     @Test

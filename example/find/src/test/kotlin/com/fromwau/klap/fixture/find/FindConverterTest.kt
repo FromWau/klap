@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.find
 
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.io.CliPath
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -42,7 +43,7 @@ private fun ParitySuite<FindInputs>.checkValues(cells: List<ConverterCell>) = ch
 }
 
 /** `find .` with nothing else: the starting point every predicate line below carries. */
-private val AT_DOT: FindInputs = NOTHING_BOUND.copy(operand = listOf("."))
+private val AT_DOT: FindInputs = walking(".")
 
 /** The fixture's two spellings of a respelled predicate's value: spaced `--opt v` and attached `--opt=v`. */
 private fun spellings(
@@ -149,14 +150,25 @@ private val DEPTHS: List<Predicate<Int>> = listOf(
 private fun notPositiveDecimal(long: String) =
     { value: String -> "find: Expected a positive decimal integer argument to ${real(long)}, but got '$value'" }
 
-private val REGEXTYPE = Predicate<String>("--regextype") { copy(regextype = it) }
+private val REGEXTYPE = Predicate<RegexType>("--regextype") { copy(regextype = it) }
 
 private fun unknownRegexType(value: String) = "find: Unknown regular expression type '$value'; valid types are ..."
 
-/** find's thirteen regex types, as `find . -regextype help` lists them. */
+/** find's thirteen regex types, as `find . -regextype help` lists them, each with the type it binds. */
 private val FIND_REGEX_TYPES = listOf(
-    "findutils-default", "awk", "ed", "egrep", "emacs", "gnu-awk", "grep", "posix-awk", "posix-basic", "posix-egrep",
-    "posix-extended", "posix-minimal-basic", "sed",
+    "findutils-default" to RegexType.FindutilsDefault,
+    "awk" to RegexType.Awk,
+    "ed" to RegexType.Ed,
+    "egrep" to RegexType.Egrep,
+    "emacs" to RegexType.Emacs,
+    "gnu-awk" to RegexType.GnuAwk,
+    "grep" to RegexType.Grep,
+    "posix-awk" to RegexType.PosixAwk,
+    "posix-basic" to RegexType.PosixBasic,
+    "posix-egrep" to RegexType.PosixEgrep,
+    "posix-extended" to RegexType.PosixExtended,
+    "posix-minimal-basic" to RegexType.PosixMinimalBasic,
+    "sed" to RegexType.Sed,
 )
 
 /** `-O<level>`, glued, as find spells it before the starting points. */
@@ -205,14 +217,14 @@ private val USER = Predicate<String>("--user") { copy(ownerUser = listOf(it)) }
 
 private val GROUP = Predicate<String>("--group") { copy(ownerGroup = listOf(it)) }
 
-private val NEWER = Predicate<String>("--newer") { copy(newerThan = listOf(it)) }
+private val NEWER = Predicate<CliPath>("--newer") { copy(newerThan = listOf(it)) }
 
 /** `-files0-from FILE` with no starting point, since find refuses both together ("extra operand '.'"). */
 private fun files0From(vararg typed: String) = typed.flatMap { value ->
     listOf(listOf("--files0-from", value), listOf("--files0-from=$value")).map { argv ->
         ConverterCell(
             argv,
-            Reading.Binds(NOTHING_BOUND.copy(files0From = value)),
+            Reading.Binds(NOTHING_BOUND.copy(files0From = CliPath(value))),
             "`find -files0-from '$value'` parses; a list that does not open is find's run-time answer",
         )
     }
@@ -413,7 +425,7 @@ class FindConverterTest {
     @Test
     fun `--regextype binds every name find has`() = parity.checkValues(
         // `find . -regextype help` lists the thirteen.
-        REGEXTYPE.reads(*FIND_REGEX_TYPES.map { it to it }.toTypedArray()),
+        REGEXTYPE.reads(*FIND_REGEX_TYPES.toTypedArray()),
     )
 
     @Test
@@ -452,7 +464,7 @@ class FindConverterTest {
     @Test
     fun `--newer binds its file verbatim`() = parity.checkValues(
         // `find . -newer nofile` is "'nofile': No such file or directory", the file system's answer.
-        NEWER.reads(*listOf("a", "sub", "sub/", "nofile").map { it to it }.toTypedArray()),
+        NEWER.reads(*listOf("a", "sub", "sub/", "nofile").map { it to CliPath(it) }.toTypedArray()),
     )
 
     @Test
@@ -462,10 +474,10 @@ class FindConverterTest {
     fun `the starting points bind verbatim and in order`() = parity.checkValues(
         // `find ''` is "'': No such file or directory" when find walks it.
         listOf(
-            boundLine("a", "sub", expected = NOTHING_BOUND.copy(operand = listOf("a", "sub"))),
-            boundLine("sub", "a", expected = NOTHING_BOUND.copy(operand = listOf("sub", "a"))),
-            boundLine("sub/", "./a", expected = NOTHING_BOUND.copy(operand = listOf("sub/", "./a"))),
-            boundLine("", because = "parses", expected = NOTHING_BOUND.copy(operand = listOf(""))),
+            boundLine("a", "sub", expected = walking("a", "sub")),
+            boundLine("sub", "a", expected = walking("sub", "a")),
+            boundLine("sub/", "./a", expected = walking("sub/", "./a")),
+            boundLine("", because = "parses", expected = walking("")),
             boundLine(expected = NOTHING_BOUND, because = "find with no starting point walks ."),
         ),
     )
@@ -502,7 +514,7 @@ class FindConverterTest {
         listOf(
             boundLine(
                 ".", "--regextype", "posix-basic", "--regextype", "posix-extended",
-                expected = AT_DOT.copy(regextype = "posix-extended"),
+                expected = AT_DOT.copy(regextype = RegexType.PosixExtended),
             ),
         ),
     )

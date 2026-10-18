@@ -47,7 +47,7 @@ class BuiltinsOptOutTest {
         val help = tree.helpOutput()
         assertTrue("      --help" in help, help)
         assertTrue("--json" in help, help)
-        assertTrue("--color[=<auto|always|never>]" in help, help)
+        assertTrue("--color[=auto|always|never]" in help, help)
 
         // 4. injected
         assertNotNull(tree.subcommand("completion"))
@@ -415,7 +415,7 @@ class BuiltinsOptOutTest {
 
         val help = tree.helpOutput()
         assertTrue("      --help" in help, help)
-        assertTrue("--color[=<auto|always|never>]" in help, help)
+        assertTrue("--color[=auto|always|never]" in help, help)
         assertTrue("--version" in help, help)
         assertNotNull(tree.subcommand("completion"))
         assertNotNull(tree.subcommand("docs"))

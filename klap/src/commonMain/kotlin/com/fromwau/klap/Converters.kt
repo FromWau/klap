@@ -13,8 +13,13 @@ import com.fromwau.klap.internal.spec.token
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.jvm.JvmName
 import kotlin.math.abs
+import kotlin.reflect.typeOf
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
+import kotlin.uuid.Uuid
 
-private fun numeric(error: ConversionError, parse: (String) -> Any?): (String) -> Result<Any?, ConversionError> =
+private fun parsedOr(error: ConversionError, parse: (String) -> Any?): (String) -> Result<Any?, ConversionError> =
     { raw -> parse(raw)?.let { Result.Success(it) } ?: Result.Error(error) }
 
 /** The blanks C's `isspace` names, which `strtol` skips ahead of a number. */
@@ -53,6 +58,15 @@ private fun strtodDouble(raw: String): Double? {
     return if (decimal.isNotEmpty() || binaryExponent.isNotEmpty()) number.toDouble() else "${number}p0".toDouble()
 }
 
+/**
+ * [raw] as a duration of zero or more: a bare number read as [strtodDouble] reads one is that many seconds, as GNU
+ * `sleep 1.5` reads it, and anything else is Kotlin's own format; null when negative, infinite or neither.
+ */
+private fun nonNegativeDuration(raw: String): Duration? {
+    val duration = strtodDouble(raw)?.takeUnless { it.isNaN() }?.seconds ?: Duration.parseOrNull(raw)
+    return duration?.takeIf { !it.isNegative() && it.isFinite() }
+}
+
 /** How help and a refusal name this progression: low to high, with its step when that is not 1. */
 private fun IntProgression.label(): String {
     val bounds = "${minOf(first, last)}..${maxOf(first, last)}"
@@ -60,10 +74,10 @@ private fun IntProgression.label(): String {
 }
 
 /**
- * Wraps a composed [ValueSpec.convert] whose newest stage is type-changing (`.int()`, `.long()`,
- * `.double()`, `.boolean()`, `.enum<E>()`): its success value is no longer a `String`, so
- * [andThenConvert]'s inner cast would break if another converter composed on top of it. `.choice()`,
- * `.map { }`, and `.convert { }` stay unmarked, since stacking those is legal however often they chain.
+ * Wraps a composed [ValueSpec.convert] whose newest stage is type-changing (`.int()`, `.enum<E>()`, a
+ * `.convert { }` or `.map { }` to anything but `String`, ...): its success value is no longer a `String`, so
+ * [andThenConvert]'s inner cast would break if another converter composed on top of it. `.choice()` and a
+ * `String` to `String` `.convert { }` or `.map { }` stay unmarked, since stacking those is legal.
  */
 private class TypeChangedConverter(private val delegate: (String) -> Result<Any?, ConversionError>) :
     (String) -> Result<Any?, ConversionError> {
@@ -81,8 +95,10 @@ private fun ValueSpec.andThenConvert(typeChanging: Boolean = false, next: (Strin
     val label = if (this is OptionSpec) "option" else "argument"
     require(convert !is TypeChangedConverter) {
         "$label '$name': cannot add another converter after a type-changing converter " +
-            "(.int()/.long()/.double()/.boolean()/.enum<E>()) has already run; this usually means a " +
-            "converter was called through an Arg<String>/Opt<String?> handle kept alive past that point"
+            "(.int()/.long()/.double()/.boolean()/.duration()/.instant()/.uuid()/.enum<E>(), or a " +
+            ".convert { }/.map { } to a type other than String) has already run; " +
+            "this usually means a converter was called through an Arg<String>/Opt<String?> handle kept alive " +
+            "past that point"
     }
     val prior = convert.thenChecked(validate)
     validate = null
@@ -187,8 +203,29 @@ private fun ValueSpec.applyChoice(choices: List<String>, ignoreCase: Boolean) {
     }
 }
 
-private fun ValueSpec.applyMap(transform: (String) -> Any?) {
-    andThenConvert { raw ->
+/**
+ * Whether a `.convert { }` or `.map { }` to [T] leaves anything but a `String` for a later converter to read; a
+ * `String?` leaves the chain open, as `Opt<String?>` still offers every converter.
+ */
+@PublishedApi
+internal inline fun <reified T> changesType(): Boolean = typeOf<T>().classifier != String::class
+
+/** The body behind `.convert { }`, `@PublishedApi` so the inline wrappers that read its result type can call it. */
+@PublishedApi
+internal fun ValueSpec.applyConvert(
+    typeChanging: Boolean,
+    transform: (String) -> Result<Any?, ConversionError>,
+) {
+    andThenConvert(typeChanging, transform)
+}
+
+/** The body behind `.map { }`, `@PublishedApi` so the inline wrappers that read its result type can call it. */
+@PublishedApi
+internal fun ValueSpec.applyMap(
+    typeChanging: Boolean,
+    transform: (String) -> Any?,
+) {
+    andThenConvert(typeChanging) { raw ->
         try {
             Result.Success(transform(raw))
         } catch (e: CancellationException) {
@@ -297,13 +334,13 @@ public abstract class ConverterScope internal constructor() {
      * value before your action runs.
      */
     public fun Arg<String>.int(): Arg<Int> {
-        spec.andThenConvert(true, numeric(ConversionError.NotAnInteger) { gnuDecimal(it)?.toIntOrNull() })
+        spec.andThenConvert(true, parsedOr(ConversionError.NotAnInteger) { gnuDecimal(it)?.toIntOrNull() })
         return Arg(spec)
     }
 
     /** Parses this operand as a `Long`, read as [int] reads an `Int`; anything else fails as an invalid value. */
     public fun Arg<String>.long(): Arg<Long> {
-        spec.andThenConvert(true, numeric(ConversionError.NotALong) { gnuDecimal(it)?.toLongOrNull() })
+        spec.andThenConvert(true, parsedOr(ConversionError.NotALong) { gnuDecimal(it)?.toLongOrNull() })
         return Arg(spec)
     }
 
@@ -314,13 +351,43 @@ public abstract class ConverterScope internal constructor() {
      * number too large for a `Double` is infinity.
      */
     public fun Arg<String>.double(): Arg<Double> {
-        spec.andThenConvert(true, numeric(ConversionError.NotADouble, ::strtodDouble))
+        spec.andThenConvert(true, parsedOr(ConversionError.NotADouble, ::strtodDouble))
         return Arg(spec)
     }
 
     /** Parses this operand as `true` or `false`; any other spelling is an invalid value. */
     public fun Arg<String>.boolean(): Arg<Boolean> {
-        spec.andThenConvert(true, numeric(ConversionError.NotABoolean) { it.toBooleanStrictOrNull() })
+        spec.andThenConvert(true, parsedOr(ConversionError.NotABoolean) { it.toBooleanStrictOrNull() })
+        return Arg(spec)
+    }
+
+    /**
+     * Parses this operand as a [Duration] of zero or more, in Kotlin's format (`PT1H30M`, `1h30m`, `1.5h`,
+     * `5h 31m 2s 123ms`, units in decreasing order) or as a bare number of seconds read as [double] reads one, the
+     * way GNU `sleep 5.5` does. A negative or infinite duration (`-1h`, `Infinity`, `inf`) and any other text
+     * (`1H`, `1 h`, `30m 1h`) fail as an invalid value.
+     */
+    public fun Arg<String>.duration(): Arg<Duration> {
+        spec.andThenConvert(true, parsedOr(ConversionError.NotADuration, ::nonNegativeDuration))
+        return Arg(spec)
+    }
+
+    /**
+     * Parses this operand as an [Instant] through `Instant.parse`: ISO 8601 with seconds and an offset,
+     * `2026-01-31T12:00:00Z`, `2026-01-31T14:00:00+02:00` or `+02`, fractions and a lowercase `t` or `z` allowed.
+     * A time without seconds or an offset, or with a space for the `T`, fails as an invalid value.
+     */
+    public fun Arg<String>.instant(): Arg<Instant> {
+        spec.andThenConvert(true, parsedOr(ConversionError.NotAnInstant, Instant::parseOrNull))
+        return Arg(spec)
+    }
+
+    /**
+     * Parses this operand as a [Uuid] through `Uuid.parse`: 32 hex digits in either case, dashed as 8-4-4-4-12 or
+     * plain. Braces and anything else fail as an invalid value; the value prints dashed in lower case.
+     */
+    public fun Arg<String>.uuid(): Arg<Uuid> {
+        spec.andThenConvert(true, parsedOr(ConversionError.NotAUuid, Uuid::parseOrNull))
         return Arg(spec)
     }
 
@@ -350,9 +417,15 @@ public abstract class ConverterScope internal constructor() {
      * Name your failure and pair it with the words klap prints,
      * `Err(ConversionError.Domain(NotAPort, "not a port"))`; the error itself arrives intact on
      * [CliError.BadValue.cause] for a `parse` caller to match on.
+     *
+     * A [T] other than `String` ends the converter chain: a converter called afterwards through a handle kept
+     * from before this one fails when the CLI is built. `.convert { Ok(it.trim()) }.choice("a", "b")` still
+     * chains. A [transform] that only ever fails needs [T] spelled out, `.convert<Int> { Err(...) }`.
      */
-    public fun <T> Arg<String>.convert(transform: (String) -> Result<T, ConversionError>): Arg<T> {
-        spec.andThenConvert(next = transform)
+    public inline fun <reified T> Arg<String>.convert(
+        noinline transform: (String) -> Result<T, ConversionError>,
+    ): Arg<T> {
+        spec.applyConvert(changesType<T>(), transform)
         return Arg(spec)
     }
 
@@ -360,9 +433,12 @@ public abstract class ConverterScope internal constructor() {
      * Generic input adapter: reads the raw string and returns a domain type. A thrown exception becomes a
      * clean parse error (`invalid value …`). e.g. `argument("timeout").map { it.toInt().seconds }`.
      * Use [convert] instead when you want to control the error message yourself.
+     *
+     * A [T] other than `String` ends the converter chain, as [convert]'s does; `.map { it.lowercase() }` still
+     * chains.
      */
-    public fun <T> Arg<String>.map(transform: (String) -> T): Arg<T> {
-        spec.applyMap(transform)
+    public inline fun <reified T> Arg<String>.map(noinline transform: (String) -> T): Arg<T> {
+        spec.applyMap(changesType<T>(), transform)
         return Arg(spec)
     }
 
@@ -635,19 +711,37 @@ public abstract class ConverterScope internal constructor() {
      * invalid value.
      */
     public fun Opt<String?>.int(): Opt<Int?> {
-        spec.andThenConvert(true, numeric(ConversionError.NotAnInteger) { gnuDecimal(it)?.toIntOrNull() })
+        spec.andThenConvert(true, parsedOr(ConversionError.NotAnInteger) { gnuDecimal(it)?.toIntOrNull() })
         return Opt(spec)
     }
 
     /** Parses this option's value as a `Long`, read as [int] reads an `Int`; anything else is an invalid value. */
     public fun Opt<String?>.long(): Opt<Long?> {
-        spec.andThenConvert(true, numeric(ConversionError.NotALong) { gnuDecimal(it)?.toLongOrNull() })
+        spec.andThenConvert(true, parsedOr(ConversionError.NotALong) { gnuDecimal(it)?.toLongOrNull() })
         return Opt(spec)
     }
 
     /** Parses this option's value as a `Double`, read through `strtod` as an operand's is; anything else is invalid. */
     public fun Opt<String?>.double(): Opt<Double?> {
-        spec.andThenConvert(true, numeric(ConversionError.NotADouble, ::strtodDouble))
+        spec.andThenConvert(true, parsedOr(ConversionError.NotADouble, ::strtodDouble))
+        return Opt(spec)
+    }
+
+    /** Parses this option's value as a [Duration] of zero or more, read as an operand's [Arg.duration] is. */
+    public fun Opt<String?>.duration(): Opt<Duration?> {
+        spec.andThenConvert(true, parsedOr(ConversionError.NotADuration, ::nonNegativeDuration))
+        return Opt(spec)
+    }
+
+    /** Parses this option's value as an [Instant] through `Instant.parse`, read as an operand's [Arg.instant] is. */
+    public fun Opt<String?>.instant(): Opt<Instant?> {
+        spec.andThenConvert(true, parsedOr(ConversionError.NotAnInstant, Instant::parseOrNull))
+        return Opt(spec)
+    }
+
+    /** Parses this option's value as a [Uuid] through `Uuid.parse`, read as an operand's [Arg.uuid] is. */
+    public fun Opt<String?>.uuid(): Opt<Uuid?> {
+        spec.andThenConvert(true, parsedOr(ConversionError.NotAUuid, Uuid::parseOrNull))
         return Opt(spec)
     }
 
@@ -662,7 +756,7 @@ public abstract class ConverterScope internal constructor() {
 
     /** Parses this option's value as `true` or `false`; any other spelling is an invalid value. */
     public fun Opt<String?>.boolean(): Opt<Boolean?> {
-        spec.andThenConvert(true, numeric(ConversionError.NotABoolean) { it.toBooleanStrictOrNull() })
+        spec.andThenConvert(true, parsedOr(ConversionError.NotABoolean) { it.toBooleanStrictOrNull() })
         return Opt(spec)
     }
 
@@ -701,7 +795,7 @@ public abstract class ConverterScope internal constructor() {
      * Where the CLI's [Abbreviation] abbreviates values, a prefix is accepted when every word it starts is a
      * spelling of one entry, and refused as ambiguous when the words it starts belong to different entries. Tab
      * offers every word in declared order, and an unknown value lists them all. `--help` names each entry by
-     * its first word, `--interactive <never|once|always>`.
+     * its first word, `--interactive=never|once|always`.
      *
      * @param ignoreCase matches every word in any case.
      * @param abbreviates lets a prefix of a word name its entry where the CLI's [Abbreviation] abbreviates values.
@@ -734,18 +828,27 @@ public abstract class ConverterScope internal constructor() {
      * Name your failure and pair it with the words klap prints,
      * `Err(ConversionError.Domain(NotAPort, "not a port"))`; the error itself arrives intact on
      * [CliError.BadValue.cause] for a `parse` caller to match on.
+     *
+     * A [T] other than `String` ends the converter chain: a converter called afterwards through a handle kept
+     * from before this one fails when the CLI is built. `.convert { Ok(it.trim()) }.choice("a", "b")` still
+     * chains. A [transform] that only ever fails needs [T] spelled out, `.convert<Int> { Err(...) }`.
      */
-    public fun <T> Opt<String?>.convert(transform: (String) -> Result<T, ConversionError>): Opt<T?> {
-        spec.andThenConvert(next = transform)
+    public inline fun <reified T> Opt<String?>.convert(
+        noinline transform: (String) -> Result<T, ConversionError>,
+    ): Opt<T?> {
+        spec.applyConvert(changesType<T>(), transform)
         return Opt(spec)
     }
 
     /**
      * Generic input adapter for an option: reads the raw string and returns a domain type; a thrown
      * exception becomes a clean parse error. e.g. `option(short = 't', long = "timeout").map { it.toInt().seconds }`.
+     *
+     * A [T] other than `String` ends the converter chain, as [convert]'s does; `.map { it.lowercase() }` still
+     * chains.
      */
-    public fun <T> Opt<String?>.map(transform: (String) -> T): Opt<T?> {
-        spec.applyMap(transform)
+    public inline fun <reified T> Opt<String?>.map(noinline transform: (String) -> T): Opt<T?> {
+        spec.applyMap(changesType<T>(), transform)
         return Opt(spec)
     }
 
@@ -823,7 +926,7 @@ public abstract class ConverterScope internal constructor() {
      * they read the attached value, so `.int().optionalValue()` binds `Given(5)` for `--depth=5`. Chain
      * `.multiple()` after it to keep every occurrence, `[Bare, Given("x")]` for `--context --context=x`. A
      * `.validate { }` after it receives the [OptionalValue.Given] of each attached value. Help shows the option as
-     * `--backup[=<CONTROL>]`, with no note of a bare value.
+     * `--backup[=CONTROL]`, with no note of a bare value.
      */
     public fun <T> Opt<T?>.optionalValue(): Opt<OptionalValue<T>?> {
         spec.requireOneBareReading(spec.bareValue != null)
@@ -848,8 +951,8 @@ public abstract class ConverterScope internal constructor() {
      * must be immediately followed by a decimal integer"). Reach for it only to match such a tool. The type stays
      * the plain value, so converters, `.multiple()` and `.completeWith { }` chain before or after it, a glued value
      * may end a short cluster as a required value does, and [ShortOptions.Alone] lets it stay glued. Completion
-     * offers its candidates glued (`-O0`) and nothing after a bare `-O`, and help shows it as `-O<LEVEL>`, or
-     * `--optimise=<LEVEL>` when it has a long name. It cannot be combined with `.optionalValue()`.
+     * offers its candidates glued (`-O0`) and nothing after a bare `-O`, and help shows it as `-OLEVEL`, or
+     * `-O, --optimise=LEVEL` when it has a long name. It cannot be combined with `.optionalValue()`.
      */
     public fun <T> Opt<T>.gluedValue(): Opt<T> {
         spec.requireNotGluedAndOptional(spec.valueOptional)
@@ -914,7 +1017,7 @@ public abstract class ConverterScope internal constructor() {
     /** Resolves the overlap between IntRange, ClosedRange<Int>, and IntProgression. */
     public fun Opt<Int?>.range(range: IntRange): Opt<Int?> = range(range as IntProgression)
 
-    /** Names this option's value in help and usage, e.g. `--output <FILE>`. Display-only; overrides a choice list. */
+    /** Names this option's value in help and usage, e.g. `--output=FILE`. Display-only; overrides a choice list. */
     public fun <T> Opt<T>.placeholder(name: String): Opt<T> {
         require(name.isNotBlank()) { "placeholder must not be blank" }
         spec.placeholder = name

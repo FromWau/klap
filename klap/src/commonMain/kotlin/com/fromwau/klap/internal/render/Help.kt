@@ -114,13 +114,13 @@ internal fun ValueSpec.display(value: Any?): String {
 
 /**
  * The word-form of an option/flag: every spelling, shorts first, or the display label when it has no
- * spelling at all (options add `<placeholder>`, or `[=<placeholder>]` when the value is optional; a
- * negatable flag shows `--[no-]long`, or both real halves when the negative one has its own spellings).
+ * spelling at all (an option adds its value as GNU writes it, see [optionWords]; a negatable flag shows
+ * `--[no-]long`, or both real halves when the negative one has its own spellings).
  */
 internal fun NamedSpec.words(): String {
     // An input with no spelling of its own (`-<NUM>`, a lastOf fold) has nothing to join, and the
     // digits ARE the value, so there is no placeholder to append either.
-    if (this is OptionSpec && names.isEmpty()) return name
+    if (this is OptionSpec) return if (names.isEmpty()) name else optionWords()
     // A negation with words of its own renders on its own row ([negationRow]), so this row is the positive half.
     val ownRow = this is FlagSpec && negativeHelp != null
     val generatedNegation = this is FlagSpec && negatable && negativeNames.isEmpty() && !ownRow
@@ -137,14 +137,22 @@ internal fun NamedSpec.words(): String {
     val spellings = (allShorts + allLongs).joinToString(", ")
     // A row starts with a short whenever EITHER half has one: allShorts (built above) already puts the
     // negative short first if there is no positive one, so the row itself, not just `shorts`, decides the indent.
-    val base = if (allShorts.isEmpty()) "    $spellings" else spellings
-    return when {
-        this !is OptionSpec -> base
-        valueOptional -> base + optionalValueHint(attachedToLong = allLongs.isNotEmpty())
-        gluedValue -> base + gluedValueHint(attachedToLong = allLongs.isNotEmpty())
-        else -> "$base <${resolvedPlaceholder()}>"
-    }
+    return if (allShorts.isEmpty()) "    $spellings" else spellings
 }
+
+/**
+ * An option's spellings with its value as cp's and od's `--help` write it: `-S, --suffix=SUFFIX`, `-E END`
+ * with no long, and an optional value bracketed, `--backup[=CONTROL]`, `-w[BYTES], --width[=BYTES]`.
+ */
+private fun OptionSpec.optionWords(): String {
+    val shortHint = shortValueHint(hasLong = longs.isNotEmpty()).orEmpty()
+    val spelled = shorts.map { "-$it" }.appendToLast(shortHint) + longs.map { "--$it" }.appendToLast(longValueHint())
+    val joined = spelled.joinToString(", ")
+    return if (shorts.isEmpty()) "    $joined" else joined
+}
+
+private fun List<String>.appendToLast(suffix: String): List<String> =
+    mapIndexed { i, word -> if (i == lastIndex) word + suffix else word }
 
 /**
  * A trailing `  (...)` note on a flag row: any constraint set it belongs to, then its negation default
@@ -176,7 +184,7 @@ internal fun ValueSpec.metaHint(): String {
             add("one of: ${listedChoices!!.joinToString(", ")}")
         }
         valueHint?.let { add(it) }
-        // The bare form's value is not derivable from the signature: `--color[=<WHEN>]` says a bare
+        // The bare form's value is not derivable from the signature: `--color[=WHEN]` says a bare
         // occurrence is legal but not what it then means.
         (this@metaHint as? OptionSpec)?.bareValue?.let { add("bare: $it") }
         constraintHint?.let { add(it) }
@@ -284,24 +292,28 @@ internal fun Command.usageTail(): String = if (isGroup) {
     (constraints.mapNotNull { it.usageGroup() } + required + tail).joinToString(" ")
 }
 
-/** A `.gluedValue()` value as typed: `=<LEVEL>` after a long, `<LEVEL>` straight after a short (`-O<LEVEL>`). */
-private fun OptionSpec.gluedValueHint(attachedToLong: Boolean): String =
-    (if (attachedToLong) "=" else "") + "<${resolvedPlaceholder()}>"
+/** The value after a long spelling: `=SUFFIX`, or `[=CONTROL]` when it may be left off. */
+private fun OptionSpec.longValueHint(): String =
+    if (valueOptional) "[=${resolvedPlaceholder()}]" else "=${resolvedPlaceholder()}"
 
 /**
- * An optional value as typed, bracketed since it may be left off: `[=<WHEN>]` after a long, `[<KEY>]` straight
- * after a short, which getopt reads `-S=x` with as the value `=x`.
+ * The value after a short spelling: `[BYTES]` when it may be left off, since getopt reads it from a short only
+ * glued (`-w16`); with no long beside it a required one too, glued for a `.gluedValue()` (`-OLEVEL`), else after a
+ * space (`-E END`). Null for a required value the long spelling already shows.
  */
-private fun OptionSpec.optionalValueHint(attachedToLong: Boolean): String = "[${gluedValueHint(attachedToLong)}]"
+private fun OptionSpec.shortValueHint(hasLong: Boolean): String? = when {
+    valueOptional -> "[${resolvedPlaceholder()}]"
+    hasLong -> null
+    gluedValue -> resolvedPlaceholder()
+    else -> " ${resolvedPlaceholder()}"
+}
 
 /**
- * The `--host <value>` fragments for options the command cannot run without, in declaration order.
- *
- * The value is always angle-bracketed, matching [argSummary]'s notation for a required positional; square
- * brackets additionally wrap it (`[=<value>]`) when the option's value is itself optional. The primary
- * spelling is used rather than the compact short a constraint group uses: a required option is named once
- * here and the reader has to be able to type it. A member of a constraint set is left out — its group
- * already renders, and listing it twice would say the set is required AND that one member is.
+ * The `--host=HOST` fragments for options the command cannot run without, in declaration order, the value
+ * written as the help row writes it. The primary spelling is used rather than the compact short a constraint
+ * group uses: a required option is named once here and the reader has to be able to type it. A member of a
+ * constraint set is left out — its group already renders, and listing it twice would say the set is required
+ * AND that one member is.
  */
 internal fun Command.requiredOptionSummary(): List<String> {
     val constrained = constraints.flatMap { it.members }.toSet()
@@ -309,12 +321,7 @@ internal fun Command.requiredOptionSummary(): List<String> {
         .filter { !it.hidden && it.cardinality == Cardinality.Required && it !in constrained }
         .map { spec ->
             val token = spec.token()
-            val attachedToLong = token.startsWith("--")
-            when {
-                spec.valueOptional -> token + spec.optionalValueHint(attachedToLong)
-                spec.gluedValue -> token + spec.gluedValueHint(attachedToLong)
-                else -> "$token <${spec.resolvedPlaceholder()}>"
-            }
+            token + if (token.startsWith("--")) spec.longValueHint() else spec.shortValueHint(hasLong = false).orEmpty()
         }
 }
 
@@ -426,8 +433,8 @@ internal fun Command.builtinOptions(
 }
 
 /**
- * This option as a text help row, padded like a short-less [words] when it has no short, an optional value shown
- * as a declared `.optionalValue()` option's is: `--color[=<auto|always|never>]`, with its bare meaning.
+ * This option as a text help row, padded like a short-less [words] when it has no short, its value written as a
+ * declared option's is: `--completion=bash|zsh|fish|powershell`, `--color[=auto|always|never]` with its bare meaning.
  */
 private fun BuiltinOption.row(): InputRow {
     val spelled = names.joinToString(", ")
@@ -435,8 +442,8 @@ private fun BuiltinOption.row(): InputRow {
     val value = choices?.joinToString("|")
     return when {
         value == null -> InputRow(signature, help)
-        bare != null -> InputRow("$signature[=<$value>]", "$help (bare: $bare)")
-        else -> InputRow("$signature <$value>", help)
+        bare != null -> InputRow("$signature[=$value]", "$help (bare: $bare)")
+        else -> InputRow("$signature=$value", help)
     }
 }
 
@@ -458,20 +465,30 @@ internal data class HelpStyle(val columns: Int, val color: Boolean) {
 /** Descriptions below this many columns are left on one line rather than wrapped into a sliver. */
 private const val WRAP_FLOOR = 20
 
-/** Greedy word-wrap on spaces. An over-long unbreakable token (a URL) is left intact on its own line. */
+/**
+ * Greedy word-wrap on spaces to [width] terminal columns ([displayWidth]). An over-long unbreakable token (a URL)
+ * is left intact on its own line.
+ */
 internal fun wrap(text: String, width: Int): List<String> {
     if (width <= 0 || text.isEmpty()) return listOf(text)
     val lines = mutableListOf<String>()
     var current = StringBuilder()
+    var currentWidth = 0
     for (word in text.split(" ")) {
+        val wordWidth = displayWidth(word)
         when {
             current.isEmpty() -> current.append(word)
-            current.length + 1 + word.length <= width -> current.append(' ').append(word)
+            currentWidth + 1 + wordWidth <= width -> {
+                current.append(' ').append(word)
+                currentWidth += 1
+            }
             else -> {
                 lines += current.toString()
                 current = StringBuilder(word)
+                currentWidth = 0
             }
         }
+        currentWidth += wordWidth
     }
     if (current.isNotEmpty()) lines += current.toString()
     return lines.ifEmpty { listOf(text) }
@@ -482,11 +499,10 @@ private fun HelpStyle.paint(text: String): String = with(palette) { bold(text) }
 
 /** The padded (and, when colored, bolded) signature column; the visible width stays [width] either way. */
 private fun HelpStyle.paintSignature(signature: String, width: Int): String {
-    // Branches on the flag rather than the palette: a bolded signature and a plain one must occupy the
-    // same visible width, and only the plain form can use padEnd (ANSI codes are zero-width but counted).
-    if (!color) return signature.padEnd(width)
-    val pad = " ".repeat((width - signature.length).coerceAtLeast(0))
-    return with(palette) { bold(signature) } + pad
+    // Padded before bolding: the escape codes take no column, but displayWidth would count them.
+    val padded = padToWidth(signature, width)
+    if (!color) return padded
+    return with(palette) { bold(signature) } + padded.substring(signature.length)
 }
 
 /**
@@ -549,7 +565,7 @@ internal fun Command.helpText(
     builtins: Builtins = Builtins.DEFAULT,
 ): String {
     val sections = helpSections(globalSpecs, rootVersioned, rootMetaOptions, builtins)
-    val width = sections.flatMap { it.rows }.maxOfOrNull { it.signature.length } ?: 0
+    val width = sections.flatMap { it.rows }.maxOfOrNull { displayWidth(it.signature) } ?: 0
 
     return buildString {
         val usage = usageLine(qualifiedName)

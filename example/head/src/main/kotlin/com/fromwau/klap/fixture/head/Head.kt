@@ -4,6 +4,8 @@ import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Builtin
 import com.fromwau.klap.Help
+import com.fromwau.klap.io.CliPath
+import com.fromwau.klap.io.path
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.ValueScope
 import com.fromwau.klap.Version
@@ -102,7 +104,7 @@ public fun headCli(): TypedCli<HeadInputs> = cliOf("head") {
     // Deliberately NOT `dashLed()`, unlike chmod's mode: real head rejects a dash-led FILE, so `head -x f`
     // must stay an unknown option here too. Only `-NUM` slips through, claimed by the number input above.
     val files = argument("file", "file to print the head of; '-' means standard input")
-        .file()
+        .path()
         .multiple()
 
     val read: ValueScope.() -> HeadInputs = {
@@ -124,7 +126,7 @@ public fun headCli(): TypedCli<HeadInputs> = cliOf("head") {
             is Count.Lines -> "${count.num} line(s)"
             is Count.Bytes -> "${count.num} byte(s)"
         }
-        val operands = bound.files.ifEmpty { listOf("-") }
+        val operands = bound.files.ifEmpty { listOf(CliPath("-")) }
         val delimiter = if (bound.zeroTerminated) "NUL" else "newline"
         Ok("would print $unit of ${operands.size} operand(s), headers=${bound.headers}, delimiter=$delimiter")
     }
@@ -167,7 +169,7 @@ public data class HeadInputs(
     val count: Count,
     val headers: Headers,
     val zeroTerminated: Boolean,
-    val files: List<String>,
+    val files: List<CliPath>,
 )
 
 /** `head` with no arguments at all: every field at the default head gives it. */

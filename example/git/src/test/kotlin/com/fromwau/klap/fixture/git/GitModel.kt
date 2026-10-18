@@ -1,5 +1,6 @@
 package com.fromwau.klap.fixture.git
 
+import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.testing.Suggestion
 
 /*
@@ -118,20 +119,20 @@ private fun spelled(
  * `git <spelling> status` in a throwaway repository.
  */
 internal val ROOT_SPELLINGS: List<RootSpelling> = listOf(
-    spelled("-C", "d", letter = 'C') { copy(directory = listOf("d")) },
+    spelled("-C", "d", letter = 'C') { copy(directory = listOf(CliPath("d"))) },
     spelled("-c", "a.b=1", letter = 'c') { copy(config = listOf("a.b=1")) },
     spelled("-p", letter = 'p') { copy(paginate = true) },
     spelled("--paginate") { copy(paginate = true) },
     spelled("--no-pager") { copy(paginate = false) },
     spelled("-P", letter = 'P') { copy(paginate = false) },
-    spelled("--git-dir=.git") { copy(gitDir = ".git") },
-    spelled("--git-dir", ".git") { copy(gitDir = ".git") },
-    spelled("--work-tree=.") { copy(workTree = ".") },
-    spelled("--work-tree", ".") { copy(workTree = ".") },
+    spelled("--git-dir=.git") { copy(gitDir = CliPath(".git")) },
+    spelled("--git-dir", ".git") { copy(gitDir = CliPath(".git")) },
+    spelled("--work-tree=.") { copy(workTree = CliPath(".")) },
+    spelled("--work-tree", ".") { copy(workTree = CliPath(".")) },
     spelled("--namespace=n") { copy(namespace = "n") },
     spelled("--namespace", "n") { copy(namespace = "n") },
     spelled("--bare") { copy(bare = true) },
-    spelled("--exec-path=x") { copy(execPath = "x") },
+    spelled("--exec-path=x") { copy(execPath = CliPath("x")) },
     spelled("--no-replace-objects") { copy(noReplaceObjects = true) },
     spelled("--no-optional-locks") { copy(noOptionalLocks = true) },
 )

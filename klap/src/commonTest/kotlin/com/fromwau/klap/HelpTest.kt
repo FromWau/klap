@@ -6,6 +6,7 @@ import com.fromwau.kern.result.map
 import com.fromwau.klap.internal.render.BuiltinOptionHelp
 import com.fromwau.klap.internal.render.HelpStyle
 import com.fromwau.klap.internal.render.argSummary
+import com.fromwau.klap.internal.render.helpSections
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.render.metaHint
 import com.fromwau.klap.internal.render.usageLine
@@ -135,8 +136,8 @@ class HelpTest {
             action { Ok("") }
         }
         val help = cmd.helpText()
-        assertTrue("--completion <bash|zsh|fish|powershell>" in help, help)
-        assertTrue("--docs <markdown|man>" in help, help)
+        assertTrue("--completion=bash|zsh|fish|powershell" in help, help)
+        assertTrue("--docs=markdown|man" in help, help)
         assertFalse("Commands:" in help, help)
     }
 
@@ -150,8 +151,8 @@ class HelpTest {
         val term = RecordingTerminal()
         assertEquals(0, cmd.run(arrayOf("sub", "--help"), term))
         val globals = term.out.toString().substringAfter("Global options:")
-        assertTrue("--completion <bash|zsh|fish|powershell>" in globals, globals)
-        assertTrue("--docs <markdown|man>" in globals, globals)
+        assertTrue("--completion=bash|zsh|fish|powershell" in globals, globals)
+        assertTrue("--docs=markdown|man" in globals, globals)
     }
 
     @Test
@@ -164,7 +165,7 @@ class HelpTest {
             action { Ok("") }
         }
         val help = cmd.helpText()
-        assertTrue("--from <celsius|fahrenheit>" in help, help)
+        assertTrue("--from=celsius|fahrenheit" in help, help)
         assertTrue("(required)" in help, help)
         assertTrue("(default: 2)" in help, help)
         assertTrue("(optional)" in help, help)
@@ -178,9 +179,9 @@ class HelpTest {
             action { Ok("") }
         }
         val help = cmd.helpText()
-        assertTrue("-p, --priority <value>" in help, help)
+        assertTrue("-p, --priority=value" in help, help)
         assertTrue("-v, --verbose" in help, help)
-        assertTrue("-v, --verbose <value>" !in help, help)
+        assertTrue("-v, --verbose=value" !in help, help)
         assertTrue("[options]" in help, help)
     }
 
@@ -257,7 +258,7 @@ class HelpTest {
         cmd.run(arrayOf("--help"), term)
         val help = term.out.toString()
         assertTrue("Global options:" in help, help)
-        assertTrue("--color[=<${COLOR_MODE_NAMES.joinToString("|")}>]" in help, help)
+        assertTrue("--color[=${COLOR_MODE_NAMES.joinToString("|")}]" in help, help)
         assertTrue(BuiltinOptionHelp.COLOR in help, help)
         assertTrue(help.indexOf("--json") < help.indexOf("--color"), help)
     }
@@ -300,7 +301,7 @@ class HelpTest {
         }
         val help = cmd.helpText()
         assertTrue("Networking:" in help, help)
-        assertTrue("-H, --host <value>" in help, help)
+        assertTrue("-H, --host=value" in help, help)
         assertTrue("Advanced:" in help, help)
         assertTrue("-f, --force" in help, help)
         // Grouped inputs live under their heading, not in the default block above `Networking:`.
@@ -439,7 +440,7 @@ class HelpTest {
         // At a narrow terminal the aligned description column can't fit, so the description stacks
         // under the signature and wraps to the full width instead of overflowing. Uses a subcommand so
         // no injected completion/docs rows (root-only, unbreakable tokens) intrude. The width here must
-        // still fit the unconditional `--color[=<auto|always|never>]` global row's signature (an
+        // still fit the unconditional `--color[=auto|always|never]` global row's signature (an
         // unbreakable token, like a URL, that the wrapper never splits), while staying narrow enough to
         // exercise the stacking path rather than the aligned two-column layout.
         val long = "a long description that must wrap across several lines at this narrow width"
@@ -529,12 +530,12 @@ class HelpTest {
         val expected = buildString {
             append("usage: app add <text> [options]\n\n")
             append("Add a task\n\n")
-            append("  <text>                             the task text (required)\n")
-            append("  -d, --done                         mark it done\n\n")
+            append("  <text>                           the task text (required)\n")
+            append("  -d, --done                       mark it done\n\n")
             append("Global options:\n")
-            append("      --help                         Show this help\n")
-            append("      --json                         Output as JSON\n")
-            append("      --color[=<auto|always|never>]  Colorize output: auto, always, or never (bare: always)")
+            append("      --help                       Show this help\n")
+            append("      --json                       Output as JSON\n")
+            append("      --color[=auto|always|never]  Colorize output: auto, always, or never (bare: always)")
         }
         assertEquals(expected, add.helpText("app add"))
     }
@@ -734,7 +735,7 @@ class HelpTest {
         }
         val help = cmd.helpText()
         assertTrue("-r, -R, --recursive" in help, help)
-        assertTrue("-a, --since, --after <value>" in help, help)
+        assertTrue("-a, --since, --after=value" in help, help)
     }
 
     @Test
@@ -746,7 +747,7 @@ class HelpTest {
             action { Ok("") }
         }
         val help = cmd.helpText()
-        assertTrue("-v, --verbose, --loud <value>" in help, help)
+        assertTrue("-v, --verbose, --loud=value" in help, help)
     }
 
     @Test
@@ -756,7 +757,7 @@ class HelpTest {
             action { Ok("") }
         }
         val help = cmd.helpText()
-        assertTrue("-Z <value>" in help, help)
+        assertTrue("-Z value" in help, help)
         assertFalse("--Z" in help, help)
     }
 
@@ -795,7 +796,7 @@ class RequiredOptionUsageTest {
             option(short = 'p', long = "port")
             action { Ok("") }
         }
-        assertEquals("usage: app --host <value> [options]", cmd.usageLine())
+        assertEquals("usage: app --host=value [options]", cmd.usageLine())
     }
 
     @Test
@@ -814,7 +815,7 @@ class RequiredOptionUsageTest {
             option(long = "mode").choice("fast", "slow").required()
             action { Ok("") }
         }
-        assertEquals("usage: app --out <FILE> --mode <fast|slow> [options]", cmd.usageLine())
+        assertEquals("usage: app --out=FILE --mode=fast|slow [options]", cmd.usageLine())
     }
 
     @Test
@@ -827,7 +828,7 @@ class RequiredOptionUsageTest {
             argument("path").multiple(min = 0)
             action { Ok("") }
         }
-        assertEquals("usage: tar (-c|-x) --file <value> [path...] [options]", cmd.usageLine())
+        assertEquals("usage: tar (-c|-x) --file=value [path...] [options]", cmd.usageLine())
     }
 
     @Test
@@ -853,6 +854,64 @@ class RequiredOptionUsageTest {
     }
 }
 
+/** An option's value is written as GNU writes it: cp's, od's and xargs's `--help` rows. */
+class ValuePlaceholderHelpTest {
+
+    private fun signatures(build: CliBuilder.() -> Unit): List<String> = cli("app") {
+        builtins { color = Builtin.Off }
+        build()
+        action { Ok("") }
+    }.helpSections().flatMap { section -> section.rows.map { it.signature.trim() } }
+
+    @Test
+    fun `a value follows the long spelling after an equals sign`() {
+        val rows = signatures {
+            option(short = 'S', long = "suffix", help = "override the usual backup suffix").placeholder("SUFFIX")
+            option(long = "sparse", help = "control creation of sparse files").placeholder("WHEN")
+        }
+        assertEquals("-S, --suffix=SUFFIX", rows[0])
+        assertEquals("--sparse=WHEN", rows[1])
+    }
+
+    @Test
+    fun `an optional value is bracketed after an equals sign`() {
+        val rows = signatures {
+            option(long = "backup", help = "make a backup").placeholder("CONTROL").optionalValue("existing")
+        }
+        assertEquals("--backup[=CONTROL]", rows[0])
+    }
+
+    @Test
+    fun `an optional value is bracketed after the short as well when the option has both`() {
+        val rows = signatures {
+            option(short = 'w', long = "width", help = "output BYTES bytes per line")
+                .placeholder("BYTES")
+                .optionalValue("32")
+        }
+        assertEquals("-w[BYTES], --width[=BYTES]", rows[0])
+    }
+
+    @Test
+    fun `a short-only option takes its value after a space`() {
+        val rows = signatures {
+            option(short = 'E', help = "set logical EOF string").placeholder("END")
+            option(short = 'l', help = "similar to -L").placeholder("MAX-LINES").optionalValue("1")
+        }
+        assertEquals("-E END", rows[0])
+        assertEquals("-l[MAX-LINES]", rows[1])
+    }
+
+    @Test
+    fun `a required option shows its value in the usage line as its help row does`() {
+        val cmd = cli("app") {
+            option(long = "host").placeholder("HOST").required()
+            option(short = 't').placeholder("DIR").required()
+            action { Ok("") }
+        }
+        assertEquals("usage: app --host=HOST -t DIR [options]", cmd.usageLine())
+    }
+}
+
 /** An optional value is visible in the signature, or nobody discovers the bare form. */
 class OptionalValueHelpTest {
 
@@ -865,7 +924,7 @@ class OptionalValueHelpTest {
             option(long = "color", help = "colorize the output").optionalValue("always")
             action { Ok("") }
         }
-        assertTrue("--color[=<value>]" in cmd.helpText(), cmd.helpText())
+        assertTrue("--color[=value]" in cmd.helpText(), cmd.helpText())
     }
 
     @Test
@@ -875,7 +934,7 @@ class OptionalValueHelpTest {
             option(long = "color", help = "colorize").placeholder("WHEN").optionalValue("always")
             action { Ok("") }
         }
-        assertTrue("--color[=<WHEN>]" in cmd.helpText(), cmd.helpText())
+        assertTrue("--color[=WHEN]" in cmd.helpText(), cmd.helpText())
     }
 
     @Test
@@ -885,16 +944,17 @@ class OptionalValueHelpTest {
             option(long = "color").choice("always", "auto", "never").optionalValue("always")
             action { Ok("") }
         }
-        assertTrue("--color[=<always|auto|never>]" in cmd.helpText(), cmd.helpText())
+        assertTrue("--color[=always|auto|never]" in cmd.helpText(), cmd.helpText())
     }
 
     @Test
     fun `a short spelling brackets it too`() {
+        // od writes `-w[BYTES], --width[=BYTES]`: a short reads an optional value only glued, so it shows one too.
         val cmd = cli("git") {
             option(short = 'S', long = "gpg-sign", help = "sign it").placeholder("keyid").optionalValue("default")
             action { Ok("") }
         }
-        assertTrue("-S, --gpg-sign[=<keyid>]" in cmd.helpText(), cmd.helpText())
+        assertTrue("-S[keyid], --gpg-sign[=keyid]" in cmd.helpText(), cmd.helpText())
     }
 
     @Test
@@ -904,12 +964,12 @@ class OptionalValueHelpTest {
             option(short = 'S', help = "sign it").placeholder("keyid").optionalValue("default")
             action { Ok("") }
         }
-        assertTrue("-S[<keyid>]" in cmd.helpText(), cmd.helpText())
+        assertTrue("-S[keyid]" in cmd.helpText(), cmd.helpText())
         val required = cli("app") {
             option(short = 'm').placeholder("M").optionalValue("fast").required()
             action { Ok("") }
         }
-        assertEquals("usage: app -m[<M>] [options]", required.usageLine())
+        assertEquals("usage: app -m[M] [options]", required.usageLine())
     }
 
     @Test
@@ -925,9 +985,9 @@ class OptionalValueHelpTest {
             .single { it.trim().startsWith(long) }
             .trim()
             .split(Regex(" {2,}"))
-        assertEquals("--colour[=<auto|always|never>]", row(declared, "--colour").first())
+        assertEquals("--colour[=auto|always|never]", row(declared, "--colour").first())
         assertEquals(
-            listOf("--color[=<auto|always|never>]", "Colorize output: auto, always, or never (bare: always)"),
+            listOf("--color[=auto|always|never]", "Colorize output: auto, always, or never (bare: always)"),
             row(builtin, "--color"),
         )
     }
@@ -948,7 +1008,7 @@ class OptionalValueHelpTest {
             option(short = 'o', long = "out", help = "where to write")
             action { Ok("") }
         }
-        assertTrue("-o, --out <value>" in cmd.helpText(), cmd.helpText())
+        assertTrue("-o, --out=value" in cmd.helpText(), cmd.helpText())
     }
 
     @Test
@@ -957,6 +1017,6 @@ class OptionalValueHelpTest {
             option(long = "mode").placeholder("M").optionalValue("fast").required()
             action { Ok("") }
         }
-        assertEquals("usage: app --mode[=<M>] [options]", cmd.usageLine())
+        assertEquals("usage: app --mode[=M] [options]", cmd.usageLine())
     }
 }

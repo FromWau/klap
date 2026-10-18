@@ -3,6 +3,7 @@ package com.fromwau.klap.fixture.cp
 import com.fromwau.kern.result.Result
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.io.CliPath
 import kotlin.test.fail
 
 /*
@@ -202,7 +203,7 @@ internal object CpProjectionSupport {
         input.cell(
             AFTER_END,
             listOf("--", word, "b"),
-            NOTHING_BOUND.copy(sources = listOf(word), dest = "b"),
+            operands(word, "b"),
             "`cp a -- -v` makes a file named -v",
         ),
     )
@@ -232,7 +233,7 @@ internal object CpProjectionSupport {
                 input.cell(
                     BARE_THEN_WORD,
                     listOf(long, sample) + AB,
-                    A_TO_B.copy(sources = listOf(sample, "a")).bare(),
+                    A_TO_B.copy(sources = listOf(CliPath(sample), CliPath("a"))).bare(),
                     "`cp $long $sample a b`: target 'b': Not a directory, so $sample was a source",
                 ),
             )

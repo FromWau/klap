@@ -8,6 +8,8 @@ import com.fromwau.klap.ConversionError
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
+import com.fromwau.klap.io.CliPath
+import com.fromwau.klap.io.path
 import com.fromwau.klap.projection
 
 /**
@@ -55,11 +57,11 @@ public fun sshCli(): TypedCli<SshInputs> = cliOf("ssh") {
     val port = option(short = 'p', long = "port", help = "port to connect to on the remote host").int().range(1..65535)
     val login = option(short = 'l', long = "login", help = "user to log in as on the remote machine")
     val bindAddress = option(short = 'b', long = "bind-address", help = "address of the local interface to bind")
-    val configFile = option(short = 'F', long = "config", help = "per-user configuration file").file()
-    val logFile = option(short = 'E', long = "log-file", help = "append debug logs here instead of stderr").file()
+    val configFile = option(short = 'F', long = "config", help = "per-user configuration file").path()
+    val logFile = option(short = 'E', long = "log-file", help = "append debug logs here instead of stderr").path()
 
     // Repeatable in real ssh: most-preferred key first.
-    val identity = option(short = 'i', long = "identity", help = "identity (private key) file").file().multiple()
+    val identity = option(short = 'i', long = "identity", help = "identity (private key) file").path().multiple()
 
     // The assignment-shaped repeatable option. `.convert` runs per occurrence, so each `-o` value is
     // split into a typed pair and a malformed one reports a real parse error. All four spellings the
@@ -207,9 +209,9 @@ public data class SshInputs(
     val port: Int?,
     val login: String?,
     val bindAddress: String?,
-    val configFile: String?,
-    val logFile: String?,
-    val identity: List<String>,
+    val configFile: CliPath?,
+    val logFile: CliPath?,
+    val identity: List<CliPath>,
     val sshOptions: List<Pair<String, String>>,
     val jumpHosts: List<String>,
     val localForward: List<String>,

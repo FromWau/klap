@@ -86,7 +86,7 @@ class PacmanSuggestionListTest {
         // bare --debug; `pacman -Q --check --check pacman` counts.
         val query = NOTHING_BOUND.copy(query = true)
         val cells = listOf(
-            Triple("pacman -Q --col=al|", "--col=always", query.copy(color = "always")),
+            Triple("pacman -Q --col=al|", "--col=always", query.copy(color = ColorWhen.Always)),
             Triple("pacman -Q --deb|", "--debug", query.copy(debug = "1")),
             Triple("pacman -Q --chec|", "--check", query.copy(check = 1)),
             Triple("pacman --que| pacman", "--query", query.copy(targets = listOf("pacman"))),
@@ -110,7 +110,7 @@ class PacmanSuggestionListTest {
         val chosen = acceptSuggestion(line, values[1])
         parity.binds(
             *chosen.split(' ').drop(1).toTypedArray(),
-            expected = NOTHING_BOUND.copy(query = true, color = "never"),
+            expected = NOTHING_BOUND.copy(query = true, color = ColorWhen.Never),
             because = "E16 `$chosen`",
         )
     }

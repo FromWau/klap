@@ -38,10 +38,20 @@ internal data class ArgumentHelp(
     val help: String,
     val required: Boolean,
     val repeatable: Boolean,
+    val min: Int? = null,
+    val max: Int? = null,
     val default: String? = null,
     val choices: List<String>? = null,
     val absentWhen: String? = null,
     val optionalWhen: String? = null,
+    val atMostWhen: List<CapHelp>? = null,
+)
+
+/** One `.atMostWhen` cap: while [input] is given, the operand takes at most [max] values. */
+@Serializable
+internal data class CapHelp(
+    val input: String,
+    val max: Int,
 )
 
 @Serializable
@@ -51,6 +61,8 @@ internal data class OptionHelp(
     val value: String? = null,
     val required: Boolean = false,
     val repeatable: Boolean = false,
+    val min: Int? = null,
+    val max: Int? = null,
     val default: String? = null,
     val choices: List<String>? = null,
     val section: String? = null,
@@ -118,15 +130,24 @@ private fun BuiltinOption.toHelp(): OptionHelp =
 private fun Cardinality.isRequired(): Boolean =
     this == Cardinality.Required || (this is Cardinality.Multiple && min > 0)
 
+/** A `.multiple()` input's declared minimum, null when it is zero, as text help leaves it unsaid. */
+private val Cardinality.minCount: Int? get() = (this as? Cardinality.Multiple)?.min?.takeIf { it > 0 }
+
+/** A `.multiple()` input's declared maximum, null when it has none. */
+private val Cardinality.maxCount: Int? get() = (this as? Cardinality.Multiple)?.max?.takeIf { it != Int.MAX_VALUE }
+
 private fun ArgumentSpec.toHelp(): ArgumentHelp = ArgumentHelp(
     name = displayName(),
     help = help,
     required = cardinality.isRequired(),
     repeatable = cardinality is Cardinality.Multiple,
+    min = cardinality.minCount,
+    max = cardinality.maxCount,
     default = (cardinality as? Cardinality.Default)?.let { display(it.value) },
     choices = listedChoices,
     absentWhen = absentWhen?.constraintToken(),
     optionalWhen = optionalWhen?.constraintToken(),
+    atMostWhen = capsWhen.map { (trigger, n) -> CapHelp(trigger.constraintToken(), n) }.ifEmpty { null },
 )
 
 private fun NamedSpec.toHelp(): OptionHelp = when (this) {
@@ -136,6 +157,8 @@ private fun NamedSpec.toHelp(): OptionHelp = when (this) {
         value = resolvedPlaceholder(),
         required = cardinality.isRequired(),
         repeatable = cardinality is Cardinality.Multiple,
+        min = cardinality.minCount,
+        max = cardinality.maxCount,
         default = (cardinality as? Cardinality.Default)?.let { display(it.value) },
         choices = listedChoices,
         section = section,

@@ -9,6 +9,8 @@ import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Builtin
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Help
+import com.fromwau.klap.io.CliPath
+import com.fromwau.klap.io.path
 import com.fromwau.klap.OptionalValue
 import com.fromwau.klap.RepeatedOptions
 import com.fromwau.klap.TypedCli
@@ -95,7 +97,7 @@ public fun mvCli(environment: Map<String, String> = emptyMap()): TypedCli<MvInpu
         long = "target-directory",
         help = "move all SOURCE arguments into DIRECTORY",
     )
-        .file()
+        .path()
         .placeholder("DIRECTORY")
         .repeated(RepeatedOptions.Refuse)
     val noTargetDirectory = flag(short = 'T', long = "no-target-directory", help = "treat DEST as a normal file")
@@ -134,16 +136,16 @@ public fun mvCli(environment: Map<String, String> = emptyMap()): TypedCli<MvInpu
     // operand, `-T` leaves one SOURCE so `mv -T a b c` is an extra operand, and `mv a` is a parse-level
     // "missing required argument <source>" rather than a rule the action re-implements.
     //
-    // KLAP-GAP: `.file()` on DEST can't restrict to directories-only, unlike real mv.
+    // KLAP-GAP: `.path()` on DEST can't restrict to directories-only, unlike real mv.
     val sources = argument("source", "the files to move")
         .placeholder("SOURCE")
-        .file()
+        .path()
         .multiple(min = 1)
         .atMostWhen(noTargetDirectory, 1)
 
     val dest = argument("dest", "where to move them")
         .placeholder("DEST")
-        .file()
+        .path()
         .absentWhen(targetDirectory)
 
     fun ValueScope.backupAsked(): Boolean = backup().isNotEmpty() || backupDefault() || suffix() != null
@@ -231,7 +233,7 @@ public data class MvInputs(
     val force: Boolean,
     val interactive: Boolean,
     val noClobber: Boolean,
-    val targetDirectory: String?,
+    val targetDirectory: CliPath?,
     val noTargetDirectory: Boolean,
     /** The suffix a simple backup takes, from `-S` or `SIMPLE_BACKUP_SUFFIX`, or null for mv's `~`. */
     val suffix: String?,
@@ -243,8 +245,8 @@ public data class MvInputs(
     val noCopy: Boolean,
     val stripTrailingSlashes: Boolean,
     val context: Boolean,
-    val sources: List<String>,
-    val dest: String?,
+    val sources: List<CliPath>,
+    val dest: CliPath?,
 )
 
 /** `mv` with no arguments at all: every field at the default its declaration gives it. */

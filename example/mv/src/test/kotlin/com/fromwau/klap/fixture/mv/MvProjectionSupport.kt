@@ -3,6 +3,7 @@ package com.fromwau.klap.fixture.mv
 import com.fromwau.kern.result.Result
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.parse
 import kotlin.test.fail
 
@@ -182,7 +183,7 @@ internal object MvProjectionSupport {
         input.cell(
             AFTER_END,
             listOf("--", word, "b"),
-            NOTHING_BOUND.copy(sources = listOf(word), dest = "b"),
+            operands(word, "b"),
             "`mv a -- -v` makes a file named -v",
         ),
     )
@@ -210,7 +211,7 @@ internal object MvProjectionSupport {
                 input.cell(
                     BARE_THEN_WORD,
                     listOf(long, sample) + AB,
-                    A_TO_B.copy(sources = listOf(sample, "a")).bare(),
+                    A_TO_B.copy(sources = listOf(CliPath(sample), CliPath("a"))).bare(),
                     "`mv --backup numbered a b`: target 'b': Not a directory, so the word was a source",
                 ),
             )

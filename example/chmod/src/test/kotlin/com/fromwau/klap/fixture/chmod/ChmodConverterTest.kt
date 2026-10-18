@@ -5,6 +5,7 @@ import com.fromwau.klap.fixture.checkCells
 import com.fromwau.klap.fixture.chmod.ChmodMode.OctalOp.ADD
 import com.fromwau.klap.fixture.chmod.ChmodMode.OctalOp.ASSIGN
 import com.fromwau.klap.fixture.chmod.ChmodMode.OctalOp.REMOVE
+import com.fromwau.klap.io.CliPath
 import kotlin.test.Test
 
 /*
@@ -34,7 +35,12 @@ private fun ParitySuite<ChmodInputs>.checkModes(cells: List<ModeCell>) = checkCe
     if (mode == null) {
         rejects(cell.word, "f", because = cell.because)
     } else {
-        binds(cell.word, "f", expected = NOTHING_BOUND.copy(mode = mode, files = listOf("f")), because = cell.because)
+        binds(
+            cell.word,
+            "f",
+            expected = NOTHING_BOUND.copy(mode = mode, files = listOf(CliPath("f"))),
+            because = cell.because,
+        )
     }
 }
 
@@ -128,12 +134,13 @@ class ChmodConverterTest {
 
     @Test
     fun `a mode after the end of options binds as typed`() = checkCells(DASH_LED + OCTALS.take(3)) { cell ->
-        parity.binds("--", cell.word, "f", expected = NOTHING_BOUND.copy(mode = cell.mode, files = listOf("f")))
+        val expected = NOTHING_BOUND.copy(mode = cell.mode, files = listOf(CliPath("f")))
+        parity.binds("--", cell.word, "f", expected = expected)
     }
 
     @Test
     fun `--reference binds its file as typed`() = checkCells(REFERENCES) { value ->
-        val expected = NOTHING_BOUND.copy(reference = value, files = listOf("f"))
+        val expected = NOTHING_BOUND.copy(reference = CliPath(value), files = listOf(CliPath("f")))
         parity.binds("--reference=$value", "f", expected = expected, because = "chmod opens '$value' only later")
         parity.binds("--reference", value, "f", expected = expected, because = "chmod opens '$value' only later")
     }

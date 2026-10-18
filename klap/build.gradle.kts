@@ -1,22 +1,12 @@
 plugins {
-    alias(libs.plugins.kotlinMultiplatform)
+    id("klap-library")
     alias(libs.plugins.kotlinSerialization)
-    id("klap-publish")
 }
 
-val jdkVersion = libs.versions.jdk.get().toInt()
+description = "A reflection-free Kotlin Multiplatform command-line framework: a builder DSL for commands and " +
+    "subcommands, typed and validated arguments, generated help, shell completion, and typed Result errors."
 
 kotlin {
-    explicitApi()
-
-    jvmToolchain(jdkVersion)
-
-    jvm {
-        attributes.attribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, jdkVersion)
-    }
-    linuxX64()
-    mingwX64()
-
     listOf(
         macosArm64(),
         iosArm64(),
@@ -39,7 +29,6 @@ kotlin {
         }
 
         commonTest.dependencies {
-            implementation(libs.kotlin.test)
             implementation(libs.kern.result.test)
             // Test-only. commonMain must stay free of kotlinx-coroutines; `suspend` itself is stdlib.
             implementation(libs.kotlinx.coroutines.test)

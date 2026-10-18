@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.chmod
 
 import com.fromwau.klap.fixture.chmod.Dereference.Follow
 import com.fromwau.klap.fixture.chmod.Dereference.NoFollow
+import com.fromwau.klap.io.CliPath
 import kotlin.test.fail
 
 /*
@@ -61,7 +62,7 @@ internal val INPUTS: List<Input> = listOf(
         null,
         "use RFILE's mode instead of specifying MODE values. RFILE is always dereferenced if a symbolic link.",
         value = true,
-    ) { copy(reference = it) },
+    ) { copy(reference = CliPath(it)) },
     flag("--recursive", short = 'R', help = "change files and directories recursively") { copy(recursive = true) },
     flag(short = 'H', help = "if a command line argument is a symlink to a directory, traverse it") {
         copy(traverseArgLinks = true, traverseAllLinks = false, traverseNoLinks = false)
@@ -119,4 +120,4 @@ internal fun octal(
 ): ChmodMode = ChmodMode.Octal(digits.toInt(radix = 8), op)
 
 /** What `chmod u+x f` binds before any option: the record most cells start from. */
-internal val U_X_F: ChmodInputs = NOTHING_BOUND.copy(mode = symbolic("u+x"), files = listOf("f"))
+internal val U_X_F: ChmodInputs = NOTHING_BOUND.copy(mode = symbolic("u+x"), files = listOf(CliPath("f")))

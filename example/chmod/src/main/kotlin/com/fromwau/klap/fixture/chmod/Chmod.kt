@@ -10,6 +10,8 @@ import com.fromwau.klap.Builtin
 import com.fromwau.klap.CliError
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.Help
+import com.fromwau.klap.io.CliPath
+import com.fromwau.klap.io.path
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.ValueScope
 import com.fromwau.klap.Version
@@ -130,7 +132,7 @@ public fun chmodCli(): TypedCli<ChmodInputs> = cliOf("chmod") {
         long = "reference",
         help = "use RFILE's mode instead of specifying MODE values. RFILE is always dereferenced if a symbolic link.",
     )
-        .file()
+        .path()
 
     val recursive = flag(short = 'R', long = "recursive", help = "change files and directories recursively")
 
@@ -173,7 +175,7 @@ public fun chmodCli(): TypedCli<ChmodInputs> = cliOf("chmod") {
         .absentWhen(reference)
     atMostOne(mode, reference)
 
-    val files = argument("file", "files whose mode to change").file().multiple(min = 1)
+    val files = argument("file", "files whose mode to change").path().multiple(min = 1)
 
     action {
         // Safe: reference and mode are mutually exclusive by construction (absentWhen), so whichever
@@ -244,13 +246,13 @@ public data class ChmodInputs(
     val verbose: Boolean,
     val dereference: Dereference,
     val preserveRoot: Boolean,
-    val reference: String?,
+    val reference: CliPath?,
     val recursive: Boolean,
     val traverseArgLinks: Boolean,
     val traverseAllLinks: Boolean,
     val traverseNoLinks: Boolean,
     val mode: ChmodMode?,
-    val files: List<String>,
+    val files: List<CliPath>,
 )
 
 /** `chmod` with no arguments at all: every field at the default its declaration gives it. */
