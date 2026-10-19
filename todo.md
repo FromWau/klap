@@ -350,7 +350,8 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
   (`gradle/libs.versions.toml:10`) while kern is at 0.5.1, and kern's 0.6.0 (logger API, result's smart casts,
   `toResult` and combining, the two terminal fixes of `2d1a924`) is not yet in Maven Local. Kotlin is 2.4.21 in klap,
   2.4.20 in kern; the notes want kern raised to match. klap uses only `result`, `terminal`, `fuzzy` and `result-test`,
-  so kern's `dirs`/`fs` split does not touch it; kern keeps `fuzzy` (item 175). Waits on kern 0.6.0 being
+  so kern's `dirs`/`fs` split does not touch it; kern keeps `fuzzy` (item 175; the revert of kern's `61a6ae5` is staged
+  in the worktree `/home/fromml/Projects/kern-fuzzy` on `feat/fuzzy-back`, for kern's review). Waits on kern 0.6.0 being
   published. Build.
 - [x] **175. `didYouMean` and `editDistance` move into klap.** Owner, 2026-10-17 (kern notes, section 6, F2 A): kern's
   "two real projects" rule, and klap is fuzzy's only user. kern 0.6.0 drops the module; the source is in kern at
@@ -481,6 +482,71 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
   search), used by `wrap` and the signature column. `DisplayWidthTest` (11). Chosen: Hangul medial and final jamo 1, a
   soft hyphen 0, an emoji ZWJ sequence or skin tone measured per code point (👍🏽 is 4 where a terminal shows 2).
 
+- [x] **179. The parse and completion entry points are too long to read.** Branch deslop, 2026-10-18: `completeCandidates`
+  (`internal/render/Completion.kt`) is 301 lines, 189 on `master`; `parseTokens` (`Parser.kt`) 275, 237 on `master`;
+  `sift` (`internal/parse/Parser.kt`) 271. Each is a run of early-returning stages with a comment per stage. Split
+  each into named stage functions, no behaviour change, the suite as the guard. Design, owner to schedule.
+  Done 2026-10-19 (one agent, merged): `parseTokens` is 13 lines over named stages (`readBuiltins`, `walkToCommand`,
+  `readHelpRequest`, `bindCommand`, ...), `sift` a delegate to a `SegmentSift` with one reader per token kind,
+  `completeCandidates` 9 lines over `TabLine` and its candidate stages; no test changed, counts identical. Left, found
+  on the way: `unknownSubcommandBeforeHelp`'s KDoc sits above `routesTransparently`'s; `completionAnswer`, `docsAnswer`
+  and `routeBuiltin` repeat one choice-resolution step; `siftGlobals` (about 200 lines) has the same shape.
+- [x] **180. The subcommand walk exists twice.** Branch deslop, 2026-10-18: `walkSubcommands` (`internal/parse/
+  Walk.kt`) routes the parse and Tab and steps over a command's own option words by a trial `sift`; `ArityWalk`
+  (`internal/parse/ArgvScan.kt`) routes the built-in scans over raw argv by its own claim rules (`Claim.routesOn`).
+  169 taught both the same rule separately, so they can drift; fold the scan onto the walk, or pin their agreement in a
+  test over the fixtures' lines. klap core.
+  2026-10-19: `WalkAgreementTest` grew 10 tests (globals, value slots, `--`, help, meta-options, prio, flag-spelled,
+  `ownOptions`, a first-word number). The fold stopped on two lines where the walks disagree, each wrong once:
+  `tool remote --verbose=x add o` (the scan routes past a flag given a value; the walk stops) and `tool remote -v -5
+  add o` (the walk reads `-5` as `remote`'s first word and routes on; the scan stops). The parse refuses both, and Tab
+  follows the walk, so `remote -v -5 add -` offers add's options. **Owner, 2026-10-19 (180a):** A. 160's rule
+  decides both: a word the command's own options refuse stops routing, in the walk and in the scan; the walk's trial
+  read knows a word past the command's first is not its first word. Then both route by one shared step, and the two
+  lines go back into `WalkAgreementTest`. Done 2026-10-19 (one agent, merged): `SubcommandRouter.step` in `Walk.kt` is
+  the one per-word routing step (`RouteStep`: descend, step over, the command's own run, stop); `walkSubcommands` loops
+  over it and `ArityWalk` calls it on the raw argv, keeping only what the scan needs (value slots, pools, the first
+  word, `optionsEndAt`); a trial read knows a word past the command's first (`sift(leadsSegment)`). The two lines and
+  Tab on `remote -v -5 add -` are pinned, each seen failing first.
+  **Owner, 2026-10-19 (180b):** A. A global before a first-word-only number leaves the number the command's first word,
+  in the scan as in the parse, which strips the global first (`tool remote -g -5 add -x --help o` printed add's help,
+  `-5 -g` ran). Done: a word the parse strips (`Claim.stripped`: a global, `--json`, `--color`) moves the scan's first
+  word past it; `WalkAgreementTest` pins `-g -5`, `-t x -5` and `--global -5`, seen failing first.
+
+- [x] **181. The branch review's defects.** Review of `feat/klap-0.6.0` against `master`, 2026-10-18, every finding
+  reproduced; fixed test-first by two agents, merged. (1) A group with its own options blamed its own option for any
+  mistake on its segment (`app -v bogus` gave `UnknownOption(-v)`): it is read by the same sift as a leaf, its first
+  operand an unknown subcommand. (2) A parent's `.required()` option outranked a later options mistake (`app build
+  --bogus`): every options refusal on the line is ordered first, requirements after. (3) A parent's own option could
+  not precede a flag-spelled or prio child (`pm -v -Q`, `mytool -v license`): hoisting keeps it on the parent's
+  segment. (4) The built-in scan stopped routing at a number run where the parse routes on (`app -3 sub -e --help`);
+  `WalkAgreementTest` pins the two walks agreeing (180 stays open for folding them). (5) `run` read `--json` from the
+  unhoisted line. (6) The version and help shorts ignored the root's `ownOptions` (`-pv`). (7) A flag-spelled
+  command's long abbreviated under the root's `Abbreviation.None` (`pm --quer`). (8, 9) Two false guide examples
+  (`mytool --completion bash license` on a root without an action; `-Qc` with no `-c` on `-Q`). Open choices the
+  agents made, for the owner:
+  - `pm -Q pkg -v`: a parent's own option after the child's first operand is refused, as 169 refuses it after the
+    child's name.
+    **Owner, 2026-10-19 (181a):** A. For a flag-spelled child the parent's own options bind anywhere on the line, as
+    pacman reads one getopt loop (`pacman -Q pacman -v` and `pacman -Q pacman --dbpath /var/lib/pacman` exit 0); a
+    word child keeps 169's refusal after its name. `FlagCommandTest`'s `the parent's own option after the command's
+    operand is refused` is restated. To build.
+  - A letter both the parent and a flag-spelled child declare goes to the parent in the leading run, so the child's
+    is reachable only past an operand; nothing pins it. A tie-break by position, or a build refusal?
+    **Owner, 2026-10-19 (181b):** A. Building refuses a parent's own option whose short or long a flag-spelled child
+    also declares, naming both, as `validateGlobalCollisions` refuses a global's letter reused below it. To build.
+  - A `prio` child skips its parent's required globals but not the parent's own `.required()` options.
+    **Owner, 2026-10-19 (181c):** A. A `prio` child skips every requirement of the commands it passes, their own
+    `.required()` options as well as required globals; its action must not read one it runs without. `CommandBuilder.prio`'s
+    KDoc and the guide say "required inputs". To build.
+  Done 2026-10-19 (181a to 181c), test-first: `frontOwnWords` reads a flag-spelled child's whole line up to `--`
+  (`FlagCommandTest`: `the parent's own option binds anywhere on a flag-spelled command's line`, restated from the
+  refusal); `validateFlagSpelledCommands` refuses a spelling a parent's own option and its flag-spelled child share,
+  naming the command by its spellings (`a flag-spelled command may not declare a letter or long its parent's own
+  option has`; a word child may still reuse one, `git -p log -p`); a passed command binds under
+  `BindPolicy.DeferRequired` and skips its `.requiredWhen` checks for a `prio` child (`PrioCommandTest`). Each seen
+  failing first. The guide's flag-command and prio paragraphs and `CommandBuilder.prio`'s KDoc are restated.
+
 ## Owner calls
 
 - [x] **64. Open points from the cp API pass (2026-10-11).** Each is a small call on what was built for 21, 57 and 63:
@@ -521,10 +587,11 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
 
 ## Release
 
-- [ ] **3. Merge `completion-whole-word` into `master` and publish klap.**
-  `6f3bdce` holds the whole-word completion round; the public `com.fromwau.klap.testing` API, its guide section,
-  the `fixture-parity-tests` skill and the pacman fixture work are still in the working tree. kotoml's `dev`
-  builds against klap 0.5.3 from Maven Local until klap is published to `maven.frommhund.xyz`.
+- [ ] **3. Merge `feat/klap-0.6.0` into `master` and publish klap 0.6.0.** The branch is 18 commits on
+  `origin/master` (2026-10-19): the completion rounds and the 0.5.3 bump that were on `master`, then the 0.6.0 work
+  squashed into six. Publishing needs HEAD tagged `v0.6.0` and a clean checkout (`klap-publish`), and klap 0.6.0
+  depends on kern 0.6.0 being published first (134, 135). kotoml's `dev` builds against klap 0.5.3 from Maven Local
+  until then.
 
 ## Will not do
 
@@ -604,7 +671,7 @@ Decided against, with the reason, so they are not proposed again.
   are declared or provided in`), and a provider that wants fuzzy matching ranks its own candidates. The same pass
   tried `fuzzyRank` for the "did you mean" hints, which made them wrong (`--he` suggested `--header` over
   `--help`, and hints appeared where nothing is close); they stay on `didYouMean`. `fuzzyRank` stays in kern.
-  It was dropped from kern 0.6.0 on 2026-10-17 (item 175).
+  kern keeps `fuzzy` (item 175a).
 
 ## Done
 

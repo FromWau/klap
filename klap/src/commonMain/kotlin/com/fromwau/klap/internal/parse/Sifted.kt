@@ -33,6 +33,8 @@ internal data class Sifted(
     val flagHits: List<FlagHit> = emptyList(),
     // The dash words the command's `dashLed(gather) { }` slot took, in line order.
     val gathered: List<String> = emptyList(),
+    // Where the first of [positionals] stood.
+    val firstPositionalAt: ClusterPosition? = null,
 ) {
     /** [error] with where it stood. */
     val refusal: Refusal? get() = error?.let { e -> errorAt?.let { Refusal(e, it) } }

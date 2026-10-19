@@ -372,6 +372,15 @@ internal fun validateFlagSpelledCommands(
                 "command '${sub.token}': one of its own inputs is spelled '$spelling', the command's own spelling"
             }
         }
+        // A flag-spelled command shares its parent's line, so a spelling both declare would mean two things on it.
+        val parentOwn = specs.filterIsInstance<NamedSpec>().flatMap { it.allSpellings }.toSet()
+        for (input in sub.namedInputs) {
+            val shared = input.allSpellings.firstOrNull { it in parentOwn } ?: continue
+            throw IllegalArgumentException(
+                "command '${sub.flagSpellings.joinToString(", ")}': option/flag '$shared' is also an option of " +
+                    "'$name', whose line it shares",
+            )
+        }
     }
 }
 

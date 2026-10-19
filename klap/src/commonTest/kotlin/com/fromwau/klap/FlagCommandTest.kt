@@ -207,6 +207,115 @@ class FlagCommandTest {
         assertEquals("Q color=true [pkg]", tool.bindText("-Q", "--color", "pkg"))
     }
 
+    private val pm = cli("pm") {
+        val verbose = flag(short = 'v', long = "verbose")
+        command(short = 'Q', long = "query") {
+            val info = flag(short = 'i', long = "info")
+            val packages = argument("package").multiple(min = 0)
+            action { Ok("Q v=${verbose()} i=${info()} ${packages()}") }
+        }
+        command("word") {
+            action { Ok("word v=${verbose()}") }
+        }
+    }
+
+    @Test
+    fun `the parent's own option binds on its own segment wherever the command's spelling stands`() {
+        assertEquals("Q v=true i=false []", pm.bindText("-v", "-Q"))
+        assertEquals("Q v=true i=false []", pm.bindText("-vQ"))
+        assertEquals("Q v=true i=false []", pm.bindText("-Qv"))
+        assertEquals("Q v=true i=false []", pm.bindText("-Q", "-v"))
+        assertEquals("Q v=true i=false []", pm.bindText("--verbose", "--query"))
+        assertEquals("Q v=true i=true [x]", pm.bindText("-i", "-v", "-Q", "x"))
+        assertEquals("word v=true", pm.bindText("-v", "word"))
+    }
+
+    @Test
+    fun `the parent's own option binds anywhere on a flag-spelled command's line`() {
+        // pacman reads its whole line in one getopt loop: `pacman -Q pacman -v` exits 0, verbose.
+        assertEquals("Q v=true i=false [x]", pm.bindText("-Q", "x", "-v"))
+        assertEquals("Q v=true i=true [x, y]", pm.bindText("-Q", "x", "-v", "y", "-i"))
+        assertEquals("Q v=false i=false [x, -v]", pm.bindText("-Q", "x", "--", "-v"))
+    }
+
+    @Test
+    fun `a flag-spelled command may not declare a letter or long its parent's own option has`() {
+        val letter = assertFailsWith<IllegalArgumentException> {
+            cli("pm") {
+                flag(short = 'c', long = "cache")
+                command(short = 'Q', long = "query") {
+                    flag(short = 'c', long = "changelog")
+                    action { Ok("") }
+                }
+            }
+        }
+        assertTrue("-c" in letter.message.orEmpty() && "-Q" in letter.message.orEmpty(), letter.message)
+        assertFailsWith<IllegalArgumentException> {
+            cli("pm") {
+                flag(long = "cache")
+                command(short = 'Q', long = "query") {
+                    option(long = "cache")
+                    action { Ok("") }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `a word command may reuse a letter its parent's own option has`() {
+        val git = cli("git") {
+            val paginate = flag(short = 'p')
+            command("log") {
+                val patch = flag(short = 'p')
+                action { Ok("paginate=${paginate()} patch=${patch()}") }
+            }
+        }
+        assertEquals("paginate=true patch=true", git.bindText("-p", "log", "-p"))
+    }
+
+    @Test
+    fun `tab after the parent's own option completes for the command its spelling names`() {
+        val dash = pm.offered("-v", "-")
+        assertTrue("-Q" in dash && "--query" in dash, dash.toString())
+        val afterQuery = pm.offered("-v", "-Q", "-")
+        assertTrue("-i" in afterQuery && "--info" in afterQuery, afterQuery.toString())
+        assertTrue("-i" in pm.offered("-Q", "-v", "-"))
+    }
+
+    @Test
+    fun `a flag-spelled command's long matches by the abbreviation of its parent's own segment`() {
+        val tool = cli("pm") {
+            abbreviation = Abbreviation.Options
+            ownOptions(shortOptions = ShortOptions.Clustered, abbreviation = Abbreviation.None)
+            command(short = 'Q', long = "query") { action { Ok("Q") } }
+        }
+        assertEquals("Q", tool.bindText("--query"))
+        assertEquals(CliError.UnknownOption("--quer"), tool.parse(listOf("--quer")).assertError())
+        val abbreviating = cli("pm") {
+            ownOptions(shortOptions = ShortOptions.Clustered, abbreviation = Abbreviation.Options)
+            command(short = 'Q', long = "query") { action { Ok("Q") } }
+        }
+        assertEquals("Q", abbreviating.bindText("--quer"))
+    }
+
+    @Test
+    fun `run reads --json as the value of the command's option the parse gives it to`() {
+        val tool = cli("pm") {
+            command(short = 'Q', long = "query") {
+                val db = option(short = 'b')
+                val n = option(short = 'n').int()
+                action { Ok("Q b=${db()} n=${n()}") }
+            }
+        }
+        for (argv in listOf(arrayOf("-Qb", "--json", "-n", "x"), arrayOf("-Q", "-b", "--json", "-n", "x"))) {
+            val terminal = RecordingTerminal()
+            tool.run(argv, terminal)
+            val err = terminal.err.toString()
+            assertTrue("\"type\"" !in err && "\"type\"" !in terminal.out.toString(), "${argv.toList()}: $err")
+            assertTrue("-n" in err, "${argv.toList()}: $err")
+        }
+    }
+
     @Test
     fun `a dash at the parent offers each command's spellings beside the globals`() {
         val dash = offered("-")

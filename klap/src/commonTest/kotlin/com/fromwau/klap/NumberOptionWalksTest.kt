@@ -65,6 +65,21 @@ class NumberOptionWalksTest {
     }
 
     @Test
+    fun `the built-in scan routes past the number of the command that declares it`() {
+        val tree = cli("app") {
+            val lines = numberOption("lines").int()
+            command("sub") {
+                val expr = option(short = 'e')
+                action { Ok("lines=${lines()} e=${expr()}") }
+            }
+            action { Ok("root lines=${lines()}") }
+        }
+        assertEquals("lines=null e=--help", tree.bindText("sub", "-e", "--help"))
+        assertEquals("lines=3 e=--help", tree.bindText("-3", "sub", "-e", "--help"))
+        assertEquals("lines=3 e=--json", tree.bindText("-3", "sub", "-e", "--json"))
+    }
+
+    @Test
     fun `a digit cluster carrying a global after an operand is refused`() {
         // firstUnresolvedShort through the MixedClusterAfterOperands gate: the cluster resolves in full
         // (a run, then a global), so the tail token is a mixed cluster rather than the operand it looks

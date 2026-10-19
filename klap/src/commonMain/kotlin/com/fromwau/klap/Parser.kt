@@ -7,9 +7,10 @@ import com.fromwau.klap.internal.parse.ArgvScan
 import com.fromwau.klap.internal.parse.ClusterPosition
 import com.fromwau.klap.internal.parse.END_OF_OPTIONS
 import com.fromwau.klap.internal.parse.GlobalAccumulator
+import com.fromwau.klap.internal.parse.GlobalSift
+import com.fromwau.klap.internal.parse.Hoisted
 import com.fromwau.klap.internal.parse.Refusal
 import com.fromwau.klap.internal.parse.bind
-import com.fromwau.klap.internal.parse.bindOwnOptions
 import com.fromwau.klap.internal.parse.bindGlobals
 import com.fromwau.klap.internal.parse.builtinScan
 import com.fromwau.klap.internal.parse.firstBadValue
@@ -21,6 +22,7 @@ import com.fromwau.klap.internal.parse.LongPool
 import com.fromwau.klap.internal.parse.longMatchPool
 import com.fromwau.klap.internal.parse.namesHelpShort
 import com.fromwau.klap.internal.parse.namesVersionShort
+import com.fromwau.klap.internal.parse.PassedSift
 import com.fromwau.klap.internal.parse.refusals
 import com.fromwau.klap.internal.parse.resolveChoice
 import com.fromwau.klap.internal.parse.sift
@@ -260,13 +262,50 @@ public fun Cli.parse(argv: Collection<String>): Result<Invocation, CliError> = p
  * use. Passing an unordered collection is the caller's error: argv is a sequence and the order is the input.
  */
 private fun Cli.parseTokens(typed: List<String>): Result<Invocation, CliError> {
+    val line = readBuiltins(typed)
+    refusalBeforeWalk(line)?.let { return Result.Error(it) }
+    metaOptionAnswer(line)?.let { return it }
+    val walked = walkToCommand(line).getOrElse { return Result.Error(it) }
+    helpOrVersionAnswer(line, walked, readHelpRequest(line, walked))?.let { return it }
+    refusalBeforeBind(line, walked)?.let { return Result.Error(it) }
+    // A resolved built-in renders the whole tree via this root, so route it straight to its Show* invocation
+    // using `this`, with no binding, no action, no self-reference. Its node exists only to be listed/documented.
+    // Placed after --help (so `completion --help` shows the node's help) and after the hard global-sift error.
+    walked.cmd.builtinKind?.let { return routeBuiltin(it, walked.rest, walked.qualifiedName) }
+    return bindCommand(line, walked)
+}
+
+/** The built-ins a line carries, read before the walk, and the line left for the walk once they are stripped. */
+private class BuiltinLine(
+    val hoisted: Hoisted,
+    /** Shared by every scan of the line: a token in a value-taking option's argument slot is that option's. */
+    val scan: ArgvScan,
+    /** The root's segment as the root reads it, its own `ownOptions` included, for the shorts read before the walk. */
+    val rootReading: GlobalAccumulator,
+    val json: Boolean,
+    /** [scan] without the built-in `--json` and `--color`. */
+    val withoutColor: ArgvScan,
+    /** [withoutColor] without `--completion` and `--docs`, which name nothing ahead of a `prio` command. */
+    val withoutMeta: ArgvScan,
+    /** The line's first version request, or null. */
+    val versionAt: Int?,
+    /** [versionAt] when no help request stands ahead of it, so the version answers; null otherwise. */
+    val versionAnswerAt: Int?,
+    /** The line's first bad built-in value, held back while --help or --version may stand ahead of it. */
+    val builtinRefusal: Refusal?,
+) {
+    val versionFirst: Boolean get() = versionAnswerAt != null
+}
+
+/** Reads [typed]'s built-ins once its flag-spelled and prio commands are hoisted. */
+private fun Cli.readBuiltins(typed: List<String>): BuiltinLine {
     // A flag-spelled command stands where its word would from here on, and a prio command at the front of its
     // parent's segment, so every scan below routes both as words.
     val hoisted = hoistCommands(typed)
-    val argv = hoisted.tokens
     // Resolved once, ahead of every scan below and shared by all of them: a token standing in a
     // value-taking option's argument slot belongs to that option, so no built-in may claim it.
-    val scan = builtinScan(argv)
+    val scan = builtinScan(hoisted.tokens)
+    val rootReading = globalLookup().at(this)
     val json = builtins.json && scan.names("json")
     val inlineValueRefusal = builtinInlineValueRefusal(scan)
 
@@ -283,86 +322,136 @@ private fun Cli.parseTokens(typed: List<String>): Result<Invocation, CliError> {
     val colorRefusal = if (builtins.color) colorRefusal(withoutJson) else null
     val withoutColor = if (builtins.color) withoutJson.stripSpellings("color") else withoutJson
 
-    // --help and --version answer whichever the line gives first, as GNU tools do: `ls --help --version` prints
-    // the usage, `ls --version --help` the version. --help-all sits with them.
-    val versionAt = if (version == null) {
-        null
-    } else {
-        listOfNotNull(
-            builtins.versionLong?.let { scan.firstNaming(it) },
-            scan.firstOpenIndexed { i, token ->
-                (!builtins.versionRootOnly || scan.atRoot(i)) &&
-                    namesVersionShort(token, globalLookup(), firstWord = i == 0)
-            },
-        ).minOrNull()
-    }
+    val versionAt = versionRequestAt(scan, rootReading)
     // Answered after the walk, which tells whether a bad option or value stands ahead of it.
-    val versionFirst = versionAt != null && listOfNotNull(
-        scan.firstNaming(*helpLongs().toTypedArray()),
-        scan.firstOpenIndexed { i, token -> namesHelpShort(token, globalLookup(), firstWord = i == 0) },
-    ).minOrNull().let { helpAt -> helpAt == null || versionAt < helpAt }
+    val versionAnswerAt = versionAt?.takeIf { it < (helpRequestAt(scan, rootReading) ?: Int.MAX_VALUE) }
+    return BuiltinLine(
+        hoisted,
+        scan,
+        rootReading,
+        json,
+        withoutColor,
+        withoutMetaOptions(withoutColor),
+        versionAt,
+        versionAnswerAt,
+        listOfNotNull(inlineValueRefusal, colorRefusal).minByOrNull { it.at },
+    )
+}
 
-    // A bad built-in value refuses the line at once unless --help or --version may stand ahead of it, which
-    // only the walk below can tell.
-    val builtinRefusal = listOfNotNull(inlineValueRefusal, colorRefusal).minByOrNull { it.at }
-    if (builtinRefusal != null && versionAt == null && !hasHelpRequest(scan, this, globalLookup())) {
-        return Result.Error(builtinRefusal.error)
-    }
+/**
+ * The line's first `--version` or version short, or null when this tree has no version.
+ *
+ * --help and --version answer whichever the line gives first, as GNU tools do: `ls --help --version` prints
+ * the usage, `ls --version --help` the version. --help-all sits with them.
+ */
+private fun Cli.versionRequestAt(scan: ArgvScan, rootReading: GlobalAccumulator): Int? {
+    if (version == null) return null
+    return listOfNotNull(
+        builtins.versionLong?.let { scan.firstNaming(it) },
+        scan.firstOpenIndexed { i, token ->
+            (!builtins.versionRootOnly || scan.atRoot(i)) &&
+                namesVersionShort(token, rootReading, firstWord = i == 0)
+        },
+    ).minOrNull()
+}
 
-    // A `prio` command runs ahead of the meta-options, which then name nothing.
-    val withoutMeta = if (metaOptions) {
-        withoutColor
-            .let { if (builtins.completion) it.stripValued("completion") else it }
-            .let { if (builtins.docs) it.stripValued("docs") else it }
-    } else {
-        withoutColor
-    }
+/** The line's first help request as the root reads it before the walk, or null. */
+private fun Cli.helpRequestAt(scan: ArgvScan, rootReading: GlobalAccumulator): Int? = listOfNotNull(
+    scan.firstNaming(*helpLongs().toTypedArray()),
+    scan.firstOpenIndexed { i, token -> namesHelpShort(token, rootReading, firstWord = i == 0) },
+).minOrNull()
 
-    // Single-command roots expose completion/docs as position-independent, print-and-exit meta-options
-    // (dispatchers use subcommands). Recognized here like --version, before the walk and binding.
-    // --help / -h outrank the meta-options, and between the two the line's first one answers.
-    if (metaOptions && !hoisted.prio && !versionFirst && !hasHelpRequest(scan, this, globalLookup())) {
-        val docsAt = withoutColor.firstSpelling("docs")
-        val completionAt = withoutColor.firstSpelling("completion")
-        val docsFirst = builtins.docs && docsAt != null && (completionAt == null || docsAt < completionAt)
-        if (builtins.completion && !docsFirst) {
-            withoutColor.value("completion").getOrElse { return Result.Error(it) }
-                ?.let { raw ->
-                    val resolved = resolveBuiltinChoice("--completion", raw, COMPLETION_SHELL_NAMES)
-                        .getOrElse { return Result.Error(it) }
-                    val shell = CompletionShell.fromOrNull(resolved)
-                        ?: return Result.Error(
-                            CliError.InvalidChoice(
-                                "--completion",
-                                raw,
-                                COMPLETION_SHELL_NAMES,
-                                didYouMean(raw, COMPLETION_SHELL_NAMES),
-                            ),
-                        )
-                    return Result.Success(Invocation.ShowCompletion(this, shell))
-                }
-        }
-        if (builtins.docs) {
-            withoutColor.value("docs").getOrElse { return Result.Error(it) }?.let { raw ->
-                val resolved = resolveBuiltinChoice("--docs", raw, DOC_FORMAT_NAMES)
-                    .getOrElse { return Result.Error(it) }
-                val format = DocFormat.fromOrNull(resolved)
-                    ?: return Result.Error(
-                        CliError.InvalidChoice(
-                            "--docs",
-                            raw,
-                            DOC_FORMAT_NAMES,
-                            didYouMean(raw, DOC_FORMAT_NAMES),
-                        ),
-                    )
-                return Result.Success(Invocation.ShowDocs(this, format))
-            }
-        }
-    }
+/** [withoutColor] without the meta-options this root offers. A `prio` command runs ahead of them. */
+private fun Cli.withoutMetaOptions(withoutColor: ArgvScan): ArgvScan = if (metaOptions) {
+    withoutColor
+        .let { if (builtins.completion) it.stripValued("completion") else it }
+        .let { if (builtins.docs) it.stripValued("docs") else it }
+} else {
+    withoutColor
+}
 
+/**
+ * The bad built-in value that refuses the line before the walk, unless --help or --version may stand ahead of
+ * it, which only the walk can tell.
+ */
+private fun Cli.refusalBeforeWalk(line: BuiltinLine): CliError? {
+    val refusal = line.builtinRefusal ?: return null
+    if (line.versionAt != null || hasHelpRequest(line.scan, this, line.rootReading)) return null
+    return refusal.error
+}
+
+/**
+ * What `--completion <shell>` or `--docs <format>` answers, or null when the line asks for neither.
+ *
+ * Single-command roots expose completion/docs as position-independent, print-and-exit meta-options
+ * (dispatchers use subcommands). Recognized here like --version, before the walk and binding.
+ * --help / -h outrank the meta-options, and between the two the line's first one answers.
+ */
+private fun Cli.metaOptionAnswer(line: BuiltinLine): Result<Invocation, CliError>? {
+    if (!metaOptions || line.hoisted.prio || line.versionFirst) return null
+    if (hasHelpRequest(line.scan, this, line.rootReading)) return null
+    val withoutColor = line.withoutColor
+    val docsAt = withoutColor.firstSpelling("docs")
+    val completionAt = withoutColor.firstSpelling("completion")
+    val docsFirst = builtins.docs && docsAt != null && (completionAt == null || docsAt < completionAt)
+    if (builtins.completion && !docsFirst) completionAnswer(withoutColor)?.let { return it }
+    if (builtins.docs) docsAnswer(withoutColor)?.let { return it }
+    return null
+}
+
+/** The completion script `--completion <shell>` asks for, or null when the line gives no `--completion`. */
+private fun Cli.completionAnswer(withoutColor: ArgvScan): Result<Invocation, CliError>? {
+    val raw = withoutColor.value("completion").getOrElse { return Result.Error(it) } ?: return null
+    val resolved = resolveBuiltinChoice("--completion", raw, COMPLETION_SHELL_NAMES)
+        .getOrElse { return Result.Error(it) }
+    val shell = CompletionShell.fromOrNull(resolved)
+        ?: return Result.Error(
+            CliError.InvalidChoice(
+                "--completion",
+                raw,
+                COMPLETION_SHELL_NAMES,
+                didYouMean(raw, COMPLETION_SHELL_NAMES),
+            ),
+        )
+    return Result.Success(Invocation.ShowCompletion(this, shell))
+}
+
+/** The documentation `--docs <format>` asks for, or null when the line gives no `--docs`. */
+private fun Cli.docsAnswer(withoutColor: ArgvScan): Result<Invocation, CliError>? {
+    val raw = withoutColor.value("docs").getOrElse { return Result.Error(it) } ?: return null
+    val resolved = resolveBuiltinChoice("--docs", raw, DOC_FORMAT_NAMES)
+        .getOrElse { return Result.Error(it) }
+    val format = DocFormat.fromOrNull(resolved)
+        ?: return Result.Error(
+            CliError.InvalidChoice(
+                "--docs",
+                raw,
+                DOC_FORMAT_NAMES,
+                didYouMean(raw, DOC_FORMAT_NAMES),
+            ),
+        )
+    return Result.Success(Invocation.ShowDocs(this, format))
+}
+
+/** The line walked to the command it names, with what is left for that command to read. */
+private class WalkedCommand(
+    val cmd: Command,
+    val rest: List<String>,
+    /** The argv index of each [rest] token. */
+    val restPositions: List<Int>,
+    val qualifiedName: String,
+    val globalSift: GlobalSift,
+    /** The globals as [cmd] reads them, topped up by every sift of the line. */
+    val globalAcc: GlobalAccumulator,
+    val globalFlagShorts: Set<String>,
+    val passedSifts: List<PassedSift>,
+)
+
+/** Pulls the globals out of the line and walks it to the command it names. */
+private fun Cli.walkToCommand(line: BuiltinLine): Result<WalkedCommand, CliError> {
     // Globals are position-independent: pulled out before the subcommand walk, the same move --json already
-    // makes, and stopping at a value slot for the same reason the built-in strips above do.
-    val preStrip = globalSpecs.siftGlobals(if (hoisted.prio) withoutMeta else withoutColor, shortOptions)
+    // makes, and stopping at a value slot for the same reason the built-in strips do.
+    val preStrip = globalSpecs.siftGlobals(if (line.hoisted.prio) line.withoutMeta else line.withoutColor, shortOptions)
     val globalSift = preStrip.sift
 
     // Valueless globals only: the walk cannot tell a value-taking global's argument from a subcommand
@@ -392,13 +481,28 @@ private fun Cli.parseTokens(typed: List<String>): Result<Invocation, CliError> {
     val globalAcc = tally.at(cmd)
     // Each command the walk passed reads its own option words, in line order, ahead of the one it reached.
     val passedSifts = walk.passed.map { passed ->
-        passed.command to passed.command.sift(
-            preStrip.cleaned.slice(passed.words),
-            tally.at(passed.command),
-            preStrip.positions.slice(passed.words),
-        )
+        val own = tally.at(passed.command)
+        val words = preStrip.cleaned.slice(passed.words)
+        PassedSift(passed.command, passed.command.sift(words, own, preStrip.positions.slice(passed.words)), own)
     }
+    return Result.Success(
+        WalkedCommand(cmd, rest, restPositions, qualifiedName, globalSift, globalAcc, globalFlagShorts, passedSifts),
+    )
+}
 
+/** Where the segment the walk reached asks for `--help-all` and for `--help` or its short. */
+private class HelpRequest(
+    val requested: Boolean,
+    val helpAllAt: Int?,
+    val plainHelpAt: Int?,
+    /** The segment as the reached command reads it; the two indices above are into it. */
+    val segment: ArgvScan,
+)
+
+/** Reads the help request off the segment the walk reached, against that command's own pool. */
+private fun Cli.readHelpRequest(line: BuiltinLine, walked: WalkedCommand): HelpRequest {
+    val cmd = walked.cmd
+    val globalAcc = walked.globalAcc
     // --help and --help-all are the only built-ins resolved after the walk, against the pool of the command it
     // reached. The value slots come along unchanged, keyed on the original argv, so `sub -e --help f` is still
     // `-e`'s.
@@ -406,85 +510,110 @@ private fun Cli.parseTokens(typed: List<String>): Result<Invocation, CliError> {
     val segment = ArgvScan(
         { segmentPool },
         globalAcc.inferNames,
-        scan.valueSlots,
-        rest,
-        restPositions,
+        line.scan.valueSlots,
+        walked.rest,
+        walked.restPositions,
     )
-    val helpRequested = hasHelpRequest(segment, cmd, globalAcc)
-    // Gated on the help request: without one the same error already comes from cmd.bind() below, where a
-    // global-sift error rightly outranks it. Firing unconditionally here would invert that precedence.
-    if (helpRequested && !versionFirst) {
-        unknownSubcommandBeforeHelp(cmd, rest, qualifiedName, globalFlagShorts)?.let { return Result.Error(it) }
-    }
+    val requested = hasHelpRequest(segment, cmd, globalAcc)
     // --help-all and --help, like --version, answer whichever the line gives first.
     val helpAllAt = if (builtins.helpAll) segment.firstNaming("help-all") else null
     val plainHelpAt = listOfNotNull(
         segment.firstNaming("help").takeIf { builtins.help },
         segment.firstOpenIndexed { i, token -> cmd.namesHelpShort(token, globalAcc, firstWord = i == 0) },
     ).minOrNull()
-    // The line's first of the built-in and a bad option or value decides, as GNU coreutils reads its options
-    // in getopt's loop: `cp --help --bogus` prints the usage, `cp --bogus --help` is refused. Operands and
-    // requirements are checked after that loop, so they never refuse an answer.
-    if (helpRequested || versionFirst) {
-        val answerAt = if (versionFirst) {
-            scan.positions[versionAt]
-        } else {
-            listOfNotNull(helpAllAt, plainHelpAt).minOrNull()?.let { segment.positions[it] }
-        }
-        val sifted = cmd.sift(rest, globalAcc, restPositions)
-        val passedRefusals = passedSifts.flatMap { (_, passed) -> passed.refusals(globalAcc.inferValues) }
-        val refusal = listOfNotNull(
-            builtinRefusal,
-            sifted.refusal,
-            globalSift.refusal,
-            globalAcc.repeatRefusal(),
-            firstBadValue(sifted, globalAcc.toGlobalSift(), globalAcc.inferValues),
-        ).plus(passedRefusals).minByOrNull { it.at }
-        // Token by token: the built-in's own token refuses it only when the cluster is refused whole, as one
-        // mixing it with a local short past the first operand is; otherwise a short cluster can only carry a
-        // refusal behind the built-in's character, since one ahead of it leaves the cluster no help request.
-        if (refusal != null && (answerAt == null || refusal.at.token < answerAt || refusal.refusesWhole(answerAt))) {
-            return Result.Error(refusal.error)
-        }
-    }
-    if (versionFirst) return Result.Success(Invocation.ShowVersion(this, json))
+    return HelpRequest(requested, helpAllAt, plainHelpAt, segment)
+}
 
-    if (helpRequested) {
-        val helpAllFirst = helpAllAt != null && (plainHelpAt == null || helpAllAt < plainHelpAt)
-        return Result.Success(
-            Invocation.ShowHelp(
-                cmd,
-                qualifiedName,
-                globalSpecs,
-                version != null,
-                metaOptions,
-                recursive = helpAllFirst || builtins.helpTree,
-                builtins = builtins,
-                json = json,
-            )
+/** The version or help page the line asks for, or what refuses it; null when the line asks for neither. */
+private fun Cli.helpOrVersionAnswer(
+    line: BuiltinLine,
+    walked: WalkedCommand,
+    help: HelpRequest,
+): Result<Invocation, CliError>? {
+    // Gated on the help request: without one the same error already comes from cmd.bind(), where a
+    // global-sift error rightly outranks it. Firing unconditionally here would invert that precedence.
+    if (help.requested && !line.versionFirst) {
+        unknownSubcommandBeforeHelp(walked.cmd, walked.rest, walked.qualifiedName, walked.globalFlagShorts)
+            ?.let { return Result.Error(it) }
+    }
+    if (!help.requested && !line.versionFirst) return null
+    refusalAheadOfAnswer(line, walked, help)?.let { return Result.Error(it) }
+    if (line.versionFirst) return Result.Success(Invocation.ShowVersion(this, line.json))
+
+    val helpAllFirst = help.helpAllAt != null && (help.plainHelpAt == null || help.helpAllAt < help.plainHelpAt)
+    return Result.Success(
+        Invocation.ShowHelp(
+            walked.cmd,
+            walked.qualifiedName,
+            globalSpecs,
+            version != null,
+            metaOptions,
+            recursive = helpAllFirst || builtins.helpTree,
+            builtins = builtins,
+            json = line.json,
         )
-    }
-    // Held back above for a help request the walk then did not confirm.
-    builtinRefusal?.let { return Result.Error(it.error) }
+    )
+}
 
-    // A hard global-sift error (dangling global value, or a value handed to a global boolean flag) is a
-    // usage error regardless of where the walk ends up; raise it before the command bind sees the leftover.
-    globalSift.error?.let { return Result.Error(it) }
-    hoisted.error?.let { return Result.Error(it) }
+/**
+ * The bad option or value that refuses a help or version request standing behind it, or null.
+ *
+ * The line's first of the built-in and a bad option or value decides, as GNU coreutils reads its options
+ * in getopt's loop: `cp --help --bogus` prints the usage, `cp --bogus --help` is refused. Operands and
+ * requirements are checked after that loop, so they never refuse an answer.
+ */
+private fun refusalAheadOfAnswer(
+    line: BuiltinLine,
+    walked: WalkedCommand,
+    help: HelpRequest,
+): CliError? {
+    val answerAt = line.versionAnswerAt?.let { line.scan.positions[it] }
+        ?: listOfNotNull(help.helpAllAt, help.plainHelpAt).minOrNull()?.let { help.segment.positions[it] }
+    val globalAcc = walked.globalAcc
+    val sifted = walked.cmd.sift(walked.rest, globalAcc, walked.restPositions)
+    val passedRefusals = walked.passedSifts.flatMap { it.sifted.refusals(it.globals.inferValues) }
+    val refusal = listOfNotNull(
+        line.builtinRefusal,
+        sifted.refusal,
+        walked.globalSift.refusal,
+        globalAcc.repeatRefusal(),
+        firstBadValue(sifted, globalAcc.toGlobalSift(), globalAcc.inferValues),
+    ).plus(passedRefusals).minByOrNull { it.at } ?: return null
+    // Token by token: the built-in's own token refuses it only when the cluster is refused whole, as one
+    // mixing it with a local short past the first operand is; otherwise a short cluster can only carry a
+    // refusal behind the built-in's character, since one ahead of it leaves the cluster no help request.
+    val ahead = answerAt == null || refusal.at.token < answerAt || refusal.refusesWhole(answerAt)
+    return refusal.error.takeIf { ahead }
+}
 
-    // A resolved built-in renders the whole tree via this root, so route it straight to its Show* invocation
-    // using `this`, with no binding, no action, no self-reference. Its node exists only to be listed/documented.
-    // Placed after --help (so `completion --help` shows the node's help) and after the hard global-sift error.
-    cmd.builtinKind?.let { return routeBuiltin(it, rest, qualifiedName) }
+/** The refusal the line carries whatever command it reaches, raised before that command binds. */
+private fun refusalBeforeBind(line: BuiltinLine, walked: WalkedCommand): CliError? =
+    // Held back for a help request the walk then did not confirm.
+    line.builtinRefusal?.error
+        // A hard global-sift error (dangling global value, or a value handed to a global boolean flag) is a
+        // usage error regardless of where the walk ends up; raise it before the command bind sees the leftover.
+        ?: walked.globalSift.error
+        ?: line.hoisted.error
 
+/** Binds the reached command and then the globals, and runs its input validations. */
+private fun Cli.bindCommand(line: BuiltinLine, walked: WalkedCommand): Result<Invocation, CliError> {
+    val cmd = walked.cmd
+    val json = line.json
+    val globalAcc = walked.globalAcc
     // Every resolved input is recorded in this per-parse sink, never on the shared specs, so the tree stays
     // immutable during parsing (concurrent parses each own their own sink). It is frozen into the Execute's
     // ActionScope once the command and its globals are both bound.
     val sink = mutableMapOf<HolderSpec, Any?>()
-    for ((passed, sifted) in passedSifts) {
-        passed.bindOwnOptions(sifted, sink, tally.at(passed))?.let { return Result.Error(it) }
-    }
-    return when (val outcome = cmd.bind(rest, Globals(json), qualifiedName, globalAcc, sink, restPositions)) {
+    val outcome = cmd.bind(
+        walked.rest,
+        Globals(json),
+        walked.qualifiedName,
+        globalAcc,
+        sink,
+        walked.restPositions,
+        walked.passedSifts,
+    )
+    return when (outcome) {
         is Result.Error -> outcome
         is Result.Success -> {
             val deferredGlobalErrors = bindGlobals(

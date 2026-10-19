@@ -67,6 +67,31 @@ class ParentSegmentTest {
         assertEquals(CliError.UnknownOption("--workdir"), app.parse(listOf("build", "--workdir", "d")).assertError())
     }
 
+    private val required = cli("app") {
+        option(short = 'x', long = "xx").required()
+        option(short = 'n').int()
+        command("build") {
+            flag(short = 'f', long = "fast")
+            action { Ok("built") }
+        }
+    }
+
+    @Test
+    fun `a mistake in the child's options outranks a parent's missing required option`() {
+        assertEquals(CliError.UnknownOption("--bogus"), required.parse(listOf("build", "--bogus")).assertError())
+        assertEquals(CliError.UnknownOption("-k"), required.parse(listOf("build", "-k", "abc")).assertError())
+    }
+
+    @Test
+    fun `a parent's missing required option is refused once the options are read`() {
+        assertEquals(CliError.MissingRequiredOption("--xx"), required.parse(listOf("build", "-f")).assertError())
+    }
+
+    @Test
+    fun `a mistake on the parent's segment outranks one in the child's options`() {
+        assertIs<CliError.BadValue>(required.parse(listOf("-n", "abc", "build", "--bogus")).assertError())
+    }
+
     @Test
     fun `a child's option before its name is refused`() {
         assertEquals(CliError.UnknownOption("-f"), app.parse(listOf("-f", "build")).assertError())

@@ -175,6 +175,12 @@ internal val Command.gatheringSlot: ArgumentSpec? get() = arguments.firstOrNull 
 /** Whether [spec] is the gathering slot and the line gave it a word. */
 internal fun ArgumentSpec.gathersOn(sifted: Sifted): Boolean = gather != null && sifted.gathered.isNotEmpty()
 
+/**
+ * A command the walk passed on its way to the one it reached: its own segment read by [sifted], the line's
+ * globals as it reads them in [globals].
+ */
+internal class PassedSift(val command: Command, val sifted: Sifted, val globals: GlobalAccumulator)
+
 internal fun Command.bind(
     segment: List<String>,
     globals: Globals,
@@ -182,77 +188,24 @@ internal fun Command.bind(
     globalAcc: GlobalAccumulator? = null,
     sink: MutableMap<HolderSpec, Any?>,
     positions: List<Int> = emptyList(),
+    passed: List<PassedSift> = emptyList(),
 ): Result<Invocation, CliError> {
-    if (isGroup) {
-        // A group given only its own options shows its help, as `git -C .` prints git's usage.
-        if (namedInputs.isNotEmpty()) {
-            val own = sift(segment, globalAcc, positions)
-            if (own.error == null && own.positionals.isEmpty()) {
-                return Result.Success(Invocation.ShowHelp(this, qualifiedName))
-            }
-        }
-        val ddIndex = segment.indexOf(END_OF_OPTIONS)
-        val head = if (ddIndex < 0) segment else segment.take(ddIndex)
-        val tail = if (ddIndex < 0) emptyList() else segment.drop(ddIndex + 1)
-        // Report the leftmost offender: a flag-shaped first token blames the option, otherwise the first
-        // positional blames the subcommand. Post-`--` tokens are always positional, never options.
-        val positionals = head.filterNot { it.isFlagLike() } + tail
-        val firstToken = head.firstOrNull()
-        return when {
-            // Match a leaf sift's granularity: a short cluster names its first (offending) char, not the
-            // whole token, so `-vz` at a group and `list -az` at a leaf both report `-z`; a long `--opt`
-            // is named in full.
-            firstToken != null && firstToken.isFlagLike() -> {
-                val long = firstToken.takeIf { it.startsWith("--") }?.removePrefix("--")?.substringBefore('=')
-                // A group binds nothing, so this token is an error whichever way it resolves; it is
-                // resolved anyway, because "unknown option '--he'; did you mean '--help'?" is a false
-                // diagnosis of a token that names several spellings, and a leaf would never give it.
-                val ambiguous = long?.let {
-                    resolveLong(it, longMatchPool(globalAcc), globalAcc?.inferNames ?: false) as? NameMatch.Ambiguous
-                }
-                if (ambiguous != null) {
-                    Result.Error(CliError.AmbiguousOption(firstToken, ambiguous.candidates.map { "--$it" }))
-                } else {
-                    // Resolved rather than assumed to be firstToken[1]: a cluster reaching here may carry
-                    // declared characters ahead of the offending one, and naming a declared global as
-                    // unknown is worse than naming nothing.
-                    val offending = if (long != null) firstToken
-                    else firstUnresolvedShort(firstToken.removePrefix("-"), globalAcc, firstWord = true)
-                        ?: "-${firstToken[1]}"
-                    val suggestion = long?.let { suggestLong(it, globalAcc) }
-                    Result.Error(CliError.UnknownOption(offending, suggestion, firstToken.takeIf { it != offending }))
-                }
-            }
-
-            positionals.isNotEmpty() -> {
-                val token = positionals.first()
-                // A real subcommand that only reached here because `--` preceded it (routing had already
-                // stopped) is misplaced, not unknown; say so instead of "unknown subcommand".
-                val infer = globalAcc?.inferSubcommands ?: false
-                if (ddIndex >= 0 && resolveSubcommand(token, infer) is SubcommandMatch.One) {
-                    Result.Error(CliError.SubcommandAfterSeparator(token, qualifiedName))
-                } else {
-                    Result.Error(
-                        CliError.UnknownSubcommand(
-                            qualifiedName, token,
-                            didYouMean(token, subcommandCandidates()),
-                        )
-                    )
-                }
-            }
-
-            else -> Result.Success(Invocation.ShowHelp(this, qualifiedName))
-        }
-    }
-
     val sifted = sift(segment, globalAcc, positions)
     val inferValues = globalAcc?.inferValues ?: false
     val globalSift = globalAcc?.toGlobalSift() ?: NO_GLOBALS
-    // The line's first refusal wins, as getopt's loop meets each option and its value in turn. A global's repeat
-    // is counted only once this sift has topped the globals up, so the refusals are ordered here.
-    listOfNotNull(sifted.refusal, globalAcc?.repeatRefusal(), firstBadValue(sifted, globalSift, inferValues))
-        .minByOrNull { it.at }
-        ?.let { return Result.Error(it.error) }
+    // The line's first refusal wins, as getopt's loop meets each option and its value in turn, the passed commands'
+    // segments included. A global's repeat is counted only once this sift has topped the globals up.
+    val refusals = passed.flatMap { it.sifted.refusals(it.globals.inferValues) } +
+        listOfNotNull(sifted.refusal, globalAcc?.repeatRefusal(), firstBadValue(sifted, globalSift, inferValues))
+    // A group's first operand names no child it routed to, so it ends the group's options where it stands.
+    val groupOperand = if (isGroup) unroutedOperand(sifted, segment, positions, qualifiedName, globalAcc) else null
+    (refusals + listOfNotNull(groupOperand)).minByOrNull { it.at }?.let { return Result.Error(it.error) }
+    for (above in passed) {
+        above.command.bindOwnOptions(above.sifted, sink, above.globals, skipRequired = prio)
+            ?.let { return Result.Error(it) }
+    }
+    // A group given only its own options shows its help, as `git -C .` prints git's usage.
+    if (isGroup) return Result.Success(Invocation.ShowHelp(this, qualifiedName))
     bindOptions(sifted, sink, inferValues)?.let { return Result.Error(it) }
     bindPositionals(sifted.positionals, sink, sifted, inferValues, qualifiedName = qualifiedName)
         .getOrElse { return Result.Error(it) }
@@ -267,11 +220,35 @@ internal fun Command.bind(
 
 private val NO_GLOBALS = GlobalSift(emptyMap(), emptyMap(), emptyMap())
 
+/**
+ * The refusal of this group's first operand, which the walk could not route: a child's name the end of options
+ * kept from routing is misplaced, any other word an unknown subcommand. Null when the group was given no operand.
+ */
+private fun Command.unroutedOperand(
+    sifted: Sifted,
+    segment: List<String>,
+    positions: List<Int>,
+    qualifiedName: String,
+    globalAcc: GlobalAccumulator?,
+): Refusal? {
+    val at = sifted.firstPositionalAt ?: return null
+    val token = sifted.positionals.first()
+    val separator = segment.indexOf(END_OF_OPTIONS).takeIf { it >= 0 }?.let { positions.getOrNull(it) ?: it }
+    val routable = resolveSubcommand(token, globalAcc?.inferSubcommands ?: false) is SubcommandMatch.One
+    val error = if (separator != null && separator < at.token && routable) {
+        CliError.SubcommandAfterSeparator(token, qualifiedName)
+    } else {
+        CliError.UnknownSubcommand(qualifiedName, token, didYouMean(token, subcommandCandidates()))
+    }
+    return Refusal(error, at)
+}
+
 /** This command's flags and options from [sifted] into [sink], after the checks that span several of them. */
 private fun Command.bindOptions(
     sifted: Sifted,
     sink: MutableMap<HolderSpec, Any?>,
     inferValues: Boolean,
+    policy: BindPolicy = BindPolicy.Strict,
 ): CliError? {
     checkConstraints(sifted)?.let { return it }
     bindFlagsAndOptions(
@@ -282,6 +259,7 @@ private fun Command.bindOptions(
         sifted.options,
         sink,
         inferValues,
+        policy,
     ).getOrElse { return it }
     // Ahead of resolveLastWins: a fold reads its winner's bound value, and an ENCLOSING set that overrode
     // the fold must then be free to reset it.
@@ -296,16 +274,19 @@ internal fun Sifted.refusals(inferValues: Boolean): List<Refusal> =
 
 /**
  * Binds the option words [sifted] read on this command's own segment, for a command the walk passed on the way to
- * a child: its options are the child's to read, an absent one its default.
+ * a child: its options are the child's to read, an absent one its default. Its refusals are the caller's to order
+ * against the rest of the line's. [skipRequired] leaves its requirements unchecked, for a `prio` child that runs
+ * without them, as it runs without its parent's required globals.
  */
-internal fun Command.bindOwnOptions(
+private fun Command.bindOwnOptions(
     sifted: Sifted,
     sink: MutableMap<HolderSpec, Any?>,
     globalAcc: GlobalAccumulator,
+    skipRequired: Boolean,
 ): CliError? {
-    sifted.refusals(globalAcc.inferValues).minByOrNull { it.at }?.let { return it.error }
-    bindOptions(sifted, sink, globalAcc.inferValues)?.let { return it }
-    return checkConditionalRequirements(sifted, globalAcc)
+    val policy = if (skipRequired) BindPolicy.DeferRequired else BindPolicy.Strict
+    bindOptions(sifted, sink, globalAcc.inferValues, policy)?.let { return it }
+    return if (skipRequired) null else checkConditionalRequirements(sifted, globalAcc)
 }
 
 /**
@@ -750,53 +731,118 @@ private fun OptionSpec?.valueFrom(attached: String?, next: () -> String?): Taken
  * here can be ordered against one the pre-strip already resolved and removed (see [Polarity], [Occurrence]).
  * Without it each token's position is its index in [segment], which orders nothing against the pre-strip, so
  * every caller that binds globals passes it, completion included.
+ *
+ * [leadsSegment] is false for a trial read of words further into the command's segment, whose first word is then
+ * not the command's first, where a first-word-only number may stand.
  */
 internal fun Command.sift(
     segment: List<String>,
     globalAcc: GlobalAccumulator? = null,
     positions: List<Int> = emptyList(),
-): Sifted {
-    val flagCounts = mutableMapOf<FlagSpec, Int>()
-    val negations = mutableMapOf<FlagSpec, Boolean>()
-    val optionValues = mutableMapOf<OptionSpec, MutableList<String?>>()
-    val positionals = mutableListOf<String>()
-    val dashLedAdmitted = mutableSetOf<Int>()
-    val gathered = mutableListOf<String>()
-    var error: CliError? = null
-    var errorAt: ClusterPosition? = null
+    leadsSegment: Boolean = true,
+): Sifted = SegmentSift(this, segment, globalAcc, positions, leadsSegment).run()
+
+/** One walk of [cmd]'s [segment], tallying what [sift] returns as it goes. */
+private class SegmentSift(
+    private val cmd: Command,
+    private val segment: List<String>,
+    private val globalAcc: GlobalAccumulator?,
+    private val positions: List<Int>,
+    private val leadsSegment: Boolean,
+) {
+    private val flagCounts = mutableMapOf<FlagSpec, Int>()
+    private val negations = mutableMapOf<FlagSpec, Boolean>()
+    private val optionValues = mutableMapOf<OptionSpec, MutableList<String?>>()
+    private val positionals = mutableListOf<String>()
+    private var firstPositionalAt: ClusterPosition? = null
+    private val dashLedAdmitted = mutableSetOf<Int>()
+    private val gathered = mutableListOf<String>()
+    private var error: CliError? = null
+    private var errorAt: ClusterPosition? = null
+    private val flagPositions = mutableMapOf<FlagSpec, ClusterPosition>()
+    private val optionPositions = mutableMapOf<OptionSpec, ClusterPosition>()
+    private val optionValuePositions = mutableMapOf<OptionSpec, MutableList<ClusterPosition>>()
+    private val flagHits = mutableListOf<FlagHit>()
+
+    // Built only once a long token actually needs it: a segment of operands and short clusters must not pay for
+    // a list it never reads.
+    private val longPool by lazy(LazyThreadSafetyMode.NONE) { cmd.longMatchPool(globalAcc) }
+
+    // Read once per walk; the properties behind them walk the specs on every read.
+    private val dashLedSlot = cmd.hasDashLedSlot
+    private val gather = cmd.gatheringSlot?.gather
+    private val endAt = cmd.optionsEndAt
+
+    private var optionsEnded = false
+
+    // `--` makes every later token literal, so the refusal after the end of options must not reach past one.
+    private var endedBySeparator = false
+
+    fun run(): Sifted {
+        var i = 0
+        while (i < segment.size) i += readToken(i)
+        return Sifted(
+            flagCounts,
+            negations,
+            optionValues,
+            positionals,
+            error,
+            flagPositions,
+            optionPositions,
+            dashLedAdmitted,
+            errorAt,
+            optionValuePositions,
+            flagHits,
+            gathered,
+            firstPositionalAt,
+        )
+    }
+
+    /** Reads the token at [i] and returns how many tokens it took, a value in the next one included. */
+    private fun readToken(i: Int): Int {
+        val token = segment[i]
+        // This token's place in the ORIGINAL argv, which is what every position recorded below is
+        // measured in; a segment the caller did not map falls back to its own index.
+        val tokenIndex = positions.getOrNull(i) ?: i
+        val tokenAt = ClusterPosition(tokenIndex)
+        val firstWord = i == 0 && leadsSegment
+        return when {
+            optionsEnded -> readAfterOptionsEnd(token, tokenAt, firstWord)
+
+            token == END_OF_OPTIONS -> {
+                optionsEnded = true
+                endedBySeparator = true
+                1
+            }
+
+            !token.isFlagLike() -> readOperand(token, tokenAt)
+            token.startsWith("--") -> readLong(token, i, tokenAt)
+            else -> readShortCluster(token, i, tokenIndex, firstWord)
+        }
+    }
 
     // A lambda, not a value: only the first call's build() actually executes, so didYouMean's edit-distance
     // scan runs at most once even though the walk keeps going after an error.
-    fun record(at: ClusterPosition, build: () -> CliError) {
+    private fun record(at: ClusterPosition, build: () -> CliError) {
         if (error == null) {
             error = build()
             errorAt = at
         }
     }
 
-    val flagPositions = mutableMapOf<FlagSpec, ClusterPosition>()
-    val optionPositions = mutableMapOf<OptionSpec, ClusterPosition>()
-    val optionValuePositions = mutableMapOf<OptionSpec, MutableList<ClusterPosition>>()
-
-    fun addValue(opt: OptionSpec, value: String?, at: ClusterPosition) {
+    private fun addValue(opt: OptionSpec, value: String?, at: ClusterPosition) {
         if (opt in optionValues && globalAcc.refusesRepeat(opt)) record(at) { CliError.RepeatedOption(opt.name) }
         optionValues.getOrPut(opt) { mutableListOf() } += value
         optionValuePositions.getOrPut(opt) { mutableListOf() } += at
         optionPositions[opt] = at
     }
 
-    // Loop-invariant, but built only once a long token actually needs it: a segment of operands and short
-    // clusters must not pay for a list it never reads.
-    val longPool by lazy(LazyThreadSafetyMode.NONE) { longMatchPool(globalAcc) }
+    private fun addPositional(token: String, at: ClusterPosition) {
+        if (positionals.isEmpty()) firstPositionalAt = at
+        positionals += token
+    }
 
-    // Loop-invariant; the properties behind them walk the specs on every read.
-    val dashLedSlot = hasDashLedSlot
-    val gather = gatheringSlot?.gather
-    val endAt = optionsEndAt
-
-    val flagHits = mutableListOf<FlagHit>()
-
-    fun hit(flag: FlagSpec, polarity: Boolean, at: ClusterPosition) {
+    private fun hit(flag: FlagSpec, polarity: Boolean, at: ClusterPosition) {
         if (flag in flagCounts && globalAcc.refusesRepeat(flag)) record(at) { CliError.RepeatedOption(flag.name) }
         flagCounts[flag] = (flagCounts[flag] ?: 0) + 1
         flagPositions[flag] = at
@@ -804,223 +850,211 @@ internal fun Command.sift(
         if (flag.negatable) negations[flag] = polarity
     }
 
-    var i = 0
-    var optionsEnded = false
-    // `--` makes every later token literal, so the refusal below must not reach past one.
-    var endedBySeparator = false
-    while (i < segment.size) {
-        val token = segment[i]
-        // This token's place in the ORIGINAL argv, which is what every position recorded below is
-        // measured in; a segment the caller did not map falls back to its own index.
-        val tokenIndex = positions.getOrNull(i) ?: i
-        val tokenAt = ClusterPosition(tokenIndex)
-        val firstWord = i == 0
-        when {
-            optionsEnded -> {
-                // Refused rather than kept: neither reading survives here (see MixedClusterAfterOperands),
-                // and keeping it whole is the one that loses the global without saying so. Gated on the
-                // cluster resolving in FULL, so a tail word that merely happens to carry a global's letter
-                // (`tar -cvf x`) stays the operand it is.
-                val chars = token.removePrefix("-")
-                val mixedGlobal =
-                    if (endedBySeparator || !token.isFlagLike() || token.startsWith("--")) null
-                    else if (!shortClusterResolvesInFull(chars, globalAcc, firstWord)) null
-                    else globalAcc?.let { mixedGlobalShort(chars, it, firstWord) }
-                if (mixedGlobal != null) {
-                    record(tokenAt) { CliError.MixedClusterAfterOperands(token, mixedGlobal) }
-                } else {
-                    positionals += token
-                }
-                i += 1
+    /** A token past the end of options: an operand, unless it is a cluster that would lose a global. */
+    private fun readAfterOptionsEnd(token: String, tokenAt: ClusterPosition, firstWord: Boolean): Int {
+        // Refused rather than kept: neither reading survives here (see MixedClusterAfterOperands),
+        // and keeping it whole is the one that loses the global without saying so. Gated on the
+        // cluster resolving in FULL, so a tail word that merely happens to carry a global's letter
+        // (`tar -cvf x`) stays the operand it is.
+        val chars = token.removePrefix("-")
+        val mixedGlobal =
+            if (endedBySeparator || !token.isFlagLike() || token.startsWith("--")) null
+            else if (!cmd.shortClusterResolvesInFull(chars, globalAcc, firstWord)) null
+            else globalAcc?.let { cmd.mixedGlobalShort(chars, it, firstWord) }
+        if (mixedGlobal != null) {
+            record(tokenAt) { CliError.MixedClusterAfterOperands(token, mixedGlobal) }
+        } else {
+            addPositional(token, tokenAt)
+        }
+        return 1
+    }
+
+    private fun readOperand(token: String, tokenAt: ClusterPosition): Int {
+        addPositional(token, tokenAt)
+        // klap's default is getopt's permutation, which keeps looking past an operand; a command that opted
+        // out (getopt's leading `+`, POSIXLY_CORRECT, or ssh's restart after its destination) ends them here.
+        if (endAt != null && positionals.size > endAt) optionsEnded = true
+        return 1
+    }
+
+    /** A `--name` or `--name=value` token at [i]: a flag, its negation, or an option and its value. */
+    private fun readLong(token: String, i: Int, tokenAt: ClusterPosition): Int {
+        val (typed, inlineValue) = longToken(token)
+        // Resolved against ONE pool so an abbreviation reaching two spellings is reported as
+        // ambiguous rather than binding whichever lookup ran first; see [longMatchPool].
+        val resolved = resolveLong(typed, longPool, globalAcc?.inferNames ?: false)
+        val named = resolved.named(token)
+        val long = when (resolved) {
+            is NameMatch.Exact -> resolved.name
+            is NameMatch.Prefix -> resolved.name
+            else -> typed
+        }
+        // An exact spelling would have resolved, so nothing below can match once this is ambiguous.
+        val flag = cmd.findFlag("--$long")
+        val negated = if (flag == null) cmd.findNegatedFlag(long) else null
+        return when {
+            resolved is NameMatch.Ambiguous -> {
+                record(tokenAt) { CliError.AmbiguousOption(named, resolved.candidates.map { "--$it" }) }
+                1
             }
 
-            token == END_OF_OPTIONS -> {
-                optionsEnded = true
-                endedBySeparator = true
-                i += 1
-            }
-
-            !token.isFlagLike() -> {
-                positionals += token
-                i += 1
-                // klap's default is getopt's permutation, which keeps looking past an operand; a command that opted
-                // out (getopt's leading `+`, POSIXLY_CORRECT, or ssh's restart after its destination) ends them here.
-                if (endAt != null && positionals.size > endAt) optionsEnded = true
-            }
-
-            token.startsWith("--") -> {
-                val (typed, inlineValue) = longToken(token)
-                // Resolved against ONE pool so an abbreviation reaching two spellings is reported as
-                // ambiguous rather than binding whichever lookup ran first; see [longMatchPool].
-                val resolved = resolveLong(typed, longPool, globalAcc?.inferNames ?: false)
-                val named = resolved.named(token)
-                val long = when (resolved) {
-                    is NameMatch.Exact -> resolved.name
-                    is NameMatch.Prefix -> resolved.name
-                    else -> typed
-                }
-                // An exact spelling would have resolved, so nothing below can match once this is ambiguous.
-                val flag = findFlag("--$long")
-                val negated = if (flag == null) findNegatedFlag(long) else null
-                when {
-                    resolved is NameMatch.Ambiguous -> {
-                        record(tokenAt) { CliError.AmbiguousOption(named, resolved.candidates.map { "--$it" }) }
-                        i += 1
-                    }
-
-                    flag != null -> {
-                        // hit() still runs, matching siftGlobals: the flag WAS present, and a caller that
-                        // ignores the error should see it. Invisible at parse time, where bind raises first.
-                        if (inlineValue != null) {
-                            record(tokenAt) {
-                                CliError.FlagTakesNoValue(
-                                    named,
-                                    if (flag.negatable) flag.negativeLongs.firstOrNull() else null,
-                                )
-                            }
-                        }
-                        hit(flag, true, tokenAt)
-                        i += 1
-                    }
-
-                    negated != null -> {
-                        if (inlineValue != null) record(tokenAt) { CliError.FlagTakesNoValue(named) }
-                        hit(negated, false, tokenAt)
-                        i += 1
-                    }
-
-                    else -> {
-                        val opt = findOption(long, null)
-                        val taken = opt.valueFrom(inlineValue) {
-                            segment.getOrNull(i + 1)
-                        }
-                        when {
-                            // klap's own, resolved by the built-in ladder rather than bound here. In the
-                            // pool since it is a legal spelling on every command, so without this the
-                            // binder would call a name its own pool accepts unknown.
-                            opt == null && long in globalAcc.offeredBuiltinLongs() -> i += 1
-
-                            opt == null -> {
-                                record(tokenAt) { CliError.UnknownOption(named, suggestLong(typed, globalAcc)) }
-                                // Skipped, never demoted to a positional: the tokens after it still fill
-                                // their own slots, but the unknown option itself must not occupy one.
-                                i += 1
-                            }
-
-                            taken.missing -> {
-                                record(tokenAt) { CliError.MissingOptionValue(named) }
-                                i += 1
-                            }
-
-                            else -> {
-                                addValue(opt, taken.value, tokenAt)
-                                i += if (taken.consumedNext) 2 else 1
-                            }
-                        }
+            flag != null -> {
+                // hit() still runs, matching siftGlobals: the flag WAS present, and a caller that
+                // ignores the error should see it. Invisible at parse time, where bind raises first.
+                if (inlineValue != null) {
+                    record(tokenAt) {
+                        CliError.FlagTakesNoValue(
+                            named,
+                            if (flag.negatable) flag.negativeLongs.firstOrNull() else null,
+                        )
                     }
                 }
+                hit(flag, true, tokenAt)
+                1
+            }
+
+            negated != null -> {
+                if (inlineValue != null) record(tokenAt) { CliError.FlagTakesNoValue(named) }
+                hit(negated, false, tokenAt)
+                1
+            }
+
+            else -> readLongOption(long, typed, named, inlineValue, i, tokenAt)
+        }
+    }
+
+    /** A long that names no flag: an option of [cmd] or the globals, klap's own, or unknown. */
+    private fun readLongOption(
+        long: String,
+        typed: String,
+        named: String,
+        inlineValue: String?,
+        i: Int,
+        tokenAt: ClusterPosition,
+    ): Int {
+        val opt = cmd.findOption(long, null)
+        val taken = opt.valueFrom(inlineValue) {
+            segment.getOrNull(i + 1)
+        }
+        return when {
+            // klap's own, resolved by the built-in ladder rather than bound here. In the
+            // pool since it is a legal spelling on every command, so without this the
+            // binder would call a name its own pool accepts unknown.
+            opt == null && long in globalAcc.offeredBuiltinLongs() -> 1
+
+            opt == null -> {
+                record(tokenAt) { CliError.UnknownOption(named, cmd.suggestLong(typed, globalAcc)) }
+                // Skipped, never demoted to a positional: the tokens after it still fill
+                // their own slots, but the unknown option itself must not occupy one.
+                1
+            }
+
+            taken.missing -> {
+                record(tokenAt) { CliError.MissingOptionValue(named) }
+                1
             }
 
             else -> {
-                // Short cluster: each char is a flag until one names an option, which takes the rest (`-p8080`)
-                // or the next token. A char that is not local is tried against the globals ([globalAcc]) so a
-                // mixed cluster like `-fv` binds the global too; only a char that is neither is recorded.
-                val chars = token.removePrefix("-")
-                var advance = 1
-
-                // Decided before the walk, because the walk records flag hits as it goes and a token that
-                // turns out to be an operand would have to unwind them. A `--` token cannot arrive here at
-                // all, the arm above claims it, so long-option typos keep their did-you-mean.
-                val resolvesInFull = shortClusterResolvesInFull(chars, globalAcc, firstWord)
-                if (gather != null && !resolvesInFull && gather.accepts(token)) {
-                    gathered += token
-                    i += 1
-                    continue
-                }
-                if (dashLedSlot && !resolvesInFull) {
-                    dashLedAdmitted += positionals.size
-                    positionals += token
-                    i += 1
-                    // It is an operand, so it ends options where the command opted out of permutation, exactly as
-                    // the not-flag-like route above does; which operand ends them cannot depend on its spelling.
-                    if (endAt != null && positionals.size > endAt) optionsEnded = true
-                    continue
-                }
-
-                if (refusesCluster(chars, globalAcc, firstWord)) {
-                    record(tokenAt) { CliError.UnknownOption(token) }
-                    i += 1
-                    continue
-                }
-
-                var j = 0
-                while (j < chars.length) {
-                    // One position per character, shared by the local record and the global top-up below, which
-                    // must agree about where this character sat.
-                    val at = ClusterPosition(tokenIndex, j)
-                    val read = readShort(chars, j, globalAcc, firstWord)
-                    when (read) {
-                        is ShortRead.NumberRun -> addValue(numberInput!!, read.value, at)
-
-                        ShortRead.NumberSuffix -> Unit
-
-                        // Klap's own, so it binds nothing here; the help or version ladder answers it. An inline
-                        // `=value` on it is the same usage error a declared boolean short reports.
-                        ShortRead.Builtin -> if (chars.getOrNull(j + 1) == '=') record(at) {
-                            val offered = globalAcc?.builtins ?: Builtins.DEFAULT
-                            val long = if (globalAcc.isHelpShort(chars[j])) "help" else offered.versionLong
-                            CliError.FlagTakesNoValue(long?.let { "--$it" } ?: "-${chars[j]}", null)
-                        }
-
-                        is ShortRead.Flag -> {
-                            val globals = read.hit.globals
-                            if (globals != null) globals.hitFlag(read.hit.spec, at, on = read.on)
-                            else hit(read.hit.spec, read.on, at)
-                        }
-
-                        is ShortRead.Option -> {
-                            val opt = read.hit.spec
-                            val attached = chars.substring(j + 1).ifEmpty { null }
-                            val taken = opt.valueFrom(attached) {
-                                segment.getOrNull(i + 1)
-                            }
-                            if (taken.missing) {
-                                record(at) { CliError.MissingOptionValue("-${chars[j]}") }
-                            } else {
-                                val globals = read.hit.globals
-                                if (globals != null) globals.addOptionValue(opt, taken.value, at)
-                                else addValue(opt, taken.value, at)
-                                advance = if (taken.consumedNext) 2 else 1
-                            }
-                            break
-                        }
-
-                        // No suggestion here: a single-letter short option is too noisy to edit-distance against.
-                        ShortRead.Unresolved -> {
-                            record(at) { clusterCharError(token, chars, j, globalAcc) }
-                            break
-                        }
-                    }
-                    j += read.width
-                }
-                i += advance
+                addValue(opt, taken.value, tokenAt)
+                if (taken.consumedNext) 2 else 1
             }
         }
     }
-    return Sifted(
-        flagCounts,
-        negations,
-        optionValues,
-        positionals,
-        error,
-        flagPositions,
-        optionPositions,
-        dashLedAdmitted,
-        errorAt,
-        optionValuePositions,
-        flagHits,
-        gathered,
-    )
+
+    /**
+     * A single-dash token at [i]: a gathered or dash-led operand when its letters do not all resolve, else a
+     * short cluster.
+     */
+    private fun readShortCluster(token: String, i: Int, tokenIndex: Int, firstWord: Boolean): Int {
+        val chars = token.removePrefix("-")
+        val tokenAt = ClusterPosition(tokenIndex)
+        // Decided before the walk, because the walk records flag hits as it goes and a token that
+        // turns out to be an operand would have to unwind them. A `--` token cannot arrive here at
+        // all, the arm above claims it, so long-option typos keep their did-you-mean.
+        val resolvesInFull = cmd.shortClusterResolvesInFull(chars, globalAcc, firstWord)
+        if (gather != null && !resolvesInFull && gather.accepts(token)) {
+            gathered += token
+            return 1
+        }
+        if (dashLedSlot && !resolvesInFull) {
+            dashLedAdmitted += positionals.size
+            // It is an operand, so it ends options where the command opted out of permutation, exactly as
+            // the not-flag-like route does; which operand ends them cannot depend on its spelling.
+            return readOperand(token, tokenAt)
+        }
+        if (cmd.refusesCluster(chars, globalAcc, firstWord)) {
+            record(tokenAt) { CliError.UnknownOption(token) }
+            return 1
+        }
+        return readClusterChars(token, chars, i, tokenIndex, firstWord)
+    }
+
+    /**
+     * Short cluster: each char is a flag until one names an option, which takes the rest (`-p8080`)
+     * or the next token. A char that is not local is tried against the globals ([globalAcc]) so a
+     * mixed cluster like `-fv` binds the global too; only a char that is neither is recorded.
+     */
+    private fun readClusterChars(token: String, chars: String, i: Int, tokenIndex: Int, firstWord: Boolean): Int {
+        var j = 0
+        while (j < chars.length) {
+            // One position per character, shared by the local record and the global top-up below, which
+            // must agree about where this character sat.
+            val at = ClusterPosition(tokenIndex, j)
+            val read = cmd.readShort(chars, j, globalAcc, firstWord)
+            when (read) {
+                is ShortRead.NumberRun -> addValue(cmd.numberInput!!, read.value, at)
+
+                ShortRead.NumberSuffix -> Unit
+
+                // Klap's own, so it binds nothing here; the help or version ladder answers it. An inline
+                // `=value` on it is the same usage error a declared boolean short reports.
+                ShortRead.Builtin -> if (chars.getOrNull(j + 1) == '=') record(at) {
+                    val offered = globalAcc?.builtins ?: Builtins.DEFAULT
+                    val long = if (globalAcc.isHelpShort(chars[j])) "help" else offered.versionLong
+                    CliError.FlagTakesNoValue(long?.let { "--$it" } ?: "-${chars[j]}", null)
+                }
+
+                is ShortRead.Flag -> {
+                    val globals = read.hit.globals
+                    if (globals != null) globals.hitFlag(read.hit.spec, at, on = read.on)
+                    else hit(read.hit.spec, read.on, at)
+                }
+
+                is ShortRead.Option -> return readClusterOption(read.hit, chars, j, i, at)
+
+                // No suggestion here: a single-letter short option is too noisy to edit-distance against.
+                ShortRead.Unresolved -> {
+                    record(at) { cmd.clusterCharError(token, chars, j, globalAcc) }
+                    return 1
+                }
+            }
+            j += read.width
+        }
+        return 1
+    }
+
+    /** The option short at [j] of the cluster, taking the rest of it or the token after [i] as its value. */
+    private fun readClusterOption(
+        hit: ClusterHit<OptionSpec>,
+        chars: String,
+        j: Int,
+        i: Int,
+        at: ClusterPosition,
+    ): Int {
+        val opt = hit.spec
+        val attached = chars.substring(j + 1).ifEmpty { null }
+        val taken = opt.valueFrom(attached) {
+            segment.getOrNull(i + 1)
+        }
+        if (taken.missing) {
+            record(at) { CliError.MissingOptionValue("-${chars[j]}") }
+            return 1
+        }
+        val globals = hit.globals
+        if (globals != null) globals.addOptionValue(opt, taken.value, at)
+        else addValue(opt, taken.value, at)
+        return if (taken.consumedNext) 2 else 1
+    }
 }
 
 internal fun List<FlagSpec>.findFlag(token: String): FlagSpec? = when {

@@ -34,11 +34,59 @@ internal class SubcommandWalk(
     }
 }
 
+/** What the subcommand walk does with one word in a command's scope. */
+internal sealed interface RouteStep {
+    /** The word names [child], which the walk descends into. */
+    class Descend(val child: Command) : RouteStep
+
+    /** The word names two children at once, [match], and stops the walk. */
+    class Ambiguous(val match: SubcommandMatch.Ambiguous) : RouteStep
+
+    /** A word [routesTransparently] lets pass, which the walk steps over (`app --help build` reaches build). */
+    data object StepOver : RouteStep
+
+    /** A run of the command's own option words ending before [end], which stays on its segment. */
+    class OwnRun(val end: Int) : RouteStep
+
+    /** A word that stops the walk: the command reached reads it. */
+    data object Stop : RouteStep
+}
+
 /**
- * Walks [argv], the line without its globals, down the subcommand tree. A word naming a child of the command reached
- * descends into it; a word [routesTransparently] lets pass is stepped over (`app --help build` reaches build); a run
- * of the command's own option words stays on its segment, so `git remote -v add` reaches add with `-v` remote's. Any
- * other word stops the walk, and the command reached reads it.
+ * Reads one word of a line for the subcommand walk: the step both the parse's walk and the built-in scan route by.
+ * A word the command's own options refuse stops the walk, so it never reaches a child the parse would not.
+ *
+ * [freshGlobals] seeds the accumulator each trial read of an option run needs, since a read tops it up.
+ */
+internal class SubcommandRouter(
+    private val cli: Cli,
+    private val freshGlobals: () -> GlobalAccumulator,
+) {
+    private val globalFlagShorts = cli.globalSpecs.filterIsInstance<FlagSpec>().flatMap { it.shorts }.toSet()
+
+    /** How the word at [at] of [words] routes in [cmd]'s scope; [firstWord] says whether it is [cmd]'s first. */
+    fun step(
+        cmd: Command,
+        words: List<String>,
+        at: Int,
+        firstWord: Boolean,
+    ): RouteStep {
+        val token = words[at]
+        return when (val match = cmd.resolveSubcommand(token, cli.abbreviationAt(cmd) == Abbreviation.All)) {
+            is SubcommandMatch.One -> RouteStep.Descend(match.command)
+            is SubcommandMatch.Ambiguous -> RouteStep.Ambiguous(match)
+            SubcommandMatch.None -> if (cli.routesTransparently(token, globalFlagShorts, cmd)) {
+                RouteStep.StepOver
+            } else {
+                cmd.ownOptionsEnd(words, at, freshGlobals, firstWord)?.let(RouteStep::OwnRun) ?: RouteStep.Stop
+            }
+        }
+    }
+}
+
+/**
+ * Walks [argv], the line without its globals, down the subcommand tree by [SubcommandRouter]: a run of the command's
+ * own option words stays on its segment, so `git remote -v add` reaches add with `-v` remote's.
  *
  * [freshGlobals] seeds the accumulator each trial read of an option run needs, since a read tops it up.
  */
@@ -46,7 +94,7 @@ internal fun Cli.walkSubcommands(
     argv: List<String>,
     freshGlobals: () -> GlobalAccumulator,
 ): SubcommandWalk {
-    val globalFlagShorts = globalSpecs.filterIsInstance<FlagSpec>().flatMap { it.shorts }.toSet()
+    val router = SubcommandRouter(this, freshGlobals)
     var cmd: Command = this
     val passed = mutableListOf<PassedCommand>()
     val names = mutableListOf<Int>()
@@ -55,29 +103,26 @@ internal fun Cli.walkSubcommands(
     // builds (KT-87261, fixed in 2.4.20-Beta2) and passes on the JVM; retest before converting.
     var idx = 0
     while (idx < argv.size) {
-        val token = argv[idx]
-        when (val match = cmd.resolveSubcommand(token, abbreviationAt(cmd) == Abbreviation.All)) {
-            is SubcommandMatch.One -> {
+        when (val step = router.step(cmd, argv, idx, firstWord = own.isEmpty())) {
+            is RouteStep.Descend -> {
                 passed += PassedCommand(cmd, own)
                 own = mutableListOf()
-                cmd = match.command
+                cmd = step.child
                 names += idx
                 idx += 1
             }
 
-            is SubcommandMatch.Ambiguous ->
-                return SubcommandWalk(cmd, passed, names, routing = false, ambiguous = token to match)
+            is RouteStep.Ambiguous ->
+                return SubcommandWalk(cmd, passed, names, routing = false, ambiguous = argv[idx] to step.match)
 
-            SubcommandMatch.None -> {
-                if (routesTransparently(token, globalFlagShorts, cmd)) {
-                    idx += 1
-                } else {
-                    val end = cmd.ownOptionsEnd(argv, idx, freshGlobals)
-                        ?: return SubcommandWalk(cmd, passed, names, routing = false)
-                    own += idx until end
-                    idx = end
-                }
+            RouteStep.StepOver -> idx += 1
+
+            is RouteStep.OwnRun -> {
+                own += idx until step.end
+                idx = step.end
             }
+
+            RouteStep.Stop -> return SubcommandWalk(cmd, passed, names, routing = false)
         }
     }
     return SubcommandWalk(cmd, passed, names, routing = true)
@@ -85,20 +130,35 @@ internal fun Cli.walkSubcommands(
 
 /**
  * The end of the shortest run of [argv] from [from] that this command reads as its own options and nothing else, or
- * null when the word there is none of its options. The run is the option and the value it takes from the next word,
- * so `--workdir build` is one run whatever the value is spelled. A leaf has no child to route to, and a help request
- * stays where the help scan finds it, so neither yields a run.
+ * null when the word there is none of its options. A leaf has no child to route to, and a help request stays where
+ * the help scan finds it, so neither yields a run. [firstWord] says whether the word at [from] is the command's first.
  */
-private fun Command.ownOptionsEnd(
+internal fun Command.ownOptionsEnd(
     argv: List<String>,
     from: Int,
     freshGlobals: () -> GlobalAccumulator,
+    firstWord: Boolean = true,
+): Int? {
+    if (subcommands.isEmpty()) return null
+    if (namesHelpShort(argv[from], freshGlobals().at(this), firstWord = false)) return null
+    return optionRunEnd(argv, from, freshGlobals, firstWord)
+}
+
+/**
+ * The end of the shortest run of [argv] from [from] that this command's [sift] reads as options alone, or null when
+ * none does. The run is the option and the value it takes from the next word, so `--workdir build` is one run
+ * whatever the value is spelled. [firstWord] says whether the word at [from] is the command's first.
+ */
+internal fun Command.optionRunEnd(
+    argv: List<String>,
+    from: Int,
+    freshGlobals: () -> GlobalAccumulator,
+    firstWord: Boolean = true,
 ): Int? {
     val first = argv[from]
-    if (subcommands.isEmpty() || first == END_OF_OPTIONS || !first.isFlagLike()) return null
-    if (namesHelpShort(first, freshGlobals().at(this), firstWord = false)) return null
+    if (first == END_OF_OPTIONS || !first.isFlagLike()) return null
     for (end in from + 1..argv.size) {
-        val read = sift(argv.subList(from, end), freshGlobals().at(this))
+        val read = sift(argv.subList(from, end), freshGlobals().at(this), leadsSegment = firstWord)
         if (read.positionals.isNotEmpty()) return null
         when (read.error) {
             null -> return end

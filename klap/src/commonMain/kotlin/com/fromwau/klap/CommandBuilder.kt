@@ -32,8 +32,9 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
     public abstract var hidden: Boolean
 
     /**
-     * Lets this command run ahead of the rest of the line, as `mytool license` would: given, it runs without its
-     * parent's required globals and ahead of `--completion` and `--docs`. `--help` and `--version` keep their usual
+     * Lets this command run ahead of the rest of the line, as `mytool license` would: given, it runs without the
+     * required inputs of the commands above it, globals and their own options alike, and ahead of `--completion`
+     * and `--docs`. `--help` and `--version` keep their usual
      * meaning beside it, so `mytool license --help` and `mytool --help license` both show its help.
      */
     public abstract var prio: Boolean
