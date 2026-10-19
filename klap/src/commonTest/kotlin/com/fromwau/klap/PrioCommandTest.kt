@@ -6,6 +6,7 @@ import com.fromwau.kern.result.assertSuccess
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * `prio = true` (todo 36b and 47f): a command that runs ahead of the rest of the line, as `mytool license` should
@@ -57,5 +58,36 @@ class PrioCommandTest {
         assertEquals("MIT", tool(prio = true).bindText("--completion", "bash", "license"))
         assertEquals("MIT", tool(prio = true).bindText("license", "--docs", "markdown"))
         assertIs<Invocation.ShowCompletion>(tool(prio = false).invocation("--completion", "bash", "license"))
+    }
+
+    @Test
+    fun `the parent's own option before a prio command binds on the parent's segment`() {
+        val tool = cli("mytool") {
+            val verbose = flag(short = 'v', long = "verbose")
+            command("license") {
+                prio = true
+                action { Ok("MIT v=${verbose()}") }
+            }
+            command("sync") { action { Ok("synced v=${verbose()}") } }
+            action { Ok("root") }
+        }
+        assertEquals("MIT v=true", tool.bindText("-v", "license"))
+        assertEquals("synced v=true", tool.bindText("-v", "sync"))
+        assertEquals("MIT v=true", tool.bindText("-v", "--completion", "bash", "license"))
+        assertTrue("license" in tool.offered("-v", ""))
+    }
+
+    @Test
+    fun `a prio command skips its parent's own required option`() {
+        val tool = cli("mytool") {
+            val token = option(long = "token").required()
+            command("license") {
+                prio = true
+                action { Ok("MIT") }
+            }
+            command("sync") { action { Ok("synced with ${token()}") } }
+        }
+        assertEquals("MIT", tool.bindText("license"))
+        assertEquals(CliError.MissingRequiredOption("--token"), tool.parse(listOf("sync")).assertError())
     }
 }

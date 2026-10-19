@@ -5,6 +5,7 @@ import com.fromwau.kern.result.fold
 import com.fromwau.kern.terminal.Terminal
 import com.fromwau.kern.terminal.defaultTerminal
 import com.fromwau.klap.internal.parse.builtinScan
+import com.fromwau.klap.internal.parse.hoistCommands
 import com.fromwau.klap.internal.platform.platformExit
 import com.fromwau.klap.internal.render.Candidate
 import com.fromwau.klap.internal.render.HelpStyle
@@ -72,12 +73,13 @@ private inline fun Cli.runCore(
     val argList = argv.toList()
     // The parse's own reading of each token and the value slots, read once and shared by both reads below, so an
     // abbreviated --json or --col resolves here — and a built-in in an option's value slot stays out of
-    // reach here — exactly as in parse().
-    val scan = builtinScan(argList)
+    // reach here — exactly as in parse(), over the line parse() scans, its flag-spelled commands hoisted.
+    val line = hoistCommands(argList).tokens
+    val scan = builtinScan(line)
     val json = builtins.json && scan.names("json")
     // --color, bare or =always/never, beats the whole env ladder below; auto (absent/invalid) defers to the
     // terminal's own reading, unchanged. A bad --color value is reported by parse() itself, not here.
-    val mode = argList.colorMode(builtins, abbreviation, scan)
+    val mode = line.colorMode(builtins, abbreviation, scan)
     val effectiveColor = when (mode) {
         ColorMode.ALWAYS -> true
         ColorMode.NEVER -> false

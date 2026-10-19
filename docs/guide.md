@@ -865,8 +865,8 @@ cli("find") {
 Under `Alone` a short that requires a value takes it from the next word only, and an `.optionalValue()` short keeps
 its value glued, since getopt has no other form for an optional value, as a `.gluedValue()` short does. A word
 holding more than one short is one unknown option, named whole (`error: unknown option '-LP'`), and it takes no
-value, so the word after `-LD` is an operand. A help short asks for help only alone, a command spelled as a short
-(`pacman -Q`) is named only by its own word, and a run of a [number option](#numbers-on-the-command-line) such as
+value, so the word after `-LD` is an operand. A help or version short answers only alone, a command spelled as a
+short (`pacman -Q`) is named only by its own word, and a run of a [number option](#numbers-on-the-command-line) such as
 `-25` still reads as the number.
 Completion offers each short alone, with no cluster continuations.
 
@@ -1871,6 +1871,12 @@ cli("git") {
 The root's own options work the same way before the first subcommand. An option that should bind at every
 depth, before or after the path, is a global (below).
 
+A mistake in the options is reported where it stands in the line, whichever command's segment holds it: an unknown
+option, a missing or refused value, a repeat the option refuses. On a group's segment, a word after the group's own
+options that names none of its children is an unknown subcommand, so `app -v bogus` blames `bogus`. A required option
+of a command on the way is checked only once every option is read: with a `.required()` option on the root, `app build
+--bogus` is "unknown option" rather than the root's missing option.
+
 A command can also declare `aliases`, a `var` on the command builder, so an alternate name routes to
 the same command:
 
@@ -1897,8 +1903,9 @@ cli("pacman") {
     command(short = 'Q', long = "query") {
         help = "query the package database"
         val info = flag(short = 'i', long = "info", help = "view package information").count()
+        val changelog = flag(short = 'c', long = "changelog", help = "view the changelog of a package")
         val packages = argument("package").multiple()
-        action { Ok("info=${info()} ${packages()}") }
+        action { Ok("info=${info()} changelog=${changelog()} ${packages()}") }
     }
     command(short = 'R', long = "remove") {
         help = "remove packages from the system"
@@ -1908,15 +1915,19 @@ cli("pacman") {
 }
 ```
 
-The spelling may stand anywhere among the options, and the command's own options bind wherever they stand,
-before it or after it: `pacman -Qi pkg`, `pacman -iQ pkg`, `pacman -i -Q pkg` and `pacman -vQi pkg` all reach
-`-Q` with `--info` once. Inside a cluster the command's letter picks the command and the other letters are its
-own or the globals, so one letter can mean what each command gives it (`-Qc` and `-Rc` above). A value-taking
-letter still takes the rest of the cluster. Two commands of one parent on one line are refused, and so is a
-value on one (`--query=x`). Help lists the command by its spellings, `-Q, --query`, and names it `pacman
---query` in its own usage line; Tab offers `-Q` and `--query` where the parent's options are offered, and
-continues `-Q` with `-Q`'s letters. A flag-spelled command takes no `aliases`, and its spelling must name nothing
-else at its parent: no option, global or sibling.
+The spelling may stand anywhere among the options, and the command's own options bind wherever they stand, before it
+or after it: `pacman -Qi pkg`, `pacman -iQ pkg`, `pacman -i -Q pkg` and `pacman -vQi pkg` all reach `-Q` with `--info`
+once. Inside a cluster the command's letter picks the command and the other letters are its own or the globals, so one
+letter can mean what each command gives it (`-Qc` and `-Rc` above). A value-taking letter still takes the rest of the
+cluster. The parent's own options bind on the parent's segment wherever they stand on the line, before or after the
+spelling and past the command's operands, since the command shares its parent's line as pacman reads it in one getopt
+loop (`pacman -Q pacman -v` is verbose): with a root `flag(short = 'v')`, `pm -v -Q`, `pm -vQ`, `pm -Q -v` and
+`pm -Q pkg -v` all give the root its `-v`. So a flag-spelled command may not declare a letter or long its parent's own option
+has, and building such a tree fails. Two commands of one parent on one line are refused, and so is a value on one
+(`--query=x`). Help lists the command by its spellings, `-Q, --query`, and names it `pacman --query` in its own usage
+line; Tab offers `-Q` and `--query` where the parent's options are offered, and continues `-Q` with `-Q`'s letters. A
+flag-spelled command takes no `aliases`, and its spelling must name nothing else at its parent: no option, global or
+sibling.
 
 ### Commands that answer ahead of the line
 
@@ -1934,10 +1945,12 @@ cli("mytool") {
 }
 ```
 
-Given, it runs without its parent's required globals (`mytool license` needs no `--token`, while `mytool sync`
-still does) and ahead of `--completion` and `--docs` (`mytool --completion bash license` prints the license).
-Its action must not read a required global it runs without. `--help` and `--version` keep their usual meaning
-beside it, so `mytool license --help` and `mytool --help license` both show license's help.
+Given, it runs without its parents' required inputs, globals and their own options alike (`mytool license` needs no
+`--token`, while `mytool sync` still does). On a root with its own `action`, where `--completion` and `--docs` are
+options, it also runs ahead of them: `mytool --completion bash license` prints the license. Its action must not read a
+required input it runs without. A parent's own options before it bind on the parent, as they do before any child.
+`--help` and `--version` keep their usual meaning beside it, so `mytool license --help` and `mytool --help license`
+both show license's help.
 
 ## Help output
 
@@ -2039,9 +2052,9 @@ automatically, and subcommand and option name completion carry each command's or
 as the description (shown by shells that support it, bash excepted), so `myapp <TAB>` explains each choice
 for free. Tab offers what the parse would read at the cursor:
 
-- **A subcommand name** only where the walk would still route to it, so none after `--`, after an option of the
-  parent or after an unknown option: `git -- <TAB>`, `git remote -v <TAB>` and `git -s <TAB>` offer no
-  subcommand, since the parse routes none of those lines to one.
+- **A subcommand name** only where the walk would still route to it, so none after `--` or after an unknown
+  option: `git -- <TAB>` and `git -s <TAB>` offer no subcommand, since the parse routes neither line to one. A
+  parent's own option keeps the walk going, so `git remote -v <TAB>` offers remote's children.
 - **A single-dash word a `dashLed()` operand takes** and no option does completes from that operand's values,
   as a chmod mode such as `-w` does; a word an option takes completes from the names, and a lone `-`, which
   either could take, offers both.

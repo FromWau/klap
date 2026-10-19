@@ -5,6 +5,7 @@ import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Command
 import com.fromwau.klap.SubcommandMatch
+import com.fromwau.klap.abbreviationAt
 import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.longs
 import com.fromwau.klap.internal.spec.shorts
@@ -27,11 +28,13 @@ internal class Hoisted(val tokens: List<String>, val error: CliError?, val prio:
  * [argv] with each flag-spelled command moved to where its parent's subcommand word would stand, so the walk
  * routes `pacman -i -Q pkg` and `pacman -iQ pkg` as it routes a word: to `-Q`, with `-i pkg` its own segment.
  * The spelling leaves its token, a whole `-Q` or `--query` going and a letter leaving its cluster (`-iQ` is
- * `-i`), and the command's [hoistedToken] stands at the start of the parent's segment. Below it the same
- * happens one level down, and a word subcommand is followed as the walk follows it.
+ * `-i`), and the command's [hoistedToken] stands at the start of the parent's segment, after the parent's own
+ * options, which keeps them there. Below it the same happens one level down, and a word subcommand is followed as
+ * the walk follows it.
  *
- * A `prio` command's word moves to the front of its parent's segment too, past the options before it, so it
- * answers ahead of them: `mytool --completion bash license` runs license. An operand before it keeps it in place.
+ * A `prio` command's word moves to the front of its parent's segment too, past the options before it other than the
+ * parent's own, so it answers ahead of them: `mytool --completion bash license` runs license. An operand before it
+ * keeps it in place.
  *
  * A letter is the command's only where it does not sit in a value: past a value-taking letter, or in the word
  * after one, it is that option's. Two commands of one parent on a line are refused, keeping the first, and so is
@@ -39,22 +42,24 @@ internal class Hoisted(val tokens: List<String>, val error: CliError?, val prio:
  */
 internal fun Cli.hoistCommands(argv: List<String>): Hoisted {
     val tokens = argv.toMutableList()
-    val globals = globalLookup()
-    val infer = abbreviation != Abbreviation.None
-    val inferSubcommands = abbreviation == Abbreviation.All
     var level: Command = this
     var start = 0
     var error: CliError? = null
     var prio = false
     while (true) {
-        val scan = level.scanLevel(tokens, start, globals, infer, inferSubcommands)
+        val globals = globalLookup().at(level)
+        val abbreviation = abbreviationAt(level)
+        val scan = level.scanLevel(tokens, start, globals, abbreviation)
         val chosen = scan.hits.firstOrNull()?.command
         if (chosen == null) {
             var word = scan.wordAt ?: break
-            level = (level.resolveSubcommand(tokens[word], inferSubcommands) as SubcommandMatch.One).command
+            val parent = level
+            level = (parent.resolveSubcommand(tokens[word], abbreviation == Abbreviation.All) as SubcommandMatch.One)
+                .command
             if (level.prio && !scan.operandBefore) {
-                tokens.add(start, tokens.removeAt(word))
-                word = start
+                val at = frontOwnWords(parent, tokens, start, word, child = null)
+                tokens.add(at, tokens.removeAt(word))
+                word = at
             }
             prio = prio || level.prio
             start = word + 1
@@ -81,11 +86,60 @@ internal fun Cli.hoistCommands(argv: List<String>): Hoisted {
                 if (rest == "-") tokens.removeAt(hit.token) else tokens[hit.token] = rest
             }
         }
-        tokens.add(start, chosen.hoistedToken)
+        val at = frontOwnWords(level, tokens, start, tokens.size, chosen)
+        tokens.add(at, chosen.hoistedToken)
         level = chosen
-        start += 1
+        start = at + 1
     }
     return Hoisted(tokens, error, prio)
+}
+
+/**
+ * Moves [level]'s own option words in [tokens] between [start] and [end] to the front of that range and returns the
+ * index after them, where [level]'s child goes so those words stay on [level]'s segment: `pm -i -v -Q` reads as `-v`,
+ * `-Q`, `-i` where `-v` is the root's and `-i` is -Q's. A flag-spelled [child] shares its parent's line, as pacman reads
+ * one getopt loop, so the words are read up to `--` and past [child]'s operands (`pm -Q x -v`); for a prio word
+ * (no [child]) only up to its first operand. A word of [child]'s own stays where it stands with the value it takes.
+ */
+private fun Cli.frontOwnWords(
+    level: Command,
+    tokens: MutableList<String>,
+    start: Int,
+    end: Int,
+    child: Command?,
+): Int {
+    val line = tokens.subList(0, end).toList()
+    val fresh = { globalLookup() }
+    val own = mutableListOf<Int>()
+    var i = start
+    while (i < end) {
+        val runEnd = level.ownOptionsEnd(line, i, fresh)?.takeIf { level.namesOwnInput(line.subList(i, it), fresh) }
+        if (runEnd != null) {
+            own += i until runEnd
+            i = runEnd
+            continue
+        }
+        if (line[i] == END_OF_OPTIONS) break
+        if (!line[i].isFlagLike()) {
+            if (child == null) break
+            i += 1
+            continue
+        }
+        i = child?.optionRunEnd(line, i, fresh) ?: (i + 1)
+    }
+    val words = own.map { line[it] }
+    own.asReversed().forEach { tokens.removeAt(it) }
+    tokens.addAll(start, words)
+    return start + words.size
+}
+
+/** Whether [run] names one of this command's own inputs, not only globals or klap's built-ins. */
+private fun Command.namesOwnInput(
+    run: List<String>,
+    freshGlobals: () -> GlobalAccumulator,
+): Boolean {
+    val read = sift(run, freshGlobals().at(this))
+    return read.flags.isNotEmpty() || read.options.isNotEmpty()
 }
 
 /** A flag-spelled command named at [token], by the whole token or by its cluster letter at [letter] after the dash. */
@@ -107,9 +161,10 @@ private fun Command.scanLevel(
     tokens: List<String>,
     start: Int,
     globals: GlobalAccumulator,
-    infer: Boolean,
-    inferSubcommands: Boolean,
+    abbreviation: Abbreviation,
 ): LevelScan {
+    val infer = abbreviation != Abbreviation.None
+    val inferSubcommands = abbreviation == Abbreviation.All
     val flagSubs = flagSubcommands
     val hits = mutableListOf<Hit>()
     val valueOptions = options + globals.optionSpecs
@@ -207,12 +262,6 @@ private fun OptionSpec.takesNextWord(): Boolean = !valueAttachedOnly
  */
 internal fun Cli.flagCommandsNamed(level: Command, tokens: List<String>): List<Command> {
     if (level.flagSubcommands.isEmpty()) return emptyList()
-    val scan = level.scanLevel(
-        tokens,
-        start = 0,
-        globals = globalLookup(),
-        infer = abbreviation != Abbreviation.None,
-        inferSubcommands = abbreviation == Abbreviation.All,
-    )
+    val scan = level.scanLevel(tokens, start = 0, globals = globalLookup().at(level), abbreviationAt(level))
     return scan.hits.map { it.command }
 }

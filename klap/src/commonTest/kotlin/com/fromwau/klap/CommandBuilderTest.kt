@@ -846,6 +846,53 @@ class ActionlessCommandInputTest {
         assertEquals("inner verbose=true", tree.bindText("outer", "--verbose", "inner"))
     }
 
+    private val group = cli("app") {
+        flag(short = 'v', long = "verbose")
+        option(short = 'C')
+        option(short = 'n').int()
+        option(short = 't').repeated(RepeatedOptions.Refuse)
+        option(short = 'x')
+        command("build") { action { Ok("") } }
+    }
+
+    @Test
+    fun `a word after a group's own option that names no child is an unknown subcommand`() {
+        assertEquals(CliError.UnknownSubcommand("app", "bogus"), group.parse(listOf("-v", "bogus")).assertError())
+        assertEquals(
+            CliError.UnknownSubcommand("app", "buidl", "build"),
+            group.parse(listOf("-v", "buidl")).assertError(),
+        )
+    }
+
+    @Test
+    fun `a group's own option without its value is a missing value`() {
+        assertEquals(CliError.MissingOptionValue("-C"), group.parse(listOf("-C")).assertError())
+    }
+
+    @Test
+    fun `a group's own option that refuses a repeat is refused when repeated`() {
+        assertIs<CliError.RepeatedOption>(group.parse(listOf("-t", "a", "-t", "b")).assertError())
+    }
+
+    @Test
+    fun `a child's name after a group's own option and the end of options is misplaced`() {
+        assertEquals(
+            CliError.SubcommandAfterSeparator("build", "app"),
+            group.parse(listOf("-x", "1", "--", "build")).assertError(),
+        )
+    }
+
+    @Test
+    fun `a group's own option given a value it refuses is a bad value with or without a child`() {
+        assertIs<CliError.BadValue>(group.parse(listOf("-n", "abc")).assertError())
+        assertIs<CliError.BadValue>(group.parse(listOf("-n", "abc", "build")).assertError())
+    }
+
+    @Test
+    fun `a group given its own option and its value shows its help`() {
+        assertIs<Invocation.ShowHelp>(group.parse(listOf("-C", "d")).assertSuccess())
+    }
+
     // --- reject an action-less command that declares a positional argument ---
 
     @Test

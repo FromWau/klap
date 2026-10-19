@@ -79,4 +79,18 @@ class VersionRootOnlyTest {
         }
         assertIs<Invocation.ShowVersion>(everywhere.parse(listOf("status", "--version")).assertSuccess())
     }
+
+    @Test
+    fun `the version short reads by the root's own segment`() {
+        val tool = cli("tool") {
+            version = Version.Of("1", long = "version", short = 'v', rootOnly = true)
+            ownOptions(ShortOptions.Alone, Abbreviation.None)
+            val paginate = flag(short = 'p')
+            action { Ok("p=${paginate()}") }
+        }
+        assertEquals("tool 1", tool.bindText("-v"))
+        for (word in listOf("-pv", "-vp", "-pp")) {
+            assertEquals(CliError.UnknownOption(word), tool.parse(listOf(word)).assertError(), word)
+        }
+    }
 }
