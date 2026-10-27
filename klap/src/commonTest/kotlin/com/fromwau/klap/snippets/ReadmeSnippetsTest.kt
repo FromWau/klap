@@ -1,12 +1,13 @@
 package com.fromwau.klap.snippets
 
 import com.fromwau.kern.result.Err
-import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.ResultError
 import com.fromwau.kern.result.getOrElse
 import com.fromwau.kern.result.map
 import com.fromwau.kern.result.mapError
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
@@ -14,7 +15,6 @@ import com.fromwau.klap.CommandBuilder
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.Invocation
 import com.fromwau.klap.Opt
-import com.fromwau.klap.RecordingTerminal
 import com.fromwau.klap.ValueScope
 import com.fromwau.klap.Version
 import com.fromwau.klap.bindText
@@ -65,14 +65,14 @@ class ReadmeSnippetsTest {
         val terminal = RecordingTerminal()
         val exit = greetCli().run(emptyArray(), terminal)
         assertTrue(exit != 0, "expected a non-zero exit, got $exit")
-        assertContains(terminal.err.toString(), "name")
+        assertContains(terminal.err, "name")
     }
 
     @Test
     fun `the front page program suggests the closest option on a typo`() {
         val terminal = RecordingTerminal()
         greetCli().run(arrayOf("Ada", "--tmies", "2"), terminal)
-        assertContains(terminal.err.toString(), "--times")
+        assertContains(terminal.err, "--times")
     }
 
     /**
@@ -152,7 +152,7 @@ class ReadmeSnippetsTest {
 
     private fun Cli.render(vararg argv: String): String = RecordingTerminal().let { terminal ->
         run(argv.toList().toTypedArray(), terminal)
-        terminal.out.toString().trim()
+        terminal.out.trim()
     }
 }
 
@@ -176,8 +176,8 @@ private fun greetCli() = cli("greet") {
 /** Stands in for the README's `Task`; only the two fields its snippets read are modelled. */
 private class StoredTask(val id: Int, val tags: List<String>)
 
-/** Stands in for the guide's `StoreError`: the store's own failure type, rooted in kern's [IError]. */
-private sealed interface TaskStoreError : IError {
+/** Stands in for the guide's `StoreError`: the store's own failure type, rooted in kern's [ResultError]. */
+private sealed interface TaskStoreError : ResultError {
     val detail: String
 
     data object DiskFull : TaskStoreError {

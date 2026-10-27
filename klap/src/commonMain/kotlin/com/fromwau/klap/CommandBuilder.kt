@@ -304,7 +304,7 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * Only a real invocation runs one — never `--help`, `--version`, completion or docs — and only on the
      * command that runs, so a block declared on the root does not fire when a subcommand does.
      */
-    public abstract fun validateInputs(block: ActionScope.() -> CliError?)
+    public abstract fun validateInputs(block: ValueScope.() -> CliError?)
 
     /** One example invocation shown under an `Examples:` heading in `--help`. */
     public abstract fun example(command: String, description: String = "")
@@ -318,7 +318,7 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
         block: suspend ActionScope.() -> Result<T, CliError>,
         suspending: Boolean,
         serializer: () -> KSerializer<T>,
-        human: (ActionScope.(T) -> String)?,
+        human: (ActionScope.(T) -> CharSequence)?,
         exitCode: (ActionScope.(T) -> Int)?,
     ) {
         actionSpec = ActionSpec(block, suspending, serializer, human, exitCode)
@@ -336,9 +336,11 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      *
      * For work that suspends, use [actionSuspending] instead.
      *
-     * @param human turns the returned value into the line printed on success; without it the value's
-     *   `toString()` is printed. A `--json` run serializes the value instead of calling this, so [T] must be
-     *   `@Serializable` for a CLI that offers `--json`.
+     * @param human turns the returned value into the line printed on success. Without it a value that is text,
+     *   such as a `String` or kern's `Styled`, is printed as it is, and anything else by its `toString()`. Styled
+     *   text is coloured only when colour is on, so `--color=never` and a pipe print it plain. A `--json` run
+     *   serializes the value instead of calling this, so [T] must be `@Serializable` for a CLI that offers
+     *   `--json`; `Styled` is written as its plain text.
      * @param exitCode what the process exits with when [block] succeeds; without it a success exits 0. Use
      *   it for the `diff` and `grep` convention, where a non-zero exit is the answer rather than a failure:
      *   the value is still printed and still serialized, and only the exit code changes. Clamped to
@@ -347,7 +349,7 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      *   and turns into the exit code.
      */
     public inline fun <reified T> action(
-        noinline human: (ActionScope.(T) -> String)? = null,
+        noinline human: (ActionScope.(T) -> CharSequence)? = null,
         noinline exitCode: (ActionScope.(T) -> Int)? = null,
         noinline block: ActionScope.() -> Result<T, CliError>,
     ) {
@@ -369,9 +371,11 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * [runActionSuspending] for a single resolved command. The synchronous `run`, `main` and `runAction`
      * refuse it, because without a caller-supplied scope nothing could resume it.
      *
-     * @param human turns the returned value into the line printed on success; without it the value's
-     *   `toString()` is printed. A `--json` run serializes the value instead of calling this, so [T] must be
-     *   `@Serializable` for a CLI that offers `--json`.
+     * @param human turns the returned value into the line printed on success. Without it a value that is text,
+     *   such as a `String` or kern's `Styled`, is printed as it is, and anything else by its `toString()`. Styled
+     *   text is coloured only when colour is on, so `--color=never` and a pipe print it plain. A `--json` run
+     *   serializes the value instead of calling this, so [T] must be `@Serializable` for a CLI that offers
+     *   `--json`; `Styled` is written as its plain text.
      * @param exitCode what the process exits with when [block] succeeds; without it a success exits 0. Use
      *   it for the `diff` and `grep` convention, where a non-zero exit is the answer rather than a failure:
      *   the value is still printed and still serialized, and only the exit code changes. Clamped to
@@ -380,7 +384,7 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      *   and turns into the exit code. It may suspend.
      */
     public inline fun <reified T> actionSuspending(
-        noinline human: (ActionScope.(T) -> String)? = null,
+        noinline human: (ActionScope.(T) -> CharSequence)? = null,
         noinline exitCode: (ActionScope.(T) -> Int)? = null,
         noinline block: suspend ActionScope.() -> Result<T, CliError>,
     ) {

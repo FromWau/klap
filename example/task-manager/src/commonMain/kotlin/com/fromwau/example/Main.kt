@@ -4,16 +4,17 @@ import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.getOrElse
 import com.fromwau.kern.terminal.Style
+import com.fromwau.kern.terminal.Styled
 import com.fromwau.kern.terminal.bold
 import com.fromwau.kern.terminal.cyan
 import com.fromwau.kern.terminal.dim
 import com.fromwau.kern.terminal.green
+import com.fromwau.kern.terminal.joinToStyled
 import com.fromwau.kern.terminal.red
 import com.fromwau.kern.terminal.yellow
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
-import com.fromwau.klap.ColorScope
 import com.fromwau.klap.CompletionScope
 import com.fromwau.klap.Flag
 import com.fromwau.klap.Opt
@@ -129,7 +130,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
             if (dueDate != null && !done() && dueDate.isPastDue()) pastDue(dueDate) else null
         }
 
-        action(human = { task -> "${green("added")} ${dim("#${task.id}:")} ${bold(task.title)}" }) {
+        action(human = { task -> green("added") + " " + dim("#${task.id}:") + " " + bold(task.title) }) {
             val store = taskStore()
             store.withLock {
                 val tasks = store.load().getOrElse { return@withLock Err(it) }
@@ -173,7 +174,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
             human = { tasks ->
                 val verbosity = verbose()
                 val longForm = long()
-                if (tasks.isEmpty()) "no tasks" else tasks.joinToString("\n") { render(it, verbosity, longForm) }
+                if (tasks.isEmpty()) "no tasks" else tasks.map { render(it, verbosity, longForm) }.joinToStyled("\n")
             },
         ) {
             val tasks = taskStore().load().getOrElse { return@action Err(it) }
@@ -200,7 +201,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
         val id = argument("id", "task id").int()
             .completeWith { taskIdCandidates { task -> !task.done } }
 
-        action(human = { task -> "${green("done")} ${dim("#${task.id}:")} ${bold(task.title)}" }) {
+        action(human = { task -> green("done") + " " + dim("#${task.id}:") + " " + bold(task.title) }) {
             val store = taskStore()
             store.withLock {
                 val tasks = store.load().getOrElse { return@withLock Err(it) }
@@ -220,7 +221,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
         val id = argument("id", "task id").int()
             .completeWith { taskIdCandidates() }
 
-        action(human = { task -> "${yellow("removed")} ${dim("#${task.id}:")} ${bold(task.title)}" }) {
+        action(human = { task -> yellow("removed") + " " + dim("#${task.id}:") + " " + bold(task.title) }) {
             val store = taskStore()
             store.withLock {
                 val tasks = store.load().getOrElse { return@withLock Err(it) }
@@ -248,7 +249,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
             action(
                 human = { task ->
                     val tags = if (task.tags.isEmpty()) dim("none") else cyan(task.tags.joinToString(", "))
-                    "${dim("tags for #${task.id}:")} $tags"
+                    dim("tags for #${task.id}:") + " " + tags
                 },
             ) {
                 val store = taskStore()
@@ -282,7 +283,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
             action(
                 human = { task ->
                     val tags = if (task.tags.isEmpty()) dim("none") else cyan(task.tags.joinToString(", "))
-                    "${dim("tags for #${task.id}:")} $tags"
+                    dim("tags for #${task.id}:") + " " + tags
                 },
             ) {
                 val store = taskStore()
@@ -307,7 +308,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
     command("tags") {
         help = "list every tag in use"
         action(
-            human = { tags -> if (tags.isEmpty()) "no tags" else tags.joinToString("\n") { cyan(it) } },
+            human = { tags -> if (tags.isEmpty()) "no tags" else tags.map { cyan(it) }.joinToStyled("\n") },
         ) {
             val tasks = taskStore().load().getOrElse { return@action Err(it) }
             Ok(tasks.allTags())
@@ -324,15 +325,8 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
 }
 
 
-/**
- * Renders one task as a single display line, detailed to [verbosity] or forced open by [long].
- *
- * Declared on [ColorScope] — the narrowest receiver that can resolve a style — rather than on the
- * ActionScope the caller actually has: least privilege, so reaching an input like `verbose()` from a
- * formatter is a compile error. It costs nothing here, since `verbose` is a local val of the `cli { }`
- * block and has to arrive as a parameter either way.
- */
-private fun ColorScope.render(task: Task, verbosity: Int, long: Boolean): String = buildList {
+/** Renders one task as a single display line, detailed to [verbosity] or forced open by [long]. */
+private fun render(task: Task, verbosity: Int, long: Boolean): Styled = buildList {
     add(dim(if (task.done) "[x]" else "[ ]"))
     add(dim("#${task.id}"))
     // A finished task recedes; a pending one is what the reader still has to act on.
@@ -345,9 +339,8 @@ private fun ColorScope.render(task: Task, verbosity: Int, long: Boolean): String
     // --long forces both open regardless of --verbose, one flag rather than remembering `-vv`.
     if ((long || verbosity >= 1) && task.due != null) add(dim("(due ${task.due})"))
     if ((long || verbosity >= 2) && task.tags.isNotEmpty()) add(cyan("[${task.tags.joinToString(",")}]"))
-}.joinToString(" ")
+}.joinToStyled(" ")
 
-/** Combined with `+`, never nested: `bold(red(...))` would emit the inner reset and clear the bold again. */
 private val Priority.style: Style
     get() = when (this) {
         Priority.HIGH -> bold + red

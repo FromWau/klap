@@ -1,9 +1,9 @@
 package com.fromwau.klap.fixture.ssh
 
 import com.fromwau.kern.result.Err
-import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.ResultError
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.TypedCli
 import com.fromwau.klap.Version
@@ -257,7 +257,7 @@ public val NOTHING_BOUND: SshInputs = SshInputs(
 )
 
 /** A `-o` occurrence that is not `KEY=VALUE`. */
-private data object NotKeyValue : IError
+private data object NotKeyValue : ResultError
 
 /**
  * What `ssh -V` prints for OpenSSH 10.6p1, the version installed when it was pinned

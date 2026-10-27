@@ -3,6 +3,7 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.parse.LongPool
 import com.fromwau.klap.internal.parse.NameMatch
 import com.fromwau.klap.internal.parse.resolveLong
@@ -288,7 +289,7 @@ class AbbreviationTest {
         // RecordingTerminal reports no ANSI, so an escape in build's help means the run read `--col` as --color.
         val painted = RecordingTerminal()
         tree.run(listOf("build", "--col", "--help"), painted)
-        assertTrue(Char(27) in painted.out.toString(), painted.out.toString())
+        assertTrue(Char(27) in painted.out, painted.out)
     }
 
     private fun addListDispatcher() = cli("app") {

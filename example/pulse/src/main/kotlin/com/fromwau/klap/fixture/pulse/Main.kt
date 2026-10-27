@@ -6,14 +6,15 @@ import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.getOrElse
 import com.fromwau.kern.result.map
 import com.fromwau.kern.result.mapError
+import com.fromwau.kern.terminal.Styled
 import com.fromwau.kern.terminal.bold
 import com.fromwau.kern.terminal.defaultTerminal
 import com.fromwau.kern.terminal.dim
 import com.fromwau.kern.terminal.green
+import com.fromwau.kern.terminal.joinToStyled
 import com.fromwau.kern.terminal.red
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
-import com.fromwau.klap.ColorScope
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.Version
 import com.fromwau.klap.cli
@@ -222,18 +223,18 @@ internal fun pulseCli(): Cli = cli("pulse") {
     }
 }
 
-private fun ColorScope.renderCheckReport(report: CheckReport): String = buildString {
-    report.results.forEach { s ->
-        val line = if (s.healthy) {
+private fun renderCheckReport(report: CheckReport): Styled {
+    val rows = report.results.map { s ->
+        if (s.healthy) {
             // Explicit unit: a measured Duration renders at nanosecond precision (`40.961158ms`), which is
             // false precision for a health probe. The configured latencies below are whole ms already.
             green("[ok]   ${s.service} (${s.latency.toString(DurationUnit.MILLISECONDS)})")
         } else {
             red("[fail] ${s.service}: ${s.detail}")
         }
-        appendLine(line)
     }
-    append(dim(bold("${report.healthyCount}/${report.total} healthy")))
+    val summary = (bold + dim)("${report.healthyCount}/${report.total} healthy")
+    return (rows + summary).joinToStyled("\n")
 }
 
 /**

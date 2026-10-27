@@ -1,6 +1,7 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -225,7 +226,7 @@ class CompletionWholeLineTest {
     fun `a cursor that is no index into the words is the last word`() {
         val terminal = RecordingTerminal()
         tool().run(arrayOf("__complete", "--cursor", "x", "--", "get", ".ow"), terminal)
-        assertEquals(".ow|null|false", terminal.out.toString().trim())
+        assertEquals(".ow|null|false", terminal.out.trim())
     }
 
     @Test
@@ -233,7 +234,7 @@ class CompletionWholeLineTest {
         val terminal = RecordingTerminal()
         val code = tool().run(arrayOf("__complete", "--cursor", "1", "--", "get", ".ow", "conf.toml"), terminal)
         assertEquals(0, code)
-        assertEquals(".ow|conf.toml|false", terminal.out.toString().trim())
+        assertEquals(".ow|conf.toml|false", terminal.out.trim())
     }
 
     @Test
@@ -241,7 +242,7 @@ class CompletionWholeLineTest {
         val terminal = RecordingTerminal()
         val code = tool().run(arrayOf("__complete", "--", "get", ".ow"), terminal)
         assertEquals(0, code)
-        assertEquals(".ow|null|false", terminal.out.toString().trim())
+        assertEquals(".ow|null|false", terminal.out.trim())
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.parse.sift
 import com.fromwau.klap.internal.render.BuiltinOptionHelp
 import com.fromwau.klap.internal.render.Candidate
@@ -276,7 +277,7 @@ class CompleteBuiltinRoundTripTest {
         val t = RecordingTerminal()
         val code = tree.run(arrayOf("__complete", "checkout", "fe"), t)
         assertEquals(0, code)
-        assertEquals("feature-x", t.out.toString().trim())
+        assertEquals("feature-x", t.out.trim())
     }
 
     @Test
@@ -290,7 +291,7 @@ class CompleteBuiltinRoundTripTest {
         val t = RecordingTerminal()
         val code = tree.run(arrayOf("__complete", "rm", ""), t)
         assertEquals(0, code)
-        assertEquals("1\tBuy Beer", t.out.toString().trim())
+        assertEquals("1\tBuy Beer", t.out.trim())
     }
 
     @Test
@@ -601,7 +602,7 @@ class FlagNameCandidateTest {
         val term = RecordingTerminal()
         tree.run(arrayOf("sub", "--help"), term)
         val listed = Regex("""(?<![\w-])--?[\w-]+""")
-            .findAll(term.out.toString().substringAfter("Global options:"))
+            .findAll(term.out.substringAfter("Global options:"))
             .map { it.value }
             .toList()
         assertEquals(listed, tree.completeCandidates(listOf("sub", "-")).map { it.value })
@@ -973,13 +974,7 @@ class ProviderFailureTest {
         val t = RecordingTerminal()
         val code = tree.run(arrayOf("__complete", "--", "-v", "issue", "show", ""), t)
         assertEquals(0, code)
-        assertEquals(
-            listOf("open", "closed"),
-            t.out
-                .toString()
-                .trim()
-                .lines(),
-        )
+        assertEquals(listOf("open", "closed"), t.out.trim().lines())
     }
 }
 

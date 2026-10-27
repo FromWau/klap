@@ -3,6 +3,7 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -27,7 +28,7 @@ class GlobalOptionArgvOrderTest {
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("build", "-fr", "5", "--retries", "9"), t)
-        assertEquals("retries=9\n", t.out.toString())
+        assertEquals("retries=9\n", t.out)
     }
 
     @Test
@@ -41,7 +42,7 @@ class GlobalOptionArgvOrderTest {
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("build", "-ft", "a", "--tag", "b"), t)
-        assertEquals("tags=[a, b]\n", t.out.toString())
+        assertEquals("tags=[a, b]\n", t.out)
     }
 }
 
@@ -87,7 +88,7 @@ class NumberOptionClusterTest {
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("head", "-20"), t)
-        assertEquals("zero=true lines=null\n", t.out.toString())
+        assertEquals("zero=true lines=null\n", t.out)
     }
 }
 
@@ -103,7 +104,7 @@ class ArgDefaultTypeTest {
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("c"), t)
-        assertEquals("n+1=1\n", t.out.toString())
+        assertEquals("n+1=1\n", t.out)
     }
 
     @Test
@@ -118,7 +119,7 @@ class ArgDefaultTypeTest {
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("c", "--reference=r", "a"), t)
-        assertEquals("modeLen=3 files=[a]\n", t.out.toString())
+        assertEquals("modeLen=3 files=[a]\n", t.out)
     }
 }
 
@@ -134,8 +135,8 @@ class RestatedChoiceSetTest {
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("c", "dark"), t)
-        assertEquals("m=DARK\n", t.out.toString())
-        assertEquals("", t.err.toString())
+        assertEquals("m=DARK\n", t.out)
+        assertEquals("", t.err)
     }
 }
 
@@ -214,6 +215,6 @@ class MetaOptionErrorTextTest {
         val tree = cli("app") { action { Ok("") } }
         val t = RecordingTerminal()
         tree.run(arrayOf("--docs"), t)
-        assertEquals("error: option --docs requires a value\n", t.err.toString())
+        assertEquals("error: option --docs requires a value\n", t.err)
     }
 }

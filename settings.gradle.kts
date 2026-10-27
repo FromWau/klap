@@ -17,6 +17,10 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS
     repositories {
+        // Temporary until kern 0.6.0 is on the release repository.
+        mavenLocal {
+            mavenContent { includeGroup("com.fromwau.kern") }
+        }
         mavenCentral()
         maven("https://maven.frommhund.xyz/releases") {
             mavenContent { includeGroupAndSubgroups("com.fromwau") }

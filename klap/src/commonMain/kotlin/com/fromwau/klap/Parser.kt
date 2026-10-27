@@ -318,7 +318,7 @@ private fun Cli.readBuiltins(typed: List<String>): BuiltinLine {
     // --color is a position-independent modifier with an optional value: unlike completion/docs below (gated
     // behind metaOptions), it is validated for EVERY tree, then stripped before the walk, so
     // `--color=never build` still resolves `build`. Unlike version/completion/docs it never short-circuits to
-    // an Invocation; its effect (effectiveColor) is read back by `run()`, post-parse, against `terminal.ansi`.
+    // an Invocation; `run()` reads it back post-parse and forces the terminal's colour for always or never.
     val colorRefusal = if (builtins.color) colorRefusal(withoutJson) else null
     val withoutColor = if (builtins.color) withoutJson.stripSpellings("color") else withoutJson
 
@@ -628,7 +628,7 @@ private fun Cli.bindCommand(line: BuiltinLine, walked: WalkedCommand): Result<In
                     // Output mode resolves here, not in run() where the color switch waits for a terminal, so
                     // an embedder driving parse() + runAction() reads the same mode the terminal path gives.
                     val exec = invocation.copy(
-                        scope = ActionScope(sink, json = invocation.globals.json, line = invocation.scope.line),
+                        scope = BoundInputs(sink, json = invocation.globals.json, line = invocation.scope.line),
                     )
                     // A prio command runs without its parent's required globals.
                     if (!cmd.prio) deferredGlobalErrors.firstOrNull()?.let { return Result.Error(it) }

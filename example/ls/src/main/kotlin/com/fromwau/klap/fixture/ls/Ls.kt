@@ -1,9 +1,9 @@
 package com.fromwau.klap.fixture.ls
 
 import com.fromwau.kern.result.Err
-import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.ResultError
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Builtin
 import com.fromwau.klap.ConversionError
@@ -538,7 +538,7 @@ public val NOTHING_BOUND: LsInputs = LsInputs(
 )
 
 /** A COLS ls refuses, as typed. */
-private data class ColsRefused(val typed: String) : IError
+private data class ColsRefused(val typed: String) : ResultError
 
 /**
  * COLS as gnulib's `xstrtoumax` reads it in base 0: leading blanks and a `+` skipped, a minus refused, octal after a

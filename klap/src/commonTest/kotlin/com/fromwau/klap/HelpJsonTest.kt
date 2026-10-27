@@ -1,6 +1,7 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -30,7 +31,7 @@ class HelpJsonTest {
     private fun stdout(vararg args: String, tool: Cli = tool()): Pair<Int, String> {
         val t = RecordingTerminal()
         val code = tool.run(arrayOf(*args), t)
-        return code to t.out.toString()
+        return code to t.out
     }
 
     @Test
@@ -97,7 +98,7 @@ class HelpJsonTest {
         fun arguments(command: String): String {
             val t = RecordingTerminal()
             conditional.run(arrayOf(command, "--help", "--json"), t)
-            return Json.parseToJsonElement(t.out.toString()).jsonObject.getValue("arguments").toString()
+            return Json.parseToJsonElement(t.out).jsonObject.getValue("arguments").toString()
         }
         assertEquals(
             """[{"name":"source","help":"what to copy","required":true,"repeatable":true,"min":1},""" +
@@ -115,7 +116,7 @@ class HelpJsonTest {
     private fun page(command: String, tool: Cli): JsonObject {
         val t = RecordingTerminal()
         tool.run(arrayOf(command, "--help", "--json"), t)
-        return Json.parseToJsonElement(t.out.toString()).jsonObject
+        return Json.parseToJsonElement(t.out).jsonObject
     }
 
     @Test

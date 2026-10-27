@@ -3,6 +3,7 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -22,7 +23,7 @@ class DashLedOperandTest {
     fun `declaring dashLed leaves an ordinary parse untouched`() {
         val t = RecordingTerminal()
         assertEquals(0, seekTree(mark = true).run(listOf("seek", "5"), t))
-        assertEquals("pos=5\n", t.out.toString())
+        assertEquals("pos=5\n", t.out)
     }
 
     @Test
@@ -35,7 +36,7 @@ class DashLedOperandTest {
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(listOf("go", "7"), t))
-        assertEquals("n=7\n", t.out.toString())
+        assertEquals("n=7\n", t.out)
     }
 
     @Test
@@ -56,18 +57,18 @@ class DashLedOperandTest {
         // -v resolves, so it stays a flag and never reaches the marked slot.
         val resolved = RecordingTerminal()
         assertEquals(0, tree.run(listOf("go", "-v", "5"), resolved))
-        assertEquals("v=true n=5\n", resolved.out.toString())
+        assertEquals("v=true n=5\n", resolved.out)
         // -v1m does not resolve in full, so the whole word is the operand and -v is NOT counted.
         val admitted = RecordingTerminal()
         assertEquals(0, tree.run(listOf("go", "-v1m"), admitted))
-        assertEquals("v=false n=-v1m\n", admitted.out.toString())
+        assertEquals("v=false n=-v1m\n", admitted.out)
     }
 
     @Test
     fun `a marked slot takes a negative offset`() {
         val t = RecordingTerminal()
         assertEquals(0, seekTree(mark = true).run(listOf("seek", "-1m"), t))
-        assertEquals("pos=-1m\n", t.out.toString())
+        assertEquals("pos=-1m\n", t.out)
     }
 
     @Test
@@ -77,7 +78,7 @@ class DashLedOperandTest {
         // taking hour offsets away.
         val t = RecordingTerminal()
         assertEquals(0, seekTree(mark = true).run(listOf("seek", "-1h"), t))
-        assertEquals("pos=-1h\n", t.out.toString())
+        assertEquals("pos=-1h\n", t.out)
     }
 
     @Test
@@ -114,7 +115,7 @@ class DashLedOperandTest {
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(listOf("seek", "-1m", "-v"), t))
-        assertEquals("v=false pos=-1m rest=-v\n", t.out.toString())
+        assertEquals("v=false pos=-1m rest=-v\n", t.out)
     }
 
     @Test
@@ -131,7 +132,7 @@ class DashLedOperandTest {
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(listOf("go", "-vp8080"), t))
-        assertEquals("v=true port=8080 n=null\n", t.out.toString())
+        assertEquals("v=true port=8080 n=null\n", t.out)
     }
 
     @Test
@@ -174,7 +175,7 @@ class DashLedOperandTest {
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(listOf("seek", "-1m", "--", "-2m"), t))
-        assertEquals("from=-1m to=-2m\n", t.out.toString())
+        assertEquals("from=-1m to=-2m\n", t.out)
     }
 
     @Test
@@ -190,7 +191,7 @@ class DashLedOperandTest {
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(listOf("go", "-v", "--mod", "x", "5"), t))
-        assertEquals("v=true mode=x n=5\n", t.out.toString())
+        assertEquals("v=true mode=x n=5\n", t.out)
     }
 
     @Test
@@ -204,7 +205,7 @@ class DashLedOperandTest {
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(listOf("go", "-5"), t))
-        assertEquals("lines=5 rest=null\n", t.out.toString())
+        assertEquals("lines=5 rest=null\n", t.out)
     }
 
     @Test
@@ -215,7 +216,7 @@ class DashLedOperandTest {
         // cannot reach it.
         val t = RecordingTerminal()
         assertEquals(0, seekTree(mark = true).run(listOf("seek", "--", "-h"), t))
-        assertEquals("pos=-h\n", t.out.toString())
+        assertEquals("pos=-h\n", t.out)
     }
 
     @Test
@@ -228,7 +229,7 @@ class DashLedOperandTest {
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(listOf("go", "-1m", "-2m"), t))
-        assertEquals("ns=-1m,-2m\n", t.out.toString())
+        assertEquals("ns=-1m,-2m\n", t.out)
     }
 
     @Test

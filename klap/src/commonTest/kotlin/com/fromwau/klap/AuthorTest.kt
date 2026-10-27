@@ -2,10 +2,11 @@ package com.fromwau.klap
 
 import com.fromwau.kern.fuzzy.didYouMean
 import com.fromwau.kern.result.Err
-import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.ResultError
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.render.message
 import com.fromwau.klap.internal.render.renderError
@@ -233,7 +234,7 @@ class PublicSurfaceTest {
 
         val term = RecordingTerminal()
         assertEquals(6, renderError(err, json = false, terminal = term))
-        assertEquals("error: out of space\n", term.err.toString())
+        assertEquals("error: out of space\n", term.err)
     }
 
     @Test
@@ -241,7 +242,7 @@ class PublicSurfaceTest {
         // Two lines survive, exactly as they do for Failure: the consumer wrote the sentence.
         val term = RecordingTerminal()
         renderError(CliError.Domain(StoreError.DiskFull, "out of space\n  free some and retry"), json = false, terminal = term)
-        assertTrue("\n  free some and retry" in term.err.toString(), term.err.toString())
+        assertTrue("\n  free some and retry" in term.err, term.err)
     }
 
     @Test
@@ -254,4 +255,4 @@ class PublicSurfaceTest {
     }
 }
 
-private enum class StoreError : IError { DiskFull, NotFound }
+private enum class StoreError : ResultError { DiskFull, NotFound }

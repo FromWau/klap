@@ -4,6 +4,7 @@ import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
 import com.fromwau.kern.result.map
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.completeCandidates
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.render.message
@@ -33,8 +34,8 @@ private fun tarTree(): Cli = cli("tar") {
 private fun Cli.out(argv: List<String>): String {
     val term = RecordingTerminal()
     val code = run(argv.toTypedArray(), term)
-    assertEquals(0, code, term.err.toString())
-    return term.out.toString()
+    assertEquals(0, code, term.err)
+    return term.out
 }
 
 class ExactlyOneTest {
@@ -76,7 +77,7 @@ class ExactlyOneTest {
         val code = tarTree().run(arrayOf("run", "-c", "-x", "-f", "a.tar"), term)
         assertEquals(USAGE_ERROR_EXIT, code)
         assertEquals(2, code)
-        assertEquals("error: --create and --extract are mutually exclusive\n", term.err.toString())
+        assertEquals("error: --create and --extract are mutually exclusive\n", term.err)
     }
 }
 
@@ -733,7 +734,7 @@ class LastWinsTest {
 
     private fun run(vararg argv: String): String = RecordingTerminal().let { term ->
         tree().run(argv.toList().toTypedArray(), term)
-        term.out.toString().trim()
+        term.out.trim()
     }
 
     @Test

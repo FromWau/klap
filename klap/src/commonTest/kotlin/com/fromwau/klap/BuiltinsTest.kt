@@ -4,6 +4,7 @@ import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
 import com.fromwau.kern.result.map
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.Candidate
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
@@ -62,7 +63,7 @@ class BuiltinsTest {
         val t = RecordingTerminal()
         val code = app().run(arrayOf("completion", "fish"), t)
         assertEquals(0, code)
-        assertTrue("complete -c todo" in t.out.toString(), t.out.toString())
+        assertTrue("complete -c todo" in t.out, t.out)
     }
 
     @Test
@@ -71,7 +72,7 @@ class BuiltinsTest {
         val code = app().run(arrayOf("completion", "ksh"), t)
         assertEquals(2, code)
         // Named bare: the user reached this through the `completion` SUBCOMMAND, not the `--completion` option.
-        assertTrue("invalid value 'ksh' for completion" in t.err.toString(), t.err.toString())
+        assertTrue("invalid value 'ksh' for completion" in t.err, t.err)
     }
 
     @Test
@@ -110,7 +111,7 @@ class BuiltinsTest {
         val tree = greet()
         val t = RecordingTerminal()
         assertEquals(0, tree.run(arrayOf("--completion", "bash"), t))
-        assertTrue("complete -F _greet greet" in t.out.toString(), t.out.toString())
+        assertTrue("complete -F _greet greet" in t.out, t.out)
     }
 
     @Test
@@ -118,7 +119,7 @@ class BuiltinsTest {
         val tree = greet()
         val t = RecordingTerminal()
         assertEquals(0, tree.run(arrayOf("--docs", "man"), t))
-        assertTrue(".TH \"GREET\" 1" in t.out.toString(), t.out.toString())
+        assertTrue(".TH \"GREET\" 1" in t.out, t.out)
     }
 
     @Test
@@ -140,7 +141,7 @@ class BuiltinsTest {
         val tree = greet()
         val t = RecordingTerminal()
         assertEquals(0, tree.run(arrayOf("--completion=bash"), t))
-        assertTrue("complete -F _greet greet" in t.out.toString(), t.out.toString())
+        assertTrue("complete -F _greet greet" in t.out, t.out)
     }
 
     @Test
@@ -209,7 +210,7 @@ class BuiltinsTest {
         }
         assertIs<Invocation.ShowVersion>(parseOf(tool, "-V"))
         assertIs<Invocation.ShowVersion>(parseOf(tool, "-QV"))
-        val help = RecordingTerminal().also { tool.run(arrayOf("--help"), it) }.out.toString()
+        val help = RecordingTerminal().also { tool.run(arrayOf("--help"), it) }.out
         assertTrue("-V, --version" in help, help)
         // Without a version there is no --version, so nothing for a short to name: `Version.Off` holds no short.
         assertIs<CliError.UnknownOption>(cli("pkg") { action { Ok("") } }.parse(listOf("-V")).assertError())
@@ -226,7 +227,7 @@ class BuiltinsTest {
             argument("file")
             action { Ok("") }
         }
-        val help = RecordingTerminal().also { tool.run(arrayOf("--help"), it) }.out.toString()
+        val help = RecordingTerminal().also { tool.run(arrayOf("--help"), it) }.out
         assertTrue("display this help and exit" in help && "output version information and exit" in help, help)
         val offered = tool.completeCandidates(listOf("--"))
         assertTrue(Candidate("--help", "display this help and exit") in offered, "$offered")
@@ -242,7 +243,7 @@ class BuiltinsTest {
             }
             command("sync") { action { Ok("") } }
         }
-        val help = RecordingTerminal().also { tool.run(arrayOf("--help"), it) }.out.toString()
+        val help = RecordingTerminal().also { tool.run(arrayOf("--help"), it) }.out
         assertTrue("emit the script" in help && "emit the manual" in help, help)
         val offered = tool.completeCandidates(listOf(""))
         assertTrue(Candidate("completion", "emit the script") in offered, "$offered")
@@ -317,7 +318,7 @@ class BuiltinsTest {
             action { Ok("") }
         }
         for (argv in listOf(arrayOf("--help"), arrayOf("-?"))) {
-            val out = RecordingTerminal().also { tree.run(argv, it) }.out.toString()
+            val out = RecordingTerminal().also { tree.run(argv, it) }.out
             assertEquals("usage: tool [-?] file", out.trim(), argv.toList().toString())
         }
         assertIs<CliError.UnknownOption>(tree.parse(listOf("-h")).assertError())
@@ -333,7 +334,7 @@ class BuiltinsTest {
         }
         assertIs<Invocation.ShowVersion>(parseOf(tree, "-V"))
         assertIs<CliError.UnknownOption>(tree.parse(listOf("--version")).assertError())
-        val help = RecordingTerminal().also { tree.run(arrayOf("--help"), it) }.out.toString()
+        val help = RecordingTerminal().also { tree.run(arrayOf("--help"), it) }.out
         assertTrue(help.lines().any { it.trim().startsWith("-V ") }, help)
         assertTrue("--version" !in help, help)
         val noSpelling = assertFailsWith<IllegalArgumentException> {
@@ -358,7 +359,7 @@ class BuiltinsTest {
             action { Ok("") }
         }
         for (argv in listOf(arrayOf("--ver"), arrayOf("-V"))) {
-            val out = RecordingTerminal().also { tree.run(argv, it) }.out.toString()
+            val out = RecordingTerminal().also { tree.run(argv, it) }.out
             assertEquals("pkg v7.1.0 (banner)", out.trim(), argv.toList().toString())
         }
         assertIs<CliError.UnknownOption>(tree.parse(listOf("--version")).assertError())
@@ -374,7 +375,7 @@ class BuiltinsTest {
         }
         assertIs<CliError.UnknownOption>(tree.parse(listOf("--help-all")).assertError())
         assertTrue("--help-all" !in tree.completeCandidates(listOf("--help")).map { it.value })
-        val help = RecordingTerminal().also { tree.run(arrayOf("--help"), it) }.out.toString()
+        val help = RecordingTerminal().also { tree.run(arrayOf("--help"), it) }.out
         assertTrue("--help-all" !in help, help)
         cli("pac") {
             globalFlag(long = "help-all", help = "the tool's own")
@@ -514,11 +515,11 @@ class BuiltinsTest {
 
         val plain = RecordingTerminal()
         assertEquals(0, tree.run(listOf("--version"), plain))
-        assertEquals("todo 1.0\n", plain.out.toString())
+        assertEquals("todo 1.0\n", plain.out)
 
         val structured = RecordingTerminal()
         assertEquals(0, tree.run(listOf("--version", "--json"), structured))
-        assertEquals("""{"name":"todo","version":"1.0"}""" + "\n", structured.out.toString())
+        assertEquals("""{"name":"todo","version":"1.0"}""" + "\n", structured.out)
     }
 
     @Test
@@ -531,7 +532,7 @@ class BuiltinsTest {
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(listOf("--version", "--json"), t))
-        assertEquals("todo 1.0\n", t.out.toString())
+        assertEquals("todo 1.0\n", t.out)
     }
 
     @Test

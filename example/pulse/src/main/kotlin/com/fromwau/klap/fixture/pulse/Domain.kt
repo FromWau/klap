@@ -1,6 +1,6 @@
 package com.fromwau.klap.fixture.pulse
 
-import com.fromwau.kern.result.IError
+import com.fromwau.kern.result.ResultError
 import kotlinx.serialization.Serializable
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -26,8 +26,8 @@ data class HealthStatus(
     val detail: String? = null,
 )
 
-/** Typed failures for a health check. Rooted in kern's [IError] so it composes with [com.fromwau.klap.CliError]. */
-sealed interface ServiceError : IError {
+/** Typed failures for a health check, rooted in kern's [ResultError] to compose with [com.fromwau.klap.CliError]. */
+sealed interface ServiceError : ResultError {
     val service: String
 
     data class Down(override val service: String) : ServiceError
@@ -35,14 +35,14 @@ sealed interface ServiceError : IError {
 }
 
 /** The whole `check` batch outran its budget. Not a [ServiceError]: no single service is to blame. */
-data class BatchTimeout(val after: Duration) : IError
+data class BatchTimeout(val after: Duration) : ResultError
 
-sealed interface NotifyError : IError {
+sealed interface NotifyError : ResultError {
     data class ChannelDown(val channel: String) : NotifyError
 }
 
 /** A `--timeout`/`--interval`/`--duration` value kotlin.time could not parse, e.g. a bare number or garbage. */
-sealed interface DurationError : IError {
+sealed interface DurationError : ResultError {
     data class Malformed(val given: String) : DurationError
 }
 

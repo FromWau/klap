@@ -2,6 +2,7 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.Candidate
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
@@ -27,7 +28,7 @@ class NegationSpellingTest {
         }
         assertEquals("noconfirm=false", tree.bindText("--noconfirm", "--confirm"))
         assertEquals("noconfirm=true", tree.bindText("--confirm", "--noconfirm"))
-        val help = RecordingTerminal().also { tree.run(arrayOf("--help"), it) }.out.toString()
+        val help = RecordingTerminal().also { tree.run(arrayOf("--help"), it) }.out
         assertTrue(help.lines().any { it.trim().startsWith("--noconfirm") && "do not ask" in it }, help)
         assertTrue(help.lines().any { it.trim().startsWith("--confirm") && "always ask" in it }, help)
         val offered = tree.completeCandidates(listOf("--con"))

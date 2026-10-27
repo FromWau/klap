@@ -2,6 +2,7 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -45,11 +46,11 @@ class TerminalPolicyTest {
 
         val never = RecordingTerminal()
         tree.run(arrayOf("--color=never", "--help"), never)
-        assertFalse(esc in never.out.toString(), never.out.toString())
+        assertFalse(esc in never.out, never.out)
 
         val always = RecordingTerminal()
         tree.run(arrayOf("--color=always", "--help"), always)
-        assertTrue(esc in always.out.toString(), always.out.toString())
+        assertTrue(esc in always.out, always.out)
     }
 
     @Test
@@ -66,6 +67,6 @@ class TerminalPolicyTest {
         val esc = Char(27)
         val recorder = RecordingTerminal()
         tree.run(arrayOf("--color=al", "--help"), recorder)
-        assertTrue(esc in recorder.out.toString(), recorder.out.toString())
+        assertTrue(esc in recorder.out, recorder.out)
     }
 }

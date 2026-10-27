@@ -7,7 +7,7 @@ import com.fromwau.kern.result.getOrNull
 import com.fromwau.kern.result.map
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.infersValues
-import com.fromwau.klap.ActionScope
+import com.fromwau.klap.BoundInputs
 import com.fromwau.klap.BuiltinLong
 import com.fromwau.klap.Builtins
 import com.fromwau.klap.Cli
@@ -215,7 +215,7 @@ internal fun Command.bind(
     // action nor subcommands is rejected at build. Help keeps parse() total rather than throwing.
     val resolved = action ?: return Result.Success(Invocation.ShowHelp(this, qualifiedName))
     val line = lineOrder(sifted, globalSift, inferValues)
-    return Result.Success(Invocation.Execute(this, globals, resolved, ActionScope(emptyMap(), line = line)))
+    return Result.Success(Invocation.Execute(this, globals, resolved, BoundInputs(emptyMap(), json = false, line = line)))
 }
 
 private val NO_GLOBALS = GlobalSift(emptyMap(), emptyMap(), emptyMap())

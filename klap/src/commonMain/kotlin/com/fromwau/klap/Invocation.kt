@@ -10,7 +10,7 @@ public data class Globals(val json: Boolean)
 public sealed interface Invocation {
     // internal constructor: the generated copy() must stay internal, or a public copy() would let
     // consumers forge an Execute with an arbitrary scope. Public consumers read [command]/[globals],
-    // match `is Invocation.Execute`, and run the resolved action via Execute.runAction().
+    // match `is Invocation.Execute`, and run the resolved action via Execute.runAction(terminal).
     @ConsistentCopyVisibility
     public data class Execute internal constructor(
         val command: Command,
@@ -18,14 +18,14 @@ public sealed interface Invocation {
         // Non-null by construction, so running it needs no check: a group resolves to ShowHelp, and a
         // command with neither an action nor subcommands is rejected when the tree is built.
         internal val action: Action,
-        internal val scope: ActionScope,
+        internal val scope: BoundInputs,
     ) : Invocation {
         /**
          * The bound inputs, readable without running the action: `with(exec.inputs) { name() }`. This is
          * what makes your own parsing testable — assert that an argv binds the values you expect, with no
          * action, no output and no exit.
          *
-         * You get the reading half of an action's scope, not its colour operators, since nothing prints here.
+         * You get the reading half of an action's scope, not its [ActionScope.terminal], since nothing prints here.
          */
         public val inputs: ValueScope get() = scope
     }

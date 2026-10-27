@@ -3,6 +3,7 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -112,9 +113,9 @@ class RepeatedOptionsTest {
         val terminal = RecordingTerminal()
         val exit = cpLike().run(arrayOf("-t", "d", "-t", "e", "a"), terminal)
         assertEquals(USAGE_ERROR_EXIT, exit)
-        assertTrue("'--target-directory' may be given only once" in terminal.err.toString(), "${terminal.err}")
+        assertTrue("'--target-directory' may be given only once" in terminal.err, "${terminal.err}")
         val json = RecordingTerminal().also { cpLike().run(arrayOf("--json", "-t", "d", "-t", "e"), it) }
-        val text = json.out.toString() + json.err.toString()
+        val text = json.out + json.err
         assertTrue("\"type\":\"RepeatedOption\"" in text && "\"option\":\"--target-directory\"" in text, text)
     }
 

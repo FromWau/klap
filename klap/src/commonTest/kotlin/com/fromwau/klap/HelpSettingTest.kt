@@ -3,6 +3,7 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.Candidate
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlinx.serialization.json.Json
@@ -43,7 +44,7 @@ class HelpSettingTest {
         assertIs<Invocation.ShowHelp>(parse(argv.toList()).assertSuccess())
 
     private fun Cli.out(vararg argv: String): String =
-        RecordingTerminal().also { run(arrayOf(*argv), it) }.out.toString()
+        RecordingTerminal().also { run(arrayOf(*argv), it) }.out
 
     // --- parse ---
 
@@ -52,7 +53,7 @@ class HelpSettingTest {
         val tree = tree()
         assertFalse(tree.answer("--help").recursive)
         assertEquals("app remote", tree.answer("remote", "--help").qualifiedName)
-        assertEquals(CliError.UnknownOption("--help-all", null), tree.parse(listOf("--help-all")).assertError())
+        assertEquals(CliError.UnknownOption("--help-all", "--help"), tree.parse(listOf("--help-all")).assertError())
         assertIs<CliError.UnknownOption>(tree.parse(listOf("remote", "--help-all")).assertError())
     }
 

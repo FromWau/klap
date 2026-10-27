@@ -4,6 +4,7 @@ import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
@@ -30,7 +31,7 @@ class SuspendingActionTest {
         }
         val terminal = RecordingTerminal()
         assertEquals(0, tree.runSuspending(emptyArray(), terminal))
-        assertEquals("resumed\n", terminal.out.toString())
+        assertEquals("resumed\n", terminal.out)
     }
 
     @Test
@@ -38,7 +39,7 @@ class SuspendingActionTest {
         val tree = cli("app") { action { Ok("plain") } }
         val terminal = RecordingTerminal()
         assertEquals(0, tree.runSuspending(emptyArray(), terminal))
-        assertEquals("plain\n", terminal.out.toString())
+        assertEquals("plain\n", terminal.out)
     }
 
     @Test
@@ -52,7 +53,23 @@ class SuspendingActionTest {
         val execute = assertIs<Invocation.Execute>(
             tree.parse(emptyList()).assertSuccess(),
         )
-        assertEquals(Result.Success("value"), execute.runActionSuspending())
+        assertEquals(Result.Success("value"), execute.runActionSuspending(RecordingTerminal()))
+    }
+
+    @Test
+    fun `an action run through runActionSuspending writes into the terminal it is given`() = runTest {
+        val tree = cli("app") {
+            actionSuspending {
+                delay(10.milliseconds)
+                terminal.out("tick\n")
+                Ok("done")
+            }
+        }
+        val terminal = RecordingTerminal()
+        val execute = assertIs<Invocation.Execute>(tree.parse(emptyList()).assertSuccess())
+
+        assertEquals(Result.Success("done"), execute.runActionSuspending(terminal))
+        assertEquals("tick\n", terminal.out)
     }
 
     @Test
@@ -65,11 +82,11 @@ class SuspendingActionTest {
         }
         val human = RecordingTerminal()
         assertEquals(0, tree.runSuspending(emptyArray(), human))
-        assertEquals("human v\n", human.out.toString())
+        assertEquals("human v\n", human.out)
 
         val machine = RecordingTerminal()
         assertEquals(0, tree.runSuspending(arrayOf("--json"), machine))
-        assertEquals("\"v\"\n", machine.out.toString())
+        assertEquals("\"v\"\n", machine.out)
     }
 
     @Test
@@ -117,7 +134,7 @@ class SuspendingActionTest {
         val execute = assertIs<Invocation.Execute>(
             tree.parse(emptyList()).assertSuccess(),
         )
-        assertEquals(Result.Success("sync"), execute.runActionSuspending())
+        assertEquals(Result.Success("sync"), execute.runActionSuspending(RecordingTerminal()))
     }
 
     @Test
@@ -144,7 +161,7 @@ class SuspendingActionTest {
         val execute = assertIs<Invocation.Execute>(
             tree.parse(listOf("plain")).assertSuccess(),
         )
-        assertEquals(Result.Success("a"), execute.runAction())
+        assertEquals(Result.Success("a"), execute.runAction(RecordingTerminal()))
     }
 
     @Test
@@ -156,7 +173,7 @@ class SuspendingActionTest {
         val execute = assertIs<Invocation.Execute>(
             tree.parse(listOf("fetch")).assertSuccess(),
         )
-        val error = assertFailsWith<IllegalArgumentException> { execute.runAction() }
+        val error = assertFailsWith<IllegalArgumentException> { execute.runAction(RecordingTerminal()) }
         assertTrue("fetch" in error.message.orEmpty(), error.message)
         assertTrue("runActionSuspending" in error.message.orEmpty(), error.message)
     }
@@ -173,7 +190,7 @@ class SuspendingActionTest {
         val t = RecordingTerminal()
         val code = tree.runSuspending(emptyArray(), t)
         assertEquals(3, code)
-        assertEquals("error: fail\n", t.err.toString())
+        assertEquals("error: fail\n", t.err)
     }
 
     @Test
@@ -193,8 +210,8 @@ class SuspendingActionTest {
 
         assertEquals(0, syncCode)
         assertEquals(syncCode, suspendingCode)
-        assertEquals(sync.out.toString(), suspending.out.toString())
-        assertTrue("usage: app add <text>" in sync.out.toString(), sync.out.toString())
+        assertEquals(sync.out, suspending.out)
+        assertTrue("usage: app add <text>" in sync.out, sync.out)
     }
 
     @Test

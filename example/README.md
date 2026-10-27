@@ -207,7 +207,7 @@ The two tag commands are deliberately a pair: `tag add` / `tag rm` act on one ta
 `tags` reports every label in the store. It exercises most of klap in one program: subcommands and
 nested groups, a command alias, a global `--file` and a counting global `-v`, group-scoped options,
 enum/choice/multiple/validate converters, `validateInputs` rules for the checks no single input can
-make, a `.range()`-bounded `--limit`, colorized output through a `ColorScope` helper, a `hidden`
+make, a `.range()`-bounded `--limit`, colorized output through a `Styled` helper, a `hidden`
 diagnostic subcommand, typed errors with custom exit codes, structured `--json`, and value-aware
 completion that resolves `--file` through the same accessor the action uses.
 Unlike the fixtures it stays on plain `cli(name) { }`. It is a program: its values are read inside

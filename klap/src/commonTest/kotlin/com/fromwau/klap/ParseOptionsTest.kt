@@ -1,10 +1,11 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Err
-import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.ResultError
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.render.message
 import kotlin.test.Test
@@ -38,7 +39,7 @@ private fun clusterTree(): Cli = cli("app") {
 private fun Cli.execAndCapture(argv: List<String>): String {
     val term = RecordingTerminal()
     run(argv.toTypedArray(), term)
-    return term.out.toString()
+    return term.out
 }
 
 class ParseOptionsTest {
@@ -1958,4 +1959,4 @@ class OptionalValueTest {
 }
 
 /** A converter error with a payload the rendered sentence drops, for [ParseOptionsTest]. */
-private data class PortRejected(val given: String) : IError
+private data class PortRejected(val given: String) : ResultError
