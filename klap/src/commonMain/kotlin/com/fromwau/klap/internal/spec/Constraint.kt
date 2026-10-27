@@ -18,7 +18,7 @@ internal enum class ConstraintArity {
 
 /**
  * A rule relating two or more of ONE command's own inputs, declared through
- * [com.fromwau.klap.CommandBuilder.requireExactlyOne] / [com.fromwau.klap.CommandBuilder.requireAtMostOne]
+ * [com.fromwau.klap.CommandBuilder.exactlyOne] / [com.fromwau.klap.CommandBuilder.atMostOne]
  * and enforced by `Parser.kt`'s bind before any input binds.
  *
  * [members] keeps the order they were passed in, which is the order both the error text and the help hint

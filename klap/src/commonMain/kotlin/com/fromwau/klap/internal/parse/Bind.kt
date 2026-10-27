@@ -3,10 +3,12 @@ package com.fromwau.klap.internal.parse
 import com.fromwau.kern.fuzzy.didYouMean
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.getOrElse
+import com.fromwau.klap.CheckRefused
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Command
 import com.fromwau.klap.ConversionError
+import com.fromwau.klap.OptionalValue
 import com.fromwau.klap.internal.render.reason
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.ConstraintArity
@@ -16,6 +18,7 @@ import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.ValueSpec
 import com.fromwau.klap.internal.spec.constraintToken
 import com.fromwau.klap.internal.spec.token
+import com.fromwau.klap.judge
 import kotlin.coroutines.cancellation.CancellationException
 
 // The bind half: turns a completed Sifted walk into bound values, enforcing arity and cross-input constraints.
@@ -63,7 +66,7 @@ internal fun bindFlagsAndOptions(
     options: List<OptionSpec>,
     flagHits: Map<FlagSpec, Int>,
     negations: Map<FlagSpec, Boolean>,
-    optionValues: Map<OptionSpec, List<String>>,
+    optionValues: Map<OptionSpec, List<String?>>,
     sink: MutableMap<HolderSpec, Any?>,
     inferValues: Boolean,
     policy: BindPolicy = BindPolicy.Strict,
@@ -98,7 +101,7 @@ private fun bindFlags(
  */
 private fun bindOptions(
     options: List<OptionSpec>,
-    optionValues: Map<OptionSpec, List<String>>,
+    optionValues: Map<OptionSpec, List<String?>>,
     sink: MutableMap<HolderSpec, Any?>,
     inferValues: Boolean,
     policy: BindPolicy,
@@ -128,9 +131,16 @@ private fun bindOptions(
             }
 
             else -> {
-                val raw = raws.lastOrNull()
-                if (raw != null) {
-                    when (val outcome = opt.convertOne(raw, inferValues)) {
+                // The last occurrence binds, but every one is converted: GNU head refuses `head -n abc -n 5`
+                // and ls refuses `ls --width abc --width 80`.
+                if (policy != BindPolicy.Lenient) {
+                    for (earlier in raws.dropLast(1)) {
+                        val outcome = opt.convertOccurrence(earlier, inferValues)
+                        if (outcome is Result.Error) return outcome
+                    }
+                }
+                if (raws.isNotEmpty()) {
+                    when (val outcome = opt.convertOccurrence(raws.last(), inferValues)) {
                         // Lenient leaves it unbound: a wrong or half-typed value must not blank its siblings.
                         is Result.Error -> if (policy != BindPolicy.Lenient) return outcome
                         // A converter ERROR is handled above; only a converter that SUCCEEDS with null (e.g.
@@ -198,20 +208,32 @@ internal fun Command.bindPositionals(
     policy: BindPolicy = BindPolicy.Strict,
     // Defaulted for the completion caller, whose Lenient policy discards every error built here.
     qualifiedName: String = name,
+    // The operand a variadic slot leaves out of its value while still counting it toward the slots: the word
+    // completion is typing, which is not a finished value yet.
+    skipOperand: Int? = null,
 ): Result<Unit, CliError> {
     val overridden = lastWinsLosers(sifted)
     val args = activeArguments(sifted, overridden)
     // A slot whose absentWhen trigger fired is not in [args] at all, so the operands after it keep their
-    // own positions; binding it here rather than in the loop keeps the accessor total.
-    arguments.filterNot { it in args }.forEach { sink[it] = it.absentValue() }
+    // own positions; binding it here rather than in the loop keeps the accessor total. The gathering slot
+    // is not in [args] either once it took a word, and binds those words joined.
+    for (spec in arguments.filterNot { it in args }) {
+        val gather = spec.gather
+        if (gather == null || !spec.gathersOn(sifted) || removedByTrigger(spec, sifted, overridden)) {
+            sink[spec] = spec.absentValue()
+            continue
+        }
+        when (val outcome = spec.convertOne(sifted.gathered.joinToString(gather.separator), inferValues)) {
+            is Result.Error -> if (policy != BindPolicy.Lenient) return outcome
+            is Result.Success -> sink[spec] = outcome.value ?: (spec.cardinality as? Cardinality.Default)?.value
+        }
+    }
     var i = 0
     for ((index, spec) in args.withIndex()) {
         val isLast = index == args.lastIndex
         when (val c = spec.cardinality) {
             is Cardinality.Multiple -> {
-                // A relaxedWhen trigger drops the declared minimum to zero; the slot itself is untouched,
-                // so nothing else about the slice changes.
-                val min = if (spec.relaxedWhen?.let { supplied(it, sifted, overridden) } == true) 0 else c.min
+                val min = operandMin(spec, sifted, overridden)
                 // Everything left EXCEPT what the fixed slots after this one still need. They are all
                 // Required (BuilderValidation's rule), so the count is exact and `cp a b c` gives the
                 // variadic [a, b] and the destination c. With the variadic last this is `values.drop(i)`
@@ -221,8 +243,13 @@ internal fun Command.bindPositionals(
                 // Short of satisfying both, this slot keeps its minimum and lets the starved fixed slot
                 // report itself: `cp a` means "a is the source, the destination is missing", and blaming
                 // the variadic instead would answer `cp a` and bare `cp` with the same sentence.
-                val take = (left - fixedAfter).coerceAtLeast(0).coerceAtLeast(minOf(min, left))
-                val slice = values.subList(i, i + take)
+                val take = (left - fixedAfter)
+                    .coerceAtLeast(0)
+                    .coerceAtLeast(minOf(min, left))
+                    .coerceAtMost(operandCap(spec, sifted, overridden))
+                val slice = values
+                    .subList(i, i + take)
+                    .filterIndexed { offset, _ -> i + offset != skipOperand }
                 // Rule 3: the sift is permissive (it admits when ANY argument on the command is marked), so
                 // the slot a value actually lands in is only known here. Keyed on what the sift admitted
                 // rather than on the token's shape, so a `--`-escaped operand still binds in an unmarked
@@ -307,14 +334,27 @@ private fun ValueSpec.convertAll(raws: List<String>, inferValues: Boolean): Resu
  * (`.map { it.toIntOrNull() }` on bad input): `Opt<T?>.multiple()` narrows the accessor to a non-null
  * `List<T>`, leaving no slot to bind such a value into. The positional form keeps `List<T?>` and allows it.
  */
-private fun OptionSpec.convertOccurrences(raws: List<String>, inferValues: Boolean): Result<List<Any>, CliError> {
+private fun OptionSpec.convertOccurrences(raws: List<String?>, inferValues: Boolean): Result<List<Any>, CliError> {
     val converted = mutableListOf<Any>()
     for (raw in raws) {
-        val value = convertOne(raw, inferValues).getOrElse { return Result.Error(it) }
-            ?: return Result.Error(CliError.BadValue(name, raw, "conversion failed"))
+        val value = convertOccurrence(raw, inferValues).getOrElse { return Result.Error(it) }
+            ?: return Result.Error(CliError.BadValue(name, raw.orEmpty(), "conversion failed"))
         converted += value
     }
     return Result.Success(converted)
+}
+
+/**
+ * What one occurrence of this option binds: [raw] converted, wrapped as an [OptionalValue] for an option declared
+ * with `.optionalValue()`, where a null [raw] is its bare occurrence. A converter's null stays null, as absent.
+ */
+internal fun OptionSpec.convertOccurrence(raw: String?, inferValues: Boolean): Result<Any?, CliError> = when {
+    raw == null -> Result.Success(OptionalValue.Bare)
+    bareMarks -> when (val converted = convertOne(raw, inferValues)) {
+        is Result.Error -> converted
+        is Result.Success -> Result.Success(converted.value?.let { OptionalValue.Given(it) })
+    }
+    else -> convertOne(raw, inferValues)
 }
 
 /**
@@ -324,57 +364,43 @@ private fun OptionSpec.convertOccurrences(raws: List<String>, inferValues: Boole
  * root's [Abbreviation] mode itself.
  */
 private fun ValueSpec.convertOne(raw: String, inferValues: Boolean): Result<Any?, CliError> {
-    val resolved = if (!inferValues || choices == null) {
+    val resolved = if (!inferValues || !choiceAbbreviates || choices == null) {
         raw
     } else {
         resolveChoice(raw, choices!!).getOrElse { return Result.Error(it) }
     }
     // A converter chain that compiles but is misused (two type converters stacked, or a nullable map
-    // feeding a later String-typed stage) can throw at parse; the parse-never-throws contract turns any
-    // converter exception into a BadValue instead of crashing the process.
+    // feeding a later String-typed stage) can throw at parse; the parse-never-throws contract turns anything
+    // a converter throws, an Error included, into a BadValue instead of crashing the process.
     val converted = try {
         convert(resolved)
     } catch (e: CancellationException) {
         throw e
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
         val threw = ConversionError.Threw(e)
         return Result.Error(CliError.BadValue(name, raw, threw.reason(), threw))
     }
-    val value = converted.getOrElse { cause ->
-        return Result.Error(
-            if (choices != null) {
-                // Choice-restricted matching is case-insensitive (.choice()/.enum()), so the "did you
-                // mean" suggestion ignores case too, rather than penalizing a near-miss for wrong case.
-                CliError.InvalidChoice(
-                    name, raw, choices!!,
-                    didYouMean(raw, choices!!),
-                )
-            } else {
-                CliError.BadValue(name, raw, cause.reason(), cause)
-            },
-        )
-    }
+    val value = converted.getOrElse { cause -> return Result.Error(refusal(raw, cause)) }
     // A converter that succeeds with null is treated as absent (see the bind-site "?: default"
-    // substitution), and an absent value never runs validate, so skip it here rather than hand a
-    // non-null predicate a null. Guard validate itself too, upholding the never-throw contract.
-    if (value != null) {
-        // A validate failure is always BadValue, never InvalidChoice, even on a choices-backed spec.
-        val message = try {
-            validate?.invoke(value)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            val reason = e.message?.takeIf { it.isNotBlank() } ?: "conversion failed"
-            return Result.Error(CliError.BadValue(name, raw, reason))
-        }
-        message?.let { return Result.Error(CliError.BadValue(name, raw, it)) }
-    }
+    // substitution), and an absent value is never judged, so a non-null predicate never sees a null.
+    val message = value?.let { checked -> validate?.let { judge(it, checked) } }
+    message?.let { return Result.Error(CliError.BadValue(name, raw, it)) }
     return Result.Success(value)
+}
+
+/**
+ * The [CliError] for [raw] refused by this spec's converters with [cause]. A check is always [CliError.BadValue]
+ * carrying its message alone, never [CliError.InvalidChoice], even on a choices-backed spec.
+ */
+private fun ValueSpec.refusal(raw: String, cause: ConversionError): CliError = when {
+    cause is ConversionError.Domain && cause.error == CheckRefused -> CliError.BadValue(name, raw, cause.detail)
+    choices != null -> CliError.InvalidChoice(name, raw, choices!!, didYouMean(raw, choices!!))
+    else -> CliError.BadValue(name, raw, cause.reason(), cause)
 }
 
 /** [resolveChoice], reading this spec's own [ValueSpec.name] as the error's [CliError.AmbiguousValue.name]. */
 private fun ValueSpec.resolveChoice(raw: String, choices: List<String>): Result<String, CliError> =
-    resolveChoice(name, raw, choices)
+    resolveChoice(name, raw, choices, choiceIgnoreCase, choiceEntries)
 
 /**
  * A [CliError.TooManyArguments] whose first extra token, when it near-matches a visible subcommand,
@@ -383,7 +409,7 @@ private fun ValueSpec.resolveChoice(raw: String, choices: List<String>): Result<
  * a stray positional for the action instead of being routed.
  */
 private fun Command.tooManyArguments(extras: List<String>, qualifiedName: String): CliError {
-    val commandNames = subcommands.filterNot { it.hidden }.flatMap { listOf(it.name) + it.aliases }
+    val commandNames = subcommands.filterNot { it.hidden }.flatMap { it.words }
     // A dash-led extra is never a mistyped subcommand: [requireValidName] forbids a leading '-' on every
     // command name and alias, so measuring one against them can only produce a wrong answer ('-rm' is one
     // edit from 'rm'). Such a token gets here past `--`, or past a `dashLed()` slot that already took one.
@@ -395,27 +421,52 @@ private fun Command.tooManyArguments(extras: List<String>, qualifiedName: String
     return CliError.TooManyArguments(qualifiedName, extras, needle?.let { didYouMean(it, commandNames) })
 }
 
+/**
+ * The first option value on the line, in line order, that its conversion or check refuses, read over a
+ * command's own [sifted] values and every global in [globals]. getopt's loop meets a value as it reads its
+ * option, so a bad one written ahead of `--help` refuses the line.
+ */
+internal fun firstBadValue(sifted: Sifted, globals: GlobalSift, inferValues: Boolean): Refusal? {
+    // A bare occurrence (a null value) has nothing to convert.
+    val local = sifted.options.flatMap { (spec, raws) ->
+        raws.zip(sifted.optionValuePositions[spec].orEmpty()) { raw, at -> raw?.let { Triple(spec, it, at) } }
+            .filterNotNull()
+    }
+    val global = globals.options.flatMap { (spec, occurrences) ->
+        occurrences.mapNotNull { occurrence ->
+            occurrence.position?.let { at -> occurrence.value?.let { Triple(spec, it, at) } }
+        }
+    }
+    return (local + global)
+        .sortedBy { it.third }
+        .firstNotNullOfOrNull { (spec, raw, at) ->
+            (spec.convertOne(raw, inferValues) as? Result.Error)?.let { Refusal(it.error, at) }
+        }
+}
+
 /** These occurrences' values in argv order; an unpositioned one (see [Occurrence]) comes last. */
-private fun List<Occurrence>.inArgvOrder(): List<String> =
+private fun List<Occurrence>.inArgvOrder(): List<String?> =
     sortedWith(compareBy(nullsLast()) { it.position }).map { it.value }
 
 /**
  * The lenient counterpart to [com.fromwau.klap.parse]'s bind phase, for tab completion: bind everything the
- * half-typed [sifted] segment and [globalAcc] can resolve for [cmd], and leave the rest unbound.
+ * half-typed [sifted] segment and [globals] can resolve for [cmd], and leave the rest unbound.
  *
  * Never fails, and [Sifted.error] is deliberately ignored — a malformed token loses only itself, not the
  * inputs around it. Reading an input this leaves unbound throws from the [com.fromwau.klap.CompletionScope]
  * accessor, which the provider seam turns into "no candidates".
  *
- * [sifted] must be the result of `cmd.sift(segment, globalAcc)` with this same [globalAcc]: that walk is
- * what records a global hiding in a mixed short cluster (`-fv`), and the [bindGlobals] below reads them
- * back off the accumulator.
+ * [globals] must be read off the accumulator `cmd.sift` filled while sifting [sifted], since that walk is what
+ * records a global hiding in a mixed short cluster (`-fv`); the caller may leave an occurrence out of them.
+ * [inferValues] is that accumulator's [GlobalAccumulator.inferValues].
  */
 internal fun Cli.completionValues(
     cmd: Command,
     sifted: Sifted,
-    globalAcc: GlobalAccumulator,
-): Map<HolderSpec, Any?> {
+    globals: GlobalSift,
+    inferValues: Boolean,
+    skipOperand: Int? = null,
+): BoundLine {
     val sink = mutableMapOf<HolderSpec, Any?>()
     // Same order parse() binds in: the command's own inputs, then the globals the segment sift topped up.
     // Every Result is discarded: Lenient never errors, and it defers nothing.
@@ -426,10 +477,17 @@ internal fun Cli.completionValues(
         sifted.negations,
         sifted.options,
         sink,
-        globalAcc.inferNames,
+        inferValues,
         BindPolicy.Lenient,
     )
-    cmd.bindPositionals(sifted.positionals, sink, sifted, globalAcc.inferNames, BindPolicy.Lenient)
-    bindGlobals(globalSpecs, globalAcc.toGlobalSift(), sink, globalAcc.inferNames, BindPolicy.Lenient)
-    return sink
+    cmd.bindPositionals(
+        sifted.positionals,
+        sink,
+        sifted,
+        inferValues,
+        BindPolicy.Lenient,
+        skipOperand = skipOperand,
+    )
+    bindGlobals(globalSpecs, globals, sink, inferValues, BindPolicy.Lenient)
+    return BoundLine(sink, lineOrder(sifted, globals, inferValues))
 }

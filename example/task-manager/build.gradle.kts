@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.androidKotlinMultiplatformLibrary)
     alias(libs.plugins.kotlinSerialization)
 }
 
@@ -30,14 +29,6 @@ val versionSource = tasks.register("versionSource") {
 }
 
 kotlin {
-    jvmToolchain(libs.versions.jdk.get().toInt())
-
-    android {
-        compileSdk = libs.versions.android.compileSdk.get().toInt()
-        minSdk = libs.versions.android.minSdk.get().toInt()
-        namespace = "com.fromwau.example"
-    }
-
     linuxX64 {
         binaries.executable {
             entryPoint = "com.fromwau.example.main"
@@ -64,6 +55,7 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.kern.result.test)
+            implementation(libs.kern.terminal.test)
         }
     }
 }

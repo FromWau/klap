@@ -2,6 +2,7 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.Ok
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -25,8 +26,8 @@ class ActionExitCodeTest {
     fun `a success without the projection still exits zero`() {
         val t = RecordingTerminal()
         assertEquals(0, cli("app") { action { Ok("done") } }.run(emptyList(), t))
-        assertEquals("done\n", t.out.toString())
-        assertEquals("", t.err.toString())
+        assertEquals("done\n", t.out)
+        assertEquals("", t.err)
     }
 
     @Test
@@ -36,21 +37,21 @@ class ActionExitCodeTest {
             action(exitCode = { 3 }) { Ok("printed anyway") }
         }
         assertEquals(3, tree.run(emptyList(), t))
-        assertEquals("printed anyway\n", t.out.toString())
-        assertEquals("", t.err.toString())
+        assertEquals("printed anyway\n", t.out)
+        assertEquals("", t.err)
     }
 
     @Test
     fun `the diff contract both ways`() {
         val differ = RecordingTerminal()
         assertEquals(1, diffLike(listOf("2c2", "< b", "> c")).run(emptyList(), differ))
-        assertEquals("2c2\n< b\n> c\n", differ.out.toString())
-        assertEquals("", differ.err.toString())
+        assertEquals("2c2\n< b\n> c\n", differ.out)
+        assertEquals("", differ.err)
 
         val same = RecordingTerminal()
         assertEquals(0, diffLike(emptyList()).run(emptyList(), same))
-        assertEquals("", same.out.toString())
-        assertEquals("", same.err.toString())
+        assertEquals("", same.out)
+        assertEquals("", same.err)
     }
 
     @Test
@@ -75,8 +76,8 @@ class ActionExitCodeTest {
         }
         val t = RecordingTerminal()
         assertEquals(4, tree.run(emptyList(), t))
-        assertEquals("error: boom\n", t.err.toString())
-        assertEquals("", t.out.toString())
+        assertEquals("error: boom\n", t.err)
+        assertEquals("", t.out)
         assertFalse(consulted)
     }
 
@@ -90,8 +91,8 @@ class ActionExitCodeTest {
             ) { Ok(Report(failed = 2, total = 5)) }
         }
         assertEquals(1, tree.run(listOf("--json"), t))
-        assertEquals("""{"failed":2,"total":5}""" + "\n", t.out.toString())
-        assertEquals("", t.err.toString())
+        assertEquals("""{"failed":2,"total":5}""" + "\n", t.out)
+        assertEquals("", t.err)
     }
 
     @Test
@@ -110,6 +111,6 @@ class ActionExitCodeTest {
             actionSuspending(exitCode = { if (it.isEmpty()) 0 else 1 }) { Ok(listOf("drift")) }
         }
         assertEquals(1, tree.runSuspending(emptyArray(), t))
-        assertEquals("[drift]\n", t.out.toString())
+        assertEquals("[drift]\n", t.out)
     }
 }

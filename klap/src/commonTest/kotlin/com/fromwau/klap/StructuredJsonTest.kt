@@ -1,6 +1,7 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -68,7 +69,7 @@ class StructuredJsonTest {
         val t = RecordingTerminal()
         val code = geo().run(arrayOf("point", "--json"), t)
         assertEquals(0, code)
-        assertEquals("{\"x\":1,\"y\":2}\n", t.out.toString())
+        assertEquals("{\"x\":1,\"y\":2}\n", t.out)
     }
 
     @Test
@@ -76,7 +77,7 @@ class StructuredJsonTest {
         val t = RecordingTerminal()
         val code = geo().run(arrayOf("point"), t)
         assertEquals(0, code)
-        assertEquals("point(1, 2)\n", t.out.toString())
+        assertEquals("point(1, 2)\n", t.out)
     }
 
     @Test
@@ -84,7 +85,7 @@ class StructuredJsonTest {
         val t = RecordingTerminal()
         val code = geo().run(arrayOf("bare"), t)
         assertEquals(0, code)
-        assertEquals("Point(x=3, y=4)\n", t.out.toString())
+        assertEquals("Point(x=3, y=4)\n", t.out)
     }
 
     @Test
@@ -94,11 +95,11 @@ class StructuredJsonTest {
         val quiet = cli("quiet") { action { Ok("") } }
         val plain = RecordingTerminal()
         assertEquals(0, quiet.run(emptyArray(), plain))
-        assertEquals("", plain.out.toString())
+        assertEquals("", plain.out)
 
         val machine = RecordingTerminal()
         assertEquals(0, quiet.run(arrayOf("--json"), machine))
-        assertEquals("\"\"\n", machine.out.toString())
+        assertEquals("\"\"\n", machine.out)
     }
 
     @Test
@@ -106,7 +107,7 @@ class StructuredJsonTest {
         val t = RecordingTerminal()
         val code = geo().run(arrayOf("greet", "--json"), t)
         assertEquals(0, code)
-        assertEquals("\"hi\"\n", t.out.toString())
+        assertEquals("\"hi\"\n", t.out)
     }
 
     @Test
@@ -115,7 +116,7 @@ class StructuredJsonTest {
         val t = RecordingTerminal()
         val code = cli("esc") { action { Ok("a\"b\\c\nd") } }.run(arrayOf("--json"), t)
         assertEquals(0, code)
-        assertEquals("\"a\\\"b\\\\c\\nd\"\n", t.out.toString())
+        assertEquals("\"a\\\"b\\\\c\\nd\"\n", t.out)
     }
 
     @Test
@@ -125,7 +126,7 @@ class StructuredJsonTest {
         val t = RecordingTerminal()
         val code = geo().run(arrayOf("task", "--json"), t)
         assertEquals(0, code)
-        assertEquals("{\"id\":3,\"title\":\"x\",\"priority\":\"normal\",\"done\":false}\n", t.out.toString())
+        assertEquals("{\"id\":3,\"title\":\"x\",\"priority\":\"normal\",\"done\":false}\n", t.out)
     }
 
     @Test
@@ -150,7 +151,7 @@ class StructuredJsonTest {
         val t = RecordingTerminal()
         val code = nonSerializableTool().run(arrayOf("--json"), t)
         assertEquals(1, code)
-        assertEquals("""{"error":{"type":"NotSerializable"},"code":1}""" + "\n", t.err.toString())
+        assertEquals("""{"error":{"type":"NotSerializable"},"code":1}""" + "\n", t.err)
     }
 
     @Test
@@ -161,7 +162,7 @@ class StructuredJsonTest {
         val t = RecordingTerminal()
         val code = cli("boom") { action { Ok(Exploding()) } }.run(arrayOf("--json"), t)
         assertEquals(1, code)
-        assertEquals("""{"error":{"type":"EncodeFailed","message":"boom"},"code":1}""" + "\n", t.err.toString())
+        assertEquals("""{"error":{"type":"EncodeFailed","message":"boom"},"code":1}""" + "\n", t.err)
     }
 
     @Test
@@ -172,6 +173,6 @@ class StructuredJsonTest {
         val t = RecordingTerminal()
         val code = cli("boom2") { action { Ok(ExplodingRuntime()) } }.run(arrayOf("--json"), t)
         assertEquals(1, code)
-        assertEquals("""{"error":{"type":"EncodeFailed","message":"boom"},"code":1}""" + "\n", t.err.toString())
+        assertEquals("""{"error":{"type":"EncodeFailed","message":"boom"},"code":1}""" + "\n", t.err)
     }
 }

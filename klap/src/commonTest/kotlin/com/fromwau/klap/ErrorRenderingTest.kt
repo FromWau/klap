@@ -3,6 +3,7 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.assertError
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.message
 import com.fromwau.klap.internal.render.renderError
 import kotlin.test.Test
@@ -171,7 +172,7 @@ class ErrorRenderingTest {
     fun `json envelope escapes quotes`() {
         val t = RecordingTerminal()
         renderError(CliError.Usage("say \"hi\""), json = true, terminal = t)
-        assertEquals("""{"error":{"type":"Usage","detail":"say \"hi\""},"code":2}""" + "\n", t.err.toString())
+        assertEquals("""{"error":{"type":"Usage","detail":"say \"hi\""},"code":2}""" + "\n", t.err)
     }
 
     @Test
@@ -184,7 +185,7 @@ class ErrorRenderingTest {
         assertEquals(1, code)
         assertEquals(
             """{"error":{"type":"EncodeFailed","message":"boom\u007fboom"},"code":1}""" + "\n",
-            t.err.toString(),
+            t.err,
         )
     }
 
@@ -202,7 +203,7 @@ class ErrorRenderingTest {
         // error over the same class of mistake.
         val t = RecordingTerminal()
         assertEquals(2, renderError(CliError.Usage("--from and --to must differ"), json = false, terminal = t))
-        assertEquals("error: --from and --to must differ\n", t.err.toString())
+        assertEquals("error: --from and --to must differ\n", t.err)
     }
 
     @Test
@@ -214,7 +215,7 @@ class ErrorRenderingTest {
         val t = RecordingTerminal()
         val code = renderError(CliError.Failure("$esc[31mboom$esc[0m"), json = false, terminal = t)
         assertEquals(1, code)
-        assertEquals("error: \\x1B[31mboom\\x1B[0m\n", t.err.toString())
+        assertEquals("error: \\x1B[31mboom\\x1B[0m\n", t.err)
     }
 
     @Test
@@ -223,7 +224,7 @@ class ErrorRenderingTest {
         val t = RecordingTerminal()
         val code = renderError(CliError.Usage("bad operand '$esc[31m'"), json = false, terminal = t)
         assertEquals(2, code)
-        assertEquals("error: bad operand '\\x1B[31m'\n", t.err.toString())
+        assertEquals("error: bad operand '\\x1B[31m'\n", t.err)
     }
 
     @Test
@@ -234,14 +235,14 @@ class ErrorRenderingTest {
         val detail = "no such environment 'prd'\nhint: did you mean 'prod'?"
         val human = RecordingTerminal()
         renderError(CliError.Failure(detail), json = false, terminal = human)
-        assertEquals("error: $detail\n", human.err.toString())
+        assertEquals("error: $detail\n", human.err)
 
         val structured = RecordingTerminal()
         renderError(CliError.Usage(detail), json = true, terminal = structured)
         assertEquals(
             """{"error":{"type":"Usage","detail":"no such environment 'prd'\nhint: did you mean 'prod'?"},"code":2}""" +
                 "\n",
-            structured.err.toString(),
+            structured.err,
         )
     }
 
@@ -251,7 +252,7 @@ class ErrorRenderingTest {
         // escaped. Otherwise `app --n=$'x\nerror: disk wiped'` prints a second, fabricated error line.
         val t = RecordingTerminal()
         renderError(CliError.BadValue("n", "x\nerror: forged", "bad"), json = false, terminal = t)
-        assertEquals("error: invalid value 'x\\x0Aerror: forged' for n: bad\n", t.err.toString())
+        assertEquals("error: invalid value 'x\\x0Aerror: forged' for n: bad\n", t.err)
     }
 
     @Test
@@ -262,7 +263,7 @@ class ErrorRenderingTest {
         val t = RecordingTerminal()
         val code = renderError(CliError.BadValue("n", "$esc[31m", "bad"), json = false, terminal = t)
         assertEquals(2, code)
-        assertEquals("error: invalid value '\\x1B[31m' for n: bad\n", t.err.toString())
+        assertEquals("error: invalid value '\\x1B[31m' for n: bad\n", t.err)
     }
 
     @Test

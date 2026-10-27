@@ -1,9 +1,14 @@
 package com.fromwau.klap.snippets
 
 import com.fromwau.kern.result.Err
-import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.ResultError
 import com.fromwau.kern.result.assertError
+import com.fromwau.kern.terminal.Styled
+import com.fromwau.kern.terminal.bold
+import com.fromwau.kern.terminal.out
+import com.fromwau.kern.terminal.test.RecordingTerminal
+import com.fromwau.kern.terminal.yellow
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
@@ -11,9 +16,9 @@ import com.fromwau.klap.CommandBuilder
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.Invocation
 import com.fromwau.klap.Opt
-import com.fromwau.klap.RecordingTerminal
 import com.fromwau.klap.USAGE_ERROR_EXIT
 import com.fromwau.klap.ValueScope
+import com.fromwau.klap.Version
 import com.fromwau.klap.bindText
 import com.fromwau.klap.cli
 import com.fromwau.klap.cliOf
@@ -25,6 +30,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlinx.serialization.Serializable
 
 /**
  * The guide's abbreviation snippets, transcribed and executed. `docs/guide.md`'s abbreviation section makes
@@ -55,6 +61,7 @@ class GuideSnippetsTest {
     @Test
     fun `the guides strict help suggestion is real`() {
         val strict = cli("tasks") {
+            abbreviation = Abbreviation.None
             action<String>(human = { it }) { Ok("ran") }
         }
         assertEquals(
@@ -63,24 +70,66 @@ class GuideSnippetsTest {
         )
     }
 
+    private enum class Interactive(val words: List<String>) {
+        Never(listOf("never", "no", "none")),
+        Once(listOf("once")),
+        Always(listOf("always", "yes")),
+    }
+
+    @Test
+    fun `the guides enum words resolve a prefix of one entry`() {
+        val rm = cli("rm") {
+            abbreviation = Abbreviation.Options
+            val interactive = option(long = "interactive").enum<Interactive>(spellings = { it.words })
+            action<String>(human = { it }) { Ok("${interactive()}") }
+        }
+        assertEquals("Never", rm.bindText("--interactive=n"))
+        assertEquals("Always", rm.bindText("--interactive=yes"))
+    }
+
+    private enum class RootScope { All }
+
+    @Test
+    fun `the guides whole long and whole enum value refuse a prefix`() {
+        val rm = cli("rm") {
+            abbreviation = Abbreviation.Options
+            val noPreserveRoot = flag(long = "no-preserve-root").spelledInFull()
+            val preserveRoot = option(long = "preserve-root").enum<RootScope>(abbreviates = false).optionalValue()
+            val verbose = flag(long = "verbose")
+            argument("file")
+            action<String>(human = { it }) { Ok("${noPreserveRoot()} ${preserveRoot()} ${verbose()}") }
+        }
+        val unknown = RecordingTerminal()
+        rm.run(arrayOf("--no-p", "d"), unknown)
+        assertContains(unknown.err, "error: unknown option '--no-p'")
+        val prefix = RecordingTerminal()
+        rm.run(arrayOf("--preserve-root=al", "d"), prefix)
+        assertContains(
+            prefix.err,
+            "error: invalid value 'al' for --preserve-root (choose from all). Did you mean all?\n",
+        )
+        assertEquals("false Given(value=All) false", rm.bindText("--pre=all", "d"))
+        assertEquals("false null true", rm.bindText("--verb", "d"))
+    }
+
     // --- "Inputs and converters": the two rendered error shapes ---
 
     @Test
     fun `the guides rendered value errors name the dashed option`() {
         val tree = cli("app") {
-            val port = option("--port").int().validate("must be 1..65535") { it in 1..65535 }
-            val level = option("--level").choice("debug", "info", "warn", "error")
+            val port = option(long = "port").int().validate("must be 1..65535") { it in 1..65535 }
+            val level = option(long = "level").choice("debug", "info", "warn", "error")
             action { Ok("${port()} ${level()}") }
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("--port", "70000"), t)
-        assertEquals("error: invalid value '70000' for --port: must be 1..65535\n", t.err.toString())
+        assertEquals("error: invalid value '70000' for --port: must be 1..65535\n", t.err)
 
         val t2 = RecordingTerminal()
         tree.run(arrayOf("--level", "bogus"), t2)
         assertEquals(
             "error: invalid value 'bogus' for --level (choose from debug, info, warn, error)\n",
-            t2.err.toString(),
+            t2.err,
         )
     }
 
@@ -90,13 +139,13 @@ class GuideSnippetsTest {
     fun `the guides group snippet captures a handle by plain val`() {
         val tree = cli("deploy") {
             val host = group("Networking") {
-                option("--host", "-H", help = "target host").required()
+                option(short = 'H', long = "host", help = "target host").required()
             }
             action { Ok("shipped to ${host()}") }
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("--host", "example.com"), t)
-        assertEquals("shipped to example.com\n", t.out.toString())
+        assertEquals("shipped to example.com\n", t.out)
     }
 
     @Test
@@ -105,36 +154,35 @@ class GuideSnippetsTest {
             val jobs: Opt<Int>
             val tags: Opt<List<String>>
             group("Tuning") {
-                jobs = option("--jobs", "-j", help = "parallelism").int().default(1)
-                tags = option("--tag", "-t", help = "labels").multiple()
+                jobs = option(short = 'j', long = "jobs", help = "parallelism").int().default(1)
+                tags = option(short = 't', long = "tag", help = "labels").multiple()
             }
             action { Ok("jobs=${jobs()} tags=${tags()}") }
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("-j", "4", "-t", "a", "-t", "b"), t)
-        assertEquals("jobs=4 tags=[a, b]\n", t.out.toString())
+        assertEquals("jobs=4 tags=[a, b]\n", t.out)
     }
 
     // --- "Inputs and converters": the declaration-order rules the guide states as prose ---
 
     @Test
-    fun `the guides converter order rule is what the builder enforces`() {
-        // The guide's example of the wrong order, and of the right one it tells you to write instead.
-        val wrongOrder = assertFailsWith<IllegalArgumentException> {
-            cli("app") {
-                argument("n").validate("must not be blank") { it.isNotBlank() }.int()
-                action { Ok("") }
-            }
+    fun `the guides check order is the order a value is judged in`() {
+        // The guide's two chains: a check before .int() reads the text, a range after it reads the number.
+        val textChecked = cli("app") {
+            val n = argument("n").validate("must not be blank") { it.isNotBlank() }.int()
+            action { Ok("${n()}") }
         }
-        assertContains(wrongOrder.message.orEmpty(), "after every type-changing converter")
+        assertEquals("must not be blank", textChecked.parse(listOf("")).assertError<CliError.BadValue>().reason)
 
-        val rightOrder = cli("app") {
+        val numberChecked = cli("app") {
             val n = argument("n").int().range(1..10)
             action { Ok("${n()}") }
         }
         val t = RecordingTerminal()
-        rightOrder.run(arrayOf("7"), t)
-        assertEquals("7\n", t.out.toString())
+        numberChecked.run(arrayOf("7"), t)
+        assertEquals("7\n", t.out)
+        assertEquals("must be in 1..10", numberChecked.parse(listOf("11")).assertError<CliError.BadValue>().reason)
     }
 
     @Test
@@ -165,14 +213,14 @@ class GuideSnippetsTest {
 
 // --- "Converters and validators": the guide's typed-ConversionError snippet, transcribed ---
 
-private sealed interface PortError : IError {
+private sealed interface PortError : ResultError {
     data class NotANumber(val given: String) : PortError
 
     data class OutOfRange(val given: Int) : PortError
 }
 
 private fun guidePortCli() = cli("net") {
-    val port = option("--port").convert { raw ->
+    val port = option(long = "port").convert { raw ->
         val n = raw.toIntOrNull()
             ?: return@convert Err(ConversionError.Domain(PortError.NotANumber(raw), "'$raw' is not a number"))
         if (n in 1..65535) Ok(n)
@@ -199,7 +247,7 @@ class GuideConversionErrorSnippetTest {
     @Test
     fun `a builtin converter reports its own case rather than a domain error`() {
         val tree = cli("lvl") {
-            option("--level").int()
+            option(long = "level").int()
             action { Ok("ok") }
         }
         val bad = tree.parse(listOf("--level", "x")).assertError<CliError.BadValue>()
@@ -223,8 +271,8 @@ private fun String.isPast(): Boolean = this < GUIDE_TODAY
 private fun guideValidateInputsCli() = cli("app") {
     command("add") {
         val title = argument("title")
-        val due = option("--due", "-d").validate("must be YYYY-MM-DD") { it.looksLikeDate() }
-        val done = flag("--done", "-D")
+        val due = option(short = 'd', long = "due").validate("must be YYYY-MM-DD") { it.looksLikeDate() }
+        val done = flag(short = 'D', long = "done")
 
         validateInputs {
             val d = due()
@@ -249,14 +297,14 @@ class GuideValidateInputsSnippetTest {
             guideValidateInputsCli().run(arrayOf("add", "Ship it", "--due", "2020-01-01"), refused),
         )
         // The message the guide prints under the snippet, verbatim.
-        assertEquals("error: --due 2020-01-01 is earlier than today; pass --done\n", refused.err.toString())
+        assertEquals("error: --due 2020-01-01 is earlier than today; pass --done\n", refused.err)
 
         val excused = RecordingTerminal()
         assertEquals(
             0,
             guideValidateInputsCli().run(arrayOf("add", "Ship it", "--due", "2020-01-01", "--done"), excused),
         )
-        assertEquals("added Ship it\n", excused.out.toString())
+        assertEquals("added Ship it\n", excused.out)
     }
 
     @Test
@@ -265,13 +313,13 @@ class GuideValidateInputsSnippetTest {
         // during conversion, so --done never gets the chance to excuse it.
         val t = RecordingTerminal()
         guideValidateInputsCli().run(arrayOf("add", "x", "--due", "nope", "--done"), t)
-        assertEquals("error: invalid value 'nope' for --due: must be YYYY-MM-DD\n", t.err.toString())
+        assertEquals("error: invalid value 'nope' for --due: must be YYYY-MM-DD\n", t.err)
     }
 
     @Test
     fun `the guides Input name idiom renders like klaps own value errors`() {
         val tree = cli("app") {
-            val tag = option("--tag")
+            val tag = option(long = "tag")
             validateInputs {
                 val typed = tag() ?: return@validateInputs null
                 if (typed == "known") null else CliError.BadValue(tag.name, typed, "no such tag")
@@ -281,7 +329,7 @@ class GuideValidateInputsSnippetTest {
         val t = RecordingTerminal()
         assertEquals(USAGE_ERROR_EXIT, tree.run(arrayOf("--tag", "bogus"), t))
         // Indistinguishable from a `.validate` rejection, which is the point of building it off `tag.name`.
-        assertEquals("error: invalid value 'bogus' for --tag: no such tag\n", t.err.toString())
+        assertEquals("error: invalid value 'bogus' for --tag: no such tag\n", t.err)
     }
 
     @Test
@@ -293,20 +341,20 @@ class GuideValidateInputsSnippetTest {
         }
         val t = RecordingTerminal()
         tree.run(arrayOf<String>(), t)
-        assertEquals("error: first\n", t.err.toString())
+        assertEquals("error: first\n", t.err)
     }
 
     @Test
     fun `a block never runs for --help or --version`() {
         val tree = cli("app") {
-            version = "1.0.0"
+            version = Version.Of("1.0.0")
             validateInputs { CliError.Usage("must not reach this") }
             action { Ok("ran") }
         }
         for (builtin in listOf("--help", "--version")) {
             val t = RecordingTerminal()
             assertEquals(0, tree.run(arrayOf(builtin), t), builtin)
-            assertEquals("", t.err.toString(), builtin)
+            assertEquals("", t.err, builtin)
         }
     }
 
@@ -318,6 +366,75 @@ class GuideValidateInputsSnippetTest {
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(arrayOf("sub"), t))
-        assertEquals("sub ran\n", t.out.toString())
+        assertEquals("sub ran\n", t.out)
+    }
+
+    @Test
+    fun `the endsOptions snippet reads options until the remote command`() {
+        val ssh = cli("ssh") {
+            val port = option(short = 'p', long = "port")
+            argument("destination")
+            val command = argument("command").multiple().endsOptions()
+            action<String>(human = { it }) { Ok("port=${port()} command=${command()}") }
+        }
+        assertEquals("port=2222 command=[]", ssh.bindText("web1", "-p", "2222"))
+        assertEquals("port=null command=[ls, -p, 2222]", ssh.bindText("web1", "ls", "-p", "2222"))
+        assertEquals("port=null command=[-p, 2222]", ssh.bindText("web1", "--", "-p", "2222"))
+    }
+}
+
+// --- "Actions that print their own output": the action writes its human half through the run's terminal ---
+
+@Serializable
+data class Summary(val ticks: Int)
+
+class ActionsThatPrintSnippetTest {
+
+    private val app = cli("app") {
+        command("run") {
+            action(human = { "ticked ${it.ticks} times" }) {
+                val ticks = 3
+                repeat(ticks) { tick ->
+                    if (!json) terminal.out(yellow("tick $tick") + "\n") // the human half: suppressed under --json
+                }
+                Ok(Summary(ticks))                                     // the value: rendered by human, or serialized
+            }
+        }
+    }
+
+    private fun output(vararg argv: String): String =
+        RecordingTerminal(ansi = true).also { app.run(arrayOf(*argv), it) }.out
+
+    @Test
+    fun `the guides ticking action colours its own lines ahead of the returned value`() {
+        val esc = Char(27)
+        val ticks = (0..2).joinToString("") { "$esc[33mtick $it$esc[0m\n" }
+        assertEquals("${ticks}ticked 3 times\n", output("run"))
+        assertEquals("tick 0\ntick 1\ntick 2\nticked 3 times\n", output("--color=never", "run"))
+        assertEquals("{\"ticks\":3}\n", output("--json", "run"))
+    }
+}
+
+// --- "Color output": a formatting helper returns Styled, which klap colors only when color is on ---
+
+private fun warn(text: String): Styled = (bold + yellow)("warning: $text")
+
+class ColorOutputSnippetTest {
+
+    private val app = cli("app") {
+        command("build") {
+            action { Ok(warn("no targets matched")) }
+        }
+    }
+
+    private fun output(vararg argv: String): String =
+        RecordingTerminal(ansi = true).also { app.run(arrayOf(*argv), it) }.out
+
+    @Test
+    fun `the guides warn helper is colored when color is on and plain when it is off`() {
+        val esc = Char(27)
+        assertEquals("$esc[1;33mwarning: no targets matched$esc[0m\n", output("build"))
+        assertEquals("warning: no targets matched\n", output("--color=never", "build"))
+        assertEquals("\"warning: no targets matched\"\n", output("--json", "build"))
     }
 }

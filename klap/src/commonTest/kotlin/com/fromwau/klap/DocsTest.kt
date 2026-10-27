@@ -1,6 +1,7 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -8,22 +9,22 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 private fun sampleTree(): Cli = cli("todo") {
-    version = "1.2.3"
-    description = "Manage a todo list"
+    version = Version.Of("1.2.3")
+    help = "Manage a todo list"
     command("add") {
-        description = "Add a task"
+        help = "Add a task"
         argument("text", help = "the task text")
-        option("--priority", "-p", help = "priority level").int().default(0)
+        option(short = 'p', long = "priority", help = "priority level").int().default(0)
         action { Ok("") }
     }
     command("config") {
-        description = "Manage config"
+        help = "Manage config"
         command("get") {
-            description = "read a key"
+            help = "read a key"
             action { Ok("") }
         }
         command("set") {
-            description = "write a key"
+            help = "write a key"
             action { Ok("") }
         }
     }
@@ -34,7 +35,7 @@ class DocsTest {
     @Test
     fun `single command markdown does not duplicate root description`() {
         val tree = cli("wc") {
-            description = "count words"
+            help = "count words"
             argument("file")
             action { Ok("") }
         }
@@ -47,21 +48,22 @@ class DocsTest {
     @Test
     fun `man name section collapses a multi line description`() {
         val tree = cli("tool") {
-            description = "line one\nline two"
+            help = "line one\nline two"
             command("x") { action { Ok("") } }
         }
         val nameLine = tree
             .renderManPage()
             .lines()
             .let { it[it.indexOf(".SH NAME") + 1] }
-        // The POSIX NAME section stays one line: the embedded newline is collapsed to a space.
+        // The man page NAME section stays one line: the embedded newline is collapsed to a space.
         assertEquals("tool \\- line one line two", nameLine)
     }
 
     @Test
-    fun `doc format fromOrNull is case insensitive and rejects unknown`() {
+    fun `doc format fromOrNull matches in exact case and rejects unknown`() {
         assertEquals(DocFormat.MARKDOWN, DocFormat.fromOrNull("markdown"))
-        assertEquals(DocFormat.MAN, DocFormat.fromOrNull("MAN"))
+        assertEquals(DocFormat.MAN, DocFormat.fromOrNull("man"))
+        assertNull(DocFormat.fromOrNull("MAN"))
         assertEquals(DocFormat.MARKDOWN, DocFormat.fromOrNull("md"))
         assertNull(DocFormat.fromOrNull("pdf"))
     }
@@ -72,9 +74,9 @@ class DocsTest {
         // reused it, since the leaf's bare name could collide with a shallower node. docNodes must not.
         val tree = cli("app") {
             command("group") {
-                description = "a group"
+                help = "a group"
                 command("leaf") {
-                    description = "the deeply nested leaf"
+                    help = "the deeply nested leaf"
                     action { Ok("") }
                 }
             }
@@ -88,9 +90,7 @@ class DocsTest {
     fun `markdown shows command options with help`() {
         val docs = sampleTree().renderMarkdownDocs()
         assertTrue("add" in docs, docs)
-        // The table cell escapes the <value> placeholder's angle brackets (see mdCell); a raw <value>
-        // would be read as an unclosed HTML tag and swallowed by a real CommonMark/GFM renderer.
-        assertTrue("-p, --priority &lt;value&gt;" in docs, docs)
+        assertTrue("-p, --priority=value" in docs, docs)
         assertTrue("priority level" in docs, docs)
         assertTrue("the task text" in docs, docs)
     }
@@ -160,7 +160,7 @@ class DocsTest {
     fun `man page escapes roff special character in command name`() {
         val tree = cli("app") {
             command("weird.sub-name") {
-                description = "a .SH injection attempt"
+                help = "a .SH injection attempt"
                 action { Ok("") }
             }
         }
@@ -185,8 +185,8 @@ class DocsTest {
         val t = RecordingTerminal()
         val code = sampleTree().run(arrayOf("docs", "markdown"), t)
         assertEquals(0, code)
-        assertTrue("# todo" in t.out.toString(), t.out.toString())
-        assertTrue("add" in t.out.toString(), t.out.toString())
+        assertTrue("# todo" in t.out, t.out)
+        assertTrue("add" in t.out, t.out)
     }
 
     @Test
@@ -194,7 +194,7 @@ class DocsTest {
         val t = RecordingTerminal()
         val code = sampleTree().run(arrayOf("docs", "man"), t)
         assertEquals(0, code)
-        assertTrue(".TH \"TODO\" 1" in t.out.toString(), t.out.toString())
+        assertTrue(".TH \"TODO\" 1" in t.out, t.out)
     }
 
     @Test
@@ -203,7 +203,7 @@ class DocsTest {
         val code = sampleTree().run(arrayOf("docs", "pdf"), t)
         assertEquals(2, code)
         // Named bare: the user reached this through the `docs` SUBCOMMAND, not the `--docs` option.
-        assertTrue("invalid value 'pdf' for docs" in t.err.toString(), t.err.toString())
+        assertTrue("invalid value 'pdf' for docs" in t.err, t.err)
     }
 
     @Test
@@ -226,7 +226,7 @@ class DocsTest {
     fun `man page escapes description starting with roff control char`() {
         val tree = cli("app") {
             command("run") {
-                description = ".SH FAKE"
+                help = ".SH FAKE"
                 action { Ok("") }
             }
         }
@@ -286,19 +286,19 @@ class DocsTest {
     fun `markdown does not mislabel default block as options`() {
         val tree = cli("app") {
             command("remote") {
-                description = "manage remotes"
+                help = "manage remotes"
                 command("add") {
-                    description = "add a remote"
+                    help = "add a remote"
                     action { Ok("") }
                 }
                 command("remove") {
-                    description = "remove a remote"
+                    help = "remove a remote"
                     action { Ok("") }
                 }
             }
             command("deploy") {
                 argument("target", help = "where")
-                group("Networking") { option("--host", "-H", help = "the host") }
+                group("Networking") { option(short = 'H', long = "host", help = "the host") }
                 action { Ok("") }
             }
         }
@@ -332,7 +332,7 @@ class DocsTest {
     fun `markdown escapes pipe and newline in table cell`() {
         val tree = cli("app") {
             command("run") {
-                option("--mode", "-m", help = "a | pipe\nand newline")
+                option(short = 'm', long = "mode", help = "a | pipe\nand newline")
                 action { Ok("") }
             }
         }
@@ -448,7 +448,7 @@ class DocsTest {
         // through mdCell; description/epilogue are appended raw and must be escaped the same way a
         // paragraph-text escaper would, without collapsing structure the way mdCell does.
         val tree = cli("app") {
-            description = "Config lives at C:\\Users\\name\\.refrc, see `docs`."
+            help = "Config lives at C:\\Users\\name\\.refrc, see `docs`."
             epilogue = "Backup path: D:\\backup\\app`s data."
             action { Ok("") }
         }
@@ -469,7 +469,7 @@ class DocsTest {
         // mdText escapes the angle brackets to entities the same way mdCell does for table cells.
         val tree = cli("app") {
             command("run") {
-                description = "the <name> to use"
+                help = "the <name> to use"
                 action { Ok("") }
             }
         }
@@ -484,7 +484,7 @@ class DocsTest {
         // section. Both copies must escape paragraph markdown, or a real CommonMark renderer could eat
         // a raw backslash in the synopsis copy.
         val tree = cli("app") {
-            description = "path C:\\x\\.y"
+            help = "path C:\\x\\.y"
             command("build") { action { Ok("") } }
         }
         val md = tree.renderMarkdownDocs()
@@ -499,7 +499,7 @@ class DocsTest {
     fun `markdown shows subcommand aliases line`() {
         val tree = cli("app") {
             command("list") {
-                description = "list items"
+                help = "list items"
                 aliases = listOf("ls")
                 action { Ok("") }
             }
@@ -517,7 +517,7 @@ class DocsTest {
         // otherwise a stray backtick/angle-bracket corrupts the page.
         val tree = cli("app") {
             command("list") {
-                description = "list items"
+                help = "list items"
                 aliases = listOf("<ls>")
                 action { Ok("") }
             }
@@ -532,7 +532,7 @@ class DocsTest {
         // Mirrors markdownFor's `Aliases:` line, roff-escaped, so the man page and markdown docs agree.
         val tree = cli("app") {
             command("list") {
-                description = "list items"
+                help = "list items"
                 aliases = listOf("ls")
                 action { Ok("") }
             }
@@ -561,53 +561,52 @@ class DocsTest {
     fun `markdown table cell has no leading alignment padding for option without short`() {
         // --help pads a short-less option's signature with leading spaces to align "--long" under
         // "-s, --long"; that alignment padding is --help-only and must not leak into the raw doc source.
-        // <value> comes out angle-bracket-escaped (mdCell), same as every other table cell placeholder.
         val tree = cli("app") {
             command("run") {
-                option("--verbose", help = "be noisy")
+                option(long = "verbose", help = "be noisy")
                 action { Ok("") }
             }
         }
         val md = tree.renderMarkdownDocs()
-        assertTrue("| --verbose &lt;value&gt; |" in md, md)
-        assertTrue("|     --verbose &lt;value&gt; |" !in md, md)
+        assertTrue("| --verbose=value |" in md, md)
+        assertTrue("|     --verbose=value |" !in md, md)
     }
 
     @Test
     fun `man page has no leading alignment padding for option without short`() {
         val tree = cli("app") {
             command("run") {
-                option("--verbose", help = "be noisy")
+                option(long = "verbose", help = "be noisy")
                 action { Ok("") }
             }
         }
         val man = tree.renderManPage()
         // roff escapes each '-' as the minus escape (see manPage_escapesRoffSpecialCharacterInCommandName).
-        assertTrue(".B \\-\\-verbose <value>" in man, man)
-        assertTrue(".B     \\-\\-verbose <value>" !in man, man)
+        assertTrue(".B \\-\\-verbose=value" in man, man)
+        assertTrue(".B     \\-\\-verbose=value" !in man, man)
     }
 
     @Test
     fun `docs signature with a short renders both forms unpadded`() {
-        // An option WITH a short still renders "-v, --verbose <value>" (no padding to begin with); the
+        // An option WITH a short still renders "-v, --verbose=value" (no padding to begin with); the
         // markdown table cell additionally escapes the placeholder's angle brackets, the man page does not.
         val tree = cli("app") {
             command("run") {
-                option("--verbose", "-v", help = "be noisy")
+                option(short = 'v', long = "verbose", help = "be noisy")
                 action { Ok("") }
             }
         }
         val md = tree.renderMarkdownDocs()
         val man = tree.renderManPage()
-        assertTrue("| -v, --verbose &lt;value&gt; |" in md, md)
-        assertTrue(".B \\-v, \\-\\-verbose <value>" in man, man)
+        assertTrue("| -v, --verbose=value |" in md, md)
+        assertTrue(".B \\-v, \\-\\-verbose=value" in man, man)
     }
 
     @Test
     fun `markdown escapes backtick in table cell instead of replacing with apostrophe`() {
         val tree = cli("app") {
             command("run") {
-                option("--mode", "-m", help = "use `raw` mode")
+                option(short = 'm', long = "mode", help = "use `raw` mode")
                 action { Ok("") }
             }
         }
@@ -618,22 +617,22 @@ class DocsTest {
 
     @Test
     fun `markdown table cell escapes angle brackets in option value placeholder`() {
-        // A real CommonMark/GFM renderer reads a raw <value> as an unclosed HTML tag and swallows it,
+        // A real CommonMark/GFM renderer reads a raw <port> as an unclosed HTML tag and swallows it,
         // so the placeholder vanishes from the rendered doc. The table cell must escape it instead.
         val tree = cli("app") {
             command("serve") {
-                option("--port").int()
+                option(long = "port").placeholder("<port>").int()
                 action { Ok("") }
             }
         }
         val md = tree.renderMarkdownDocs()
-        assertTrue("| --port &lt;value&gt; |" in md, md)
-        assertTrue("<value>" !in md, md)
+        assertTrue("| --port=&lt;port&gt; |" in md, md)
+        assertTrue("<port>" !in md, md)
 
         // roff has no HTML-swallowing hazard, so the man page keeps the placeholder unescaped (only its
         // own roff-specific escapes, e.g. the dash, apply).
         val man = tree.renderManPage()
-        assertTrue(".B \\-\\-port <value>" in man, man)
+        assertTrue(".B \\-\\-port=<port>" in man, man)
     }
 
     @Test

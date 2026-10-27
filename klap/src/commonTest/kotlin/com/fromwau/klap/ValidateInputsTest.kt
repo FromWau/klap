@@ -18,7 +18,7 @@ class ValidateInputsTest {
         // `.validate()` is the counterpart these docs point authors at, and it reports a throwing
         // predicate rather than letting it out; a rule moved between the two must not lose that.
         val tree = cli("app") {
-            val name = option("--name").required()
+            val name = option(long = "name").required()
             validateInputs { error("boom") }
             action { Ok("name=${name()}") }
         }
@@ -27,11 +27,23 @@ class ValidateInputsTest {
     }
 
     @Test
+    fun `a block that throws an error is reported rather than thrown`() {
+        // `TODO()` throws an Error, not an Exception, and `.validate()` reports that too (todo 164).
+        val tree = cli("app") {
+            val name = option(long = "name").required()
+            validateInputs { TODO("rule not written yet") }
+            action { Ok("name=${name()}") }
+        }
+        val failure = tree.parse(listOf("--name", "x")).assertError<CliError.Failure>()
+        assertTrue("rule not written yet" in failure.detail, failure.detail)
+    }
+
+    @Test
     fun `completion and docs render without consulting a refusing block`() {
         // The same reason `--help` does not: neither produces the bound values a block reads, so a rule
         // that refuses every line must not stop a shell script or a man page from being written.
         val tree = cli("app") {
-            option("--name").required()
+            option(long = "name").required()
             validateInputs { CliError.Usage("always refuses") }
             action { Ok("ran") }
         }
@@ -43,9 +55,9 @@ class ValidateInputsTest {
     @Test
     fun `a block reads a global the same way it reads a local`() {
         val tree = cli("app") {
-            val verbose = globalFlag("--verbose", "-v")
+            val verbose = globalFlag(short = 'v', long = "verbose")
             command("go") {
-                val name = option("--name").required()
+                val name = option(long = "name").required()
                 validateInputs { if (verbose()) CliError.Usage("saw the global") else null }
                 action { Ok("name=${name()}") }
             }

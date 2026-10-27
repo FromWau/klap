@@ -1,13 +1,13 @@
 package com.fromwau.klap
 
-import com.fromwau.kern.result.EmptyResult
 import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.assertSuccess
 import com.fromwau.kern.terminal.Stream
 import com.fromwau.kern.terminal.WriteError
-import com.fromwau.kern.terminal.yellow
+import com.fromwau.kern.terminal.test.RecordingTerminal
+import com.fromwau.kern.terminal.test.Write
 import com.fromwau.klap.internal.render.Candidate
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
@@ -22,7 +22,7 @@ private object ThrowingToString {
 }
 
 private fun app(): Cli = cli("todo") {
-    version = "1.0.0"
+    version = Version.Of("1.0.0")
     command("ping") { action { Ok("pong") } }
     // A fail-only action can't infer T from Err (that would be Nothing); name it explicitly.
     command("fail") { action<String> { Err(CliError.Failure("fail", exitCode = 3)) } }
@@ -39,7 +39,7 @@ class RunnerTest {
         val t = RecordingTerminal()
         val code = app().run(arrayOf("ping"), t)
         assertEquals(0, code)
-        assertEquals("pong\n", t.out.toString())
+        assertEquals("pong\n", t.out)
     }
 
     @Test
@@ -53,7 +53,7 @@ class RunnerTest {
         val t = RecordingTerminal()
         val code = app().run(arrayOf("fail"), t)
         assertEquals(3, code)
-        assertEquals("error: fail\n", t.err.toString())
+        assertEquals("error: fail\n", t.err)
     }
 
     @Test
@@ -61,34 +61,32 @@ class RunnerTest {
         val t = RecordingTerminal()
         val code = app().run(arrayOf("fail", "--json"), t)
         assertEquals(3, code)
-        val err = t.err.toString()
+        val err = t.err
         assertTrue("\"error\":{\"type\":\"Failure\",\"detail\":\"fail\"}" in err, err)
         assertTrue("\"code\":3" in err, err)
     }
 
-    private fun failingWith(error: WriteError) = object : RecordingTerminal() {
-        override fun writeResult(): EmptyResult<WriteError> = Err(error)
-    }
+    private fun failingWith(error: WriteError) = RecordingTerminal().apply { failWith(error) }
 
     @Test
     fun `a closed pipe turns success into 141 and says nothing`() {
         val terminal = failingWith(WriteError.BrokenPipe(Stream.Out))
         assertEquals(141, app().run(arrayOf("ping"), terminal))
-        assertEquals("", terminal.err.toString())
+        assertEquals("", terminal.err)
     }
 
     @Test
     fun `a failure the platform cannot explain turns success into 141 and says nothing`() {
         val terminal = failingWith(WriteError.Unknown(Stream.Out, "Broken pipe"))
         assertEquals(141, app().run(arrayOf("ping"), terminal))
-        assertEquals("", terminal.err.toString())
+        assertEquals("", terminal.err)
     }
 
     @Test
     fun `a refused write turns success into exit 1 with a message`() {
         val terminal = failingWith(WriteError.Refused(Stream.Out, "No space left on device"))
         assertEquals(1, app().run(arrayOf("ping"), terminal))
-        assertEquals("error: cannot write to standard output: No space left on device\n", terminal.err.toString())
+        assertEquals("error: cannot write to standard output: No space left on device\n", terminal.err)
     }
 
     @Test
@@ -98,7 +96,7 @@ class RunnerTest {
         assertEquals(
             """{"error":{"type":"WriteFailed","stream":"stdout","message":"No space left on device"},""" +
                 """"code":1}""" + "\n",
-            terminal.err.toString(),
+            terminal.err,
         )
     }
 
@@ -106,7 +104,10 @@ class RunnerTest {
     fun `a refused write to standard error names standard error`() {
         val terminal = failingWith(WriteError.Refused(Stream.Err, "No space left on device"))
         assertEquals(1, app().run(arrayOf("ping"), terminal))
-        assertEquals("error: cannot write to standard error: No space left on device\n", terminal.err.toString())
+        assertEquals(
+            listOf(Write(Stream.Err, "error: cannot write to standard error: No space left on device\n")),
+            terminal.lostWrites,
+        )
     }
 
     @Test
@@ -121,12 +122,31 @@ class RunnerTest {
         val ping = assertIs<Invocation.Execute>(
             app().parse(listOf("ping")).assertSuccess(),
         )
-        assertEquals(Result.Success("pong"), ping.runAction())
+        assertEquals(Result.Success("pong"), ping.runAction(RecordingTerminal()))
 
         val fail = assertIs<Invocation.Execute>(
             app().parse(listOf("fail")).assertSuccess(),
         )
-        assertEquals(Result.Error(CliError.Failure("fail", exitCode = 3)), fail.runAction())
+        assertEquals(Result.Error(CliError.Failure("fail", exitCode = 3)), fail.runAction(RecordingTerminal()))
+    }
+
+    @Test
+    fun `an action run through run action writes into the terminal it is given`() {
+        val tree = cli("app") {
+            command("go") {
+                action {
+                    terminal.out("tick\n")
+                    terminal.err("warn\n")
+                    Ok("done")
+                }
+            }
+        }
+        val terminal = RecordingTerminal()
+        val go = assertIs<Invocation.Execute>(tree.parse(listOf("go")).assertSuccess())
+
+        assertEquals(Result.Success("done"), go.runAction(terminal))
+        assertEquals("tick\n", terminal.out)
+        assertEquals("warn\n", terminal.err)
     }
 
     @Test
@@ -137,8 +157,8 @@ class RunnerTest {
         val t = RecordingTerminal()
         val code = tree.run(arrayOf("go"), t)
         assertEquals(1, code)
-        assertTrue("could not render output" in t.err.toString(), t.err.toString())
-        assertEquals("", t.out.toString())
+        assertTrue("could not render output" in t.err, t.err)
+        assertEquals("", t.out)
     }
 
     @Test
@@ -165,7 +185,7 @@ class RunnerTest {
         val t = RecordingTerminal()
         val code = app().run(arrayOf("add"), t)
         assertEquals(2, code)
-        assertTrue("missing required argument <text>" in t.err.toString(), t.err.toString())
+        assertTrue("missing required argument <text>" in t.err, t.err)
     }
 
     @Test
@@ -173,7 +193,7 @@ class RunnerTest {
         val t = RecordingTerminal()
         val code = app().run(arrayOf("add", "--json"), t)
         assertEquals(2, code)
-        assertTrue(t.err.toString().trim().startsWith("{\"error\":"), t.err.toString())
+        assertTrue(t.err.trim().startsWith("{\"error\":"), t.err)
     }
 
     @Test
@@ -211,7 +231,7 @@ class RunnerTest {
         val t = RecordingTerminal()
         val code = cli("x") { action<String> { Err(CliError.Failure("boom", exitCode = 0)) } }.run(arrayOf("--json"), t)
         assertEquals(1, code)
-        assertTrue("\"code\":1" in t.err.toString(), t.err.toString())
+        assertTrue("\"code\":1" in t.err, t.err)
     }
 
     @Test
@@ -219,7 +239,7 @@ class RunnerTest {
         val t = RecordingTerminal()
         val code = app().run(arrayOf("--version"), t)
         assertEquals(0, code)
-        assertTrue("1.0.0" in t.out.toString(), t.out.toString())
+        assertTrue("1.0.0" in t.out, t.out)
     }
 
     @Test
@@ -227,7 +247,7 @@ class RunnerTest {
         val t = RecordingTerminal()
         val code = app().run(arrayOf("add", "--help"), t)
         assertEquals(0, code)
-        assertTrue("usage: todo add <text>" in t.out.toString(), t.out.toString())
+        assertTrue("usage: todo add <text>" in t.out, t.out)
     }
 
     @Test
@@ -239,7 +259,7 @@ class RunnerTest {
         }
         val code = tool.run(arrayOf("\u001B[31mred"), t)
         assertEquals(2, code)
-        val err = t.err.toString()
+        val err = t.err
         assertTrue('\u001B' !in err, err)
         assertTrue("invalid value" in err && "for n" in err, err)
     }
@@ -253,25 +273,10 @@ class RunnerTest {
         }
         val code = tool.run(arrayOf("\u001B[31mred", "--json"), t)
         assertEquals(2, code)
-        val err = t.err.toString()
+        val err = t.err
         // JSON escapes the ESC itself, so the token is carried exactly and no raw control byte reaches stderr.
         assertTrue(Char(0x1B) !in err, err)
         assertTrue(""""value":"\u001b[31mred"""" in err, err)
-    }
-
-    @Test
-    fun `action output colors through the scope palette and is plain under json`() {
-        val tree = cli("app") { command("go") { action { Ok(yellow { "ok" }) } } }
-        val esc = Char(27).toString()
-        // color-enabled terminal:
-        val on = RecordingTerminal(/* ansi = true */); tree.run(arrayOf("--color=always", "go"), on)
-        assertTrue("$esc[33mok$esc[0m" in on.out.toString(), on.out.toString())
-        // forced off:
-        val off = RecordingTerminal(); tree.run(arrayOf("--color=never", "go"), off)
-        assertEquals("ok\n", off.out.toString())
-        // json disables the action palette:
-        val js = RecordingTerminal(); tree.run(arrayOf("--color=always", "--json", "go"), js)
-        assertTrue("\"ok\"" in js.out.toString() && esc !in js.out.toString(), js.out.toString())
     }
 
     @Test
@@ -285,13 +290,13 @@ class RunnerTest {
 
     @Test
     fun `the output mode reaches an action driven through run action`() {
-        // Resolved where parse() freezes the scope, not where run() resolves the palette, so the embedding
-        // hatch is not a blind spot: a streaming action holds back the same output on either path.
+        // Resolved where parse() freezes the scope, not where run() writes, so the embedding hatch is not a
+        // blind spot: a streaming action holds back the same output on either path.
         val seen = mutableListOf<Boolean>()
         val tree = cli("app") { command("go") { action { seen += json; Ok("done") } } }
         assertIs<Invocation.Execute>(
             tree.parse(listOf("--json", "go")).assertSuccess(),
-        ).runAction()
+        ).runAction(RecordingTerminal())
         assertEquals(listOf(true), seen)
     }
 
@@ -301,9 +306,9 @@ class RunnerTest {
         // flip the run into structured output.
         val seen = mutableListOf<Boolean>()
         val tree = cli("app") {
-            builtins { json = false }
+            builtins { json = Builtin.Off }
             command("go") {
-                option("--json", help = "post this JSON body")
+                option(long = "json", help = "post this JSON body")
                 action { seen += json; Ok("done") }
             }
         }
@@ -314,6 +319,7 @@ class RunnerTest {
     @Test
     fun `nested help shows full path`() {
         val vcs = cli("vcs") {
+            builtins { help = Help.ByCommand(short = 'h') }
             command("remote") {
                 command("add") {
                     argument("name")
@@ -324,7 +330,7 @@ class RunnerTest {
         }
         val t = RecordingTerminal()
         vcs.run(arrayOf("remote", "add", "-h"), t)
-        assertTrue("usage: vcs remote add <name> <url>" in t.out.toString(), t.out.toString())
+        assertTrue("usage: vcs remote add <name> <url>" in t.out, t.out)
     }
 
     @Test

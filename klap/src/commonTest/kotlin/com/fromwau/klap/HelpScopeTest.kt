@@ -15,20 +15,21 @@ import kotlin.test.assertIs
  */
 class HelpScopeTest {
 
-    private fun tree() = cli("app") {
-        globalFlag("--verbose", "-v")
+    private fun tree(help: Help = Help.ByCommand(short = 'h')) = cli("app") {
+        builtins { this.help = help }
+        globalFlag(short = 'v', long = "verbose")
         command("remote") {
             command("add") {
-                flag("--force", "-f")
+                flag(short = 'f', long = "force")
                 argument("url")
                 action { Ok("") }
             }
         }
     }
 
-    private fun helpFor(vararg argv: String): String =
+    private fun helpFor(vararg argv: String, tree: Cli = tree()): String =
         assertIs<Invocation.ShowHelp>(
-            tree().parse(argv.toList()).assertSuccess(),
+            tree.parse(argv.toList()).assertSuccess(),
         ).qualifiedName
 
     @Test
@@ -75,9 +76,18 @@ class HelpScopeTest {
 
     @Test
     fun `help-all scopes the same way`() {
-        assertEquals("app", helpFor("--help-all"))
-        assertEquals("app remote", helpFor("--help-all", "remote"))
-        assertEquals("app remote", helpFor("remote", "--help-all"))
+        val byTree = tree(Help.ByTree())
+        assertEquals("app", helpFor("--help-all", tree = byTree))
+        assertEquals("app remote", helpFor("--help-all", "remote", tree = byTree))
+        assertEquals("app remote", helpFor("remote", "--help-all", tree = byTree))
+    }
+
+    @Test
+    fun `a help that prints the tree scopes the same way`() {
+        val all = tree(Help.All(short = 'h'))
+        assertEquals("app", helpFor("--help", tree = all))
+        assertEquals("app remote", helpFor("--help", "remote", tree = all))
+        assertEquals("app remote", helpFor("remote", "-h", tree = all))
     }
 
     @Test

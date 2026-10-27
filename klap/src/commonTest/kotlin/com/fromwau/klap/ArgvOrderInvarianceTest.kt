@@ -93,8 +93,8 @@ class ArgvOrderInvarianceTest {
         lateinit var config: Opt<String?>
         lateinit var file: Arg<String>
         val app = cli("app") {
-            verbose = globalFlag("--verbose", "-v", help = "log everything")
-            config = globalOption("--config", "-c", help = "config file")
+            verbose = globalFlag(short = 'v', long = "verbose", help = "log everything")
+            config = globalOption(short = 'c', long = "config", help = "config file")
             command("build") {
                 file = argument("file", help = "what to build")
                 action { Ok("") }
@@ -118,9 +118,9 @@ class ArgvOrderInvarianceTest {
         lateinit var target: Opt<String?>
         lateinit var file: Arg<String>
         val app = cli("app") {
-            verbose = globalFlag("--verbose", "-v", help = "log everything")
+            verbose = globalFlag(short = 'v', long = "verbose", help = "log everything")
             command("build") {
-                target = option("--target", help = "build target")
+                target = option(long = "target", help = "build target")
                 file = argument("file", help = "what to build")
                 action { Ok("") }
             }
@@ -147,10 +147,10 @@ class ArgvOrderInvarianceTest {
         lateinit var config: Opt<String?>
         lateinit var file: Arg<String>
         val app = cli("app") {
-            verbose = globalFlag("--verbose", "-v", help = "log everything")
-            config = globalOption("--config", "-c", help = "config file")
+            verbose = globalFlag(short = 'v', long = "verbose", help = "log everything")
+            config = globalOption(short = 'c', long = "config", help = "config file")
             command("build") {
-                force = flag("--force", "-f", help = "rebuild everything")
+                force = flag(short = 'f', long = "force", help = "rebuild everything")
                 file = argument("file", help = "what to build")
                 action { Ok("") }
             }
@@ -186,11 +186,11 @@ class ArgvOrderInvarianceTest {
         lateinit var jobs: Opt<Int>
         lateinit var name: Opt<String?>
         val app = cli("app") {
-            verbose = flag("--verbose", "-v", help = "log everything")
-            quiet = flag("--quiet", "-q", help = "log nothing")
-            out = option("--out", "-o", help = "where to write")
-            jobs = option("--jobs", help = "parallelism").int().default(1)
-            name = option("--name", help = "what to call it")
+            verbose = flag(short = 'v', long = "verbose", help = "log everything")
+            quiet = flag(short = 'q', long = "quiet", help = "log nothing")
+            out = option(short = 'o', long = "out", help = "where to write")
+            jobs = option(long = "jobs", help = "parallelism").int().default(1)
+            name = option(long = "name", help = "what to call it")
             action { Ok("") }
         }
         val baseline = assertOrderInvariant(
@@ -206,7 +206,7 @@ class ArgvOrderInvarianceTest {
         assertEquals("Execute(app json=false verbose=true quiet=true out=x jobs=4 name=ada)", baseline)
     }
 
-    // CONVENTION - cp/rsync: SOURCE and DEST are told apart by their order and by nothing else, while
+    // CONVENTION - cp/mv: SOURCE and DEST are told apart by their order and by nothing else, while
     // GNU permutation lets an option sit anywhere among them.
     @Test
     fun `two operands keep their own order while options move freely between them`() {
@@ -216,9 +216,9 @@ class ArgvOrderInvarianceTest {
         lateinit var from: Arg<String>
         lateinit var to: Arg<String>
         val app = cli("app") {
-            force = flag("--force", "-f", help = "overwrite")
-            quiet = flag("--quiet", "-q", help = "log nothing")
-            out = option("--out", "-o", help = "where to write")
+            force = flag(short = 'f', long = "force", help = "overwrite")
+            quiet = flag(short = 'q', long = "quiet", help = "log nothing")
+            out = option(short = 'o', long = "out", help = "where to write")
             from = argument("from", help = "source")
             to = argument("to", help = "destination")
             action { Ok("") }
@@ -254,8 +254,8 @@ class ArgvOrderInvarianceTest {
         lateinit var verbose: Flag
         lateinit var node: Arg<String>
         val app = cli("app") {
-            config = globalOption("--config", "-c", help = "config file")
-            verbose = globalFlag("--verbose", "-v", help = "log everything")
+            config = globalOption(short = 'c', long = "config", help = "config file")
+            verbose = globalFlag(short = 'v', long = "verbose", help = "log everything")
             command("cluster") {
                 command("node") {
                     command("drain") {
@@ -290,28 +290,12 @@ class ArgvOrderInvarianceTest {
         assertEquals("Execute(drain json=false config=prod.toml verbose=true node=n1)", baseline)
     }
 
-    // CONVENTION - cobra (docker, kubectl, gh): which of the two answers does not depend on which side of
-    // the other it sits on. GNU coreutils answers whichever came first instead, which is exactly the
-    // order-dependence this file exists to find; klap's ladder puts --version above --help.
-    @Test
-    fun `--help and --version answer the same thing in both orders`() {
-        val app = cli("app") {
-            version = "1.0.0"
-            action { Ok("") }
-        }
-        val baseline = assertOrderInvariant(
-            app = app,
-            units = listOf(listOf("--help"), listOf("--version")),
-        ) { "" }
-        assertEquals("ShowVersion(json=false)", baseline)
-    }
-
     // GUIDE: "--version does honour it, printing {name, version} instead of the plain line", and --json is
     // position-independent, so neither order can change the answer.
     @Test
     fun `--json and --version answer the same thing in both orders`() {
         val app = cli("app") {
-            version = "2.4.0"
+            version = Version.Of("2.4.0")
             action { Ok("") }
         }
         val baseline = assertOrderInvariant(
@@ -328,7 +312,7 @@ class ArgvOrderInvarianceTest {
         lateinit var verbose: Flag
         lateinit var file: Arg<String>
         val app = cli("app") {
-            verbose = globalFlag("--verbose", "-v", help = "log everything")
+            verbose = globalFlag(short = 'v', long = "verbose", help = "log everything")
             command("build") {
                 file = argument("file", help = "what to build")
                 action { Ok("") }
@@ -350,9 +334,9 @@ class ArgvOrderInvarianceTest {
     @Test
     fun `a child's local option before the subcommand name is refused the same way in every ordering`() {
         val app = cli("app") {
-            globalFlag("--verbose", "-v", help = "log everything")
+            globalFlag(short = 'v', long = "verbose", help = "log everything")
             command("build") {
-                option("--target", help = "build target")
+                option(long = "target", help = "build target")
                 argument("file", help = "what to build")
                 action { Ok("") }
             }

@@ -1,7 +1,11 @@
 package com.fromwau.klap.fixture.curl
 
 import com.fromwau.klap.fixture.ParitySuite
+import com.fromwau.klap.io.CliPath
+import com.fromwau.klap.testing.Suggestion
+import com.fromwau.klap.testing.suggestionsFor
 import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class CurlParityTest {
 
@@ -30,17 +34,18 @@ class CurlParityTest {
             expected = NOTHING_BOUND.copy(
                 silent = true,
                 location = true,
-                output = listOf("page.html"),
+                output = listOf(CliPath("page.html")),
                 maxTime = 5.0,
                 urls = listOf("https://example.com"),
             ),
         )
-        // `.choice()` matches case-insensitively and binds the declared spelling; real curl would put
-        // the literal lowercase `post` on the wire.
-        parity.binds(
-            "-X", "post", "https://example.com",
-            expected = NOTHING_BOUND.copy(method = "POST", urls = listOf("https://example.com")),
-        )
+        // curl(1) on -X: "curl passes on the verbatim string you give it in the request without any filter".
+        for (method in listOf("post", "PURGE", "PROPFIND")) {
+            parity.binds(
+                "-X", method, "https://example.com",
+                expected = NOTHING_BOUND.copy(method = method, urls = listOf("https://example.com")),
+            )
+        }
         // curl's --url and a bare operand are the same list to curl, so this line carries no operand.
         parity.binds(
             "--url", "https://a.example.com",
@@ -87,6 +92,19 @@ class CurlParityTest {
     }
 
     @Test
+    fun `tab offers the common methods for -X`() = assertEquals(
+        listOf("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE"),
+        curlCli().cli.suggestionsFor("curl -X ").map { it.value },
+    )
+
+    @Test
+    fun `data is described in curl's words`() = assertEquals(
+        // curl 8.23.0's `curl --help all`: " -d, --data <data>                 Post data".
+        listOf(Suggestion("--data", "Post data")),
+        curlCli().cli.suggestionsFor("curl --data").filter { it.value == "--data" },
+    )
+
+    @Test
     fun `rejects what real curl rejects`() {
         parity.rejects("--zzz", because = "real curl: option --zzz: is unknown")
         parity.rejects("-X", because = "real curl: option -X: requires parameter")
@@ -107,27 +125,20 @@ class CurlParityTest {
 
     @Test
     fun `known divergence from real curl`() {
-        // `--version` is always injected and `builtins { }` cannot decline it, so no short can be
-        // attached to it; real curl prints its version banner for `-V`.
-        parity.rejects("-V", because = "klap gap: --version has no short form, NOT real-curl behaviour")
-
-        // `-X PURGE` is deliberately absent: real curl takes any method token, and the restriction to eight
-        // verbs is this fixture's own study brief, not a klap limit.
-
         // The per-URL pairing gap above `output`: real curl writes URL1 to a.html and URL2 to b.html on
         // the first line and does the same on the second, but only because the ordinals line up. klap
         // keeps two independent lists, so the two lines are indistinguishable to any action.
         parity.binds(
             "-o", "a.html", "https://one.example.com", "-o", "b.html", "https://two.example.com",
             expected = NOTHING_BOUND.copy(
-                output = listOf("a.html", "b.html"),
+                output = listOf(CliPath("a.html"), CliPath("b.html")),
                 urls = listOf("https://one.example.com", "https://two.example.com"),
             ),
         )
         parity.binds(
             "-o", "a.html", "-o", "b.html", "https://one.example.com", "https://two.example.com",
             expected = NOTHING_BOUND.copy(
-                output = listOf("a.html", "b.html"),
+                output = listOf(CliPath("a.html"), CliPath("b.html")),
                 urls = listOf("https://one.example.com", "https://two.example.com"),
             ),
         )
@@ -144,7 +155,7 @@ class CurlParityTest {
         )
 
         // klap strips its own `--json` before binding, so curl's JSON body lands in the URL list;
-        // `builtins { json = false }` would free the name, but this fixture declines nothing.
+        // `builtins { json = Builtin.Off }` would free the name, but this fixture declines nothing.
         parity.binds(
             "--json", "{\"a\":1}", "https://api.example.com",
             expected = NOTHING_BOUND.copy(urls = listOf("{\"a\":1}", "https://api.example.com")),
@@ -170,12 +181,17 @@ class CurlParityTest {
         parity.rejects("--loc", "https://example.com", because = "real curl: option --loc: is unknown")
         parity.rejects("--sil", "https://example.com", because = "real curl: option --sil: is unknown")
 
-        // curl's own help takes a category, and `--help` is the one built-in `builtins { }` cannot decline,
-        // so klap answers the whole line with its own help and drops the subject.
+        // curl's own help takes a category, and klap's `--help` takes none, so klap answers the whole line with its
+        // own help and drops the subject.
         parity.shortCircuits("--help", "all", because = "real curl: --help all lists the 'all' category")
-        parity.shortCircuits("--help-all", "https://example.com", because = "real curl: option --help-all: is unknown")
         parity.shortCircuits("--docs", "markdown", because = "real curl: option --docs: is unknown")
         parity.shortCircuits("--completion", "bash", because = "real curl: option --completion: is unknown")
         parity.shortCircuits("__complete", "https://ex", because = "real curl: '__complete' is a URL operand")
+    }
+
+    @Test
+    fun `--help-all is refused as the real curl refuses it`() {
+        // klap offers --help-all only under Help.ByTree, and only beside a subcommand.
+        parity.rejects("--help-all", "https://example.com", because = "real curl: option --help-all: is unknown")
     }
 }

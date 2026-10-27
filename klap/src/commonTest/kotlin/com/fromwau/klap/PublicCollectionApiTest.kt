@@ -2,6 +2,7 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,7 +20,7 @@ class PublicCollectionApiTest {
     private data class Args(val lines: String?, val files: List<String>)
 
     private fun greet() = cliOf("head") {
-        val lines = option("--lines", "-n")
+        val lines = option(short = 'n', long = "lines")
         val files = argument("file").multiple()
         action { Ok("stub") }
         projection { Args(lines(), files()) }

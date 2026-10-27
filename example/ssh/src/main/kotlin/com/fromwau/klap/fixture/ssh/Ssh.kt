@@ -1,12 +1,15 @@
 package com.fromwau.klap.fixture.ssh
 
 import com.fromwau.kern.result.Err
-import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.ResultError
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.TypedCli
+import com.fromwau.klap.Version
 import com.fromwau.klap.cliOf
+import com.fromwau.klap.io.CliPath
+import com.fromwau.klap.io.path
 import com.fromwau.klap.projection
 
 /**
@@ -25,12 +28,10 @@ private fun sshOptionKeyValue(raw: String): Result<Pair<String, String>, Convers
  * A study of OpenSSH's client surface expressed in klap. Every action body is a stub.
  */
 public fun sshCli(): TypedCli<SshInputs> = cliOf("ssh") {
-    // Real ssh is a wrapper: everything after the destination is the remote's own command line, not ssh's
-    // to interpret. Without this, a remote flag this CLI happens to also declare (`-l`, `-C`, ...) was read
-    // locally instead of reaching the remote host.
-    optionsEndAtFirstOperand = true
-    description = "OpenSSH remote login client"
-    epilogue = "Everything after the destination is handed to the remote shell verbatim."
+    help = "OpenSSH remote login client"
+    // `ssh -V` prints the version and exits 0.
+    version = Version.Of("10.6p1", short = 'V', text = SSH_VERSION_TEXT)
+    epilogue = "Everything from the remote command's first word on is handed to the remote shell verbatim."
 
     example(
         "ssh -p 2222 -i ~/.ssh/id_ed25519 admin@web1",
@@ -53,24 +54,24 @@ public fun sshCli(): TypedCli<SshInputs> = cliOf("ssh") {
     // Connection
     // ---------------------------------------------------------------------------------------------
 
-    val port = option("--port", "-p", help = "port to connect to on the remote host").int().range(1..65535)
-    val login = option("--login", "-l", help = "user to log in as on the remote machine")
-    val bindAddress = option("--bind-address", "-b", help = "address of the local interface to bind")
-    val configFile = option("--config", "-F", help = "per-user configuration file").file()
-    val logFile = option("--log-file", "-E", help = "append debug logs here instead of stderr").file()
+    val port = option(short = 'p', long = "port", help = "port to connect to on the remote host").int().range(1..65535)
+    val login = option(short = 'l', long = "login", help = "user to log in as on the remote machine")
+    val bindAddress = option(short = 'b', long = "bind-address", help = "address of the local interface to bind")
+    val configFile = option(short = 'F', long = "config", help = "per-user configuration file").path()
+    val logFile = option(short = 'E', long = "log-file", help = "append debug logs here instead of stderr").path()
 
     // Repeatable in real ssh: most-preferred key first.
-    val identity = option("--identity", "-i", help = "identity (private key) file").file().multiple()
+    val identity = option(short = 'i', long = "identity", help = "identity (private key) file").path().multiple()
 
     // The assignment-shaped repeatable option. `.convert` runs per occurrence, so each `-o` value is
     // split into a typed pair and a malformed one reports a real parse error. All four spellings the
     // parser recognizes work here: `-o K=V`, `-oK=V`, `--option K=V`, `--option=K=V`
     // (internal/parse/Parser.kt splits a long token at its FIRST '='; the rest, `K=V`, stays the value).
-    val sshOptions = option("--option", "-o", help = "set a config option, as KEY=VALUE")
+    val sshOptions = option(short = 'o', long = "option", help = "set a config option, as KEY=VALUE")
         .convert(::sshOptionKeyValue)
         .multiple()
 
-    val jumpHosts = option("--jump", "-J", help = "connect via a jump host first").multiple()
+    val jumpHosts = option(short = 'J', long = "jump", help = "connect via a jump host first").multiple()
 
     // ---------------------------------------------------------------------------------------------
     // Port forwarding
@@ -78,9 +79,9 @@ public fun sshCli(): TypedCli<SshInputs> = cliOf("ssh") {
 
     val (localForward, remoteForward, dynamicForward) = group("Port forwarding") {
         Triple(
-            option("--local-forward", "-L", help = "[bind:]port:host:hostport").multiple(),
-            option("--remote-forward", "-R", help = "[bind:]port:host:hostport").multiple(),
-            option("--dynamic-forward", "-D", help = "[bind:]port, SOCKS proxy").multiple(),
+            option(short = 'L', long = "local-forward", help = "[bind:]port:host:hostport").multiple(),
+            option(short = 'R', long = "remote-forward", help = "[bind:]port:host:hostport").multiple(),
+            option(short = 'D', long = "dynamic-forward", help = "[bind:]port, SOCKS proxy").multiple(),
         )
     }
 
@@ -89,29 +90,29 @@ public fun sshCli(): TypedCli<SshInputs> = cliOf("ssh") {
     // ---------------------------------------------------------------------------------------------
 
     // The counting flag: -v, -vv, -vvv and -v -v -v all read back as an Int.
-    val verbose = flag("--verbose", "-v", help = "raise the debug level; repeat for more").count()
+    val verbose = flag(short = 'v', long = "verbose", help = "raise the debug level; repeat for more").count()
 
     // Real ssh's -t is likewise cumulative (-tt forces a tty even with no local tty).
-    val forcePty = flag("--force-pty", "-t", help = "force pseudo-terminal allocation; repeat to force harder").count()
+    val forcePty = flag(
+        short = 't',
+        long = "force-pty",
+        help = "force pseudo-terminal allocation; repeat to force harder",
+    ).count()
 
-    val quiet = flag("--quiet", "-q", help = "quiet mode")
-    val compression = flag("--compression", "-C", help = "request compression")
-    val noRemoteCommand = flag("--no-remote-command", "-N", help = "do not execute a remote command")
-    val disablePty = flag("--disable-pty", "-T", help = "disable pseudo-terminal allocation")
+    val quiet = flag(short = 'q', long = "quiet", help = "quiet mode")
+    val compression = flag(short = 'C', long = "compression", help = "request compression")
+    val noRemoteCommand = flag(short = 'N', long = "no-remote-command", help = "do not execute a remote command")
+    val disablePty = flag(short = 'T', long = "disable-pty", help = "disable pseudo-terminal allocation")
 
     // ssh spells agent forwarding as the short pair `-A` (on) / `-a` (off), with no long form of its own;
     // the long spellings here are invented so the fixture reads as one input, which is what ssh documents.
-    val forwardAgent = flag("--forward-agent", "-A", help = "enable authentication agent forwarding")
-        .negatable("--no-forward-agent", "-a", default = false)
+    val forwardAgent = flag(short = 'A', long = "forward-agent", help = "enable authentication agent forwarding")
+        .negatable(short = 'a', long = "no-forward-agent", default = false)
 
     // `ssh -4` is ssh's own spelling. The long forms are invented, kept so the fixture still reads as one
     // input under two spellings.
-    val ipv4 = flag("--ipv4", "-4", help = "force IPv4 addresses only")
-    val ipv6 = flag("--ipv6", "-6", help = "force IPv6 addresses only")
-
-    // KLAP-GAP: ssh prints its version with `-V`, but `reservedLongNames()` reserves `version` for klap's
-    // own built-in (which carries no short), so `-V` here is a plain flag the action interprets itself.
-    val showVersion = flag("--show-version", "-V", help = "display the version number (real ssh: -V)")
+    val ipv4 = flag(short = '4', long = "ipv4", help = "force IPv4 addresses only")
+    val ipv6 = flag(short = '6', long = "ipv6", help = "force IPv6 addresses only")
 
     // ---------------------------------------------------------------------------------------------
     // Operands
@@ -129,12 +130,14 @@ public fun sshCli(): TypedCli<SshInputs> = cliOf("ssh") {
     val destination = argument("destination", "[user@]hostname")
         .validate("destination must not be blank") { it.isNotBlank() }
 
-    // `optionsEndAtFirstOperand` above makes this arrive verbatim: destination is klap's last say over the
-    // line, and everything after it, dash-led or not, is the remote's own command. A remote command that
-    // itself needs to say `--json`/`--color`/`--help`/etc. still needs its own `--` ahead of it, since
+    // Real ssh is a wrapper: its options run on past the destination (`ssh web1 -p 2222`), and the remote
+    // command's first word ends them, so everything from there, dash-led or not, is the remote's own command line
+    // and a remote flag this CLI also declares (`ls -l`) reaches the remote host. A remote command that itself
+    // needs to say `--json`/`--color`/`--help`/etc. still needs a `--` ahead of it, which ssh consumes, since
     // klap's own built-ins are recognized before the walk knows which command it will reach at all.
     val remoteCommand = argument("command", "the command to run on the remote host, and its arguments")
         .multiple()
+        .endsOptions()
 
     action {
         val tail = remoteCommand()
@@ -160,7 +163,6 @@ public fun sshCli(): TypedCli<SshInputs> = cliOf("ssh") {
             if (!forwardAgent()) add("no-forward-agent")
             if (ipv4()) add("ipv4")
             if (ipv6()) add("ipv6")
-            if (showVersion()) add("show-version")
         }
         val host = destination()
         val what =
@@ -191,7 +193,6 @@ public fun sshCli(): TypedCli<SshInputs> = cliOf("ssh") {
             forwardAgent = forwardAgent(),
             ipv4 = ipv4(),
             ipv6 = ipv6(),
-            showVersion = showVersion(),
             destination = destination(),
             remoteCommand = remoteCommand(),
         )
@@ -208,9 +209,9 @@ public data class SshInputs(
     val port: Int?,
     val login: String?,
     val bindAddress: String?,
-    val configFile: String?,
-    val logFile: String?,
-    val identity: List<String>,
+    val configFile: CliPath?,
+    val logFile: CliPath?,
+    val identity: List<CliPath>,
     val sshOptions: List<Pair<String, String>>,
     val jumpHosts: List<String>,
     val localForward: List<String>,
@@ -225,7 +226,6 @@ public data class SshInputs(
     val forwardAgent: Boolean,
     val ipv4: Boolean,
     val ipv6: Boolean,
-    val showVersion: Boolean,
     val destination: String,
     val remoteCommand: List<String>,
 )
@@ -252,10 +252,15 @@ public val NOTHING_BOUND: SshInputs = SshInputs(
     forwardAgent = false,
     ipv4 = false,
     ipv6 = false,
-    showVersion = false,
     destination = "",
     remoteCommand = emptyList(),
 )
 
 /** A `-o` occurrence that is not `KEY=VALUE`. */
-private data object NotKeyValue : IError
+private data object NotKeyValue : ResultError
+
+/**
+ * What `ssh -V` prints for OpenSSH 10.6p1, the version installed when it was pinned
+ * (2026-10-10).
+ */
+internal val SSH_VERSION_TEXT: String = """OpenSSH_10.6p1, OpenSSL 3.6.5 29 Sep 2026"""

@@ -1,6 +1,6 @@
 package com.fromwau.klap.internal.spec
 
-import kotlin.coroutines.suspendCoroutine
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -23,7 +23,7 @@ class SuspensionTest {
     fun `a block that genuinely suspends fails loudly rather than hanging`() {
         // Nothing resumes this continuation, so without the check the call would block forever.
         val error = assertFailsWith<IllegalStateException> {
-            completeWithoutSuspending { suspendCoroutine<Int> { } }
+            completeWithoutSuspending { suspendCancellableCoroutine<Int> { } }
         }
         assertTrue("synchronous entry point" in error.message.orEmpty(), error.message)
     }

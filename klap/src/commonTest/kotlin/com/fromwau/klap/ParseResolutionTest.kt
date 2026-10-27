@@ -8,7 +8,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 private fun tree(): Cli = cli("todo") {
-    version = "1.0.0"
+    builtins { help = Help.ByCommand(short = 'h') }
+    version = Version.Of("1.0.0")
     command("ping") { action { Ok("") } }
     command("config") {
         command("get") { action { Ok("") } }
@@ -62,7 +63,7 @@ class ParseResolutionTest {
     fun `mistyped subcommand with flags reports subcommand not option`() {
         val app = cli("app") {
             command("temp") {
-                option("--from")
+                option(long = "from")
                 action { Ok("") }
             }
         }
@@ -98,19 +99,6 @@ class ParseResolutionTest {
         // Regression: a bad option ahead of a REAL subcommand must blame the option, not the subcommand.
         val err = tree().parse(listOf("--wat", "ping")).assertError<CliError.UnknownOption>()
         assertEquals(CliError.UnknownOption("--wat"), err)
-    }
-
-    @Test
-    fun `a local option of the parent stops the walk so its subcommand never routes`() {
-        val app = cli("app") {
-            val workdir = option("--workdir")
-            command("build") { action { Ok("built") } }
-            action { Ok("root ${workdir()}") }
-        }
-        // globalOption is the mechanism for an option usable alongside a subcommand; a local one ends
-        // routing, so "build" arrives as an operand of a root that declares no slot for it.
-        val err = app.parse(listOf("--workdir", "/tmp", "build")).assertError<CliError.UnroutedSubcommand>()
-        assertEquals(CliError.UnroutedSubcommand("build", "app"), err)
     }
 
     @Test

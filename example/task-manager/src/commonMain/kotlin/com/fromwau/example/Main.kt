@@ -4,28 +4,30 @@ import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.getOrElse
 import com.fromwau.kern.terminal.Style
+import com.fromwau.kern.terminal.Styled
 import com.fromwau.kern.terminal.bold
 import com.fromwau.kern.terminal.cyan
 import com.fromwau.kern.terminal.dim
 import com.fromwau.kern.terminal.green
+import com.fromwau.kern.terminal.joinToStyled
 import com.fromwau.kern.terminal.red
 import com.fromwau.kern.terminal.yellow
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
-import com.fromwau.klap.ColorScope
 import com.fromwau.klap.CompletionScope
 import com.fromwau.klap.Flag
 import com.fromwau.klap.Opt
 import com.fromwau.klap.ValueScope
+import com.fromwau.klap.Version
 import com.fromwau.klap.cli
 import com.fromwau.klap.main
 import com.fromwau.klap.name
-import kotlin.time.Clock
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
 import kotlinx.io.files.Path
+import kotlin.time.Clock
 
 fun main(args: Array<String>) {
     taskManagerCli().main(args)
@@ -39,19 +41,19 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
     // The showcase opts all the way in: `klapExample lis` reaches `list`, `klapExample list --j` reaches
     // `--json`, and `klapExample add --priority hi` reaches `high` (verified).
     abbreviation = Abbreviation.All
-    description = "A tiny file-backed task manager"
-    version = VERSION
+    help = "A tiny file-backed task manager"
+    version = Version.Of(VERSION)
     author = "The klap example"
     epilogue =
         "Tasks live in a JSON file in the working directory; point --file elsewhere to keep separate lists."
 
-    val storeFile = globalOption("--file", "-f", help = "path to the task store")
+    val storeFile = globalOption(short = 'f', long = "file", help = "path to the task store")
         .default(DEFAULT_STORE_FILE)
         .file()
 
     // Global rather than local to `list`: a verbosity switch is habitually typed before the
     // subcommand, and there it also clusters with -f (`-vvf other.json list`).
-    val verbose = globalFlag("--verbose", "-v", help = "show more detail per task").count()
+    val verbose = globalFlag(short = 'v', long = "verbose", help = "show more detail per task").count()
 
     example(
         "klapExample add \"Ship the release\" --priority high --tag work",
@@ -59,7 +61,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
     )
     example("klapExample list --status pending", "see what is left to do")
     // Both lines below cluster several short flags behind one dash, ending in the one that takes a
-    // value (POSIX guideline 5): -D and -p bundle on add, -r/-l/-n on list.
+    // value, as getopt groups them: -D and -p bundle on add, -r/-l/-n on list.
     example("klapExample add \"Ship it\" -Dp high", "clustered shorts: mark done, then set priority")
     example("klapExample list -rln 5", "clustered shorts: newest first, long form, five of them")
 
@@ -82,7 +84,8 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
         candidates(tasks.allTags())
     }
 
-    command("add", "create a new task") {
+    command("add") {
+        help = "create a new task"
         // Per-command, unlike the root's: `klapExample add --help` closes with this one, never the root's.
         epilogue = "Repeat --tag to attach several labels; --done records work that is already finished."
 
@@ -100,13 +103,13 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
         val done: Flag
 
         group("Details") {
-            priority = option("--priority", "-p", help = "how urgent")
+            priority = option(short = 'p', long = "priority", help = "how urgent")
                 .enum<Priority>()
                 .default(Priority.MEDIUM)
 
             // Checked and trimmed before .multiple(), so each repeat is validated on its own rather
             // than the assembled list.
-            tags = option("--tag", "-t", help = "label the task")
+            tags = option(short = 't', long = "tag", help = "label the task")
                 .validate(MUST_NOT_BE_BLANK) { it.isNotBlank() }
                 .map { it.trim() }
                 .multiple()
@@ -114,10 +117,10 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
             // Shape only. Whether a past date is wrong depends on --done, which no per-value check can
             // read, so that half is decided by the validateInputs below.
             // No sample date in the help: any literal here is one that later stops being acceptable.
-            due = option("--due", "-d", help = "when it's due, YYYY-MM-DD (past needs --done)")
+            due = option(short = 'd', long = "due", help = "when it's due, YYYY-MM-DD (past needs --done)")
                 .validate(DUE_NOT_A_DATE) { it.asDate() != null }
 
-            done = flag("--done", "-D", help = "record something you have already finished")
+            done = flag(short = 'D', long = "done", help = "record something you have already finished")
         }
 
         // Belongs to the pair, not to either input: a past date is a typo on work still to do and
@@ -127,7 +130,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
             if (dueDate != null && !done() && dueDate.isPastDue()) pastDue(dueDate) else null
         }
 
-        action(human = { task -> "${green("added")} ${dim("#${task.id}:")} ${bold(task.title)}" }) {
+        action(human = { task -> green("added") + " " + dim("#${task.id}:") + " " + bold(task.title) }) {
             val store = taskStore()
             store.withLock {
                 val tasks = store.load().getOrElse { return@withLock Err(it) }
@@ -145,23 +148,24 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
         }
     }
 
-    command("list", "show your tasks") {
+    command("list") {
+        help = "show your tasks"
         aliases = listOf("ls")
-        val status = option("--status", "-s", help = "filter by status").choice("pending", "done")
-        val namedLimit = option("--limit", "-n", help = "show at most this many").int().range(1..100)
+        val status = option(short = 's', long = "status", help = "filter by status").choice("pending", "done")
+        val namedLimit = option(short = 'n', long = "limit", help = "show at most this many").int().range(1..100)
         // Both spellings carry the range independently: the fold picks a winner, it does not share a
         // converter chain, so dropping it from either would let that spelling through unchecked.
         val directLimit = numberOption(help = "same as -n NUM").int().range(1..100)
-        val limit = lastOneWins(namedLimit, directLimit)
-        val reverse = flag("--reverse", "-r", help = "newest first")
+        val limit = lastOf(namedLimit, directLimit)
+        val reverse = flag(short = 'r', long = "reverse", help = "newest first")
         // Display-only, unlike --reverse: it never changes which tasks are chosen or their order,
         // only how much of each one the human renderer shows, so it is read in that renderer alongside
         // --verbose rather than here.
-        val long = flag("--long", "-l", help = "show due date and tags regardless of -v")
+        val long = flag(short = 'l', long = "long", help = "show due date and tags regardless of -v")
 
         // Checked and trimmed exactly like `add --tag`: stored tags carry no padding, so a padded
         // filter would quietly match nothing instead of the tag that was plainly meant.
-        val onlyTag = option("--tag", "-t", help = "filter by tag")
+        val onlyTag = option(short = 't', long = "tag", help = "filter by tag")
             .validate(MUST_NOT_BE_BLANK) { it.isNotBlank() }
             .map { it.trim() }
             .completeWith { knownTagCandidates() }
@@ -170,7 +174,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
             human = { tasks ->
                 val verbosity = verbose()
                 val longForm = long()
-                if (tasks.isEmpty()) "no tasks" else tasks.joinToString("\n") { render(it, verbosity, longForm) }
+                if (tasks.isEmpty()) "no tasks" else tasks.map { render(it, verbosity, longForm) }.joinToStyled("\n")
             },
         ) {
             val tasks = taskStore().load().getOrElse { return@action Err(it) }
@@ -191,12 +195,13 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
         }
     }
 
-    command("done", "mark a task complete") {
+    command("done") {
+        help = "mark a task complete"
         // Only pending tasks can be completed, so a done task is not a completion candidate.
         val id = argument("id", "task id").int()
             .completeWith { taskIdCandidates { task -> !task.done } }
 
-        action(human = { task -> "${green("done")} ${dim("#${task.id}:")} ${bold(task.title)}" }) {
+        action(human = { task -> green("done") + " " + dim("#${task.id}:") + " " + bold(task.title) }) {
             val store = taskStore()
             store.withLock {
                 val tasks = store.load().getOrElse { return@withLock Err(it) }
@@ -211,11 +216,12 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
         }
     }
 
-    command("rm", "delete a task") {
+    command("rm") {
+        help = "delete a task"
         val id = argument("id", "task id").int()
             .completeWith { taskIdCandidates() }
 
-        action(human = { task -> "${yellow("removed")} ${dim("#${task.id}:")} ${bold(task.title)}" }) {
+        action(human = { task -> yellow("removed") + " " + dim("#${task.id}:") + " " + bold(task.title) }) {
             val store = taskStore()
             store.withLock {
                 val tasks = store.load().getOrElse { return@withLock Err(it) }
@@ -226,8 +232,10 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
         }
     }
 
-    command("tag", "manage a task's tags") {
-        command("add", "attach a tag to a task") {
+    command("tag") {
+        help = "manage a task's tags"
+        command("add") {
+            help = "attach a tag to a task"
             val id = argument("id", "task id").int()
                 .completeWith { taskIdCandidates() }
 
@@ -241,7 +249,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
             action(
                 human = { task ->
                     val tags = if (task.tags.isEmpty()) dim("none") else cyan(task.tags.joinToString(", "))
-                    "${dim("tags for #${task.id}:")} $tags"
+                    dim("tags for #${task.id}:") + " " + tags
                 },
             ) {
                 val store = taskStore()
@@ -256,7 +264,8 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
             }
         }
 
-        command("rm", "remove a tag from a task") {
+        command("rm") {
+            help = "remove a tag from a task"
             val id = argument("id", "task id").int()
                 .completeWith { taskIdCandidates() }
 
@@ -274,7 +283,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
             action(
                 human = { task ->
                     val tags = if (task.tags.isEmpty()) dim("none") else cyan(task.tags.joinToString(", "))
-                    "${dim("tags for #${task.id}:")} $tags"
+                    dim("tags for #${task.id}:") + " " + tags
                 },
             ) {
                 val store = taskStore()
@@ -296,9 +305,10 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
     // A sibling of `tag` rather than a `tag list` subcommand: this answers about the store as a whole,
     // where every `tag` subcommand acts on one task. Exact spellings beat prefixes, so both full names
     // stay reachable; the cost is that `t` and `ta` now name two commands and stop resolving.
-    command("tags", "list every tag in use") {
+    command("tags") {
+        help = "list every tag in use"
         action(
-            human = { tags -> if (tags.isEmpty()) "no tags" else tags.joinToString("\n") { cyan(it) } },
+            human = { tags -> if (tags.isEmpty()) "no tags" else tags.map { cyan(it) }.joinToStyled("\n") },
         ) {
             val tasks = taskStore().load().getOrElse { return@action Err(it) }
             Ok(tasks.allTags())
@@ -307,22 +317,16 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
 
     // Kept out of --help: this answers "which store did --file settle on?" when something looks
     // wrong, and is not part of the task workflow the help text is there to teach.
-    command("where", "print the configured task-store path") {
+    command("where") {
+        help = "print the configured task-store path"
         hidden = true
         action { Ok(storeFile()) }
     }
 }
 
 
-/**
- * Renders one task as a single display line, detailed to [verbosity] or forced open by [long].
- *
- * Declared on [ColorScope] — the narrowest receiver that can resolve a style — rather than on the
- * ActionScope the caller actually has: least privilege, so reaching an input like `verbose()` from a
- * formatter is a compile error. It costs nothing here, since `verbose` is a local val of the `cli { }`
- * block and has to arrive as a parameter either way.
- */
-private fun ColorScope.render(task: Task, verbosity: Int, long: Boolean): String = buildList {
+/** Renders one task as a single display line, detailed to [verbosity] or forced open by [long]. */
+private fun render(task: Task, verbosity: Int, long: Boolean): Styled = buildList {
     add(dim(if (task.done) "[x]" else "[ ]"))
     add(dim("#${task.id}"))
     // A finished task recedes; a pending one is what the reader still has to act on.
@@ -335,9 +339,8 @@ private fun ColorScope.render(task: Task, verbosity: Int, long: Boolean): String
     // --long forces both open regardless of --verbose, one flag rather than remembering `-vv`.
     if ((long || verbosity >= 1) && task.due != null) add(dim("(due ${task.due})"))
     if ((long || verbosity >= 2) && task.tags.isNotEmpty()) add(cyan("[${task.tags.joinToString(",")}]"))
-}.joinToString(" ")
+}.joinToStyled(" ")
 
-/** Combined with `+`, never nested: `bold(red(...))` would emit the inner reset and clear the bold again. */
 private val Priority.style: Style
     get() = when (this) {
         Priority.HIGH -> bold + red

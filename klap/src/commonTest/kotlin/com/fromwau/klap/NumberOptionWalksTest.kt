@@ -12,16 +12,16 @@ import kotlin.test.assertEquals
 class NumberOptionWalksTest {
 
     private fun tree(): Cli = cli("head") {
-        val lines = option("--lines", "-n")
+        val lines = option(short = 'n', long = "lines")
         val direct = numberOption()
-        val count = lastOneWins(lines, direct)
+        val count = lastOf(lines, direct)
         val files = argument("file").multiple(min = 0)
         action { Ok("count=${count()} files=${files()}") }
     }
 
     @Test
     fun `a run does not open the next token to a built in`() {
-        // Guideline 6 gives the token after `-n` to `-n` whatever it is spelled, and the built-in scans run
+        // getopt gives the token after `-n` to `-n` whatever it is spelled, and the built-in scans run
         // before any bind, so they read the arity walk's value slots. A run that stops that walk leaves
         // `--help` looking position-independent again, and the line prints help instead of binding.
         assertEquals("count=--help files=[f]", tree().bindText("-5n", "--help", "f"))
@@ -35,7 +35,7 @@ class NumberOptionWalksTest {
         // command. A digit already makes that walk decline the token, which is what must stay true: were it
         // to learn the rule it would claim a token before the command owning the input is known.
         val tree = cli("app") {
-            val two = globalFlag("--two", "-2")
+            val two = globalFlag(short = '2', long = "two")
             command("go") {
                 val n = numberOption().int()
                 action { Ok("n=${n()} two=${two()}") }
@@ -65,12 +65,27 @@ class NumberOptionWalksTest {
     }
 
     @Test
+    fun `the built-in scan routes past the number of the command that declares it`() {
+        val tree = cli("app") {
+            val lines = numberOption("lines").int()
+            command("sub") {
+                val expr = option(short = 'e')
+                action { Ok("lines=${lines()} e=${expr()}") }
+            }
+            action { Ok("root lines=${lines()}") }
+        }
+        assertEquals("lines=null e=--help", tree.bindText("sub", "-e", "--help"))
+        assertEquals("lines=3 e=--help", tree.bindText("-3", "sub", "-e", "--help"))
+        assertEquals("lines=3 e=--json", tree.bindText("-3", "sub", "-e", "--json"))
+    }
+
+    @Test
     fun `a digit cluster carrying a global after an operand is refused`() {
         // firstUnresolvedShort through the MixedClusterAfterOperands gate: the cluster resolves in full
         // (a run, then a global), so the tail token is a mixed cluster rather than the operand it looks
         // like, and neither reading survives silently.
         val tree = cli("app") {
-            globalFlag("--global", "-g")
+            globalFlag(short = 'g', long = "global")
             command("go") {
                 val n = numberOption().int()
                 val files = argument("file").multiple(min = 0)
@@ -93,8 +108,8 @@ class NumberOptionDeclaredShortTest {
 
     private fun tree(): Cli = cli("app") {
         val n = numberOption().int()
-        val four = flag("--four", "-4").negatable("-3")
-        val verbose = flag("--verbose", "-v")
+        val four = flag(short = '4', long = "four").negatable(short = '3')
+        val verbose = flag(short = 'v', long = "verbose")
         action { Ok("n=${n()} four=${four()} v=${verbose()}") }
     }
 

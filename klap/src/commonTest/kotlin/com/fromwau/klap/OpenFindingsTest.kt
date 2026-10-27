@@ -3,59 +3,57 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
-import com.fromwau.klap.internal.render.completeCandidates
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /*
- * Reproductions of the review findings, each asserting the behaviour klap's own docs or POSIX promise
+ * Reproductions of the review findings, each asserting the behaviour klap's own docs or getopt promise
  * and each guarding the defect it was written red against.
  */
 
 private enum class Shade { DARK, LIGHT }
-
-private fun Cli.completionsFor(vararg words: String): List<String> = completeCandidates(words.toList()).map { it.value }
 
 class GlobalOptionArgvOrderTest {
 
     @Test
     fun `the last occurrence in argv wins`() {
         val tree = cli("app") {
-            val retries = globalOption("--retries", "-r").int().default(0)
+            val retries = globalOption(short = 'r', long = "retries").int().default(0)
             command("build") {
-                flag("--force", "-f")
+                flag(short = 'f', long = "force")
                 action { Ok("retries=${retries()}") }
             }
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("build", "-fr", "5", "--retries", "9"), t)
-        assertEquals("retries=9\n", t.out.toString())
+        assertEquals("retries=9\n", t.out)
     }
 
     @Test
     fun `a repeatable global keeps argv order`() {
         val tree = cli("app") {
-            val tags = globalOption("--tag", "-t").multiple()
+            val tags = globalOption(short = 't', long = "tag").multiple()
             command("build") {
-                flag("--force", "-f")
+                flag(short = 'f', long = "force")
                 action { Ok("tags=${tags()}") }
             }
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("build", "-ft", "a", "--tag", "b"), t)
-        assertEquals("tags=[a, b]\n", t.out.toString())
+        assertEquals("tags=[a, b]\n", t.out)
     }
 }
 
-class RequiredIfTriggerReachTest {
+class RequiredWhenTriggerReachTest {
 
     @Test
     fun `a global flag triggers the requirement it advertises`() {
         val tree = cli("app") {
-            val verbose = globalFlag("--verbose")
+            val verbose = globalFlag(long = "verbose")
             command("c") {
-                val token = option("--token").requiredIf(verbose)
+                val token = option(long = "token").requiredWhen(verbose)
                 action { Ok("token=${token()}") }
             }
         }
@@ -67,8 +65,8 @@ class RequiredIfTriggerReachTest {
     fun `the negative spelling does not trigger the requirement`() {
         val tree = cli("app") {
             command("c") {
-                val remote = flag("--remote", "-r").negatable()
-                val token = option("--token").requiredIf(remote)
+                val remote = flag(short = 'r', long = "remote").negatable()
+                val token = option(long = "token").requiredWhen(remote)
                 action { Ok("token=${token()}") }
             }
         }
@@ -81,16 +79,16 @@ class NumberOptionClusterTest {
     @Test
     fun `a mixed global local cluster outranks the number`() {
         val tree = cli("app") {
-            globalFlag("--two", "-2")
+            globalFlag(short = '2', long = "two")
             command("head") {
-                val zero = flag("--zero", "-0")
+                val zero = flag(short = '0', long = "zero")
                 val lines = numberOption().int()
                 action { Ok("zero=${zero()} lines=${lines()}") }
             }
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("head", "-20"), t)
-        assertEquals("zero=true lines=null\n", t.out.toString())
+        assertEquals("zero=true lines=null\n", t.out)
     }
 }
 
@@ -106,14 +104,14 @@ class ArgDefaultTypeTest {
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("c"), t)
-        assertEquals("n+1=1\n", t.out.toString())
+        assertEquals("n+1=1\n", t.out)
     }
 
     @Test
     fun `absent when then default binds the default not null`() {
         val tree = cli("app") {
             command("c") {
-                val ref = option("--reference")
+                val ref = option(long = "reference")
                 val mode = argument("mode").absentWhen(ref).default("755")
                 val files = argument("file").multiple(min = 1)
                 action { Ok("modeLen=${mode().length} files=${files()}") }
@@ -121,7 +119,7 @@ class ArgDefaultTypeTest {
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("c", "--reference=r", "a"), t)
-        assertEquals("modeLen=3 files=[a]\n", t.out.toString())
+        assertEquals("modeLen=3 files=[a]\n", t.out)
     }
 }
 
@@ -137,8 +135,8 @@ class RestatedChoiceSetTest {
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("c", "dark"), t)
-        assertEquals("m=DARK\n", t.out.toString())
-        assertEquals("", t.err.toString())
+        assertEquals("m=DARK\n", t.out)
+        assertEquals("", t.err)
     }
 }
 
@@ -148,13 +146,13 @@ class LastWinsCompletionTest {
     fun `a last wins member stays offered after its sibling is typed`() {
         val tree = cli("rm") {
             command("go") {
-                val interactive = flag("--interactive", "-i")
-                val force = flag("--force", "-f")
+                val interactive = flag(short = 'i', long = "interactive")
+                val force = flag(short = 'f', long = "force")
                 lastWins(interactive, force)
                 action { Ok("") }
             }
         }
-        val candidates = tree.completionsFor("go", "-i", "-")
+        val candidates = tree.offered("go", "-i", "-")
         assertTrue("--force" in candidates, "expected --force among $candidates")
     }
 }
@@ -170,7 +168,7 @@ class VariadicThenFixedCompletionTest {
                 action { Ok("") }
             }
         }
-        assertEquals(listOf(COMPLETE_FILES), tree.completionsFor("go", "f1", "f2", ""))
+        assertEquals(listOf(COMPLETE_FILES), tree.offered("go", "f1", "f2", ""))
     }
 
     private fun cpShape(): Cli = cli("cp") {
@@ -184,13 +182,13 @@ class VariadicThenFixedCompletionTest {
     @Test
     fun `operands past the slot count resolve the way the bind would`() {
         // The bind hands a line's last operand to the trailing fixed slot, so the cursor's word is dest.
-        assertEquals(listOf("D1", "D2"), cpShape().completionsFor("go", "a", "b", ""))
+        assertEquals(listOf("D1", "D2"), cpShape().offered("go", "a", "b", ""))
     }
 
     @Test
     fun `the first operand still fills the variadics minimum`() {
         // dest cannot claim the only operand while source still owes one, since that line does not parse.
-        assertEquals(listOf("S1", "S2"), cpShape().completionsFor("go", ""))
+        assertEquals(listOf("S1", "S2"), cpShape().offered("go", ""))
     }
 }
 
@@ -201,12 +199,12 @@ class AbbreviatedOptionCompletionTest {
         val tree = cli("tool") {
             abbreviation = Abbreviation.Options
             command("go") {
-                option("--sort").choice("name", "size")
+                option(long = "sort").choice("name", "size")
                 argument("a").choice("A1", "A2")
                 action { Ok("") }
             }
         }
-        assertEquals(listOf("name", "size"), tree.completionsFor("go", "--sor", ""))
+        assertEquals(listOf("name", "size"), tree.offered("go", "--sor", ""))
     }
 }
 
@@ -214,11 +212,9 @@ class MetaOptionErrorTextTest {
 
     @Test
     fun `a meta option missing its value names the dashed spelling`() {
-        val tree = cli("app") {
-            command("c") { action { Ok("") } }
-        }
+        val tree = cli("app") { action { Ok("") } }
         val t = RecordingTerminal()
-        tree.run(arrayOf("--color"), t)
-        assertEquals("error: option --color requires a value\n", t.err.toString())
+        tree.run(arrayOf("--docs"), t)
+        assertEquals("error: option --docs requires a value\n", t.err)
     }
 }

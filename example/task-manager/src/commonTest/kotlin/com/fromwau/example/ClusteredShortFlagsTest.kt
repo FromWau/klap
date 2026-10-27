@@ -8,9 +8,9 @@ import kotlin.test.assertFalse
 import kotlinx.serialization.json.Json
 
 /**
- * Short-flag clustering (POSIX guideline 5): several booleans and at most one value-taking option,
+ * Short-flag clustering, as getopt groups them: several booleans and at most one value-taking option,
  * bundled behind one dash. klap's parser already enforces this; these tests pin that `list`'s `-r`/`-l`
- * and `add`'s `-D` compose the way a real invocation like `rsync -vauP ...` does.
+ * and `add`'s `-D` compose the way a real invocation like `tar -xvzf ...` does.
  */
 class ClusteredShortFlagsTest {
 

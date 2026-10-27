@@ -1,14 +1,15 @@
 package com.fromwau.klap.internal.render
 
+import com.fromwau.kern.terminal.Styled
 import com.fromwau.kern.terminal.bold
+import com.fromwau.kern.terminal.joinToStyled
+import com.fromwau.kern.terminal.plain
 import com.fromwau.klap.Builtins
 import com.fromwau.klap.COLOR_MODE_NAMES
 import com.fromwau.klap.COMPLETION_SHELL_NAMES
 import com.fromwau.klap.Cli
-import com.fromwau.klap.ColorScope
 import com.fromwau.klap.Command
 import com.fromwau.klap.DOC_FORMAT_NAMES
-import com.fromwau.klap.Palette
 import com.fromwau.klap.internal.spec.ArgumentSpec
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.ConstraintArity
@@ -27,8 +28,8 @@ import com.fromwau.klap.internal.spec.token
 import kotlin.coroutines.cancellation.CancellationException
 
 // --- Reusable row/section model ---
-// helpText() renders through this model; the docs renderer consumes the same assembly, so the model and
-// the small formatting helpers below are internal rather than private to helpText().
+// styledHelp() renders through this model; the docs renderer consumes the same assembly, so the model and
+// the small formatting helpers below are internal rather than private to styledHelp().
 
 /** One help/doc entry: a signature column and its description (help text plus any metaHint note). */
 internal data class InputRow(val signature: String, val description: String)
@@ -51,6 +52,7 @@ internal object BuiltinOptionHelp {
     const val COMPLETION = "Print a shell completion script"
     const val DOCS = "Print generated documentation"
     const val COLOR = "Colorize output: auto, always, or never"
+    const val HELP_ALL = "Show help for every subcommand"
 }
 
 // --- formatting helpers ---
@@ -66,10 +68,10 @@ internal fun Command.argSummary(): String = arguments.filter { !it.hidden }.join
         Cardinality.Optional -> "[$shown]"
         is Cardinality.Default -> "[$shown=${spec.display(c.value)}]"
         // Square brackets whenever zero operands are reachable, whether the declared minimum is already
-        // zero or a relaxedWhen trigger drops it there: `rm [file...]` is real rm's own synopsis, and the
+        // zero or an optionalWhen trigger drops it there: `rm [file...]` is real rm's own synopsis, and the
         // usage line is the only place that distinction is visible.
         is Cardinality.Multiple ->
-            if (c.min == 0 || spec.relaxedWhen != null) "[$shown...]" else "<$shown>..."
+            if (c.min == 0 || spec.optionalWhen != null) "[$shown...]" else "<$shown>..."
     }
     spec.absentSlotToken(token)
 }
@@ -79,15 +81,20 @@ internal fun Command.argSummary(): String = arguments.filter { !it.hidden }.join
  * lines: `chmod`'s mode is Required in every other reading, so leaving its usual `<mode>` unbracketed would
  * claim the operand is always there. Wrapping rather than replacing keeps the inner `<>` legible, so the
  * reader still sees "a value, when present" instead of the plain-optional reading `[mode]` would suggest.
+ * A token already in brackets says it may be absent, so it stays as it is.
  */
-private fun ArgumentSpec.absentSlotToken(token: String): String = if (absentWhen != null) "[$token]" else token
+private fun ArgumentSpec.absentSlotToken(token: String): String =
+    if (absentWhen != null && !token.startsWith("[")) "[$token]" else token
 
 /** The name help shows for this input: an explicit `.placeholder()` if given, else the declared name. */
 internal fun ValueSpec.displayName(): String = placeholder ?: name
 
 // An explicit .placeholder() wins over the choice list: a long list of choices in the signature column widens
 // every other row (see the choice-list layout note), and a tool that names its operand FILE means it.
-internal fun ValueSpec.resolvedPlaceholder(): String = placeholder ?: choices?.joinToString("|") ?: "value"
+internal fun ValueSpec.resolvedPlaceholder(): String = placeholder ?: listedChoices?.joinToString("|") ?: "value"
+
+/** The choices help lists: an enum entry by its first word, so `never|once|always` stands for every word. */
+internal val ValueSpec.listedChoices: List<String>? get() = choiceEntries?.map { it.first() } ?: choices
 
 /**
  * Render a value for help: for a choice-backed spec, show the matching choice so an enum default
@@ -108,18 +115,20 @@ internal fun ValueSpec.display(value: Any?): String {
 
 /**
  * The word-form of an option/flag: every spelling, shorts first, or the display label when it has no
- * spelling at all (options add `<placeholder>`, or `[=<placeholder>]` when the value is optional; a
- * negatable flag shows `--[no-]long`, or both real halves when the negative one has its own spellings).
+ * spelling at all (an option adds its value as GNU writes it, see [optionWords]; a negatable flag shows
+ * `--[no-]long`, or both real halves when the negative one has its own spellings).
  */
 internal fun NamedSpec.words(): String {
-    // An input with no spelling of its own (`-<NUM>`, a lastOneWins fold) has nothing to join, and the
+    // An input with no spelling of its own (`-<NUM>`, a lastOf fold) has nothing to join, and the
     // digits ARE the value, so there is no placeholder to append either.
-    if (this is OptionSpec && names.isEmpty()) return name
-    val generatedNegation = this is FlagSpec && negatable && negativeNames.isEmpty()
-    val negatedShorts = if (this is FlagSpec) negativeShorts else emptyList()
+    if (this is OptionSpec) return if (names.isEmpty()) name else optionWords()
+    // A negation with words of its own renders on its own row ([negationRow]), so this row is the positive half.
+    val ownRow = this is FlagSpec && negativeHelp != null
+    val generatedNegation = this is FlagSpec && negatable && negativeNames.isEmpty() && !ownRow
+    val negatedShorts = if (this is FlagSpec && !ownRow) negativeShorts else emptyList()
     // Suppressed for the generated form: `--[no-]x` below already states it, so listing the generated
     // `no-x` again would render the same negation twice.
-    val negatedLongs = if (this is FlagSpec && !generatedNegation) negativeLongs else emptyList()
+    val negatedLongs = if (this is FlagSpec && !generatedNegation && !ownRow) negativeLongs else emptyList()
     // Shorts first, and grouped positive-then-negative within each half rather than positives-then-all-
     // negatives: an explicit negative half is not a prefix of the positive one, so `--[no-]x` cannot state
     // it, and grouping keeps a pair's two real spellings next to each other the way the tools being
@@ -129,15 +138,22 @@ internal fun NamedSpec.words(): String {
     val spellings = (allShorts + allLongs).joinToString(", ")
     // A row starts with a short whenever EITHER half has one: allShorts (built above) already puts the
     // negative short first if there is no positive one, so the row itself, not just `shorts`, decides the indent.
-    val base = if (allShorts.isEmpty()) "    $spellings" else spellings
-    // `[=<WHEN>]` rather than `<WHEN>`: the brackets say the value is optional and the `=` says the ATTACHED
-    // spelling is the only one that carries it, which is the half of the rule a user cannot guess.
-    return when {
-        this !is OptionSpec -> base
-        bareValue != null -> "$base[=<${resolvedPlaceholder()}>]"
-        else -> "$base <${resolvedPlaceholder()}>"
-    }
+    return if (allShorts.isEmpty()) "    $spellings" else spellings
 }
+
+/**
+ * An option's spellings with its value as cp's and od's `--help` write it: `-S, --suffix=SUFFIX`, `-E END`
+ * with no long, and an optional value bracketed, `--backup[=CONTROL]`, `-w[BYTES], --width[=BYTES]`.
+ */
+private fun OptionSpec.optionWords(): String {
+    val shortHint = shortValueHint(hasLong = longs.isNotEmpty()).orEmpty()
+    val spelled = shorts.map { "-$it" }.appendToLast(shortHint) + longs.map { "--$it" }.appendToLast(longValueHint())
+    val joined = spelled.joinToString(", ")
+    return if (shorts.isEmpty()) "    $joined" else joined
+}
+
+private fun List<String>.appendToLast(suffix: String): List<String> =
+    mapIndexed { i, word -> if (i == lastIndex) word + suffix else word }
 
 /**
  * A trailing `  (...)` note on a flag row: any constraint set it belongs to, then its negation default
@@ -159,27 +175,30 @@ internal fun FlagSpec.metaHint(): String {
 /** A trailing `  (...)` note on an arg/option row: choices, and its required/optional/default/repeatable rule. */
 internal fun ValueSpec.metaHint(): String {
     val absentWhen = (this as? ArgumentSpec)?.absentWhen
-    val relaxedWhen = (this as? ArgumentSpec)?.relaxedWhen
+    val optionalWhen = (this as? ArgumentSpec)?.optionalWhen
     val hints = buildList {
         // An option normally shows its choices inside the value placeholder (see [resolvedPlaceholder]), so
         // repeating them here would duplicate. A placeholder replaces that placeholder, and an argument's
         // placeholder is just its name — in both cases the choices have nowhere else to appear, and
         // silently dropping the set of legal values is worse than a slightly longer row.
         if (choices != null && (this@metaHint is ArgumentSpec || placeholder != null)) {
-            add("one of: ${choices!!.joinToString(", ")}")
+            add("one of: ${listedChoices!!.joinToString(", ")}")
         }
         valueHint?.let { add(it) }
-        // The bare form's value is not derivable from the signature: `--color[=<WHEN>]` says a bare
+        // The bare form's value is not derivable from the signature: `--color[=WHEN]` says a bare
         // occurrence is legal but not what it then means.
         (this@metaHint as? OptionSpec)?.bareValue?.let { add("bare: $it") }
         constraintHint?.let { add(it) }
         // Named rather than merely bracketed: "[<mode>]" says the operand is sometimes absent, and only the
         // trigger's own spelling says WHEN, which is the half a reader cannot guess.
-        absentWhen?.let { add("absent with ${it.constraintToken()}") }
-        relaxedWhen?.let { add("optional with ${it.constraintToken()}") }
+        absentWhen?.let { add("absent when ${it.constraintToken()}") }
+        optionalWhen?.let { add("optional when ${it.constraintToken()}") }
+        (this@metaHint as? ArgumentSpec)?.capsWhen?.forEach { (trigger, n) ->
+            add("at most $n when ${trigger.constraintToken()}")
+        }
         when (val c = cardinality) {
-            // "absent with X" already carries the whole rule, so a bare "required" beside it reads as a
-            // contradiction ("absent with --reference; required"); same suppression as Optional's below.
+            // "absent when X" already carries the whole rule, so a bare "required" beside it reads as a
+            // contradiction ("absent when --reference; required"); same suppression as Optional's below.
             Cardinality.Required -> if (absentWhen == null) add("required")
             // A constrained input is optional only in isolation: the hint above already states whether the
             // SET is required, so a bare "optional" beside it would read as a contradiction ("one of --a,
@@ -195,31 +214,47 @@ internal fun ValueSpec.metaHint(): String {
             // min == 0 states "optional" as well: every other cardinality says whether it is required in
             // words here, and the usage line renders this one as [name...], so a bare "repeatable" would
             // leave the row contradicting the usage line about whether zero is allowed.
-            is Cardinality.Multiple ->
-                add(if (c.min > 0) "repeatable, min ${c.min}" else "optional; repeatable")
+            is Cardinality.Multiple -> {
+                val max = if (c.max == Int.MAX_VALUE) "" else ", max ${c.max}"
+                add(if (c.min > 0) "repeatable, min ${c.min}$max" else "optional; repeatable$max")
+            }
         }
     }
     return if (hints.isEmpty()) "" else " (${hints.joinToString("; ")})"
 }
 
-/** The help row for an option/flag: its word-form signature and help+metaHint description. */
-internal fun NamedSpec.helpRow(): InputRow = InputRow(
-    words(),
-    help + when (this) {
-        is OptionSpec -> metaHint()
-        is FlagSpec -> metaHint()
-    },
+/**
+ * The help rows for an option/flag: its word-form signature and help+metaHint description, then the row of a
+ * negation that has words of its own.
+ */
+internal fun NamedSpec.helpRows(): List<InputRow> = listOfNotNull(
+    InputRow(
+        words(),
+        help + when (this) {
+            is OptionSpec -> metaHint()
+            is FlagSpec -> metaHint()
+        },
+    ),
+    (this as? FlagSpec)?.negationRow(),
 )
 
+/** The negative half's own row, shorts first, when [FlagSpec.negativeHelp] gives it words; null otherwise. */
+private fun FlagSpec.negationRow(): InputRow? {
+    val words = negativeHelp ?: return null
+    val spelled = (negativeShorts.map { "-$it" } + negativeLongs.map { "--$it" }).joinToString(", ")
+    return InputRow(if (negativeShorts.isEmpty()) "    $spelled" else spelled, words)
+}
+
 /**
- * A subcommand's row name: its canonical name plus any aliases, `list, ls` (mirrors [words]'s
- * comma-separated `-s, --long` form). Used everywhere a subcommand renders as a help/doc row, so
- * `--help`, the man page, and the markdown table agree with each other and with the markdown
+ * A subcommand's row name: its canonical name plus any aliases, `list, ls`, or a flag-spelled command's
+ * spellings shorts first, `-Q, --query`, as [words] lists an option's. Used everywhere a subcommand renders as a
+ * help/doc row, so `--help`, the man page, and the markdown table agree with each other and with the markdown
  * `Aliases:` line.
  */
-internal fun Command.commandRowName(): String = (listOf(name) + aliases).joinToString(", ")
+internal fun Command.commandRowName(): String =
+    (if (isFlagSpelled) flagSpellings.sortedBy { it.startsWith("--") } else words).joinToString(", ")
 
-/** A subcommand's help row, the [NamedSpec.helpRow] counterpart for the Commands and group blocks. */
+/** A subcommand's help row, the [NamedSpec.helpRows] counterpart for the Commands and group blocks. */
 internal fun Command.helpRow(): InputRow = InputRow(commandRowName(), description)
 
 /**
@@ -258,22 +293,36 @@ internal fun Command.usageTail(): String = if (isGroup) {
     (constraints.mapNotNull { it.usageGroup() } + required + tail).joinToString(" ")
 }
 
+/** The value after a long spelling: `=SUFFIX`, or `[=CONTROL]` when it may be left off. */
+private fun OptionSpec.longValueHint(): String =
+    if (valueOptional) "[=${resolvedPlaceholder()}]" else "=${resolvedPlaceholder()}"
+
 /**
- * The `--host <value>` fragments for options the command cannot run without, in declaration order.
- *
- * The value is always angle-bracketed, matching [argSummary]'s notation for a required positional; square
- * brackets additionally wrap it (`[=<value>]`) when the option's value is itself optional. The primary
- * spelling is used rather than the compact short a constraint group uses: a required option is named once
- * here and the reader has to be able to type it. A member of a constraint set is left out — its group
- * already renders, and listing it twice would say the set is required AND that one member is.
+ * The value after a short spelling: `[BYTES]` when it may be left off, since getopt reads it from a short only
+ * glued (`-w16`); with no long beside it a required one too, glued for a `.gluedValue()` (`-OLEVEL`), else after a
+ * space (`-E END`). Null for a required value the long spelling already shows.
+ */
+private fun OptionSpec.shortValueHint(hasLong: Boolean): String? = when {
+    valueOptional -> "[${resolvedPlaceholder()}]"
+    hasLong -> null
+    gluedValue -> resolvedPlaceholder()
+    else -> " ${resolvedPlaceholder()}"
+}
+
+/**
+ * The `--host=HOST` fragments for options the command cannot run without, in declaration order, the value
+ * written as the help row writes it. The primary spelling is used rather than the compact short a constraint
+ * group uses: a required option is named once here and the reader has to be able to type it. A member of a
+ * constraint set is left out — its group already renders, and listing it twice would say the set is required
+ * AND that one member is.
  */
 internal fun Command.requiredOptionSummary(): List<String> {
     val constrained = constraints.flatMap { it.members }.toSet()
     return options
         .filter { !it.hidden && it.cardinality == Cardinality.Required && it !in constrained }
         .map { spec ->
-            if (spec.bareValue != null) "${spec.token()}[=<${spec.resolvedPlaceholder()}>]"
-            else "${spec.token()} <${spec.resolvedPlaceholder()}>"
+            val token = spec.token()
+            token + if (token.startsWith("--")) spec.longValueHint() else spec.shortValueHint(hasLong = false).orEmpty()
         }
 }
 
@@ -282,13 +331,14 @@ internal fun Command.usageLine(qualifiedName: String = name): String = "usage: $
 
 /**
  * The ordered, labeled blocks for this command's help: an unlabeled default block, a `Commands` block,
- * custom [group] headings in first-appearance order, and a final `Global options` block. [globalSpecs]
- * and [rootVersioned] are caller-supplied, since only the root carries them. Hidden inputs are filtered
- * out throughout so they never widen the shared signature column [helpText] computes.
+ * custom [group] headings in first-appearance order, and a final `Global options` block. [globalSpecs],
+ * [rootVersioned] and [rootMetaOptions] are caller-supplied, since only the root carries them. Hidden inputs are
+ * filtered out throughout so they never widen the shared signature column [styledHelp] computes.
  */
 internal fun Command.helpSections(
     globalSpecs: List<NamedSpec> = emptyList(),
     rootVersioned: Boolean = false,
+    rootMetaOptions: Boolean = false,
     builtins: Builtins = Builtins.DEFAULT,
 ): List<HelpSection> {
     val sections = mutableListOf<HelpSection>()
@@ -297,7 +347,7 @@ internal fun Command.helpSections(
     arguments.filter { !it.hidden }.forEach {
         main += InputRow(it.absentSlotToken("<${it.displayName()}>"), it.help + it.metaHint())
     }
-    namedInputs.filter { !it.hidden && it.section == null }.forEach { main += it.helpRow() }
+    namedInputs.filter { !it.hidden && it.section == null }.forEach { main += it.helpRows() }
     if (main.isNotEmpty()) sections += HelpSection(null, main)
 
     // Ungrouped subcommands (the app's own plus the injected completion/docs) read as commands, so they
@@ -318,7 +368,7 @@ internal fun Command.helpSections(
         .forEach { groupTitles += it }
     for (title in groupTitles) {
         val rows = mutableListOf<InputRow>()
-        namedInputs.filter { !it.hidden && it.section == title }.forEach { rows += it.helpRow() }
+        namedInputs.filter { !it.hidden && it.section == title }.forEach { rows += it.helpRows() }
         subcommands
             .filter { !it.hidden && it.section == title }
             .forEach { rows += it.helpRow() }
@@ -329,51 +379,73 @@ internal fun Command.helpSections(
     // globals rather than in the default block. The section is always present since the built-ins are.
     val globalRows = globalSpecs
         .filter { !it.hidden }
-        .map { it.helpRow() }
+        .flatMap { it.helpRows() }
         .toMutableList()
-    globalRows += builtinOptions(rootVersioned, builtins).map { it.row() }
+    globalRows += builtinOptions(rootVersioned, rootMetaOptions, builtins).map { it.row() }
     sections += HelpSection("Global options", globalRows)
 
     return sections
 }
 
-/** A built-in global option as both help forms list it; [choices] are the values it takes, if it takes one. */
+/**
+ * A built-in global option as both help forms list it; [choices] are the values it takes, if it takes one, and
+ * [bare] what it means given without one, when its value is optional.
+ */
 internal data class BuiltinOption(
     val names: List<String>,
     val help: String,
     val choices: List<String>? = null,
+    val bare: String? = null,
 )
 
-/** The built-in options this node's help lists, in the order help shows them. */
+/**
+ * The built-in options that work on this node, in the order help shows them: what its help lists and what
+ * completion offers. [rootVersioned] and [rootMetaOptions] are the root's own facts, which a node below it
+ * cannot read off itself.
+ */
 internal fun Command.builtinOptions(
     rootVersioned: Boolean,
+    rootMetaOptions: Boolean,
     builtins: Builtins,
 ): List<BuiltinOption> = buildList {
-    // --help is never declinable; only its -h short is.
-    add(BuiltinOption(if (builtins.helpShort) listOf("-h", "--help") else listOf("--help"), BuiltinOptionHelp.HELP))
-    // --help-all is only meaningful (and only advertised) where there are subcommands to expand.
-    if (subcommands.any { !it.hidden }) add(BuiltinOption(listOf("--help-all"), "Show help for every subcommand"))
-    if (builtins.json) add(BuiltinOption(listOf("--json"), BuiltinOptionHelp.JSON))
-    // --color is universal (like --json), so it advertises on every node the tree still offers it on.
-    if (builtins.color) add(BuiltinOption(listOf("--color"), BuiltinOptionHelp.COLOR, COLOR_MODE_NAMES))
-    // version/metaOptions are root-only ([Cli]) facts; a plain node relies on the caller's [rootVersioned].
-    val node = this@builtinOptions
-    if ((node is Cli && node.version != null) || rootVersioned) {
-        add(BuiltinOption(listOf("--version"), BuiltinOptionHelp.VERSION))
+    if (builtins.help) {
+        val spellings = listOfNotNull(builtins.helpShort?.let { "-$it" }, "--help")
+        add(BuiltinOption(spellings, builtins.helpText))
     }
-    if (node is Cli && node.metaOptions) {
+    // --help-all is only meaningful (and only advertised) where there are subcommands to expand.
+    if (builtins.helpAll && subcommands.any { !it.hidden }) {
+        add(BuiltinOption(listOf("--help-all"), builtins.helpAllText))
+    }
+    if (builtins.json) add(BuiltinOption(listOf("--json"), builtins.jsonText))
+    // --color is universal (like --json), so it advertises on every node the tree still offers it on.
+    if (builtins.color) add(BuiltinOption(listOf("--color"), builtins.colorText, COLOR_MODE_NAMES, bare = "always"))
+    val node = this@builtinOptions
+    if ((node is Cli && node.version != null) || (rootVersioned && !builtins.versionRootOnly)) {
+        val spellings = listOfNotNull(builtins.versionShort?.let { "-$it" }, builtins.versionLong?.let { "--$it" })
+        add(BuiltinOption(spellings, builtins.versionText))
+    }
+    // Position-independent wherever the root has an action of its own, so they work on every command below it.
+    if ((node is Cli && node.metaOptions) || rootMetaOptions) {
         if (builtins.completion) {
-            add(BuiltinOption(listOf("--completion"), BuiltinOptionHelp.COMPLETION, COMPLETION_SHELL_NAMES))
+            add(BuiltinOption(listOf("--completion"), builtins.completionText, COMPLETION_SHELL_NAMES))
         }
-        if (builtins.docs) add(BuiltinOption(listOf("--docs"), BuiltinOptionHelp.DOCS, DOC_FORMAT_NAMES))
+        if (builtins.docs) add(BuiltinOption(listOf("--docs"), builtins.docsText, DOC_FORMAT_NAMES))
     }
 }
 
-/** This option as a text help row, padded like a short-less [words] when it has no short. */
+/**
+ * This option as a text help row, padded like a short-less [words] when it has no short, its value written as a
+ * declared option's is: `--completion=bash|zsh|fish|powershell`, `--color[=auto|always|never]` with its bare meaning.
+ */
 private fun BuiltinOption.row(): InputRow {
     val spelled = names.joinToString(", ")
     val signature = if (names.first().startsWith("--")) "    $spelled" else spelled
-    return InputRow(choices?.let { "$signature <${it.joinToString("|")}>" } ?: signature, help)
+    val value = choices?.joinToString("|")
+    return when {
+        value == null -> InputRow(signature, help)
+        bare != null -> InputRow("$signature[=$value]", "$help (bare: $bare)")
+        else -> InputRow("$signature=$value", help)
+    }
 }
 
 // --- style ---
@@ -382,47 +454,48 @@ private fun BuiltinOption.row(): InputRow {
  * Rendering parameters resolved once at the boundary. [columns] `== 0` disables wrapping (single-line
  * output).
  */
-internal data class HelpStyle(val columns: Int, val color: Boolean) {
-    // Not a constructor property: it is derived from [color], so it must stay out of equals/hashCode.
-    val palette: Palette = Palette(color)
-
+internal data class HelpStyle(val columns: Int) {
     companion object {
-        val PLAIN = HelpStyle(columns = 0, color = false)
+        val PLAIN = HelpStyle(columns = 0)
     }
 }
 
 /** Descriptions below this many columns are left on one line rather than wrapped into a sliver. */
 private const val WRAP_FLOOR = 20
 
-/** Greedy word-wrap on spaces. An over-long unbreakable token (a URL) is left intact on its own line. */
+/**
+ * Greedy word-wrap on spaces to [width] terminal columns ([displayWidth]). An over-long unbreakable token (a URL)
+ * is left intact on its own line.
+ */
 internal fun wrap(text: String, width: Int): List<String> {
     if (width <= 0 || text.isEmpty()) return listOf(text)
     val lines = mutableListOf<String>()
     var current = StringBuilder()
+    var currentWidth = 0
     for (word in text.split(" ")) {
+        val wordWidth = displayWidth(word)
         when {
             current.isEmpty() -> current.append(word)
-            current.length + 1 + word.length <= width -> current.append(' ').append(word)
+            currentWidth + 1 + wordWidth <= width -> {
+                current.append(' ').append(word)
+                currentWidth += 1
+            }
             else -> {
                 lines += current.toString()
                 current = StringBuilder(word)
+                currentWidth = 0
             }
         }
+        currentWidth += wordWidth
     }
     if (current.isNotEmpty()) lines += current.toString()
     return lines.ifEmpty { listOf(text) }
 }
 
-/** Chrome bold, resolved through the same [ColorScope] an action's own output uses. */
-private fun HelpStyle.paint(text: String): String = with(palette) { bold(text) }
-
-/** The padded (and, when colored, bolded) signature column; the visible width stays [width] either way. */
-private fun HelpStyle.paintSignature(signature: String, width: Int): String {
-    // Branches on the flag rather than the palette: a bolded signature and a plain one must occupy the
-    // same visible width, and only the plain form can use padEnd (ANSI codes are zero-width but counted).
-    if (!color) return signature.padEnd(width)
-    val pad = " ".repeat((width - signature.length).coerceAtLeast(0))
-    return with(palette) { bold(signature) } + pad
+/** [line] with [emphasized], which it holds at index [start], in bold, as far as a trimmed [line] still holds it. */
+private fun boldAt(line: String, start: Int, emphasized: String): Styled {
+    val end = minOf(line.length, start + emphasized.length)
+    return plain(line.take(start), bold(line.substring(start, end)), line.drop(end))
 }
 
 /**
@@ -434,30 +507,31 @@ private fun HelpStyle.paintSignature(signature: String, width: Int): String {
 private fun collapseWhitespace(text: String): String =
     text.split(' ', '\n', '\t', '\r').filter { it.isNotEmpty() }.joinToString(" ")
 
-private fun HelpStyle.renderRow(row: InputRow, width: Int): String {
+private fun HelpStyle.renderRow(row: InputRow, width: Int): Styled {
     val description = collapseWhitespace(row.description)
     val gutter = 2 + width + 2
     val budget = columns - gutter
+    val padded = padToWidth(row.signature, width)
     // PLAIN (columns <= 0) must stay byte-for-byte stable: docs and tests quote this rendering verbatim.
     if (columns <= 0) {
-        return "  ${paintSignature(row.signature, width)}  $description".trimEnd()
+        return boldAt("  $padded  $description".trimEnd(), 2, row.signature)
     }
     // Aligned two-column wrap while the description column is wide enough to be worth aligning.
     if (budget >= WRAP_FLOOR) {
         val lines = wrap(description, budget)
-        val first = "  ${paintSignature(row.signature, width)}  ${lines.first()}".trimEnd()
+        val first = boldAt("  $padded  ${lines.first()}".trimEnd(), 2, row.signature)
         val indent = " ".repeat(gutter)
         val rest = lines.drop(1).map { "$indent$it".trimEnd() }
-        return (listOf(first) + rest).joinToString("\n")
+        return (listOf(first) + rest).joinToStyled("\n")
     }
     // Narrow terminal: aligning would leave a sliver of a description column and overflow the width,
     // so stack the description on its own indented lines under the signature, wrapped to full width.
-    val signatureLine = "  ${paint(row.signature)}".trimEnd()
+    val signatureLine = boldAt("  ${row.signature}".trimEnd(), 2, row.signature)
     if (description.isEmpty()) return signatureLine
     val indent = "    "
     val body = wrap(description, (columns - indent.length).coerceAtLeast(WRAP_FLOOR))
         .map { "$indent$it".trimEnd() }
-    return (listOf(signatureLine) + body).joinToString("\n")
+    return (listOf(signatureLine) + body).joinToStyled("\n")
 }
 
 private fun HelpStyle.wrapParagraph(text: String): String =
@@ -471,80 +545,81 @@ private fun HelpStyle.wrapParagraph(text: String): String =
     }
 
 /**
- * Full help for a command: usage line, description, the [helpSections] blocks, any [examples], and the
- * [epilogue]. [HelpStyle.PLAIN] renders unwrapped and uncolored; a non-zero `columns` word-wraps and
- * `color` adds a conservative ANSI palette. [globalSpecs] and [rootVersioned] come from the caller (see
- * [com.fromwau.klap.Invocation.ShowHelp]) and pass straight through to [helpSections].
+ * Full help for a command: usage line, description, the [helpSections] blocks, any [examples], and the [epilogue],
+ * with its headings and signatures in bold. [HelpStyle.PLAIN] renders unwrapped; a non-zero `columns` word-wraps.
+ * [globalSpecs] and the root's facts come from the caller (see [com.fromwau.klap.Invocation.ShowHelp]) and pass
+ * straight through to [helpSections].
  */
-internal fun Command.helpText(
+internal fun Command.styledHelp(
     qualifiedName: String = name,
     globalSpecs: List<NamedSpec> = emptyList(),
     style: HelpStyle = HelpStyle.PLAIN,
     rootVersioned: Boolean = false,
+    rootMetaOptions: Boolean = false,
     builtins: Builtins = Builtins.DEFAULT,
-): String {
-    val sections = helpSections(globalSpecs, rootVersioned, builtins)
-    val width = sections.flatMap { it.rows }.maxOfOrNull { it.signature.length } ?: 0
+): Styled {
+    val sections = helpSections(globalSpecs, rootVersioned, rootMetaOptions, builtins)
+    val width = sections.flatMap { it.rows }.maxOfOrNull { displayWidth(it.signature) } ?: 0
 
-    return buildString {
-        val usage = usageLine(qualifiedName)
-        append(if (style.color) style.paint("usage:") + usage.removePrefix("usage:") else usage)
+    val pieces = buildList<CharSequence> {
+        add(boldAt(usageLine(qualifiedName), 0, "usage:"))
 
         if (description.isNotEmpty()) {
-            append("\n\n")
-            append(style.wrapParagraph(description))
+            add("\n\n")
+            add(style.wrapParagraph(description))
         }
 
         for (section in sections) {
-            append("\n\n")
+            add("\n\n")
             if (section.title != null) {
-                append(style.paint("${section.title}:"))
-                append("\n")
+                add(bold("${section.title}:"))
+                add("\n")
             }
-            append(section.rows.joinToString("\n") { style.renderRow(it, width) })
+            add(section.rows.map { style.renderRow(it, width) }.joinToStyled("\n"))
         }
 
         if (examples.isNotEmpty()) {
-            append("\n\n")
-            append(style.paint("Examples:"))
+            add("\n\n")
+            add(bold("Examples:"))
             for (ex in examples) {
-                append("\n")
-                append("  $ ${ex.command}")
+                add("\n")
+                add("  $ ${ex.command}")
                 if (ex.description.isEmpty()) continue
-                style.wrapExampleDescription(ex.description).forEach { append("\n").append(it) }
+                style.wrapExampleDescription(ex.description).forEach { add("\n$it") }
             }
         }
 
         if (epilogue.isNotEmpty()) {
-            append("\n\n")
-            append(style.wrapParagraph(epilogue))
+            add("\n\n")
+            add(style.wrapParagraph(epilogue))
         }
 
         // Author is a root-only fact; a subcommand's help ([Command], not [Cli]) has none to show.
-        (this@helpText as? Cli)?.author?.takeUnless { it.isBlank() }?.let { author ->
-            append("\n\n")
-            append(style.paint("Author:"))
-            append(" $author")
+        (this@styledHelp as? Cli)?.author?.takeUnless { it.isBlank() }?.let { author ->
+            add("\n\n")
+            add(bold("Author:"))
+            add(" $author")
         }
     }
+    return pieces.joinToStyled("")
 }
 
 /**
- * Recursive [helpText] backing `--help-all`: this node and every non-hidden descendant, each rendered as
+ * Recursive [styledHelp] backing `--help-all`: this node and every non-hidden descendant, each rendered as
  * its own complete help block (globals repeated per block, matching the man/markdown docs), joined by a
  * blank-line gap. Each block's usage line carries its qualified path, so the blocks are self-identifying.
  */
-internal fun Command.helpTextAll(
+internal fun Command.styledHelpAll(
     qualifiedName: String,
     globalSpecs: List<NamedSpec>,
     style: HelpStyle,
     rootVersioned: Boolean,
+    rootMetaOptions: Boolean,
     builtins: Builtins = Builtins.DEFAULT,
-): String {
-    return visibleTree(qualifiedName).joinToString("\n\n\n") { (node, path) ->
-        node.helpText(path, globalSpecs, style, rootVersioned, builtins)
-    }
-}
+): Styled =
+    visibleTree(qualifiedName)
+        .map { (node, path) -> node.styledHelp(path, globalSpecs, style, rootVersioned, rootMetaOptions, builtins) }
+        .joinToStyled("\n\n\n")
 
 /**
  * This command and every command under it pre-order (self first, then each subtree), each paired with its
@@ -555,7 +630,7 @@ internal fun Command.helpTextAll(
 internal fun Command.visibleTree(qualifiedName: String): List<Pair<Command, String>> = buildList {
     fun visit(node: Command, path: String) {
         add(node to path)
-        node.subcommands.filterNot { it.hidden }.forEach { visit(it, "$path ${it.name}") }
+        node.subcommands.filterNot { it.hidden }.forEach { visit(it, "$path ${it.token}") }
     }
     visit(this@visibleTree, qualifiedName)
 }
