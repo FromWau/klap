@@ -1,6 +1,5 @@
 package com.fromwau.klap
 
-import com.fromwau.kern.terminal.red
 import com.fromwau.klap.internal.parse.BoundLine
 import com.fromwau.klap.internal.parse.Line
 import com.fromwau.klap.internal.render.Candidate

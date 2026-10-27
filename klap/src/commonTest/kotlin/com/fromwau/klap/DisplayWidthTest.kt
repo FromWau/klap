@@ -67,12 +67,11 @@ class DisplayWidthTest {
             }
             action { Ok("") }
         }
-        val esc = Regex("${Char(27)}\\[[0-9;]*m")
         return cmd
             .helpText(style = style)
             .lines()
             .filter { Regex("row[0-9]") in it }
-            .map { line -> displayWidth(line.replace(esc, "").substringBefore("row")) }
+            .map { line -> displayWidth(line.substringBefore("row")) }
             .toSet()
     }
 
@@ -87,8 +86,7 @@ class DisplayWidthTest {
     }
 
     @Test
-    fun `wrapped and colored help pad by columns too`() {
-        assertEquals(1, descriptionColumns(HelpStyle(columns = 80, color = false), "日本", "ABCDEF").size)
-        assertEquals(1, descriptionColumns(HelpStyle(columns = 0, color = true), "日本", "ABCDEF").size)
+    fun `wrapped help pads by columns too`() {
+        assertEquals(1, descriptionColumns(HelpStyle(columns = 80), "日本", "ABCDEF").size)
     }
 }

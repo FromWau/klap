@@ -4,6 +4,7 @@ import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
 import com.fromwau.kern.result.map
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.argSummary
 import com.fromwau.klap.internal.render.helpText
 import kotlin.test.Test
@@ -35,7 +36,7 @@ private fun validateTree(): Cli = cli("todo") {
 private fun Cli.exec(argv: List<String>): String {
     val t = RecordingTerminal()
     run(argv.toTypedArray(), t)
-    return t.out.toString()
+    return t.out
 }
 
 class ParsePositionalsTest {
@@ -244,7 +245,7 @@ class NonLastVariadicTest {
 
     private fun run(tree: Cli, vararg argv: String): String = RecordingTerminal().let { term ->
         tree.run(argv.toList().toTypedArray(), term)
-        term.out.toString().trim()
+        term.out.trim()
     }
 
     @Test

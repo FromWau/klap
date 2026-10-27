@@ -3,6 +3,7 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -51,7 +52,7 @@ class FlagCommandTest {
     private fun Cli.out(vararg argv: String): String {
         val terminal = RecordingTerminal()
         run(arrayOf(*argv), terminal)
-        return terminal.out.toString()
+        return terminal.out
     }
 
     private fun offered(vararg words: String): List<String> = pac.offered(*words)
@@ -133,10 +134,10 @@ class FlagCommandTest {
         val repeated = pac.parse(listOf("-QQ")).assertError<CliError.RepeatedCommand>()
         assertEquals(CliError.RepeatedCommand("--query"), repeated)
         pac.parse(listOf("-Q", "--query")).assertError<CliError.RepeatedCommand>()
-        val err = RecordingTerminal().also { pac.run(arrayOf("-QQ"), it) }.err.toString()
+        val err = RecordingTerminal().also { pac.run(arrayOf("-QQ"), it) }.err
         assertTrue("'--query' may be given only once" in err, err)
         val json = RecordingTerminal().also { pac.run(arrayOf("--json", "-QQ"), it) }
-        val text = json.out.toString() + json.err.toString()
+        val text = json.out + json.err
         assertTrue("\"type\":\"RepeatedCommand\"" in text && "\"command\":\"--query\"" in text, text)
         assertEquals(emptyList(), offered("-Q", "-Q"))
         assertEquals(emptyList(), offered("-QS"), "nothing continues a cluster naming two commands")
@@ -310,8 +311,8 @@ class FlagCommandTest {
         for (argv in listOf(arrayOf("-Qb", "--json", "-n", "x"), arrayOf("-Q", "-b", "--json", "-n", "x"))) {
             val terminal = RecordingTerminal()
             tool.run(argv, terminal)
-            val err = terminal.err.toString()
-            assertTrue("\"type\"" !in err && "\"type\"" !in terminal.out.toString(), "${argv.toList()}: $err")
+            val err = terminal.err
+            assertTrue("\"type\"" !in err && "\"type\"" !in terminal.out, "${argv.toList()}: $err")
             assertTrue("-n" in err, "${argv.toList()}: $err")
         }
     }

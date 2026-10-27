@@ -15,12 +15,12 @@ ships, so if you are building against a release, read this file at that release'
 | [Flags](#flags-boolean-counted-negatable)                  | boolean, counted, negatable                                                       |
 | [Abbreviation](#abbreviation)                              | how far a partially typed name resolves, git's rationale, choosing a mode         |
 | [Short options](#short-options)                            | clustered as getopt reads them, or each a word of its own as find reads them      |
-| [Cross-input constraints](#cross-input-constraints)        | `exactlyOne`, `atMostOne`, `lastWins`, `lastOf`, `requiredWhen`, `validateInputs`                   |
+| [Cross-input constraints](#cross-input-constraints)        | `exactlyOne`, `atMostOne`, `lastWins`, `lastOf`, `requiredWhen`, `validateInputs` |
 | [Global / persistent options](#global--persistent-options) | options shared by every subcommand, which built-in answers, declining one         |
-| [Typed results and errors](#typed-results-and-errors)      | kern's `Result`, `IError`, `CliError`, exit codes, did-you-mean                   |
+| [Typed results and errors](#typed-results-and-errors)      | kern's `Result`, `ResultError`, `CliError`, exit codes, did-you-mean              |
 | [Suspending actions](#suspending-actions)                  | `actionSuspending`, `runSuspending`, the caller-owned scope, no suspending `main` |
 | [Structured `--json`](#structured---json)                  | one `Ok(value)`, two renderings, actions that print as they go                    |
-| [Color output](#color-output)                              | styles, `ColorScope`, `NO_COLOR`, `--color`                                       |
+| [Color output](#color-output)                              | styled text, `NO_COLOR`, `--color`                                                |
 | [Command groups and nesting](#command-groups-and-nesting)  | subcommand trees and help sections                                                |
 | [Help output](#help-output)                                | layout, wrapping, examples, epilogue                                              |
 | [Shell completion](#shell-completion)                      | bash/zsh/fish/powershell, value-aware providers                                   |
@@ -111,8 +111,8 @@ A complete, runnable program lives in
 file-backed task manager (`add` / `list` / `done` / `rm`, plus a nested `tag` group) that exercises
 most of the above: subcommands and nested groups, a command alias, a global `--file` option and a
 counting global `-v` flag, a group-scoped option read from its action, a plain `--done` flag,
-enum/choice/multiple/validate converters, a `.range()`-bounded `--limit`, colorized output via a
-`ColorScope` helper, a `hidden` diagnostic subcommand, typed errors with custom exit codes, and
+enum/choice/multiple/validate converters, a `.range()`-bounded `--limit`, colorized output from a
+`Styled` helper, a `hidden` diagnostic subcommand, typed errors with custom exit codes, and
 structured `--json`. The `example/task-manager/` module is itself a Kotlin Multiplatform
 library: all of its code lives in `commonMain`, and that one source set builds native Linux and Windows
 binaries (see
@@ -384,7 +384,7 @@ control the error instead of letting `.map` derive one from a thrown exception. 
 sealed hierarchy of klap's own conversion failures, and `Domain` is the case you contribute to:
 
 ```kotlin
-data object NotAPort : IError
+data object NotAPort : ResultError
 
 val port = option(long = "port").convert { raw ->
     raw.toIntOrNull()?.let(::Ok) ?: Err(ConversionError.Domain(NotAPort, "not a port"))   // Int?
@@ -403,7 +403,7 @@ When there are several ways to fail, they are several cases, and the wording is 
 boundary rather than baked into the error:
 
 ```kotlin
-sealed interface PortError : IError {
+sealed interface PortError : ResultError {
     data class NotANumber(val given: String) : PortError
     data class OutOfRange(val given: Int) : PortError
 }
@@ -1309,12 +1309,12 @@ import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
 ```
 
-The error side is bounded: `Result<out S, out E : IError>`, where `IError` is an empty marker interface.
-Root your own error hierarchy in it and everything else follows, including `CliError`, which implements
-it too:
+The error side is bounded: `Result<out S, out E : ResultError>`, where `ResultError` is the interface every error
+implements. Root your own error hierarchy in it and everything else follows, including `CliError`, which
+implements it too:
 
 ```kotlin
-sealed interface StoreError : IError {
+sealed interface StoreError : ResultError {
     val detail: String
 
     data object DiskFull : StoreError {
@@ -1327,8 +1327,9 @@ sealed interface StoreError : IError {
 }
 ```
 
-`IError` asks for nothing, so what a hierarchy carries is entirely yours; the `detail` above is this
-example's choice, not a klap or kern requirement. The rest of this section reuses this `StoreError`.
+`ResultError` asks for nothing you must write (its `errorType` defaults to the class name), so what a
+hierarchy carries is entirely yours; the `detail` above is this example's choice, not a klap or kern
+requirement. The rest of this section reuses this `StoreError`.
 
 **`Ok` / `Err` are builders, not the types you match on.** `Result<S, E>` is a sealed interface with
 two subtypes, `Result.Success(value)` and `Result.Error(error)`; `Ok` and `Err` are typealiases for
@@ -1455,8 +1456,8 @@ action { Err(CliError.Domain(StoreError.DiskFull, "out of space", exitCode = 6))
 val payload = (error as? CliError.Domain)?.error as? StoreError
 ```
 
-The field is typed `IError` and nothing more. klap never inspects it, so the only thing asked of your
-hierarchy is the marker it already implements to be usable as a `Result` error at all; its own sealed root
+The field is typed `ResultError` and nothing more. klap never inspects it, so the only thing asked of your
+hierarchy is the interface it already implements to be usable as a `Result` error at all; its own sealed root
 stays intact, and the `when` that unwraps it stays exhaustive.
 
 ### Did-you-mean, in your own messages
@@ -1587,10 +1588,10 @@ worked through in a real program, SIGINT handling included.
 
 The value you return from `Ok` renders two ways, chosen by the global `--json` flag:
 
-- **Without `--json`:** an optional `human` renderer passed to the action builder, falling back to
-  `value.toString()`.
+- **Without `--json`:** an optional `human` renderer passed to the action builder, falling back to the
+  value itself when it is text (a `String` or `Styled`) and to `value.toString()` otherwise.
 - **With `--json`:** `kotlinx.serialization` encoding of the value. A `String` becomes a bare JSON
-  string; an `@Serializable` type becomes its object/array.
+  string, and so does a `Styled` value, as its plain text; an `@Serializable` type becomes its object/array.
 
 ```kotlin
 @Serializable
@@ -1670,19 +1671,29 @@ tree has a structured form, or the tree declines the built-in with `builtins { j
 That leaves one case to answer: a command that writes as it goes (a progress line per tick, a table
 streamed row by row, a prompt), where the printed output is not the value the action returns.
 `ActionScope` exposes the resolved mode as `json`, so the action holds back its human half itself and
-returns the structured value either way:
+returns the structured value either way. It also exposes the run's `terminal`, the one klap writes help and
+your returned value to, so what you write through it follows `--color` and lands ahead of the returned line:
 
 ```kotlin
+import com.fromwau.kern.terminal.out
+import com.fromwau.kern.terminal.yellow
+
+@Serializable
+data class Summary(val ticks: Int)
+
 command("run") {
     action(human = { "ticked ${it.ticks} times" }) {
-        val ticks = 100
+        val ticks = 3
         repeat(ticks) { tick ->
-            if (!json) println("tick $tick")   // the human half: suppressed under --json
+            if (!json) terminal.out(yellow("tick $tick") + "\n") // the human half: suppressed under --json
         }
-        Ok(Summary(ticks))                     // the value: rendered by human, or serialized
+        Ok(Summary(ticks))                                     // the value: rendered by human, or serialized
     }
 }
 ```
+
+`out` for `Styled` text is kern's extension on `Terminal`, so it takes the import above; a plain `String` goes
+through the `out` member with no import.
 
 Read `json` only to decide what you print yourself. You never need it to build the JSON, since klap
 serializes whatever you return either way, and you never need it for the plain rendering either, since
@@ -1738,50 +1749,48 @@ failed keeps its own exit code.
 
 ## Color output
 
-klap has one color story: its own help chrome and anything your action colors itself resolve a style
-through the same switch and the same mechanism, so the two can never disagree about whether color is on.
-(One gap today: klap's own error output is not colored — only the help chrome is. A `CliError` detail is
+klap has one color story: its own help and anything your action colors are kern `Styled` text, and klap
+writes both through one colour decision for the whole run, so the two can never disagree about whether color
+is on. (One gap today: klap's own error output is not colored, only its help is. A `CliError` detail is
 sanitized on the way out, so styling one has no effect; see [Typed results and errors](#typed-results-and-errors).)
 
 ```kotlin
 import com.fromwau.kern.terminal.yellow
 
 command("build") {
-    action { Ok(yellow { "built" }) }
+    action { Ok(yellow("built")) }
 }
 ```
 
-`action { }`'s receiver (`ActionScope`) applies a style palette that comes from
-[`com.fromwau.kern:terminal`](https://github.com/FromWau/kern/blob/master/terminal/README.md), which klap
-exposes as an `api` dependency: colors `black red green yellow blue magenta cyan white brightBlack` and
-attributes `bold dim italic underline`. They are top-level declarations, so a consumer using named imports
-imports each one used (`import com.fromwau.kern.terminal.yellow` above); `+` needs no import, being a
-member of `Style`. Apply one with `yellow { "done" }` or `red("failed")` (both a lazy block form and a
-direct string form work), and compose several with `+`, opening both and closing with a single reset:
-`(bold + red)("error")`.
+The palette comes from [`com.fromwau.kern:terminal`](https://github.com/FromWau/kern/blob/master/terminal/README.md),
+which klap exposes as an `api` dependency: colors `black red green yellow blue magenta cyan white brightBlack`
+and attributes `bold dim italic underline`. They are top-level declarations, so a consumer using named imports
+imports each one used (`import com.fromwau.kern.terminal.yellow` above). Invoke a style on your text to get
+`Styled` text, combine styles with `+`, as in `(bold + red)("error")`, and join styled pieces and strings with
+`+`, starting from a styled piece: `green("added") + " " + bold(title)`. Join a list of them with
+`joinToStyled`, as in `tags.map { cyan(it) }.joinToStyled(", ")`. A string template or `joinToString` turns
+`Styled` back into plain text, so build a line with `+` or `joinToStyled` instead.
 
-The palette resolves against the same color switch as klap's help chrome: colored when color is on,
-plain text when off, so you never branch on it yourself. It is additionally forced off under `--json`,
-even with `--color=always`, so machine output never carries escape codes. Output mode is the one switch
-you do read yourself, since only your action knows what its printed half should become under `--json`; see
-[Actions that print their own output](#actions-that-print-their-own-output).
+Return `Styled` from your action, or from its `human` renderer, and klap colors it when color is on and prints
+plain text when it is off, so you never branch on it yourself. A plain `String` prints as it is. Under `--json`
+a `Styled` value is written as its plain text, so machine output never carries escape codes. Output mode is the
+one switch you do read yourself, since only your action knows what its printed half should become under
+`--json`; see [Actions that print their own output](#actions-that-print-their-own-output).
 
-The operators come from `ColorScope`, the capability `ActionScope` implements — so a formatting helper can
-take that as its receiver instead of the whole action scope, and gets style resolution and nothing else:
+A formatting helper needs no klap type at all. A plain function returning `Styled` cannot read an input,
+which keeps formatting apart from the action's logic:
 
 ```kotlin
-import com.fromwau.klap.ColorScope
+import com.fromwau.kern.terminal.Styled
+import com.fromwau.kern.terminal.bold
+import com.fromwau.kern.terminal.yellow
 
-// Declaring ColorScope rather than ActionScope makes reading an input from here a compile error.
-private fun ColorScope.warn(text: String) = (bold + yellow)("warning: $text")
+private fun warn(text: String): Styled = (bold + yellow)("warning: $text")
 
 command("build") {
     action { Ok(warn("no targets matched")) }
 }
 ```
-
-`ColorScope` is sealed, so klap owns its implementations; you write extensions against it, not
-implementations of it.
 
 ### `--color`
 
@@ -2164,8 +2173,8 @@ even with the cursor inside it. To complete from an input in every shell, take i
 first, such as `mytool get -f conf.toml .own<TAB>`.
 
 `ValueScope` is the shared base of `ActionScope` and `CompletionScope`, and the four accessors live on it —
-which is what lets `taskStore()` above be written once and used from both. Like `ColorScope`, it is sealed:
-you write extensions against it rather than implementations of it.
+which is what lets `taskStore()` above be written once and used from both. It is sealed: you write
+extensions against it rather than implementations of it.
 
 Two costs worth knowing. Reading any one accessor resolves them all — every input of the command under the
 cursor, plus every global, is converted and validated on that keypress — so keep converters and
@@ -2232,37 +2241,32 @@ klap's rendering is a thin layer over pure functions. Reach past it when you nee
   every tree whose `completion` built-in is on). `parse` resolves *which* command would run and validates its inputs; it
   does **not** run any `action { }`. `Execute.globals` carries only the built-in `--json` flag; your own `globalOption`
   / `globalFlag` values are read through their accessors inside `action { }`, not off `Execute`.
-- `Invocation.Execute.runAction(): Result<Any?, CliError>` runs the resolved command's `action { }` with
+- `Invocation.Execute.runAction(terminal): Result<Any?, CliError>` runs the resolved command's `action { }` with
   its parsed values in scope and hands back the action's own typed result — its `Ok(value)` or a typed `Failure` —
   instead of rendered text and an exit code. This is the hook for embedding klap's parsing and dispatch in
-  a larger program: branch over the `Invocation` from `parse`, then call `runAction()` on an `Execute` to
-  execute it yourself. It never writes output or exits, and erases the value to `Any?` (a `Cli` is not typed
+  a larger program: branch over the `Invocation` from `parse`, then call `runAction(terminal)` on an `Execute` to
+  execute it yourself. The action's `terminal` is the one you pass, used as given; klap itself prints nothing
+  there and never exits. It erases the value to `Any?` (a `Cli` is not typed
   over its actions' return types), so cast it to your type. An `Execute` always has an action to run: a
   group resolves to `ShowHelp`, and a command declaring neither an action nor subcommands is rejected when
   the tree is built.
-- `Invocation.Execute.runActionSuspending(): Result<Any?, CliError>` is `runAction`'s `suspend` counterpart,
+- `Invocation.Execute.runActionSuspending(terminal): Result<Any?, CliError>` is `runAction`'s `suspend` counterpart,
   for a resolved action that suspends. It never refuses, since a `suspend` function can drive either kind of
   action (see [Suspending actions](#suspending-actions)).
 - `cli.run(argv, terminal): Int` parses, dispatches, **runs the resolved `action { }`**, and renders its
   result (or any error) to a `Terminal` you supply, returning the exit code without terminating the
   process. Reach for `run` rather than `parse` whenever an action must actually execute. It also makes
-  testing easy:
+  testing easy with `RecordingTerminal` from
+  [`com.fromwau.kern:terminal-test`](https://github.com/FromWau/kern/blob/master/terminal-test/README.md):
 
 ```kotlin
-import com.fromwau.kern.terminal.Terminal
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.run   // `run` is an extension on Cli; without this import `cli.run(a, b)`
                               // resolves to stdlib `T.run` and fails to compile
 
-class RecordingTerminal : Terminal {
-    val out = StringBuilder()
-    val err = StringBuilder()
-    override fun out(text: String) { out.append(text) }
-    override fun err(text: String) { err.append(text) }
-}
-
 val term = RecordingTerminal()
 val code = cli.run(arrayOf("list", "--json"), term)
-// assert on code and term.out
+// assert on code, term.out and term.err
 ```
 
 - `Cli.runSuspending(argv, terminal): Int` is `run`'s `suspend` counterpart: same parse, dispatch and

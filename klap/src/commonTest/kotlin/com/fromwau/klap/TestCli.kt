@@ -1,5 +1,6 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.completeCandidates
 
 /** The values Tab offers for the last of [words], as `__complete` answers them. */
@@ -15,7 +16,7 @@ internal fun Cli.offeredAt(
 internal fun Cli.bindText(vararg args: String): String {
     val terminal = RecordingTerminal()
     run(arrayOf(*args), terminal)
-    return terminal.out.toString().removeSuffix("\n")
+    return terminal.out.removeSuffix("\n")
 }
 
 /** This tree's own `--help` output, without the trailing newline. */

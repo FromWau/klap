@@ -4,6 +4,9 @@ import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.fold
 import com.fromwau.kern.terminal.Terminal
 import com.fromwau.kern.terminal.defaultTerminal
+import com.fromwau.kern.terminal.out
+import com.fromwau.kern.terminal.plain
+import com.fromwau.kern.terminal.withAnsi
 import com.fromwau.klap.internal.parse.builtinScan
 import com.fromwau.klap.internal.parse.hoistCommands
 import com.fromwau.klap.internal.platform.platformExit
@@ -11,13 +14,13 @@ import com.fromwau.klap.internal.render.Candidate
 import com.fromwau.klap.internal.render.HelpStyle
 import com.fromwau.klap.internal.render.completeCandidates
 import com.fromwau.klap.internal.render.forShell
-import com.fromwau.klap.internal.render.helpText
-import com.fromwau.klap.internal.render.helpTextAll
 import com.fromwau.klap.internal.render.helpJsonText
 import com.fromwau.klap.internal.render.jsonVersionEnvelope
 import com.fromwau.klap.internal.render.renderActionError
 import com.fromwau.klap.internal.render.renderError
 import com.fromwau.klap.internal.render.renderWriteFailed
+import com.fromwau.klap.internal.render.styledHelp
+import com.fromwau.klap.internal.render.styledHelpAll
 import com.fromwau.klap.internal.spec.ActionError
 import com.fromwau.klap.internal.spec.Rendered
 import com.fromwau.klap.internal.spec.completeWithoutSuspending
@@ -44,7 +47,7 @@ public fun Cli.run(argv: Collection<String>, terminal: Terminal): Int {
         "$subject uses actionSuspending { }, which the synchronous entry points cannot drive; call " +
             "runSuspending(argv, terminal) from a coroutine instead"
     }
-    return runCore(argv, terminal) { it.executeAndRender(terminal) }
+    return runCore(argv, terminal) { invocation, output -> invocation.executeAndRender(output) }
 }
 
 /**
@@ -59,16 +62,17 @@ public fun Cli.run(argv: Collection<String>, terminal: Terminal): Int {
  * ```
  */
 public suspend fun Cli.runSuspending(argv: Collection<String>, terminal: Terminal): Int =
-    runCore(argv, terminal) { it.executeAndRenderSuspending(terminal) }
+    runCore(argv, terminal) { invocation, output -> invocation.executeAndRenderSuspending(output) }
 
 /**
  * The shared body of [run] and [runSuspending]. `inline`, so [execute] may suspend when the caller does;
  * that is what lets one implementation serve both without the parse and render work being written twice.
+ * [execute] writes to the terminal it is handed, which carries this line's colour decision.
  */
 private inline fun Cli.runCore(
     argv: Collection<String>,
     terminal: Terminal,
-    execute: (Invocation.Execute) -> Int,
+    execute: (Invocation.Execute, Terminal) -> Int,
 ): Int {
     val argList = argv.toList()
     // The parse's own reading of each token and the value slots, read once and shared by both reads below, so an
@@ -77,37 +81,28 @@ private inline fun Cli.runCore(
     val line = hoistCommands(argList).tokens
     val scan = builtinScan(line)
     val json = builtins.json && scan.names("json")
-    // --color, bare or =always/never, beats the whole env ladder below; auto (absent/invalid) defers to the
-    // terminal's own reading, unchanged. A bad --color value is reported by parse() itself, not here.
-    val mode = line.colorMode(builtins, abbreviation, scan)
-    val effectiveColor = when (mode) {
+    // --color, bare or =always/never, beats the terminal's own reading; auto (absent/invalid) leaves the caller's
+    // terminal untouched, so a terminal that computes ansi per read keeps doing so. A bad --color value is
+    // reported by parse() itself, not here.
+    val forced = when (line.colorMode(builtins, abbreviation, scan)) {
         ColorMode.ALWAYS -> true
         ColorMode.NEVER -> false
-        ColorMode.AUTO -> terminal.ansi
+        ColorMode.AUTO -> null
     }
-    val style = HelpStyle(columns = terminal.columns, color = effectiveColor)
+    val output = if (forced == null) terminal else terminal.withAnsi(forced, forced)
+    val style = HelpStyle(columns = terminal.columns)
     // A local `when` rather than kern's `fold`, because `execute` suspends through this lambda and so every
     // frame it crosses must stay inline. kern's `fold` is inline today, but keeping the chain in klap's own
     // code means a change over there cannot break `runSuspending`'s compilation over here.
     val code = when (val parsed = parse(argList)) {
-        is Result.Error -> renderError(parsed.error, json, terminal)
-        is Result.Success -> {
-            val invocation = parsed.value
-            val resolved = if (invocation is Invocation.Execute) {
-                // The action palette follows the same switch as chrome, but off under --json so machine
-                // output stays free of escape codes. Resolved here because parse() had no terminal.
-                invocation.copy(scope = invocation.scope.withColorEnabled(effectiveColor && !invocation.globals.json))
-            } else {
-                invocation
-            }
-            resolved.render(style, terminal, execute)
-        }
+        is Result.Error -> renderError(parsed.error, json, output)
+        is Result.Success -> parsed.value.render(style, output, execute)
     }
 
     if (code != 0) return code
-    return when (val written = terminal.writeResult()) {
+    return when (val written = output.writeResult()) {
         is Result.Success -> code
-        is Result.Error -> renderWriteFailed(written.error, json, terminal)
+        is Result.Error -> renderWriteFailed(written.error, json, output)
     }
 }
 
@@ -122,7 +117,7 @@ private inline fun Cli.runCore(
 private inline fun Invocation.render(
     style: HelpStyle,
     terminal: Terminal,
-    execute: (Invocation.Execute) -> Int,
+    execute: (Invocation.Execute, Terminal) -> Int,
 ): Int = when (this) {
     is Invocation.ShowHelp -> {
         val text = when {
@@ -136,7 +131,7 @@ private inline fun Invocation.render(
                 recursive,
             )
 
-            recursive -> command.helpTextAll(
+            recursive -> command.styledHelpAll(
                 qualifiedName,
                 globalSpecs,
                 style,
@@ -145,7 +140,7 @@ private inline fun Invocation.render(
                 builtins,
             )
 
-            else -> command.helpText(qualifiedName, globalSpecs, style, rootVersioned, rootMetaOptions, builtins)
+            else -> command.styledHelp(qualifiedName, globalSpecs, style, rootVersioned, rootMetaOptions, builtins)
         }
         terminal.outputLine(text)
     }
@@ -169,7 +164,7 @@ private inline fun Invocation.render(
         0
     }
 
-    is Invocation.Execute -> execute(this)
+    is Invocation.Execute -> execute(this, terminal)
 }
 
 /** Turn a finished action outcome into output on [terminal] and an exit code. Shared by both paths. */
@@ -177,7 +172,7 @@ private fun Invocation.Execute.renderOutcome(outcome: Result<Rendered, ActionErr
     outcome.fold(
         onError = { renderActionError(it, globals.json, terminal) },
         onSuccess = { rendered ->
-            if (rendered.text.isNotEmpty()) terminal.out(rendered.text + "\n")
+            if (rendered.text.isNotEmpty()) terminal.out(plain(rendered.text, "\n"))
             // Clamped at the render boundary like a failure's code, but from 0 rather than 1: a success may
             // report any code, while [renderError] keeps a failure from ever claiming 0.
             rendered.exitCode.coerceIn(0, 255)
@@ -185,43 +180,49 @@ private fun Invocation.Execute.renderOutcome(outcome: Result<Rendered, ActionErr
     )
 
 private fun Invocation.Execute.executeAndRender(terminal: Terminal): Int =
-    renderOutcome(completeWithoutSuspending { action.renderOutput(scope, globals.json) }, terminal)
+    renderOutcome(completeWithoutSuspending { action.renderOutput(scope.actionScope(terminal), globals.json) }, terminal)
 
 /** [executeAndRender] for the suspending path, where the action is awaited rather than bridged. */
 private suspend fun Invocation.Execute.executeAndRenderSuspending(terminal: Terminal): Int =
-    renderOutcome(action.renderOutput(scope, globals.json), terminal)
+    renderOutcome(action.renderOutput(scope.actionScope(terminal), globals.json), terminal)
 
-/** Write [text] as a line to stdout; the exit code for a successful print is 0. */
-private fun Terminal.outputLine(text: String): Int {
-    out(text + "\n")
+/** Write [text] as a line to stdout, coloured when it is styled and stdout takes colour; the exit code is 0. */
+private fun Terminal.outputLine(text: CharSequence): Int {
+    out(plain(text, "\n"))
     return 0
 }
 
 /**
  * Runs the resolved action and hands back its own `Ok(value)` or typed failure, instead of the rendered
- * output and exit code `run` produces. Writes nothing and exits nothing.
+ * output and exit code `run` produces. Exits nothing, and writes only what your action itself writes to
+ * [terminal]; the returned value is not printed.
  *
  * The value arrives as `Any?`, so cast it to what your action returns.
  *
  * The resolved action declaring `actionSuspending { }` is refused here; use [runActionSuspending]. Unlike
  * [run], which refuses on any suspending action anywhere in the tree, this checks only the action that was
  * resolved, so a mixed tree still drives a synchronous command through `parse` + `runAction`.
+ *
+ * @param terminal what the action's [ActionScope.terminal] writes to, used as given.
  */
-public fun Invocation.Execute.runAction(): Result<Any?, CliError> {
+public fun Invocation.Execute.runAction(terminal: Terminal): Result<Any?, CliError> {
     // The resolved action, not the tree: on a mixed tree a sync command is drivable even though some
     // sibling suspends, and the root's aggregate cannot tell the difference.
     require(!action.suspending) {
-        "command '${command.name}' uses actionSuspending { }, which runAction() cannot drive; " +
-            "call runActionSuspending() from a coroutine instead"
+        "command '${command.name}' uses actionSuspending { }, which runAction(terminal) cannot drive; " +
+            "call runActionSuspending(terminal) from a coroutine instead"
     }
-    return completeWithoutSuspending { action.evaluate(scope) }
+    return completeWithoutSuspending { action.evaluate(scope.actionScope(terminal)) }
 }
 
 /**
- * [runAction] for an action that suspends. Writes nothing and exits nothing; the value arrives as `Any?`,
- * so cast it to what your action returns.
+ * [runAction] for an action that suspends. Exits nothing, and writes only what your action itself writes to
+ * [terminal]; the value arrives as `Any?`, so cast it to what your action returns.
+ *
+ * @param terminal what the action's [ActionScope.terminal] writes to, used as given.
  */
-public suspend fun Invocation.Execute.runActionSuspending(): Result<Any?, CliError> = action.evaluate(scope)
+public suspend fun Invocation.Execute.runActionSuspending(terminal: Terminal): Result<Any?, CliError> =
+    action.evaluate(scope.actionScope(terminal))
 
 /** [run] over the `Array` that Kotlin's own `main` hands you. */
 public fun Cli.run(argv: Array<String>, terminal: Terminal): Int = run(argv.toList(), terminal)

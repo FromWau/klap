@@ -2,6 +2,7 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -1,9 +1,9 @@
 package com.fromwau.klap.fixture.chmod
 
 import com.fromwau.kern.result.Err
-import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.ResultError
 import com.fromwau.kern.result.fold
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Builtin
@@ -272,7 +272,7 @@ public val NOTHING_BOUND: ChmodInputs = ChmodInputs(
 )
 
 /** The two ways a chmod mode operand can be rejected. */
-private sealed interface ChmodModeError : IError {
+private sealed interface ChmodModeError : ResultError {
     data object Empty : ChmodModeError
 
     data object Malformed : ChmodModeError

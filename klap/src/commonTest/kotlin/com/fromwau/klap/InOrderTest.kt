@@ -2,6 +2,7 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -147,7 +148,7 @@ class InOrderTest {
         }
         val term = RecordingTerminal()
         tree.run(arrayOf("-P", "-L"), term)
-        assertEquals("-P,-L\n", term.out.toString())
+        assertEquals("-P,-L\n", term.out)
     }
 
     @Test

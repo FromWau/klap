@@ -1,6 +1,7 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -184,8 +185,8 @@ class DocsTest {
         val t = RecordingTerminal()
         val code = sampleTree().run(arrayOf("docs", "markdown"), t)
         assertEquals(0, code)
-        assertTrue("# todo" in t.out.toString(), t.out.toString())
-        assertTrue("add" in t.out.toString(), t.out.toString())
+        assertTrue("# todo" in t.out, t.out)
+        assertTrue("add" in t.out, t.out)
     }
 
     @Test
@@ -193,7 +194,7 @@ class DocsTest {
         val t = RecordingTerminal()
         val code = sampleTree().run(arrayOf("docs", "man"), t)
         assertEquals(0, code)
-        assertTrue(".TH \"TODO\" 1" in t.out.toString(), t.out.toString())
+        assertTrue(".TH \"TODO\" 1" in t.out, t.out)
     }
 
     @Test
@@ -202,7 +203,7 @@ class DocsTest {
         val code = sampleTree().run(arrayOf("docs", "pdf"), t)
         assertEquals(2, code)
         // Named bare: the user reached this through the `docs` SUBCOMMAND, not the `--docs` option.
-        assertTrue("invalid value 'pdf' for docs" in t.err.toString(), t.err.toString())
+        assertTrue("invalid value 'pdf' for docs" in t.err, t.err)
     }
 
     @Test

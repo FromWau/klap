@@ -1,9 +1,9 @@
 package com.fromwau.klap.fixture.dd
 
 import com.fromwau.kern.result.Err
-import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.ResultError
 import com.fromwau.kern.result.flatMap
 import com.fromwau.kern.result.map
 
@@ -99,7 +99,7 @@ internal sealed interface Setting {
 }
 
 /** dd's operand grammar has these ways to be wrong; [detail] picks dd's words for each. */
-internal sealed interface DdOperandError : IError {
+internal sealed interface DdOperandError : ResultError {
     data class UnknownOperand(val word: String) : DdOperandError
 
     data class InvalidNumber(val value: String) : DdOperandError

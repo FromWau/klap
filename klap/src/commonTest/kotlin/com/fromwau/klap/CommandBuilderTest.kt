@@ -4,6 +4,7 @@ import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.spec.shorts
 import kotlin.test.Test
@@ -1018,7 +1019,7 @@ class CommandCanActOrDispatchTest {
             Result.Success("ran"),
             assertIs<Invocation.Execute>(
                 tree.parse(listOf("group", "leaf")).assertSuccess(),
-            ).runAction(),
+            ).runAction(RecordingTerminal()),
         )
     }
 }

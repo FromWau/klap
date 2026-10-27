@@ -1,7 +1,7 @@
 package com.fromwau.klap
 
-import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.ResultError
 import com.fromwau.klap.internal.render.reason
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.DashLedGather
@@ -240,7 +240,7 @@ internal fun ValueSpec.applyMap(
  * The [ConversionError.Domain.error] of a `.validate()`/`.range()` declared before a later converter, which
  * judges the value inside the chain; the refusal is its [ConversionError.Domain.detail].
  */
-internal data object CheckRefused : IError
+internal data object CheckRefused : ResultError
 
 /** What [check] says of [value]: null to pass, else the refusal, a check that throws refusing with its message. */
 internal fun judge(check: (Any?) -> String?, value: Any): String? = try {

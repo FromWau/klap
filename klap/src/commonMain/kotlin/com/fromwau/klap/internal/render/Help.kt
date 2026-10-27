@@ -1,14 +1,15 @@
 package com.fromwau.klap.internal.render
 
+import com.fromwau.kern.terminal.Styled
 import com.fromwau.kern.terminal.bold
+import com.fromwau.kern.terminal.joinToStyled
+import com.fromwau.kern.terminal.plain
 import com.fromwau.klap.Builtins
 import com.fromwau.klap.COLOR_MODE_NAMES
 import com.fromwau.klap.COMPLETION_SHELL_NAMES
 import com.fromwau.klap.Cli
-import com.fromwau.klap.ColorScope
 import com.fromwau.klap.Command
 import com.fromwau.klap.DOC_FORMAT_NAMES
-import com.fromwau.klap.Palette
 import com.fromwau.klap.internal.spec.ArgumentSpec
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.ConstraintArity
@@ -27,8 +28,8 @@ import com.fromwau.klap.internal.spec.token
 import kotlin.coroutines.cancellation.CancellationException
 
 // --- Reusable row/section model ---
-// helpText() renders through this model; the docs renderer consumes the same assembly, so the model and
-// the small formatting helpers below are internal rather than private to helpText().
+// styledHelp() renders through this model; the docs renderer consumes the same assembly, so the model and
+// the small formatting helpers below are internal rather than private to styledHelp().
 
 /** One help/doc entry: a signature column and its description (help text plus any metaHint note). */
 internal data class InputRow(val signature: String, val description: String)
@@ -332,7 +333,7 @@ internal fun Command.usageLine(qualifiedName: String = name): String = "usage: $
  * The ordered, labeled blocks for this command's help: an unlabeled default block, a `Commands` block,
  * custom [group] headings in first-appearance order, and a final `Global options` block. [globalSpecs],
  * [rootVersioned] and [rootMetaOptions] are caller-supplied, since only the root carries them. Hidden inputs are
- * filtered out throughout so they never widen the shared signature column [helpText] computes.
+ * filtered out throughout so they never widen the shared signature column [styledHelp] computes.
  */
 internal fun Command.helpSections(
     globalSpecs: List<NamedSpec> = emptyList(),
@@ -453,12 +454,9 @@ private fun BuiltinOption.row(): InputRow {
  * Rendering parameters resolved once at the boundary. [columns] `== 0` disables wrapping (single-line
  * output).
  */
-internal data class HelpStyle(val columns: Int, val color: Boolean) {
-    // Not a constructor property: it is derived from [color], so it must stay out of equals/hashCode.
-    val palette: Palette = Palette(color)
-
+internal data class HelpStyle(val columns: Int) {
     companion object {
-        val PLAIN = HelpStyle(columns = 0, color = false)
+        val PLAIN = HelpStyle(columns = 0)
     }
 }
 
@@ -494,15 +492,10 @@ internal fun wrap(text: String, width: Int): List<String> {
     return lines.ifEmpty { listOf(text) }
 }
 
-/** Chrome bold, resolved through the same [ColorScope] an action's own output uses. */
-private fun HelpStyle.paint(text: String): String = with(palette) { bold(text) }
-
-/** The padded (and, when colored, bolded) signature column; the visible width stays [width] either way. */
-private fun HelpStyle.paintSignature(signature: String, width: Int): String {
-    // Padded before bolding: the escape codes take no column, but displayWidth would count them.
-    val padded = padToWidth(signature, width)
-    if (!color) return padded
-    return with(palette) { bold(signature) } + padded.substring(signature.length)
+/** [line] with [emphasized], which it holds at index [start], in bold, as far as a trimmed [line] still holds it. */
+private fun boldAt(line: String, start: Int, emphasized: String): Styled {
+    val end = minOf(line.length, start + emphasized.length)
+    return plain(line.take(start), bold(line.substring(start, end)), line.drop(end))
 }
 
 /**
@@ -514,30 +507,31 @@ private fun HelpStyle.paintSignature(signature: String, width: Int): String {
 private fun collapseWhitespace(text: String): String =
     text.split(' ', '\n', '\t', '\r').filter { it.isNotEmpty() }.joinToString(" ")
 
-private fun HelpStyle.renderRow(row: InputRow, width: Int): String {
+private fun HelpStyle.renderRow(row: InputRow, width: Int): Styled {
     val description = collapseWhitespace(row.description)
     val gutter = 2 + width + 2
     val budget = columns - gutter
+    val padded = padToWidth(row.signature, width)
     // PLAIN (columns <= 0) must stay byte-for-byte stable: docs and tests quote this rendering verbatim.
     if (columns <= 0) {
-        return "  ${paintSignature(row.signature, width)}  $description".trimEnd()
+        return boldAt("  $padded  $description".trimEnd(), 2, row.signature)
     }
     // Aligned two-column wrap while the description column is wide enough to be worth aligning.
     if (budget >= WRAP_FLOOR) {
         val lines = wrap(description, budget)
-        val first = "  ${paintSignature(row.signature, width)}  ${lines.first()}".trimEnd()
+        val first = boldAt("  $padded  ${lines.first()}".trimEnd(), 2, row.signature)
         val indent = " ".repeat(gutter)
         val rest = lines.drop(1).map { "$indent$it".trimEnd() }
-        return (listOf(first) + rest).joinToString("\n")
+        return (listOf(first) + rest).joinToStyled("\n")
     }
     // Narrow terminal: aligning would leave a sliver of a description column and overflow the width,
     // so stack the description on its own indented lines under the signature, wrapped to full width.
-    val signatureLine = "  ${paint(row.signature)}".trimEnd()
+    val signatureLine = boldAt("  ${row.signature}".trimEnd(), 2, row.signature)
     if (description.isEmpty()) return signatureLine
     val indent = "    "
     val body = wrap(description, (columns - indent.length).coerceAtLeast(WRAP_FLOOR))
         .map { "$indent$it".trimEnd() }
-    return (listOf(signatureLine) + body).joinToString("\n")
+    return (listOf(signatureLine) + body).joinToStyled("\n")
 }
 
 private fun HelpStyle.wrapParagraph(text: String): String =
@@ -551,82 +545,81 @@ private fun HelpStyle.wrapParagraph(text: String): String =
     }
 
 /**
- * Full help for a command: usage line, description, the [helpSections] blocks, any [examples], and the
- * [epilogue]. [HelpStyle.PLAIN] renders unwrapped and uncolored; a non-zero `columns` word-wraps and
- * `color` adds a conservative ANSI palette. [globalSpecs] and the root's facts come from the caller (see
- * [com.fromwau.klap.Invocation.ShowHelp]) and pass straight through to [helpSections].
+ * Full help for a command: usage line, description, the [helpSections] blocks, any [examples], and the [epilogue],
+ * with its headings and signatures in bold. [HelpStyle.PLAIN] renders unwrapped; a non-zero `columns` word-wraps.
+ * [globalSpecs] and the root's facts come from the caller (see [com.fromwau.klap.Invocation.ShowHelp]) and pass
+ * straight through to [helpSections].
  */
-internal fun Command.helpText(
+internal fun Command.styledHelp(
     qualifiedName: String = name,
     globalSpecs: List<NamedSpec> = emptyList(),
     style: HelpStyle = HelpStyle.PLAIN,
     rootVersioned: Boolean = false,
     rootMetaOptions: Boolean = false,
     builtins: Builtins = Builtins.DEFAULT,
-): String {
+): Styled {
     val sections = helpSections(globalSpecs, rootVersioned, rootMetaOptions, builtins)
     val width = sections.flatMap { it.rows }.maxOfOrNull { displayWidth(it.signature) } ?: 0
 
-    return buildString {
-        val usage = usageLine(qualifiedName)
-        append(if (style.color) style.paint("usage:") + usage.removePrefix("usage:") else usage)
+    val pieces = buildList<CharSequence> {
+        add(boldAt(usageLine(qualifiedName), 0, "usage:"))
 
         if (description.isNotEmpty()) {
-            append("\n\n")
-            append(style.wrapParagraph(description))
+            add("\n\n")
+            add(style.wrapParagraph(description))
         }
 
         for (section in sections) {
-            append("\n\n")
+            add("\n\n")
             if (section.title != null) {
-                append(style.paint("${section.title}:"))
-                append("\n")
+                add(bold("${section.title}:"))
+                add("\n")
             }
-            append(section.rows.joinToString("\n") { style.renderRow(it, width) })
+            add(section.rows.map { style.renderRow(it, width) }.joinToStyled("\n"))
         }
 
         if (examples.isNotEmpty()) {
-            append("\n\n")
-            append(style.paint("Examples:"))
+            add("\n\n")
+            add(bold("Examples:"))
             for (ex in examples) {
-                append("\n")
-                append("  $ ${ex.command}")
+                add("\n")
+                add("  $ ${ex.command}")
                 if (ex.description.isEmpty()) continue
-                style.wrapExampleDescription(ex.description).forEach { append("\n").append(it) }
+                style.wrapExampleDescription(ex.description).forEach { add("\n$it") }
             }
         }
 
         if (epilogue.isNotEmpty()) {
-            append("\n\n")
-            append(style.wrapParagraph(epilogue))
+            add("\n\n")
+            add(style.wrapParagraph(epilogue))
         }
 
         // Author is a root-only fact; a subcommand's help ([Command], not [Cli]) has none to show.
-        (this@helpText as? Cli)?.author?.takeUnless { it.isBlank() }?.let { author ->
-            append("\n\n")
-            append(style.paint("Author:"))
-            append(" $author")
+        (this@styledHelp as? Cli)?.author?.takeUnless { it.isBlank() }?.let { author ->
+            add("\n\n")
+            add(bold("Author:"))
+            add(" $author")
         }
     }
+    return pieces.joinToStyled("")
 }
 
 /**
- * Recursive [helpText] backing `--help-all`: this node and every non-hidden descendant, each rendered as
+ * Recursive [styledHelp] backing `--help-all`: this node and every non-hidden descendant, each rendered as
  * its own complete help block (globals repeated per block, matching the man/markdown docs), joined by a
  * blank-line gap. Each block's usage line carries its qualified path, so the blocks are self-identifying.
  */
-internal fun Command.helpTextAll(
+internal fun Command.styledHelpAll(
     qualifiedName: String,
     globalSpecs: List<NamedSpec>,
     style: HelpStyle,
     rootVersioned: Boolean,
     rootMetaOptions: Boolean,
     builtins: Builtins = Builtins.DEFAULT,
-): String {
-    return visibleTree(qualifiedName).joinToString("\n\n\n") { (node, path) ->
-        node.helpText(path, globalSpecs, style, rootVersioned, rootMetaOptions, builtins)
-    }
-}
+): Styled =
+    visibleTree(qualifiedName)
+        .map { (node, path) -> node.styledHelp(path, globalSpecs, style, rootVersioned, rootMetaOptions, builtins) }
+        .joinToStyled("\n\n\n")
 
 /**
  * This command and every command under it pre-order (self first, then each subtree), each paired with its

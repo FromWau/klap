@@ -29,7 +29,7 @@ public open class Command internal constructor(
     internal val constraints: List<InputConstraint> = emptyList(),
     // Cross-input value rules from validateInputs {}, in declaration order. Unlike [constraints], which read
     // only which inputs were supplied, these read the bound values, so they run once binding is complete.
-    internal val validations: List<ActionScope.() -> CliError?> = emptyList(),
+    internal val validations: List<ValueScope.() -> CliError?> = emptyList(),
     public val subcommands: List<Command>,
     internal val action: Action?,
     internal val display: Display = Display(),
@@ -153,7 +153,7 @@ public class Cli internal constructor(
     public val version: String?,
     specs: List<HolderSpec>,
     constraints: List<InputConstraint>,
-    validations: List<ActionScope.() -> CliError?> = emptyList(),
+    validations: List<ValueScope.() -> CliError?> = emptyList(),
     subcommands: List<Command>,
     action: Action?,
     internal val globalSpecs: List<NamedSpec> = emptyList(),

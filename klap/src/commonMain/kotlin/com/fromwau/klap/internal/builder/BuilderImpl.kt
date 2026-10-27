@@ -3,7 +3,6 @@ package com.fromwau.klap.internal.builder
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.map
 import com.fromwau.klap.Abbreviation
-import com.fromwau.klap.ActionScope
 import com.fromwau.klap.Arg
 import com.fromwau.klap.Builtins
 import com.fromwau.klap.BuiltinsBuilder
@@ -19,6 +18,7 @@ import com.fromwau.klap.Projection
 import com.fromwau.klap.RepeatedOptions
 import com.fromwau.klap.OwnReading
 import com.fromwau.klap.ShortOptions
+import com.fromwau.klap.ValueScope
 import com.fromwau.klap.Version
 import com.fromwau.klap.holderSpec
 import com.fromwau.klap.internal.render.HelpExample
@@ -174,9 +174,9 @@ internal class BuilderImpl(
         return Opt(fold)
     }
 
-    private val validations = mutableListOf<ActionScope.() -> CliError?>()
+    private val validations = mutableListOf<ValueScope.() -> CliError?>()
 
-    override fun validateInputs(block: ActionScope.() -> CliError?) {
+    override fun validateInputs(block: ValueScope.() -> CliError?) {
         validations += block
     }
 

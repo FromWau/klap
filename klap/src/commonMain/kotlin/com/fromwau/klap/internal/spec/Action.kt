@@ -1,21 +1,24 @@
 package com.fromwau.klap.internal.spec
 
 import com.fromwau.kern.result.Err
-import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.ResultError
 import com.fromwau.kern.result.fold
+import com.fromwau.kern.terminal.Styled
 import com.fromwau.klap.ActionScope
 import com.fromwau.klap.CliError
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 
 private val klapJson = Json { encodeDefaults = true }
 
 /** Why [Action.renderOutput] could not produce output: the action's own error, or a klap-side render/encode failure. */
-internal sealed interface ActionError : IError {
+internal sealed interface ActionError : ResultError {
     data class Failed(val error: CliError) : ActionError
     data object NotSerializable : ActionError
     data class EncodeFailed(val message: String?) : ActionError
@@ -23,10 +26,11 @@ internal sealed interface ActionError : IError {
 }
 
 /**
- * What a successful action leaves for the runner: the text to print, and the code to exit with. They
- * travel as a pair because the code is a projection of the value, which is erased by the time [text] is.
+ * What a successful action leaves for the runner: the text to print, still [Styled] when the action styled it, and
+ * the code to exit with. They travel as a pair because the code is a projection of the value, which is erased by the
+ * time [text] is.
  */
-internal class Rendered(val text: String, val exitCode: Int)
+internal class Rendered(val text: CharSequence, val exitCode: Int)
 
 /** The erased, non-generic face of an [ActionSpec]: run the action for its rendered output, or for its raw value. */
 internal sealed interface Action {
@@ -60,7 +64,7 @@ internal class ActionSpec<T>(
     private val block: suspend ActionScope.() -> Result<T, CliError>,
     override val suspending: Boolean,
     private val serializer: () -> KSerializer<T>,
-    private val human: (ActionScope.(T) -> String)?,
+    private val human: (ActionScope.(T) -> CharSequence)?,
     private val exitCode: (ActionScope.(T) -> Int)?,
 ) : Action {
     override suspend fun renderOutput(scope: ActionScope, json: Boolean): Result<Rendered, ActionError> =
@@ -87,6 +91,11 @@ internal class ActionSpec<T>(
     }
 
     private fun renderJson(value: T): Result<String, ActionError> {
+        // Neither needs the return type to be serializable, so `action<Styled?>` and `action<StringBuilder>` render.
+        when (value) {
+            null -> return Ok(klapJson.encodeToString(JsonNull.serializer(), JsonNull))
+            is CharSequence -> return Ok(klapJson.encodeToString(String.serializer(), value.toString()))
+        }
         val resolved = try {
             serializer()
         } catch (_: SerializationException) {
@@ -102,8 +111,8 @@ internal class ActionSpec<T>(
         }
     }
 
-    private fun renderHuman(scope: ActionScope, value: T): Result<String, ActionError> = try {
-        Ok(human?.invoke(scope, value) ?: value?.toString().orEmpty())
+    private fun renderHuman(scope: ActionScope, value: T): Result<CharSequence, ActionError> = try {
+        Ok(human?.invoke(scope, value) ?: value as? CharSequence ?: value?.toString().orEmpty())
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

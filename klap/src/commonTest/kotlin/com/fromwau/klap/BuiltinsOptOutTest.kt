@@ -3,6 +3,7 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -16,7 +17,7 @@ import kotlin.test.assertTrue
 private fun Cli.helpOutput(vararg argv: String = arrayOf("--help")): String {
     val terminal = RecordingTerminal()
     run(arrayOf(*argv), terminal)
-    return terminal.out.toString()
+    return terminal.out
 }
 
 /** The `Global options:` block alone, where every built-in row renders. */
@@ -27,7 +28,7 @@ private fun Cli.execute(vararg argv: String): Invocation.Execute =
 
 /** Runs the resolved action for its binding side effects, asserting it succeeded. */
 private fun Invocation.Execute.run() {
-    runAction().assertSuccess()
+    runAction(RecordingTerminal()).assertSuccess()
 }
 
 private inline fun <reified F : CliError> Cli.parseError(vararg argv: String): F =

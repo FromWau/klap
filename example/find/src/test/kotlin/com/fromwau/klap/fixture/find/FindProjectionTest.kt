@@ -1,6 +1,6 @@
 package com.fromwau.klap.fixture.find
 
-import com.fromwau.kern.terminal.Terminal
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.checkCells
 import com.fromwau.klap.fixture.find.FindProjectionSupport.ABBREVIATED
@@ -215,17 +215,9 @@ class FindProjectionTest {
     @Test
     fun `a lone dash is a starting point the action walks`() {
         // `find - -maxdepth 0`: "‘-’: No such file or directory", so find walks `-` and not its default `.`.
-        val printed = StringBuilder()
-        val terminal = object : Terminal {
-            override fun out(text: String) {
-                printed.append(text)
-            }
-
-            override fun err(text: String) {
-                printed.append(text)
-            }
-        }
+        val terminal = RecordingTerminal()
         findCli().cli.run(listOf("-"), terminal)
+        val printed = terminal.writes.joinToString("") { it.text }
         assertTrue(printed.startsWith("would walk - "), "`find -` prints: $printed")
     }
 

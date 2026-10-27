@@ -38,11 +38,11 @@ scope you supply. klap itself takes no dependency on `kotlinx-coroutines`.
 
 Two of klap's types are not its own. `Result<S, E>` is
 [`com.fromwau.kern:result`](https://github.com/FromWau/kern/blob/master/result/README.md) and `Terminal`,
-`Style` and the colour palette are
+`Style`, `Styled` and the colour palette are
 [`com.fromwau.kern:terminal`](https://github.com/FromWau/kern/blob/master/terminal/README.md). Both are
 exposed as `api` and published to the same repository, so neither needs a dependency line of its own;
 import them from `com.fromwau.kern.result` and `com.fromwau.kern.terminal`. An error type is anything
-implementing kern's `IError` marker, `CliError` included.
+implementing kern's `ResultError`, `CliError` included.
 
 Sources are published for every target, so an API question is answered by your IDE's own quick-doc and
 step-into rather than by reading a decompiled stub.

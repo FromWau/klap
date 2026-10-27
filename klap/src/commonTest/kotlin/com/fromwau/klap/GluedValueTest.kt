@@ -3,6 +3,7 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.helpText
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -125,7 +126,7 @@ class GluedValueTest {
     fun `the refusal renders as a missing value`() {
         val t = RecordingTerminal()
         assertEquals(2, cc().cli.run(arrayOf("-O"), t))
-        assertTrue("option -O requires a value" in t.err.toString(), t.err.toString())
+        assertTrue("option -O requires a value" in t.err, t.err)
     }
 
     @Test
@@ -134,7 +135,7 @@ class GluedValueTest {
         cc().cli.run(arrayOf("--optimise", "--json"), t)
         assertEquals(
             """{"error":{"type":"MissingOptionValue","option":"--optimise"},"code":2}""" + "\n",
-            t.err.toString(),
+            t.err,
         )
     }
 

@@ -2,6 +2,7 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -29,7 +30,7 @@ class EndToEndTest {
         val t = RecordingTerminal()
         val code = todo().run(arrayOf("add", "-p", "5", "-d", "buy", "milk"), t)
         assertEquals(0, code)
-        assertEquals("[5] buy milk (done)\n", t.out.toString())
+        assertEquals("[5] buy milk (done)\n", t.out)
     }
 
     @Test
@@ -37,7 +38,7 @@ class EndToEndTest {
         val t = RecordingTerminal()
         val code = todo().run(arrayOf(), t)
         assertEquals(0, code)
-        assertEquals(true, t.out.toString().startsWith("usage: todo"))
+        assertEquals(true, t.out.startsWith("usage: todo"))
     }
 
     @Test

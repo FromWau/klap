@@ -1,6 +1,6 @@
 package com.fromwau.klap
 
-import com.fromwau.kern.result.IError
+import com.fromwau.kern.result.ResultError
 import kotlinx.serialization.json.JsonElement
 
 /** A command-line usage error exits 2, as `ls --bogus` and `grep --bogus` do. */
@@ -13,7 +13,7 @@ public const val USAGE_ERROR_EXIT: Int = 2
  *
  * The token that failed is not repeated here, since [CliError.BadValue.value] already carries it.
  */
-public sealed interface ConversionError : IError {
+public sealed interface ConversionError : ResultError {
     /** `.int()` was given something that is no decimal `Int`, as GNU tools read one (see `.int()`). */
     public data object NotAnInteger : ConversionError
 
@@ -54,7 +54,7 @@ public sealed interface ConversionError : IError {
      * match on it.
      *
      * ```kotlin
-     * sealed interface PortError : IError {
+     * sealed interface PortError : ResultError {
      *     data class NotANumber(val given: String) : PortError
      *     data class OutOfRange(val given: Int) : PortError
      * }
@@ -68,7 +68,7 @@ public sealed interface ConversionError : IError {
      * ```
      */
     public data class Domain(
-        val error: IError,
+        val error: ResultError,
         val detail: String,
         val json: JsonElement? = null,
     ) : ConversionError
@@ -79,7 +79,7 @@ public sealed interface ConversionError : IError {
  * writes the words. Return [Usage], [Failure] or [Domain] from an action; the rest describe parse failures
  * you can match on after calling `parse`.
  */
-public sealed interface CliError : IError {
+public sealed interface CliError : ResultError {
     public val exitCode: Int get() = USAGE_ERROR_EXIT
 
     public data class UnknownSubcommand(
@@ -236,7 +236,7 @@ public sealed interface CliError : IError {
      * [exitCode] exactly as for [Failure]; what it adds is that a `parse` caller can recover [error] and
      * match on it, so your error hierarchy survives instead of flattening to a sentence.
      *
-     * klap never looks inside [error]; [IError] is the only thing asked of it, so your hierarchy keeps its
+     * klap never looks inside [error]; [ResultError] is the only thing asked of it, so your hierarchy keeps its
      * own sealed root and stays exhaustive at the `when` that unwraps it.
      *
      * Under `--json`, klap writes [json] as the failure, so a program reading the output gets your error's
@@ -249,7 +249,7 @@ public sealed interface CliError : IError {
      * Without [json], `--json` writes `{"type":"Domain","detail":...}`.
      */
     public data class Domain(
-        val error: IError,
+        val error: ResultError,
         val detail: String,
         override val exitCode: Int = 1,
         val json: JsonElement? = null,

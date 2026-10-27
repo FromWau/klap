@@ -1,10 +1,12 @@
 package com.fromwau.klap
 
-import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.ResultError
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
+import com.fromwau.klap.internal.parse.Line
 import com.fromwau.klap.internal.spec.ArgumentSpec
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.HolderSpec
@@ -28,8 +30,8 @@ private fun argSpec(): ArgumentSpec = ArgumentSpec("x", "", { Result.Success(it)
 private fun optSpec(): OptionSpec = OptionSpec(listOf("--opt"), "", { Result.Success(it) })
 
 /** Run [block] against a one-holder parse snapshot, so accessors resolve inside it. */
-private fun <R> boundTo(spec: HolderSpec, value: Any?, block: ActionScope.() -> R): R =
-    ActionScope(mapOf(spec to value)).block()
+private fun <R> boundTo(spec: HolderSpec, value: Any?, block: ValueScope.() -> R): R =
+    BoundInputs(mapOf(spec to value), json = false, line = Line.EMPTY).block()
 
 // Extends ConverterScope: the transformers under test are member-extensions of the build-time scope,
 // so the test class IS a scope. Every call site stays a plain `Arg<String>(spec).int()`.
@@ -79,7 +81,7 @@ class ConvertersTest : ConverterScope() {
 
     @Test
     fun `read of a holder the command did not bind fails with a clear message`() {
-        // Reading outside action { } is a compile error now (accessors live on ActionScope), so the one
+        // Reading outside action { } is a compile error now (accessors live on ValueScope), so the one
         // surviving runtime misuse is a foreign accessor (e.g. a sibling command's option closed over
         // by mistake). It must fail fast naming the misuse.
         val foreign = Arg<String>(argSpec())
@@ -819,7 +821,7 @@ class ConvertersTest : ConverterScope() {
             }
             val term = RecordingTerminal()
             debug.run(arrayOf("--debug=2", "--debug"), term)
-            assertEquals("[2, 1]", term.out.toString().trim(), order)
+            assertEquals("[2, 1]", term.out.trim(), order)
         }
     }
 
@@ -927,4 +929,4 @@ class ConvertersTest : ConverterScope() {
 }
 
 /** A converter failure with no payload beyond the fact that it happened. */
-private data object Rejected : IError
+private data object Rejected : ResultError

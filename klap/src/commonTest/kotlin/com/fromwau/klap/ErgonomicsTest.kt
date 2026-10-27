@@ -1,6 +1,7 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.argSummary
 import com.fromwau.klap.internal.render.helpText
 import kotlin.test.Test
@@ -26,7 +27,7 @@ class GroupCapturesItsDeclarationsTest {
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("build", "-j", "4", "-t", "a", "-t", "b"), t)
-        assertEquals("jobs=4 tags=[a, b]\n", t.out.toString())
+        assertEquals("jobs=4 tags=[a, b]\n", t.out)
     }
 
     @Test
@@ -39,7 +40,7 @@ class GroupCapturesItsDeclarationsTest {
         }
         val t = RecordingTerminal()
         tree.run(arrayOf("build", "--jobs", "8"), t)
-        assertEquals("jobs=8\n", t.out.toString())
+        assertEquals("jobs=8\n", t.out)
     }
 
     @Test

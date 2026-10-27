@@ -1,9 +1,9 @@
 package com.fromwau.klap.datetime
 
 import com.fromwau.kern.result.Err
-import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.ResultError
 import com.fromwau.klap.Arg
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.ConverterScope
@@ -16,7 +16,7 @@ import kotlinx.datetime.TimeZone
  * Why a value is no date, date and time or time zone: the [ConversionError.Domain.error] of a refusal, whose
  * [ConversionError.Domain.detail] holds the words klap prints.
  */
-public sealed interface DateTimeError : IError {
+public sealed interface DateTimeError : ResultError {
     /** `.localDate()` was given something `LocalDate.parse` refuses. */
     public data object NotALocalDate : DateTimeError
 

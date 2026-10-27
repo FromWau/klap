@@ -3,12 +3,14 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.map
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.BuiltinOptionHelp
 import com.fromwau.klap.internal.render.HelpStyle
 import com.fromwau.klap.internal.render.argSummary
 import com.fromwau.klap.internal.render.helpSections
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.render.metaHint
+import com.fromwau.klap.internal.render.styledHelp
 import com.fromwau.klap.internal.render.usageLine
 import com.fromwau.klap.internal.render.wrap
 import com.fromwau.klap.internal.spec.ArgumentSpec
@@ -150,7 +152,7 @@ class HelpTest {
         }
         val term = RecordingTerminal()
         assertEquals(0, cmd.run(arrayOf("sub", "--help"), term))
-        val globals = term.out.toString().substringAfter("Global options:")
+        val globals = term.out.substringAfter("Global options:")
         assertTrue("--completion=bash|zsh|fish|powershell" in globals, globals)
         assertTrue("--docs=markdown|man" in globals, globals)
     }
@@ -256,7 +258,7 @@ class HelpTest {
         }
         val term = RecordingTerminal()
         cmd.run(arrayOf("--help"), term)
-        val help = term.out.toString()
+        val help = term.out
         assertTrue("Global options:" in help, help)
         assertTrue("--color[=${COLOR_MODE_NAMES.joinToString("|")}]" in help, help)
         assertTrue(BuiltinOptionHelp.COLOR in help, help)
@@ -274,14 +276,14 @@ class HelpTest {
 
         val term = RecordingTerminal()
         cmd.run(arrayOf("--help"), term)
-        val rootHelp = term.out.toString()
+        val rootHelp = term.out
         assertTrue("Global options:" in rootHelp, rootHelp)
         assertTrue("-v, --verbose" in rootHelp, rootHelp)
         assertTrue("enable verbose logging" in rootHelp, rootHelp)
 
         val subTerm = RecordingTerminal()
         cmd.run(arrayOf("build", "--help"), subTerm)
-        val buildHelp = subTerm.out.toString()
+        val buildHelp = subTerm.out
         assertTrue("Global options:" in buildHelp, buildHelp)
         assertTrue("-v, --verbose" in buildHelp, buildHelp)
     }
@@ -357,7 +359,7 @@ class HelpTest {
         val term = RecordingTerminal()
         tree.run(arrayOf("run", "--help"), term)
 
-        val help = term.out.toString()
+        val help = term.out
         assertTrue("Exit codes: 0 ok, 1 failure." in help, help)
         assertFalse("Root trailer." in help, help)
     }
@@ -414,7 +416,7 @@ class HelpTest {
             option(short = 'm', long = "mode", help = long)
             action { Ok("") }
         }
-        val wrapped = cmd.helpText(style = HelpStyle(columns = 60, color = false))
+        val wrapped = cmd.helpText(style = HelpStyle(columns = 60))
         assertTrue(wrapped.count { it == '\n' } > cmd.helpText().count { it == '\n' }, wrapped)
         wrapped.lines().forEach { assertTrue(it.length <= 60, "line over 60 cols: '$it'") }
     }
@@ -428,7 +430,7 @@ class HelpTest {
             help = "alpha beta gamma\none two three four five six seven"
             action { Ok("") }
         }
-        val help = cmd.helpText(style = HelpStyle(columns = 20, color = false))
+        val help = cmd.helpText(style = HelpStyle(columns = 20))
         // First logical line (16 cols) fits and stays intact; the second wraps greedily to 20 cols.
         assertTrue("alpha beta gamma\none two three four\nfive six seven" in help, help)
         // Guard against the pre-fix behavior, where "one" was orphaned onto its own line.
@@ -451,7 +453,7 @@ class HelpTest {
             }
         }
         val run = root.subcommand("run")!!
-        val help = run.helpText("app run", style = HelpStyle(columns = 40, color = false))
+        val help = run.helpText("app run", style = HelpStyle(columns = 40))
         help.lines().forEach { assertTrue(it.length <= 40, "line over 40 cols: '$it'") }
         // The description text still shows up, just wrapped.
         assertTrue("description" in help, help)
@@ -467,16 +469,31 @@ class HelpTest {
     }
 
     @Test
-    fun `color escapes appear only when style enables color`() {
+    fun `help carries escape codes only when rendered for a colour stream`() {
         val cmd = cli("run") {
             help = "do a thing"
             option(short = 'm', long = "mode", help = "the mode")
             action { Ok("") }
         }
         val esc = Char(27)
-        assertFalse(esc in cmd.helpText(), "plain help must carry no escape codes")
-        val colored = cmd.helpText(style = HelpStyle(columns = 0, color = true))
-        assertTrue(esc in colored, "colored help must carry escape codes")
+        assertFalse(esc in cmd.styledHelp().render(ansi = false), "plain help must carry no escape codes")
+        val colored = cmd.styledHelp().render(ansi = true)
+        assertTrue("\n  $esc[1m-m, --mode=value$esc[0m${" ".repeat(27)}the mode (optional)\n" in colored, colored)
+        assertTrue("\n\n$esc[1mGlobal options:$esc[0m\n" in colored, colored)
+    }
+
+    @Test
+    fun `a placeholder ending in a space leaves no trailing space on a narrow terminals signature line`() {
+        val cmd = cli("run") {
+            option(long = "mode").placeholder("X ")
+            action { Ok("") }
+        }
+        val narrow = HelpStyle(columns = 20)
+        val signatureLine = cmd.helpText(style = narrow).lines().single { it.startsWith("  ") && "--mode" in it }
+        assertEquals("      --mode=X", signatureLine)
+        val esc = Char(27)
+        val colored = cmd.styledHelp(style = narrow).render(ansi = true).lines().single { "--mode" in it }
+        assertEquals("  $esc[1m    --mode=X$esc[0m", colored)
     }
 
     @Test
@@ -489,7 +506,7 @@ class HelpTest {
         }
         val term = RecordingTerminal()
         cmd.run(arrayOf("build", "--help"), term)
-        assertTrue("--version" in term.out.toString(), term.out.toString())
+        assertTrue("--version" in term.out, term.out)
     }
 
     @Test
@@ -499,7 +516,7 @@ class HelpTest {
         }
         val term = RecordingTerminal()
         cmd.run(arrayOf("build", "--help"), term)
-        assertTrue("--version" !in term.out.toString(), term.out.toString())
+        assertTrue("--version" !in term.out, term.out)
     }
 
     @Test
@@ -510,7 +527,7 @@ class HelpTest {
         }
         val term = RecordingTerminal()
         cmd.run(arrayOf("--help"), term)
-        assertTrue("--version" in term.out.toString(), term.out.toString())
+        assertTrue("--version" in term.out, term.out)
     }
 
     @Test
@@ -560,7 +577,7 @@ class HelpTest {
         }
         val all = RecordingTerminal()
         assertEquals(0, tree.run(arrayOf("--help-all"), all))
-        val out = all.out.toString()
+        val out = all.out
         assertTrue("usage: app build" in out, out)              // a depth-1 subcommand's own block
         assertTrue("--target" in out, out)                      // build's option, absent from the shallow root help
         assertTrue("usage: app remote add" in out, out)         // a depth-2 node
@@ -569,7 +586,7 @@ class HelpTest {
         // Contrast: the shallow --help does NOT descend into a subcommand's options.
         val shallow = RecordingTerminal()
         tree.run(arrayOf("--help"), shallow)
-        assertFalse("--target" in shallow.out.toString(), shallow.out.toString())
+        assertFalse("--target" in shallow.out, shallow.out)
     }
 
     @Test
@@ -592,7 +609,7 @@ class HelpTest {
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(arrayOf("remote", "--help-all"), t))
-        val out = t.out.toString()
+        val out = t.out
         assertTrue("usage: app remote add" in out, out)         // inside the remote subtree
         assertFalse("usage: app build" in out, out)             // NOT the sibling subtree
         assertFalse("--target" in out, out)
@@ -606,11 +623,11 @@ class HelpTest {
         }
         val root = RecordingTerminal()
         tree.run(arrayOf("--help"), root)
-        assertTrue("--help-all" in root.out.toString(), root.out.toString())
+        assertTrue("--help-all" in root.out, root.out)
 
         val leaf = RecordingTerminal()
         tree.run(arrayOf("build", "--help"), leaf)
-        assertFalse("--help-all" in leaf.out.toString(), leaf.out.toString())
+        assertFalse("--help-all" in leaf.out, leaf.out)
     }
 
     @Test
@@ -661,7 +678,7 @@ class HelpTest {
             }
         }
         val head = root.subcommand("head")!!
-        val wrapped = head.helpText("textkit head", style = HelpStyle(columns = 79, color = false))
+        val wrapped = head.helpText("textkit head", style = HelpStyle(columns = 79))
         // At this width the description still wraps (the help text is long), so the hint can still
         // split across lines; the point is that a bare, meaningless ")" never sits alone on a line.
         assertFalse(wrapped.lines().any { it.trim() == ")" }, wrapped)
