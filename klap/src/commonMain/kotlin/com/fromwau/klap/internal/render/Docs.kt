@@ -20,14 +20,15 @@ internal fun roffEscape(text: String): String = text
 /**
  * One node's roff body: everything a section contains except the `.SH` heading. Shared by
  * [manSectionFor] (dispatcher nodes) and the single-command root's body, which [renderManPage] folds
- * directly under `.SH NAME`. [rootVersioned] threads the root's versioned status down so a non-root
- * node's entries list `--version` too, matching `--help`.
+ * directly under `.SH NAME`. [rootVersioned] and [rootMetaOptions] thread the root's facts down so a
+ * non-root node's entries list `--version`, `--completion` and `--docs` where they work, matching `--help`.
  */
 internal fun manBodyFor(
     node: Command,
     path: String,
     globalSpecs: List<NamedSpec>,
     rootVersioned: Boolean,
+    rootMetaOptions: Boolean,
     builtins: Builtins = Builtins.DEFAULT,
 ): String = buildString {
     appendLine(".B ${roffEscape(node.usageLine(path))}")
@@ -41,7 +42,7 @@ internal fun manBodyFor(
         appendLine(".PP")
         appendLine(roffEscape("Aliases: ${node.aliases.joinToString(", ")}"))
     }
-    node.helpSections(globalSpecs, rootVersioned, builtins).forEach { section ->
+    node.helpSections(globalSpecs, rootVersioned, rootMetaOptions, builtins).forEach { section ->
         section.title?.let { appendLine(".SS ${roffEscape(it)}") }
         section.rows.forEach { row ->
             appendLine(".TP")
@@ -74,10 +75,11 @@ internal fun manSectionFor(
     path: String,
     globalSpecs: List<NamedSpec>,
     rootVersioned: Boolean,
+    rootMetaOptions: Boolean,
     builtins: Builtins = Builtins.DEFAULT,
 ): String = buildString {
     appendLine(".SH ${roffEscape(path.uppercase())}")
-    append(manBodyFor(node, path, globalSpecs, rootVersioned, builtins))
+    append(manBodyFor(node, path, globalSpecs, rootVersioned, rootMetaOptions, builtins))
 }
 
 /**
@@ -113,14 +115,15 @@ private fun mdCodeSpan(command: String): String {
 
 /**
  * One node's section of the combined markdown doc, built from the same [helpSections] rows `--help`
- * renders so the two cannot drift. [rootVersioned] threads the root's versioned status down so a
- * non-root node's table lists `--version` too, matching `--help`.
+ * renders so the two cannot drift. [rootVersioned] and [rootMetaOptions] thread the root's facts down so a
+ * non-root node's table lists `--version`, `--completion` and `--docs` where they work, matching `--help`.
  */
 internal fun markdownFor(
     node: Command,
     path: String,
     globalSpecs: List<NamedSpec>,
     rootVersioned: Boolean,
+    rootMetaOptions: Boolean,
     builtins: Builtins = Builtins.DEFAULT,
 ): String = buildString {
     val depth = path.count { it == ' ' }
@@ -141,7 +144,7 @@ internal fun markdownFor(
         // so a stray backtick/angle-bracket must not corrupt the page.
         appendLine(mdText("Aliases: ${node.aliases.joinToString(", ")}"))
     }
-    node.helpSections(globalSpecs, rootVersioned, builtins).forEach { section ->
+    node.helpSections(globalSpecs, rootVersioned, rootMetaOptions, builtins).forEach { section ->
         if (section.rows.isEmpty()) return@forEach
         appendLine()
         // The untitled default block (positionals / ungrouped inputs, or a group's subcommands) carries no

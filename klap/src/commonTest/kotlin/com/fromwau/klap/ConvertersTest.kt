@@ -1,18 +1,19 @@
 package com.fromwau.klap
 
-import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.ResultError
 import com.fromwau.kern.result.assertError
-import com.fromwau.kern.result.map
-import com.fromwau.kern.terminal.blue
-import com.fromwau.kern.terminal.green
-import com.fromwau.kern.terminal.red
+import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
+import com.fromwau.klap.internal.parse.Line
 import com.fromwau.klap.internal.spec.ArgumentSpec
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.HolderSpec
 import com.fromwau.klap.internal.spec.OptionSpec
+import com.fromwau.klap.internal.spec.ValueSpec
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
@@ -20,16 +21,17 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 private enum class Color { RED, GREEN }
-private enum class CaseCollision { A, a }
+@Suppress("unused") private enum class CaseCollision { A, @Suppress("EnumEntryName") a }
 private enum class NoConstants
+private enum class DebugLevel(val cli: String) { @Suppress("unused") BASIC("1"), FUNCTIONS("2") }
 
 private fun argSpec(): ArgumentSpec = ArgumentSpec("x", "", { Result.Success(it) })
 
 private fun optSpec(): OptionSpec = OptionSpec(listOf("--opt"), "", { Result.Success(it) })
 
 /** Run [block] against a one-holder parse snapshot, so accessors resolve inside it. */
-private fun <R> boundTo(spec: HolderSpec, value: Any?, block: ActionScope.() -> R): R =
-    ActionScope(mapOf(spec to value)).block()
+private fun <R> boundTo(spec: HolderSpec, value: Any?, block: ValueScope.() -> R): R =
+    BoundInputs(mapOf(spec to value), json = false, line = Line.EMPTY).block()
 
 // Extends ConverterScope: the transformers under test are member-extensions of the build-time scope,
 // so the test class IS a scope. Every call site stays a plain `Arg<String>(spec).int()`.
@@ -57,8 +59,29 @@ class ConvertersTest : ConverterScope() {
     }
 
     @Test
+    fun `an error thrown by a map refuses the value instead of escaping parse`() {
+        val tree = cli("app") {
+            option(long = "later").map<Int> { throw NotImplementedError("converter not written yet") }
+            action { Ok("") }
+        }
+        val refused = tree.parse(listOf("--later", "z")).assertError<CliError.BadValue>()
+        assertTrue(refused.cause is ConversionError.Threw, "cause ${refused.cause}")
+    }
+
+    @Test
+    fun `an error thrown by a validate refuses the value instead of escaping parse`() {
+        val tree = cli("app") {
+            option(long = "before").validate("never") { _: String -> throw NotImplementedError("first check") }.int()
+            option(long = "after").int().validate("never") { throw NotImplementedError("second check") }
+            action { Ok("") }
+        }
+        assertEquals("first check", tree.parse(listOf("--before", "1")).assertError<CliError.BadValue>().reason)
+        assertEquals("second check", tree.parse(listOf("--after", "1")).assertError<CliError.BadValue>().reason)
+    }
+
+    @Test
     fun `read of a holder the command did not bind fails with a clear message`() {
-        // Reading outside action { } is a compile error now (accessors live on ActionScope), so the one
+        // Reading outside action { } is a compile error now (accessors live on ValueScope), so the one
         // surviving runtime misuse is a foreign accessor (e.g. a sibling command's option closed over
         // by mistake). It must fail fast naming the misuse.
         val foreign = Arg<String>(argSpec())
@@ -74,13 +97,12 @@ class ConvertersTest : ConverterScope() {
     }
 
     @Test
-    fun `enum sets choices and converts case insensitively`() {
+    fun `enum sets choices and converts in exact case`() {
         val spec = argSpec()
         val arg = Arg<String>(spec).enum<Color>()
-        // Choices display lowercase, but matching stays case-insensitive.
         assertEquals(listOf("red", "green"), spec.choices)
         assertEquals(Result.Success(Color.GREEN), spec.convert("green"))
-        assertEquals(Result.Success(Color.GREEN), spec.convert("GREEN"))
+        spec.convert("GREEN").assertError<ConversionError.NotOneOf>()
         // The case carries the declared choices, so a caller can offer them without re-parsing the message.
         assertEquals(Result.Error(ConversionError.NotOneOf(listOf("red", "green"))), spec.convert("blue"))
         boundTo(spec, Color.RED) { assertEquals(Color.RED, arg()) }
@@ -96,9 +118,18 @@ class ConvertersTest : ConverterScope() {
     }
 
     @Test
-    fun `choice matches case insensitively and returns canonical spelling`() {
+    fun `choice matches in exact case by default`() {
         val spec = argSpec()
-        val arg = Arg<String>(spec).choice("fast", "slow")
+        Arg<String>(spec).choice("fast", "slow")
+        assertEquals(Result.Success("fast"), spec.convert("fast"))
+        spec.convert("FAST").assertError<ConversionError.NotOneOf>()
+        spec.convert("Fast").assertError<ConversionError.NotOneOf>()
+    }
+
+    @Test
+    fun `choice with ignoreCase matches any case and returns canonical spelling`() {
+        val spec = argSpec()
+        val arg = Arg<String>(spec).choice("fast", "slow", ignoreCase = true)
         assertEquals(listOf("fast", "slow"), spec.choices)
         assertEquals(Result.Success("fast"), spec.convert("FAST"))
         assertEquals(Result.Success("fast"), spec.convert("Fast"))
@@ -108,9 +139,9 @@ class ConvertersTest : ConverterScope() {
     }
 
     @Test
-    fun `opt choice matches case insensitively and returns canonical spelling`() {
+    fun `opt choice with ignoreCase matches any case and returns canonical spelling`() {
         val spec = optSpec()
-        val opt = Opt<String?>(spec).choice("fast", "slow")
+        val opt = Opt<String?>(spec).choice("fast", "slow", ignoreCase = true)
         assertEquals(listOf("fast", "slow"), spec.choices)
         assertEquals(Result.Success("fast"), spec.convert("FAST"))
         spec.convert("quick").assertError<ConversionError.NotOneOf>()
@@ -118,9 +149,9 @@ class ConvertersTest : ConverterScope() {
     }
 
     @Test
-    fun `opt choice rejects case insensitive duplicate at construction`() {
+    fun `opt choice with ignoreCase rejects a duplicate in another case at construction`() {
         val ex = assertFailsWith<IllegalArgumentException> {
-            Opt<String?>(optSpec()).choice("a", "A")
+            Opt<String?>(optSpec()).choice("a", "A", ignoreCase = true)
         }
         assertTrue("A" in ex.message.orEmpty(), ex.message)
     }
@@ -133,11 +164,19 @@ class ConvertersTest : ConverterScope() {
     }
 
     @Test
-    fun `arg choice rejects case insensitive duplicate at construction`() {
+    fun `arg choice with ignoreCase rejects a duplicate in another case at construction`() {
         val ex = assertFailsWith<IllegalArgumentException> {
-            Arg<String>(argSpec()).choice("a", "A")
+            Arg<String>(argSpec()).choice("a", "A", ignoreCase = true)
         }
         assertTrue("A" in ex.message.orEmpty(), ex.message)
+    }
+
+    @Test
+    fun `choices that differ only in case are two choices in exact case`() {
+        val spec = argSpec()
+        Arg<String>(spec).choice("a", "A")
+        assertEquals(Result.Success("a"), spec.convert("a"))
+        assertEquals(Result.Success("A"), spec.convert("A"))
     }
 
     @Test
@@ -254,7 +293,7 @@ class ConvertersTest : ConverterScope() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
                 command("c") {
-                    val o = option("-v")
+                    val o = option(short = 'v')
                     o.required()
                     o.multiple()
                     action { Ok("") }
@@ -264,7 +303,7 @@ class ConvertersTest : ConverterScope() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
                 command("c") {
-                    val o = option("-v")
+                    val o = option(short = 'v')
                     o.multiple()
                     o.default("d")
                     action { Ok("") }
@@ -274,7 +313,7 @@ class ConvertersTest : ConverterScope() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
                 command("c") {
-                    val o = option("-v")
+                    val o = option(short = 'v')
                     o.default("d")
                     o.required()
                     action { Ok("") }
@@ -284,7 +323,7 @@ class ConvertersTest : ConverterScope() {
         // Ordinary single-cardinality usage is unaffected.
         val cmd = cli("x") {
             command("c") {
-                val o = option("-v").int().required()
+                val o = option(short = 'v').int().required()
                 action { Ok(o().toString()) }
             }
         }
@@ -330,6 +369,45 @@ class ConvertersTest : ConverterScope() {
         assertEquals(Result.Error(ConversionError.NotALong), spec.convert("1.5"))
     }
 
+    /** `.int()` and `.long()` on an operand and on an option, each with its error and the value it reads [n] as. */
+    private fun integerSpecs(): List<Triple<ValueSpec, ConversionError, (Int) -> Any>> = listOf(
+        Triple(Arg<String>(argSpec()).int().spec, ConversionError.NotAnInteger) { n -> n },
+        Triple(Arg<String>(argSpec()).long().spec, ConversionError.NotALong) { n -> n.toLong() },
+        Triple(optSpec().also { Opt<String?>(it).int() }, ConversionError.NotAnInteger) { n -> n },
+        Triple(optSpec().also { Opt<String?>(it).long() }, ConversionError.NotALong) { n -> n.toLong() },
+    )
+
+    @Test
+    fun `an integer takes leading blanks and a plus sign as strtol does`() {
+        // `head -n ' 2'`, `head -n $'\t2'`, `head -n $'\n2'`, `head -n +2`, `ls -w ' 80'` and `nice -n ' -0'` run.
+        val read = mapOf(" 2" to 2, "\t2" to 2, "\n\u000B\u000C\r2" to 2, "+2" to 2, " +2" to 2, " -0" to 0, "-7" to -7)
+        for ((spec, _, typed) in integerSpecs()) {
+            read.forEach { (raw, n) -> assertEquals(Result.Success(typed(n)), spec.convert(raw), "`$raw`") }
+        }
+    }
+
+    @Test
+    fun `an integer refuses a trailing blank and a sign with no digits after it`() {
+        // `head -n '2 '`, `head -n ' '`, `head -n +` and `head -n '+ 2'`: "invalid number of lines"; `ls -w '80 '`:
+        // "invalid line width".
+        for ((spec, error, _) in integerSpecs()) {
+            listOf("2 ", "2\n", " ", "", "+", "-", "+ 2", " 2 ").forEach { raw ->
+                assertEquals(Result.Error(error), spec.convert(raw), "`$raw`")
+            }
+        }
+    }
+
+    @Test
+    fun `an integer reads ASCII decimal digits only`() {
+        // `head -n ١`, `head -n １２`, `ls -w ١` and `nice -n ١` are refused; a no-break space is no blank to strtol
+        // (`head -n $' 2'` is refused).
+        for ((spec, error, _) in integerSpecs()) {
+            listOf("١٢", "１２", "१२", "1٢", " 2").forEach { raw ->
+                assertEquals(Result.Error(error), spec.convert(raw), "`$raw`")
+            }
+        }
+    }
+
     @Test
     fun `arg double converts to double and rejects non number`() {
         val spec = argSpec()
@@ -348,12 +426,57 @@ class ConvertersTest : ConverterScope() {
     }
 
     @Test
+    fun `a double refuses a type suffix and a trailing blank`() {
+        // coreutils 9.12 `timeout 1.5f true` and `timeout '1 ' true` are "invalid time interval".
+        val spec = argSpec()
+        Arg<String>(spec).double()
+        listOf("1.5f", "1.5F", "1.5d", "1.5D", "1 ").forEach { raw ->
+            assertEquals(Result.Error(ConversionError.NotADouble), spec.convert(raw), "`$raw`")
+        }
+    }
+
+    @Test
+    fun `a double reads infinity nan and a hex float as strtod does`() {
+        // glibc strtod as coreutils 9.12 reads it: `timeout inf true`, `timeout 0x1A true` and `timeout ' 1' true` run.
+        val spec = argSpec()
+        Arg<String>(spec).double()
+        assertEquals(Result.Success(Double.POSITIVE_INFINITY), spec.convert("inf"))
+        assertEquals(Result.Success(Double.NEGATIVE_INFINITY), spec.convert("-Infinity"))
+        assertEquals(Result.Success(Double.NaN), spec.convert("NAN"))
+        assertEquals(Result.Success(8.0), spec.convert("0x1p3"))
+        assertEquals(Result.Success(26.0), spec.convert("0x1A"))
+        assertEquals(Result.Success(0.5), spec.convert("+.5"))
+        assertEquals(Result.Success(1.5), spec.convert(" 1.5"))
+        assertEquals(Result.Success(Double.POSITIVE_INFINITY), spec.convert("1e400"))
+    }
+
+    @Test
+    fun `a double refuses a word strtod reads only in part`() {
+        // coreutils 9.12 `timeout 1e true`, `timeout 0x true` and `timeout infx true` are "invalid time interval".
+        val spec = argSpec()
+        Arg<String>(spec).double()
+        listOf("1e", "0x", "infx", "infin", "1.5e+", "", "+", ".", "١٫٥").forEach { raw ->
+            assertEquals(Result.Error(ConversionError.NotADouble), spec.convert(raw), "`$raw`")
+        }
+    }
+
+    @Test
     fun `opt enum sets choices and binds`() {
         val spec = optSpec()
         val opt = Opt<String?>(spec).enum<Color>()
         assertEquals(listOf("red", "green"), spec.choices)
         assertEquals(Result.Success(Color.GREEN), spec.convert("green"))
         boundTo(spec, Color.RED) { assertEquals(Color.RED, opt()) }
+    }
+
+    @Test
+    fun `opt enum spells each constant as its spelling gives it`() {
+        // pacman's debug levels are digits, which no constant can be named.
+        val spec = optSpec()
+        Opt<String?>(spec).enum<DebugLevel>(spelling = { it.cli })
+        assertEquals(listOf("1", "2"), spec.choices)
+        assertEquals(Result.Success(DebugLevel.FUNCTIONS), spec.convert("2"))
+        assertTrue(spec.convert("functions") is Result.Error, "the constant's name is no longer a spelling")
     }
 
     @Test
@@ -366,9 +489,9 @@ class ConvertersTest : ConverterScope() {
     }
 
     @Test
-    fun `enum matches all case variants to canonical constant`() {
+    fun `enum with ignoreCase matches all case variants to canonical constant`() {
         val spec = argSpec()
-        Arg<String>(spec).enum<Color>()
+        Arg<String>(spec).enum<Color>(ignoreCase = true)
         assertEquals(Result.Success(Color.RED), spec.convert("RED"))
         assertEquals(Result.Success(Color.RED), spec.convert("red"))
         assertEquals(Result.Success(Color.RED), spec.convert("Red"))
@@ -435,14 +558,31 @@ class ConvertersTest : ConverterScope() {
         assertEquals("1..10", spec.valueHint)
     }
 
+    @Test
+    fun `a stepped range names its step in the hint and the refusal`() {
+        val spec = optSpec()
+        Opt<String?>(spec).int().range(1..9 step 3)
+        assertEquals("1..7 step 3", spec.valueHint)
+        assertEquals(null, spec.validate?.invoke(4))
+        assertEquals("must be in 1..7 step 3", spec.validate?.invoke(2))
+    }
+
+    @Test
+    fun `a descending range reads from its low end`() {
+        val spec = argSpec()
+        Arg<String>(spec).int().range(10 downTo 1)
+        assertEquals("1..10", spec.valueHint)
+        assertEquals("must be in 1..10", spec.validate?.invoke(11))
+    }
+
     // --- Converter composition: chained String-input converters must compose, not overwrite ---
 
     @Test
     fun `choice then map composes instead of overwriting and keeps choice validation`() {
         val spec = argSpec()
-        Arg<String>(spec).choice("a", "b").map { it.uppercase() }
+        Arg<String>(spec).choice("a", "b", ignoreCase = true).map { it.uppercase() }
         assertEquals(Result.Success("A"), spec.convert("a"))
-        // Case-insensitive choice still applies before the map stage runs.
+        // The choice still matches before the map stage runs.
         assertEquals(Result.Success("A"), spec.convert("A"))
         // Choice validation must not be bypassed by the later .map().
         spec.convert("z").assertError<ConversionError.NotOneOf>()
@@ -472,31 +612,68 @@ class ConvertersTest : ConverterScope() {
         assertEquals(Result.Success(2), spec.convert("  hi  "))
     }
 
-    // --- Converter ordering: .validate()/.range() must be called after every type-changing converter,
+    // --- Converter ordering: a .validate()/.range() judges the value converted so far at its place in the chain,
     // and a type-changing converter cannot be stacked on top of another one, even through a stale handle ---
 
     @Test
-    fun `validate before a type changing converter is rejected at construction`() {
-        val spec = argSpec()
-        Arg<String>(spec).validate("must not be blank") { it.isNotBlank() }
-        val ex = assertFailsWith<IllegalArgumentException> { Arg<String>(spec).int() }
-        assertEquals(
-            "argument 'x': call .validate()/.range() after every type-changing converter " +
-                "(.int()/.long()/.double()/.boolean()/.enum<E>()), not before",
-            ex.message,
-        )
+    fun `a validate before a type changing converter judges the raw value`() {
+        val tree = cli("app") {
+            val n = argument("n").validate("must not be blank") { it.isNotBlank() }.int()
+            action { Ok("n=${n()}") }
+        }
+        assertEquals("n=7", tree.bindText("7"))
+        assertEquals("must not be blank", tree.parse(listOf(" ")).assertError<CliError.BadValue>().reason)
+        assertEquals(ConversionError.NotAnInteger, tree.parse(listOf("x")).assertError<CliError.BadValue>().cause)
     }
 
     @Test
-    fun `range before a type changing converter is rejected at construction`() {
-        val spec = argSpec()
-        Arg<String>(spec).range("a".."z")
-        val ex = assertFailsWith<IllegalArgumentException> { Arg<String>(spec).int() }
-        assertEquals(
-            "argument 'x': call .validate()/.range() after every type-changing converter " +
-                "(.int()/.long()/.double()/.boolean()/.enum<E>()), not before",
-            ex.message,
-        )
+    fun `a range before a type changing converter bounds the raw value`() {
+        // The range compares strings, so `10` sorts inside "0".."5" and `7` outside it, whatever their Int.
+        val tree = cli("app") {
+            val n = argument("n").range("0".."5").int()
+            action { Ok("n=${n()}") }
+        }
+        assertEquals("n=10", tree.bindText("10"))
+        assertEquals("must be in 0..5", tree.parse(listOf("7")).assertError<CliError.BadValue>().reason)
+    }
+
+    @Test
+    fun `a validate before a map never judges the mapped value`() {
+        val tree = cli("head") {
+            val n = option(short = 'n')
+                .validate("must not be empty") { s: String -> s.isNotEmpty() }
+                .map { it.length }
+            action { Ok("n=${n()}") }
+        }
+        assertEquals("n=3", tree.bindText("-n", "abc"))
+        assertEquals("must not be empty", tree.parse(listOf("-n", "")).assertError<CliError.BadValue>().reason)
+    }
+
+    @Test
+    fun `checks on both sides of a converter each judge the value at their place`() {
+        val tree = cli("app") {
+            val n = option(long = "n")
+                .validate("must be short") { s: String -> s.length < 4 }
+                .int()
+                .validate("must be even") { it % 2 == 0 }
+            action { Ok("n=${n()}") }
+        }
+        assertEquals("n=12", tree.bindText("--n", "12"))
+        assertEquals("must be short", tree.parse(listOf("--n", "1234")).assertError<CliError.BadValue>().reason)
+        assertEquals("must be even", tree.parse(listOf("--n", "13")).assertError<CliError.BadValue>().reason)
+    }
+
+    @Test
+    fun `a validate before a choice refuses as a bad value not as a choice`() {
+        val tree = cli("app") {
+            val mode = option(long = "mode").validate("must be lowercase") { s: String -> s == s.lowercase() }
+                .choice("fast", "Slow")
+            action { Ok("mode=${mode()}") }
+        }
+        assertEquals("mode=fast", tree.bindText("--mode", "fast"))
+        val refused = tree.parse(listOf("--mode", "Slow")).assertError<CliError.BadValue>()
+        assertEquals("must be lowercase", refused.reason)
+        assertNull(refused.cause)
     }
 
     @Test
@@ -509,10 +686,57 @@ class ConvertersTest : ConverterScope() {
         val ex = assertFailsWith<IllegalArgumentException> { a.long() }
         assertEquals(
             "argument 'x': cannot add another converter after a type-changing converter " +
-                "(.int()/.long()/.double()/.boolean()/.enum<E>()) has already run; this usually means a " +
-                "converter was called through an Arg<String>/Opt<String?> handle kept alive past that point",
+                "(.int()/.long()/.double()/.boolean()/.duration()/.instant()/.uuid()/.enum<E>(), or a " +
+                ".convert { }/.map { } to a type other than String) has already run; " +
+                "this usually means a converter was called through an Arg<String>/Opt<String?> handle kept alive " +
+                "past that point",
             ex.message,
         )
+    }
+
+    @Test
+    fun `a converter through an arg handle kept past a convert to another type is refused at construction`() {
+        val a = Arg<String>(argSpec())
+        a.convert { Ok(it.length) }
+        val ex = assertFailsWith<IllegalArgumentException> { a.int() }
+        assertContains(ex.message.orEmpty(), "argument 'x': cannot add another converter after a type-changing")
+    }
+
+    @Test
+    fun `a converter through an arg handle kept past a map to another type is refused at construction`() {
+        val a = Arg<String>(argSpec())
+        a.map { it.length }
+        assertFailsWith<IllegalArgumentException> { a.map { it.trim() } }
+    }
+
+    @Test
+    fun `a converter through an opt handle kept past a convert to another type is refused at construction`() {
+        val o = Opt<String?>(optSpec())
+        o.convert { Ok(it.length) }
+        val ex = assertFailsWith<IllegalArgumentException> { o.choice("a") }
+        assertContains(ex.message.orEmpty(), "option '--opt': cannot add another converter after a type-changing")
+    }
+
+    @Test
+    fun `a converter through an opt handle kept past a map to another type is refused at construction`() {
+        val o = Opt<String?>(optSpec())
+        o.map { it.length }
+        assertFailsWith<IllegalArgumentException> { o.convert { Ok(it.trim()) } }
+    }
+
+    @Test
+    fun `a convert from string to string still chains a choice`() {
+        val spec = argSpec()
+        Arg<String>(spec).convert { Ok(it.trim()) }.choice("a", "b")
+        assertEquals(Result.Success("a"), spec.convert(" a "))
+        spec.convert(" z ").assertError<ConversionError.NotOneOf>()
+    }
+
+    @Test
+    fun `an opt map from string to string still chains another map`() {
+        val spec = optSpec()
+        Opt<String?>(spec).map { it.lowercase() }.map { it.length }
+        assertEquals(Result.Success(2), spec.convert("Hi"))
     }
 
     @Test
@@ -527,8 +751,7 @@ class ConvertersTest : ConverterScope() {
 
     @Test
     fun `map then map is not treated as a type changing stack`() {
-        // Neither .map() call sets the type-changing marker, so the guard above must not fire here even
-        // though the two stack, proving it targets only .int()/.long()/.double()/.boolean()/.enum<E>().
+        // The first .map() returns a String, so it leaves the chain open for the second.
         val spec = argSpec()
         Arg<String>(spec).map { it.trim() }.map { it.length }
         assertEquals(Result.Success(2), spec.convert("  hi  "))
@@ -572,19 +795,34 @@ class ConvertersTest : ConverterScope() {
     }
 
     @Test
-    fun `optional value rejects combining with multiple`() {
-        val ex = assertFailsWith<IllegalArgumentException> {
-            Opt<String?>(optSpec()).multiple().optionalValue("x")
+    fun `an invalid earlier occurrence of a single-valued option refuses the line`() {
+        // GNU `head -n abc -n 5` is "invalid number of lines", though the last value is fine.
+        val tool = cli("tool") {
+            val lines = option(short = 'n', long = "lines").int()
+            action { Ok("${lines()}") }
         }
-        assertTrue("multiple" in ex.message.orEmpty(), ex.message)
+        assertEquals("abc", tool.parse(listOf("-n", "abc", "-n", "5")).assertError<CliError.BadValue>().value)
+        tool.parse(listOf("-n", "3", "-n", "5")).assertSuccess()
     }
 
     @Test
-    fun `multiple rejects combining with optional value`() {
-        val ex = assertFailsWith<IllegalArgumentException> {
-            Opt<String?>(optSpec()).optionalValue("x").multiple()
+    fun `an optional value option keeps every occurrence in line order when it is multiple`() {
+        // `pacman --debug=2 --debug` keeps level 2: the action needs every occurrence, the bare one included.
+        for (order in listOf("optionalValue first", "multiple first")) {
+            val debug = cli("tool") {
+                val level = option(long = "debug").let {
+                    if (order == "optionalValue first") {
+                        it.optionalValue("1").multiple()
+                    } else {
+                        it.multiple().optionalValue("1")
+                    }
+                }
+                action { Ok("${level()}") }
+            }
+            val term = RecordingTerminal()
+            debug.run(arrayOf("--debug=2", "--debug"), term)
+            assertEquals("[2, 1]", term.out.trim(), order)
         }
-        assertTrue("optionalValue" in ex.message.orEmpty(), ex.message)
     }
 
     @Test
@@ -614,9 +852,9 @@ class ConvertersTest : ConverterScope() {
     }
 
     @Test
-    fun `optional value accepts a bare value matching a choice case insensitively`() {
+    fun `optional value accepts a bare value matching an ignoreCase choice in another case`() {
         val spec = optSpec()
-        Opt<String?>(spec).choice("Fast", "Slow").optionalValue("fast")
+        Opt<String?>(spec).choice("Fast", "Slow", ignoreCase = true).optionalValue("fast")
         assertEquals("fast", spec.bareValue)
         // The guard does not over-reject: the mismatched case is legal, same as the parser's own matching.
         assertEquals(Result.Success("Fast"), spec.convert("fast"))
@@ -664,9 +902,16 @@ class ConvertersTest : ConverterScope() {
     }
 
     @Test
-    fun `choice then default canonicalizes a case differing valid default at construction`() {
+    fun `choice then default refuses a default in another case at construction`() {
+        assertFailsWith<IllegalArgumentException> {
+            Arg<String>(argSpec()).choice("fast", "slow").default("FAST")
+        }
+    }
+
+    @Test
+    fun `ignoreCase choice then default canonicalizes a case differing valid default at construction`() {
         val spec = argSpec()
-        Arg<String>(spec).choice("fast", "slow").default("FAST")
+        Arg<String>(spec).choice("fast", "slow", ignoreCase = true).default("FAST")
         // The guard does not over-reject: the mismatched case is legal, same as the parser's own matching,
         // and the stored default is canonicalized so an absent argument binds the same value a typed
         // "FAST"/"fast"/"Fast" would have.
@@ -684,4 +929,4 @@ class ConvertersTest : ConverterScope() {
 }
 
 /** A converter failure with no payload beyond the fact that it happened. */
-private data object Rejected : IError
+private data object Rejected : ResultError

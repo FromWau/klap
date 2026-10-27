@@ -3,7 +3,6 @@ package com.fromwau.klap.internal.builder
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.map
 import com.fromwau.klap.Abbreviation
-import com.fromwau.klap.ActionScope
 import com.fromwau.klap.Arg
 import com.fromwau.klap.Builtins
 import com.fromwau.klap.BuiltinsBuilder
@@ -16,10 +15,15 @@ import com.fromwau.klap.Flag
 import com.fromwau.klap.Input
 import com.fromwau.klap.Opt
 import com.fromwau.klap.Projection
+import com.fromwau.klap.RepeatedOptions
+import com.fromwau.klap.OwnReading
+import com.fromwau.klap.ShortOptions
+import com.fromwau.klap.ValueScope
+import com.fromwau.klap.Version
 import com.fromwau.klap.holderSpec
 import com.fromwau.klap.internal.render.HelpExample
 import com.fromwau.klap.internal.spec.ArgumentSpec
-import com.fromwau.klap.internal.spec.Builtin
+import com.fromwau.klap.internal.spec.BuiltinKind
 import com.fromwau.klap.internal.spec.ConstraintArity
 import com.fromwau.klap.internal.spec.Display
 import com.fromwau.klap.internal.spec.FlagSpec
@@ -27,11 +31,14 @@ import com.fromwau.klap.internal.spec.HolderSpec
 import com.fromwau.klap.internal.spec.InputConstraint
 import com.fromwau.klap.internal.spec.NUMBER_LABEL
 import com.fromwau.klap.internal.spec.NamedSpec
+import com.fromwau.klap.internal.spec.NumberShape
 import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.constraintHintToken
 import com.fromwau.klap.internal.spec.constraintToken
 import com.fromwau.klap.internal.spec.hint
 import com.fromwau.klap.internal.spec.requireValidName
+import com.fromwau.klap.internal.spec.requireValidSpelling
+import com.fromwau.klap.internal.spec.spellings
 import com.fromwau.klap.resolve
 
 /** Identity converter: a raw string passes through unchanged until a type transformer replaces it. */
@@ -44,7 +51,7 @@ private val passthrough: (String) -> Result<Any?, ConversionError> = { Result.Su
  */
 internal class BuilderImpl(
     private val name: String,
-    // The root's own globalSpecs, threaded down so a nested `.requiredIf()` trigger can resolve against it.
+    // The root's own globalSpecs, threaded down so a nested `.requiredWhen()` trigger can resolve against it.
     // Null exactly for the root, which [build] reads as "this is the tree's outermost build()".
     private val rootGlobalSpecs: List<NamedSpec>? = null,
 ) : CliBuilder() {
@@ -54,14 +61,23 @@ internal class BuilderImpl(
         requireValidName("command", name)
     }
 
-    override var description: String = ""
+    override var help: String = ""
     override var aliases: Collection<String> = emptyList()
-    override var version: String? = null
+    override var version: Version = Version.Off
     override var author: String? = null
-    override var abbreviation: Abbreviation = Abbreviation.None
+    override var abbreviation: Abbreviation = Abbreviation.LongOptions
+    override var repeatedOptions: RepeatedOptions = RepeatedOptions.LastWins
+    override var shortOptions: ShortOptions = ShortOptions.Clustered
     override var epilogue: String = ""
     override var hidden: Boolean = false
+    override var prio: Boolean = false
     override var optionsEndAtFirstOperand: Boolean = false
+    internal var ownReading: OwnReading? = null
+        private set
+
+    override fun ownOptions(shortOptions: ShortOptions, abbreviation: Abbreviation) {
+        ownReading = OwnReading(shortOptions, abbreviation)
+    }
 
     private val specs = mutableListOf<HolderSpec>()
     private val globalSpecs = mutableListOf<NamedSpec>()
@@ -82,15 +98,22 @@ internal class BuilderImpl(
         return Arg(spec)
     }
 
-    override fun option(vararg names: String, help: String): Opt<String?> {
-        val spec = OptionSpec(names.toList(), help, passthrough, currentSection)
+    override fun option(short: List<Char>, long: List<String>, help: String): Opt<String?> {
+        val spec = OptionSpec(spellings(short, long), help, passthrough, currentSection)
         specs += spec
         return Opt(spec)
     }
 
-    override fun numberOption(help: String): Opt<String?> {
-        require(specs.none { it is OptionSpec && it.isNumber }) {
+    override fun numberOption(
+        help: String,
+        firstWordOnly: Boolean,
+        suffixes: String,
+    ): Opt<String?> {
+        require(specs.none { it is OptionSpec && it.number != null }) {
             "command '$name': numberOption is already declared; `-<NUM>` can only mean one input"
+        }
+        require(suffixes.all { it.isLetter() }) {
+            "command '$name': numberOption suffixes must be letters, got \"$suffixes\""
         }
         val spec = OptionSpec(
             names = emptyList(),
@@ -98,44 +121,44 @@ internal class BuilderImpl(
             convert = passthrough,
             section = currentSection,
             label = NUMBER_LABEL,
-            isNumber = true,
+            number = NumberShape(firstWordOnly, suffixes),
         )
         specs += spec
         return Opt(spec)
     }
 
-    override fun flag(vararg names: String, help: String): Flag {
-        val spec = FlagSpec(names.toList(), help, currentSection)
+    override fun flag(short: List<Char>, long: List<String>, help: String): Flag {
+        val spec = FlagSpec(spellings(short, long), help, currentSection)
         specs += spec
         return Flag(spec)
     }
 
-    override fun globalOption(vararg names: String, help: String): Opt<String?> {
-        val spec = OptionSpec(names.toList(), help, passthrough)
+    override fun globalOption(short: List<Char>, long: List<String>, help: String): Opt<String?> {
+        val spec = OptionSpec(spellings(short, long), help, passthrough)
         globalSpecs += spec
         return Opt(spec)
     }
 
-    override fun globalFlag(vararg names: String, help: String): Flag {
-        val spec = FlagSpec(names.toList(), help)
+    override fun globalFlag(short: List<Char>, long: List<String>, help: String): Flag {
+        val spec = FlagSpec(spellings(short, long), help)
         globalSpecs += spec
         return Flag(spec)
     }
 
     private val constraints = mutableListOf<InputConstraint>()
 
-    override fun requireExactlyOne(vararg inputs: Input): Unit =
-        addConstraint(ConstraintArity.ExactlyOne, "requireExactlyOne", inputs)
+    override fun exactlyOne(vararg inputs: Input): Unit =
+        addConstraint(ConstraintArity.ExactlyOne, "exactlyOne", inputs)
 
-    override fun requireAtMostOne(vararg inputs: Input): Unit =
-        addConstraint(ConstraintArity.AtMostOne, "requireAtMostOne", inputs)
+    override fun atMostOne(vararg inputs: Input): Unit =
+        addConstraint(ConstraintArity.AtMostOne, "atMostOne", inputs)
 
     override fun lastWins(vararg inputs: Input): Unit =
         addConstraint(ConstraintArity.LastWins, "lastWins", inputs)
 
-    override fun <T> lastOneWins(vararg inputs: Opt<T>): Opt<T> {
+    override fun <T> lastOf(vararg inputs: Opt<T>): Opt<T> {
         // Ahead of the fold spec, so a malformed set fails before this command grows an input for it.
-        addConstraint(ConstraintArity.LastWins, "lastOneWins", inputs)
+        addConstraint(ConstraintArity.LastWins, "lastOf", inputs)
         val members = inputs.map { it.spec }
         val fold = OptionSpec(
             names = emptyList(),
@@ -151,9 +174,9 @@ internal class BuilderImpl(
         return Opt(fold)
     }
 
-    private val validations = mutableListOf<ActionScope.() -> CliError?>()
+    private val validations = mutableListOf<ValueScope.() -> CliError?>()
 
-    override fun validateInputs(block: ActionScope.() -> CliError?) {
+    override fun validateInputs(block: ValueScope.() -> CliError?) {
         validations += block
     }
 
@@ -203,19 +226,28 @@ internal class BuilderImpl(
     }
 
     /** The root's resolved built-in surface, read by [cli]; a [Command] node never carries one. */
-    internal fun builtBuiltins(): Builtins = builtinsBuilder.resolve()
+    internal fun builtBuiltins(): Builtins = builtinsBuilder.resolve(version)
 
     override fun example(command: String, description: String) {
         examples += HelpExample(command, description)
     }
 
-    override fun <R> command(name: String, help: String, block: CommandBuilder.() -> R): R {
+    override fun <R> command(name: String, block: CommandBuilder.() -> R): R =
+        child(name, emptyList(), block)
+
+    override fun <R> command(short: List<Char>, long: List<String>, block: CommandBuilder.() -> R): R {
+        val spelled = spellings(short, long)
+        require(spelled.isNotEmpty()) { "command '${this.name}': a flag-spelled command needs a short or a long" }
+        spelled.forEach { requireValidSpelling("command", it) }
+        return child(long.firstOrNull() ?: short.first().toString(), spelled, block)
+    }
+
+    private fun <R> child(name: String, flagSpellings: List<String>, block: CommandBuilder.() -> R): R {
         // The child renders under the group heading enclosing this `command(...)` call (currentSection),
         // if any; its own `hidden` comes from the child block. Both are read back off the built child.
         val child = BuilderImpl(name, rootGlobalSpecs = reachableGlobalSpecs)
-        child.description = help
         val result = child.block()
-        val built = child.build(section = currentSection)
+        val built = child.build(section = currentSection, flagSpellings = flagSpellings)
         subs += built
         // A block that ended in `projection { }` has just told us which command it reads; nothing else can
         // supply that, because the handles it closes over are locals of the block that just returned.
@@ -223,21 +255,26 @@ internal class BuilderImpl(
         return result
     }
 
-    /** The root's globals, read by [cli] when assembling the [com.fromwau.klap.Cli]; a [Command] node never carries them. */
+    /** The root's globals, read by [cli] when assembling the [com.fromwau.klap.Cli]; a [Command] never carries them. */
     internal fun builtGlobals(): List<NamedSpec> = globalSpecs.toList()
 
     /**
      * Freeze the accumulated declarations into an immutable [Command], once every well-formedness rule passes.
      * [section] is the enclosing `group(...)` heading the parent threads in so this command renders under it.
      */
-    internal fun build(section: String? = null, builtinKind: Builtin? = null): Command {
+    internal fun build(
+        section: String? = null,
+        builtinKind: BuiltinKind? = null,
+        flagSpellings: List<String> = emptyList(),
+    ): Command {
         validatePositionals(name, specs)
         validateSpellings(name, specs, globalSpecs)
         validateDuplicateOptionFlagNames(name, specs)
         validateNegationCollisions(name, specs)
         validateGlobalCollisions(name, specs, globalSpecs, subs)
         validateSubcommands(name, subs)
-        validateActionlessLocalOptions(
+        validateFlagSpelledCommands(name, specs, reachableGlobalSpecs, subs)
+        validateActionlessOperands(
             name,
             specs,
             hasAction = actionSpec != null,
@@ -247,7 +284,10 @@ internal class BuilderImpl(
         validateLastWinsMembers(name, constraints)
         validateFoldCardinality(name, specs)
         validateConditionalOperandTriggers(name, specs)
-        validateRequiredIfTriggers(name, specs, reachableGlobalSpecs)
+        validateGatheringSlot(name, specs)
+        validateEndsOptionsSlot(name, specs, optionsEndAtFirstOperand)
+        validateRequiredWhenTriggers(name, specs, reachableGlobalSpecs)
+        validateRepeatedPolicies(name, specs + globalSpecs)
         validateCanActOrDispatch(name, actionSpec != null, subs.isNotEmpty(), builtinKind != null)
         val built = Command(
             name = name,
@@ -258,14 +298,17 @@ internal class BuilderImpl(
             subcommands = subs.toList(),
             action = actionSpec,
             optionsEndAtFirstOperand = optionsEndAtFirstOperand,
+            ownReading = ownReading,
             display = Display(
-                description = description,
+                description = help,
                 examples = examples.toList(),
                 epilogue = epilogue,
                 section = section,
                 hidden = hidden,
             ),
             builtinKind = builtinKind,
+            flagSpellings = flagSpellings,
+            prio = prio,
         )
         if (rootGlobalSpecs == null) {
             subs.forEach(::revalidateAgainstLaterMutation)

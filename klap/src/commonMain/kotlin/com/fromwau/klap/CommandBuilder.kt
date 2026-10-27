@@ -16,8 +16,11 @@ public annotation class KlapDsl
 /** Receiver of `cli { }` and `command { }`: declares one command's inputs, subcommands, help text and action. */
 @KlapDsl
 public abstract class CommandBuilder internal constructor() : ConverterScope() {
-    /** Prose for this command: its row in the parent's `Commands` list, and the paragraph under its own usage line. */
-    public abstract var description: String
+    /**
+     * Prose for this command: its row in the parent's `Commands` list, and the paragraph under its own usage line.
+     * Set inside the block, as `command("list") { help = "list the tasks" }`.
+     */
+    public abstract var help: String
 
     /** Further names this command answers to. `--help` lists them beside the canonical one, as `list, ls`. */
     public abstract var aliases: Collection<String>
@@ -29,11 +32,29 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
     public abstract var hidden: Boolean
 
     /**
-     * Stops reading dash-led tokens as options once the first operand appears, so the rest of the line
-     * reaches your action verbatim: `ssh web1 ls -la` passes `ls -la` through untouched, and
-     * `find . -name '*.kt'` hands find its own expression. Off by default.
+     * Lets this command run ahead of the rest of the line, as `mytool license` would: given, it runs without the
+     * required inputs of the commands above it, globals and their own options alike, and ahead of `--completion`
+     * and `--docs`. `--help` and `--version` keep their usual
+     * meaning beside it, so `mytool license --help` and `mytool --help license` both show its help.
+     */
+    public abstract var prio: Boolean
+
+    /**
+     * Stops reading dash-led tokens as options once the first operand appears, as getopt's leading `+` does, so
+     * the rest of the line reaches your action verbatim: `find . -name '*.kt'` hands find its own expression.
+     * Off by default. To end them at a later operand, as ssh does at its remote command, mark that operand with
+     * `endsOptions()` instead; building a command with both fails.
      */
     public abstract var optionsEndAtFirstOperand: Boolean
+
+    /**
+     * Reads this command's own options, those before its child's name, by [shortOptions] and [abbreviation] instead
+     * of the tree's settings, as git's root reads each word as a whole option while its commands cluster and
+     * abbreviate: `ownOptions(shortOptions = ShortOptions.Alone, abbreviation = Abbreviation.None)` refuses `git
+     * -Csub` and `git --git-d=x` and leaves `git status -sb` and `git status --bran` alone. [abbreviation] also
+     * decides whether this command's children are reached by a prefix of their names.
+     */
+    public abstract fun ownOptions(shortOptions: ShortOptions, abbreviation: Abbreviation)
 
     /**
      * Declares a positional operand, bound by where it sits on the command line rather than by a name.
@@ -44,27 +65,101 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
     public abstract fun argument(name: String, help: String = ""): Arg<String>
 
     /**
-     * Declares an option answering to every spelling in [names]. The first is its primary: the one errors
-     * name it by, and the key its value binds under. Write each spelling as the token it is, so
-     * `option("--since", "--after", "-a")` is one option under three spellings and `option("-Z")` is
-     * short-only. A short is one character; a long may be any length, `--h` included.
-     *
-     * Pass [help] by name. Given positionally it would read as one more spelling, and it must carry no
-     * dashes, which is rejected when the command is built.
+     * Declares an option answering to every spelling in [short] and [long], each written without its dashes:
+     * `option(short = 'a', long = listOf("since", "after"))` is one option under `-a`, `--since` and
+     * `--after`, and `option(short = 'Z')` is short-only. A short is typed `-a`, a long `--since`, so the
+     * parameter decides the shape. Its primary spelling, the one errors name it by and its value binds under, is
+     * the first long, or the first short when it has none.
      */
-    public abstract fun option(vararg names: String, help: String = ""): Opt<String?>
+    public abstract fun option(
+        short: List<Char> = emptyList(),
+        long: List<String> = emptyList(),
+        help: String = "",
+    ): Opt<String?>
+
+    /** An option with one short and one long spelling; see the list form for how spellings are read. */
+    public fun option(short: Char, long: String, help: String = ""): Opt<String?> =
+        option(listOf(short), listOf(long), help)
+
+    /** An option with one long spelling and no short; see the list form for how spellings are read. */
+    public fun option(long: String, help: String = ""): Opt<String?> =
+        option(emptyList(), listOf(long), help)
+
+    /** An option with one short spelling and no long; see the list form for how spellings are read. */
+    public fun option(short: Char, help: String = ""): Opt<String?> =
+        option(listOf(short), emptyList(), help)
+
+    /** An option with several shorts and one long; see the list form for how spellings are read. */
+    public fun option(short: List<Char>, long: String, help: String = ""): Opt<String?> =
+        option(short, listOf(long), help)
+
+    /** An option with one short and several longs; see the list form for how spellings are read. */
+    public fun option(short: Char, long: List<String>, help: String = ""): Opt<String?> =
+        option(listOf(short), long, help)
 
     /** The flag counterpart of [option]. `.negatable()` adds a `--no-` form for every long spelling. */
-    public abstract fun flag(vararg names: String, help: String = ""): Flag
+    public abstract fun flag(
+        short: List<Char> = emptyList(),
+        long: List<String> = emptyList(),
+        help: String = "",
+    ): Flag
 
-    /** Declares a subcommand that takes its help from its own [description]. */
-    public fun <R> command(name: String, block: CommandBuilder.() -> R): R = command(name, help = "", block)
+    /** A flag with one short and one long spelling; see the list form for how spellings are read. */
+    public fun flag(short: Char, long: String, help: String = ""): Flag =
+        flag(listOf(short), listOf(long), help)
+
+    /** A flag with one long spelling and no short; see the list form for how spellings are read. */
+    public fun flag(long: String, help: String = ""): Flag =
+        flag(emptyList(), listOf(long), help)
+
+    /** A flag with one short spelling and no long; see the list form for how spellings are read. */
+    public fun flag(short: Char, help: String = ""): Flag =
+        flag(listOf(short), emptyList(), help)
+
+    /** A flag with several shorts and one long; see the list form for how spellings are read. */
+    public fun flag(short: List<Char>, long: String, help: String = ""): Flag =
+        flag(short, listOf(long), help)
+
+    /** A flag with one short and several longs; see the list form for how spellings are read. */
+    public fun flag(short: Char, long: List<String>, help: String = ""): Flag =
+        flag(listOf(short), long, help)
 
     /**
-     * Declares a subcommand, using [help] as its [description] so a short one needs no assignment inside the
-     * block. A `description = "..."` written in [block] overrides it.
+     * Declares a subcommand, reached by [name] (`git add`). Its [help] and the rest of its settings go inside
+     * [block], beside its inputs and action.
      */
-    public abstract fun <R> command(name: String, help: String, block: CommandBuilder.() -> R): R
+    public abstract fun <R> command(name: String, block: CommandBuilder.() -> R): R
+
+    /**
+     * Declares a subcommand reached by a flag spelling rather than a word, as pacman's operations are: `-S` or
+     * `--sync`, never `sync`. The spelling may stand anywhere among the options, before the command's own
+     * (`pacman -i -Q pkg`) or inside a cluster with them (`pacman -iQ pkg`), and two commands of one parent on a
+     * line are refused. Spellings are written as for [flag].
+     */
+    public abstract fun <R> command(
+        short: List<Char> = emptyList(),
+        long: List<String> = emptyList(),
+        block: CommandBuilder.() -> R,
+    ): R
+
+    /**
+     * A flag-spelled command with one short and one long spelling; see the list form for how spellings are read. A
+     * long-only one keeps the list, `command(long = listOf("sync")) { }`, since `command("sync") { }` is the word.
+     */
+    public fun <R> command(short: Char, long: String, block: CommandBuilder.() -> R): R =
+        command(listOf(short), listOf(long), block)
+
+    /** A flag-spelled command with one short spelling and no long; see the list form for how spellings are read. */
+    public fun <R> command(short: Char, block: CommandBuilder.() -> R): R =
+        command(listOf(short), emptyList(), block)
+
+    /** A flag-spelled command with several shorts and one long; see the list form for how spellings are read. */
+    public fun <R> command(short: List<Char>, long: String, block: CommandBuilder.() -> R): R =
+        command(short, listOf(long), block)
+
+    /** A flag-spelled command with one short and several longs; see the list form for how spellings are read. */
+    public fun <R> command(short: Char, long: List<String>, block: CommandBuilder.() -> R): R =
+        command(listOf(short), long, block)
 
     /** The section options, flags and subcommands declared right now render under; null is the unlabeled default. */
     internal abstract var currentSection: String?
@@ -95,21 +190,21 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * Members must all be inputs of this one command, never a `globalOption`/`globalFlag` or another
      * command's. Fewer than two members, a repeat, or a foreign input throws when the command is built.
      */
-    public abstract fun requireExactlyOne(vararg inputs: Input)
+    public abstract fun exactlyOne(vararg inputs: Input)
 
     /**
-     * The at-most-one counterpart of [requireExactlyOne]: none is fine, two or more is a usage error.
+     * The at-most-one counterpart of [exactlyOne]: none is fine, two or more is a usage error.
      * `tar`'s `-z`/`-j` compression set, or `find`'s `-H`/`-L`/`-P`. Rows are annotated
      * `(at most one of -z, -j)`, and membership follows the same rules.
      */
-    public abstract fun requireAtMostOne(vararg inputs: Input)
+    public abstract fun atMostOne(vararg inputs: Input)
 
     /**
      * Declares that [inputs] override one another, the one written last winning: `rm -i -f` forces,
      * `rm -f -i` prompts, and neither is an error. `find`'s `-P`/`-L`/`-H`, `head`'s `-c`/`-n`, and `ls`'s
      * `-S` against `--sort=WORD` all behave this way.
      *
-     * **This overrides, it does not exclude.** [requireAtMostOne] reads plausibly here and is the wrong
+     * **This overrides, it does not exclude.** [atMostOne] reads plausibly here and is the wrong
      * tool: it would reject a line every one of those tools accepts.
      *
      * Order comes from the command line, inside a cluster too, so `-if` forces and `-fi` prompts. Losers
@@ -118,7 +213,7 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      *
      * A set may mix flags and options, since a tool often spells one setting both ways. It may not include
      * a positional, a `.required()` option or a `.multiple()` option. Membership follows
-     * [requireExactlyOne]'s rules.
+     * [exactlyOne]'s rules.
      */
     public abstract fun lastWins(vararg inputs: Input)
 
@@ -127,10 +222,10 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * and returns that handle so it can join a further rule:
      *
      * ```kotlin
-     * val named = option("--lines", "-n").int()
+     * val named = option(short = 'n', long = "lines").int()
      * val direct = numberOption().int()
-     * val bytes = option("--bytes", "-c").int()
-     * val lines = lastOneWins(named, direct)
+     * val bytes = option(short = 'c', long = "bytes").int()
+     * val lines = lastOf(named, direct)
      * lastWins(lines, bytes)
      * ```
      *
@@ -143,10 +238,10 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * @return a handle reading the winner, or the absent reading when the user wrote none of them. It is an
      *   input like any other: pass it to [lastWins] to give the folded quantity an override partner.
      */
-    public abstract fun <T> lastOneWins(vararg inputs: Opt<T>): Opt<T>
+    public abstract fun <T> lastOf(vararg inputs: Opt<T>): Opt<T>
 
     /**
-     * Declares `-<NUM>`, any run of digits, as an input of this command: `head -5`, `head -5v`, `git log -2`.
+     * Declares `-<NUM>`, a run of digits, as an input of this command: `head -5`, `head -5v`, `git log -2`.
      *
      * The digits are the value, so the handle takes the same converters and validation as [option] and is
      * read back the same way:
@@ -159,7 +254,7 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * ```
      *
      * A run every character of which names a declared short is that cluster instead, so a tool may declare
-     * both `flag("-4")` and this: `-4` is the flag and `-45` is the number. Without this declaration a
+     * both `flag(short = '4')` and this: `-4` is the flag and `-45` is the number. Without this declaration a
      * dash-led number stays an unknown option, which is what real `ls -5` and `sleep -1` answer.
      *
      * One per command, and no global option on the tree may hold a digit short: globals are resolved before
@@ -169,9 +264,26 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * The input has no spelling a user can type, so `-<NUM>` is the label help rows and error messages name
      * it by.
      *
+     * By default a run may stand in any word, after other shorts too (`git log -p -3`, `-v12`). GNU head's
+     * obsolete form, `-[NUM][bkm][cqv]` "recognized only if it is specified first", is this:
+     *
+     * ```kotlin
+     * val direct = numberOption(firstWordOnly = true, suffixes = "bcklm")
+     * // head -3bv f binds "3b" and -v; head -v -3 f and head -v12 f are unknown options
+     * ```
+     *
      * @param help the description shown on its `--help` row.
+     * @param firstWordOnly reads a run only at the start of the command's first word; anywhere else a digit is
+     *   an unknown option, as it would be without this input.
+     * @param suffixes letters a run keeps in its value after its digits, in the order typed: `-3bl` binds `"3bl"`.
+     *   The word's other letters are its cluster's flags (`-3vq` is 3, `-v` and `-q`), a value-taking short
+     *   there is refused (`-3n5`), and Tab after `-3` offers the suffixes and the flags. Letters only.
      */
-    public abstract fun numberOption(help: String = ""): Opt<String?>
+    public abstract fun numberOption(
+        help: String = "",
+        firstWordOnly: Boolean = false,
+        suffixes: String = "",
+    ): Opt<String?>
 
     /**
      * A rule no single input can answer, checked once every one of them is bound and before the action runs.
@@ -192,7 +304,7 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * Only a real invocation runs one — never `--help`, `--version`, completion or docs — and only on the
      * command that runs, so a block declared on the root does not fire when a subcommand does.
      */
-    public abstract fun validateInputs(block: ActionScope.() -> CliError?)
+    public abstract fun validateInputs(block: ValueScope.() -> CliError?)
 
     /** One example invocation shown under an `Examples:` heading in `--help`. */
     public abstract fun example(command: String, description: String = "")
@@ -206,7 +318,7 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
         block: suspend ActionScope.() -> Result<T, CliError>,
         suspending: Boolean,
         serializer: () -> KSerializer<T>,
-        human: (ActionScope.(T) -> String)?,
+        human: (ActionScope.(T) -> CharSequence)?,
         exitCode: (ActionScope.(T) -> Int)?,
     ) {
         actionSpec = ActionSpec(block, suspending, serializer, human, exitCode)
@@ -224,9 +336,11 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      *
      * For work that suspends, use [actionSuspending] instead.
      *
-     * @param human turns the returned value into the line printed on success; without it the value's
-     *   `toString()` is printed. A `--json` run serializes the value instead of calling this, so [T] must be
-     *   `@Serializable` for a CLI that offers `--json`.
+     * @param human turns the returned value into the line printed on success. Without it a value that is text,
+     *   such as a `String` or kern's `Styled`, is printed as it is, and anything else by its `toString()`. Styled
+     *   text is coloured only when colour is on, so `--color=never` and a pipe print it plain. A `--json` run
+     *   serializes the value instead of calling this, so [T] must be `@Serializable` for a CLI that offers
+     *   `--json`; `Styled` is written as its plain text.
      * @param exitCode what the process exits with when [block] succeeds; without it a success exits 0. Use
      *   it for the `diff` and `grep` convention, where a non-zero exit is the answer rather than a failure:
      *   the value is still printed and still serialized, and only the exit code changes. Clamped to
@@ -235,7 +349,7 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      *   and turns into the exit code.
      */
     public inline fun <reified T> action(
-        noinline human: (ActionScope.(T) -> String)? = null,
+        noinline human: (ActionScope.(T) -> CharSequence)? = null,
         noinline exitCode: (ActionScope.(T) -> Int)? = null,
         noinline block: ActionScope.() -> Result<T, CliError>,
     ) {
@@ -257,9 +371,11 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * [runActionSuspending] for a single resolved command. The synchronous `run`, `main` and `runAction`
      * refuse it, because without a caller-supplied scope nothing could resume it.
      *
-     * @param human turns the returned value into the line printed on success; without it the value's
-     *   `toString()` is printed. A `--json` run serializes the value instead of calling this, so [T] must be
-     *   `@Serializable` for a CLI that offers `--json`.
+     * @param human turns the returned value into the line printed on success. Without it a value that is text,
+     *   such as a `String` or kern's `Styled`, is printed as it is, and anything else by its `toString()`. Styled
+     *   text is coloured only when colour is on, so `--color=never` and a pipe print it plain. A `--json` run
+     *   serializes the value instead of calling this, so [T] must be `@Serializable` for a CLI that offers
+     *   `--json`; `Styled` is written as its plain text.
      * @param exitCode what the process exits with when [block] succeeds; without it a success exits 0. Use
      *   it for the `diff` and `grep` convention, where a non-zero exit is the answer rather than a failure:
      *   the value is still printed and still serialized, and only the exit code changes. Clamped to
@@ -268,7 +384,7 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      *   and turns into the exit code. It may suspend.
      */
     public inline fun <reified T> actionSuspending(
-        noinline human: (ActionScope.(T) -> String)? = null,
+        noinline human: (ActionScope.(T) -> CharSequence)? = null,
         noinline exitCode: (ActionScope.(T) -> Int)? = null,
         noinline block: suspend ActionScope.() -> Result<T, CliError>,
     ) {

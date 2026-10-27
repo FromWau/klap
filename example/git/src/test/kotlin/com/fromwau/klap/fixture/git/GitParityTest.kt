@@ -1,6 +1,7 @@
 package com.fromwau.klap.fixture.git
 
 import com.fromwau.klap.fixture.ParitySuite
+import com.fromwau.klap.io.CliPath
 import kotlin.test.Test
 
 class GitParityTest {
@@ -8,36 +9,38 @@ class GitParityTest {
     private val parity = ParitySuite(gitCli())
 
     @Test
-    fun `binds two level routing and globals at any depth`() {
+    fun `binds two level routing and the root options a command reads`() {
         parity.binds(
             "-C", "/tmp/repo", "status", "--short",
-            expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(directory = listOf("/tmp/repo")), short = true),
+            expected = NOTHING_STATUS.copy(
+                globals = NO_GLOBALS.copy(directory = listOf(CliPath("/tmp/repo"))),
+                short = true,
+            ),
         )
         parity.binds("status", "-sb", expected = NOTHING_STATUS.copy(short = true, branch = true))
-        // A global read from two levels down, and the `=` spelling of another.
+        // Root options read two levels down, and the `=` spelling of one.
         parity.binds(
             "--git-dir=/tmp/g", "--bare", "-c", "user.name=x", "remote", "add", "o", "u",
             expected = NOTHING_REMOTE_ADD.copy(
-                globals = NO_GLOBALS.copy(gitDir = "/tmp/g", bare = true, config = listOf("user.name=x")),
+                globals = NO_GLOBALS.copy(gitDir = CliPath("/tmp/g"), bare = true, config = listOf("user.name=x")),
                 name = "o",
                 url = "u",
             ),
         )
-        // The attached form of the optional-value global genuinely matches real git: it binds its own
-        // value and routes to `status` normally (verified against 2.55.0).
+        // The attached form of the optional-value root option genuinely matches real git: it binds its own
+        // value and routes to `status` normally (verified against 2.56.0).
         parity.binds(
             "--exec-path=/opt/gitcore", "status",
-            expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(execPath = "/opt/gitcore")),
+            expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(execPath = CliPath("/opt/gitcore"))),
         )
     }
 
     @Test
-    fun `binds the paginate pair at any depth`() {
-        // `.negatable()`'s explicit-spelling overload reproduces git's real pager pair: `--paginate`
-        // and both of the negative half's real spellings, `-P` and `--no-pager`, all bind. Only the
-        // SHORT `-p` is unclaimed, because `add`/`commit`/`log` each spell `-p` as `--patch`; the
-        // KLAP-GAP block above the global's declaration records that.
+    fun `binds the paginate pair before the subcommand`() {
+        // `.negatable()`'s explicit-spelling overload reproduces git's pager pair: `-p`, `--paginate` and both of the
+        // negative half's spellings, `-P` and `--no-pager`, all bind.
         parity.binds("status", expected = NOTHING_STATUS)
+        parity.binds("-p", "status", expected = NOTHING_STATUS)
         parity.binds("--paginate", "status", expected = NOTHING_STATUS)
         parity.binds(
             "--no-pager", "status",
@@ -64,13 +67,13 @@ class GitParityTest {
         parity.binds("add", expected = NOTHING_ADD)
         parity.binds(
             "add", "--chmod=+x", "s.sh",
-            expected = NOTHING_ADD.copy(chmod = "+x", pathspec = listOf("s.sh")),
+            expected = NOTHING_ADD.copy(chmod = ExecutableBit.Set, pathspec = listOf("s.sh")),
         )
         // Both spellings of `--chmod`'s value bind: real git's parse-options hands a required-value option
         // the next token regardless of its shape, so the space-separated `-x` is read as the value here too.
         parity.binds(
             "add", "--chmod", "-x", "f",
-            expected = NOTHING_ADD.copy(chmod = "-x", pathspec = listOf("f")),
+            expected = NOTHING_ADD.copy(chmod = ExecutableBit.Clear, pathspec = listOf("f")),
         )
     }
 
@@ -102,17 +105,17 @@ class GitParityTest {
             expected = NOTHING_COMMIT.copy(message = listOf("x"), gpgSign = "default"),
         )
         // The attached short form genuinely matches real git too: `-Sabc` signs with key "abc",
-        // matching real git's own "stuck to the option without a space" rule (verified against 2.55.0).
+        // matching real git's own "stuck to the option without a space" rule (verified against 2.56.0).
         parity.binds(
             "commit", "-Sabc", "-m", "x",
             expected = NOTHING_COMMIT.copy(message = listOf("x"), gpgSign = "abc"),
         )
         parity.binds(
             "commit", "-F", "msg.txt", "--author=A U Thor",
-            expected = NOTHING_COMMIT.copy(messageFile = "msg.txt", author = "A U Thor"),
+            expected = NOTHING_COMMIT.copy(messageFile = CliPath("msg.txt"), author = "A U Thor"),
         )
         // `Abbreviation.Options` reaches a subcommand's long options, which is the shape real git itself has:
-        // `git commit --am` resolves to `--amend` (verified against 2.55.0), and `--am` is unambiguous
+        // `git commit --am` resolves to `--amend` (verified against 2.56.0), and `--am` is unambiguous
         // against every other option this command declares.
         parity.binds(
             "commit", "--am", "-m", "x",
@@ -146,7 +149,7 @@ class GitParityTest {
             "remote", "add", "-f", "--mirror=push", "-t", "main", "origin", "https://x/y.git",
             expected = NOTHING_REMOTE_ADD.copy(
                 fetch = true,
-                mirror = "push",
+                mirror = Mirror.Push,
                 track = listOf("main"),
                 name = "origin",
                 url = "https://x/y.git",
@@ -163,7 +166,11 @@ class GitParityTest {
     @Test
     fun `rejects what real git rejects`() {
         parity.rejects("--zzz", because = "real git: unknown option: --zzz")
+        // `git help -a` lists the commands; there is no --help-all, and klap's default Help.ByCommand offers none.
+        parity.rejects("--help-all", because = "real git: unknown option: --help-all")
         parity.rejects("zzz", because = "real git: 'zzz' is not a git command")
+        // klap's completion wire is off with its completion built-in.
+        parity.rejects("__complete", "sta", because = "real git: '__complete' is not a git command")
         parity.rejects("-C", because = "real git: no directory given for '-C' option")
         parity.rejects("commit", "-m", because = "real git: switch 'm' requires a value")
         parity.rejects(
@@ -186,41 +193,16 @@ class GitParityTest {
         )
 
         // `-S`/`--gpg-sign` took the opposite side of the same trade: it kept the value form and lost
-        // negation, so `--no-gpg-sign` (verified accepted by real git 2.55.0, countermanding commit.gpgSign)
+        // negation, so `--no-gpg-sign` (verified accepted by real git 2.56.0, countermanding commit.gpgSign)
         // is unreachable here.
         parity.rejects(
             "commit", "--no-gpg-sign", "-m", "x",
             because = "klap gap: --gpg-sign took the value form for -S<keyid>, NOT real-git behaviour",
         )
 
-        // The subcommand walk stops at the first token that does not name a child, so an option cannot sit
-        // between a parent and its subcommand. git's own help says "-v must be placed before a subcommand",
-        // and `git remote -v add up <url>` really does work (verified against 2.55.0). Only a GLOBAL survives
-        // that position in klap, which is why the `-C` line in the binding test above does.
-        parity.rejects(
-            "remote", "-v", "add", "up", "https://x/y.git",
-            because = "klap gap: an option cannot precede a subcommand, NOT real-git behaviour",
-        )
-
-        // A global reserves its short across the WHOLE tree, so one letter cannot mean different things at
-        // different levels the way git's `-p` (paginate at the root, patch below it) does. Real git accepts
-        // both of these; `-v` is git's short for --version, which klap's built-in cannot carry.
-        parity.rejects("-p", "log", because = "klap gap: globals reserve a short tree-wide, NOT real-git behaviour")
-        parity.rejects("-v", because = "klap gap: the --version built-in has no short, NOT real-git behaviour")
-
         // The fixture's own shortfall, not klap's: klap can carry both spellings on one input, but this
         // tree only declares the primary, so real git's `--after` synonym for `--since` is unreached here.
         parity.rejects("log", "--after=2.weeks", because = "the fixture declares one spelling; real git takes both")
-
-        // Accepted by both, bound differently — the divergences that no reject/accept comparison can see.
-        // Real git's bare `--exec-path` is a print-and-exit special case ("If no path is given, git
-        // will print the current setting and then exit", verified against 2.55.0: neither `status`
-        // nor `log` after it is ever reached). klap cannot express a print-and-exit special case for a
-        // single option, so it binds the compiled default below and continues on to the subcommand.
-        parity.binds(
-            "--exec-path", "status",
-            expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(execPath = "/usr/lib/git-core")),
-        )
 
         // `-5` is git's shorthand for `-n 5`; the number input binds it like any other real invocation.
         parity.binds("log", "-5", expected = NOTHING_LOG.copy(maxCount = 5))
@@ -238,51 +220,14 @@ class GitParityTest {
             "log", "main", "dev",
             expected = NOTHING_LOG.copy(revisionRange = "main", paths = listOf("dev")),
         )
-
-        // `Abbreviation` is root-only, so the same switch that reaches commit's `--am` above also reaches
-        // every global below the root: real git never abbreviates a TOP-LEVEL long option (`git --exec
-        // status` answers "unknown option: --exec", verified against 2.55.0), but klap's switch has no way
-        // to turn abbreviation on beneath the root and off at it, so it resolves here too.
-        parity.bindsLoosely(
-            "--exec", "status",
-            because = "real git: unknown option: --exec; klap's switch is root-only, so real git's " +
-                "subcommand-only abbreviation shape is not expressible",
-            expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(execPath = "/usr/lib/git-core")),
-        )
     }
 
     @Test
-    fun `accepts surface real git does not have`() {
-        // The fixture declares `-C`/`-c` with an invented long spelling (`--directory`/`--config`) rather
-        // than short-only, though klap can do short-only now; these pin what real git rejects as a result.
-        parity.bindsLoosely(
-            "--directory", "/tmp/repo", "status",
-            because = "real git: unknown option: --directory",
-            expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(directory = listOf("/tmp/repo"))),
-        )
-        parity.bindsLoosely(
-            "--config", "user.name=x", "status",
-            because = "real git: unknown option: --config",
-            expected = NOTHING_STATUS.copy(globals = NO_GLOBALS.copy(config = listOf("user.name=x"))),
-        )
-
-        // klap's own position-independent built-ins, all of which real git answers `unknown option` to.
-        // `builtins { }` could decline json/color/completion/docs/-h; this fixture declines none of them.
-        parity.bindsLoosely("--json", "status", because = "real git: unknown option: --json", expected = NOTHING_STATUS)
-        parity.bindsLoosely(
-            "--color=never", "status",
-            because = "real git: unknown option: --color",
-            expected = NOTHING_STATUS,
-        )
-
-        parity.shortCircuits("--help-all", because = "real git: unknown option: --help-all")
-        // Injected as SUBCOMMANDS rather than options, git's root having no action of its own.
-        parity.shortCircuits("completion", "bash", because = "real git: 'completion' is not a git command")
-        parity.shortCircuits("docs", "markdown", because = "real git: 'docs' is not a git command")
-        parity.shortCircuits("__complete", "sta", because = "real git: '__complete' is not a git command")
-
-        // Both tools treat these as a help request; only the exit codes differ (git 129, klap 0), which is
-        // exactly the comparison this suite never makes.
+    fun `the version is the root's and help answers at every level`() {
+        // `git -v` and `git -v status` print `git version 2.56.0`; `git status --version` is "unknown option".
+        parity.showsVersion("-v", because = "real git: git version 2.56.0")
+        parity.showsVersion("-v", "status", because = "real git: git version 2.56.0")
+        parity.rejects("status", "--version", because = "real git: unknown option `version'")
         parity.shortCircuits("-h", because = "real git: prints the top-level usage")
         parity.shortCircuits("status", "-h", because = "real git: prints git-status's usage")
     }

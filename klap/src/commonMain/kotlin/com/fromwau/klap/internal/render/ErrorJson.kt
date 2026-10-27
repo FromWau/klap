@@ -89,6 +89,8 @@ internal fun CliError.toJson(): JsonElement = when (this) {
     }
     is CliError.ExactlyOneRequired -> typed("ExactlyOneRequired") { putStrings("inputs", inputs) }
     is CliError.MutuallyExclusive -> typed("MutuallyExclusive") { putStrings("inputs", inputs) }
+    is CliError.RepeatedCommand -> typed("RepeatedCommand") { put("command", command) }
+    is CliError.RepeatedOption -> typed("RepeatedOption") { put("option", option) }
     is CliError.Usage -> typed("Usage") { put("detail", detail) }
     is CliError.Failure -> typed("Failure") { put("detail", detail) }
     is CliError.Domain -> json ?: typed("Domain") { put("detail", detail) }
@@ -99,6 +101,9 @@ internal fun ConversionError.toJson(): JsonElement = when (this) {
     ConversionError.NotALong -> typed("NotALong") {}
     ConversionError.NotADouble -> typed("NotADouble") {}
     ConversionError.NotABoolean -> typed("NotABoolean") {}
+    ConversionError.NotADuration -> typed("NotADuration") {}
+    ConversionError.NotAnInstant -> typed("NotAnInstant") {}
+    ConversionError.NotAUuid -> typed("NotAUuid") {}
     is ConversionError.NotOneOf -> typed("NotOneOf") { putStrings("choices", choices) }
     // The throwable's own account is the only data a crashed transform leaves behind.
     is ConversionError.Threw -> typed("Threw") { putIfPresent("message", thrown.message) }

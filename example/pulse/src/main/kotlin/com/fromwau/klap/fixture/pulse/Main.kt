@@ -6,17 +6,24 @@ import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.getOrElse
 import com.fromwau.kern.result.map
 import com.fromwau.kern.result.mapError
+import com.fromwau.kern.terminal.Styled
 import com.fromwau.kern.terminal.bold
-import com.fromwau.kern.terminal.dim
 import com.fromwau.kern.terminal.defaultTerminal
+import com.fromwau.kern.terminal.dim
 import com.fromwau.kern.terminal.green
+import com.fromwau.kern.terminal.joinToStyled
 import com.fromwau.kern.terminal.red
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
-import com.fromwau.klap.ColorScope
 import com.fromwau.klap.ConversionError
+import com.fromwau.klap.Version
 import com.fromwau.klap.cli
 import com.fromwau.klap.runSuspending
+import kotlin.system.exitProcess
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.DurationUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -27,11 +34,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.system.exitProcess
-import kotlin.time.Clock
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.DurationUnit
 
 fun main(args: Array<String>) {
     // Everything below is the caller-owned scope the suspending-actions design doc talks about: a
@@ -84,8 +86,8 @@ fun main(args: Array<String>) {
  * `Cli.runSuspending(argv, terminal)`, which needs the built [Cli], not the process-exiting `.main(args)`.
  */
 internal fun pulseCli(): Cli = cli("pulse") {
-    description = "A tiny async service monitor"
-    version = "0.1.0"
+    help = "A tiny async service monitor"
+    version = Version.Of("0.1.0")
     author = "dx-probe"
     epilogue = "All services are simulated; nothing here touches the network."
 
@@ -97,8 +99,10 @@ internal fun pulseCli(): Cli = cli("pulse") {
     example("pulse watch --interval 1s --duration 5s", "poll every service once a second for five seconds")
     example("pulse services show cache", "look up one service")
 
-    command("services", "inspect the service catalogue") {
-        command("list", "list every known service") {
+    command("services") {
+        help = "inspect the service catalogue"
+        command("list") {
+            help = "list every known service"
             actionSuspending(
                 human = { services -> services.joinToString("\n") { "${it.name} (base ${it.baseLatency}, ${it.failureMode})" } },
             ) {
@@ -106,7 +110,8 @@ internal fun pulseCli(): Cli = cli("pulse") {
             }
         }
 
-        command("show", "show one service by name") {
+        command("show") {
+            help = "show one service by name"
             val name = argument("name", "service name")
             actionSuspending(human = { svc -> "${svc.name}: base ${svc.baseLatency}, failure mode ${svc.failureMode}" }) {
                 val svc = repo.findService(name())
@@ -116,13 +121,18 @@ internal fun pulseCli(): Cli = cli("pulse") {
         }
     }
 
-    command("check", "concurrently probe every service and report health") {
-        val timeout = option("--timeout", "-t", help = "give up on the whole batch after this long, e.g. 3s")
+    command("check") {
+        help = "concurrently probe every service and report health"
+        val timeout = option(
+            short = 't',
+            long = "timeout",
+            help = "give up on the whole batch after this long, e.g. 3s",
+        )
             .convert(::parseDuration)
             .range(1.seconds..120.seconds)
             .default(5.seconds)
             .placeholder("DURATION")
-        val only = option("--service", "-s", help = "limit to this service (repeatable)").multiple()
+        val only = option(short = 's', long = "service", help = "limit to this service (repeatable)").multiple()
 
         actionSuspending(human = { report -> renderCheckReport(report) }) {
             val budget = timeout()
@@ -147,13 +157,18 @@ internal fun pulseCli(): Cli = cli("pulse") {
         }
     }
 
-    command("watch", "poll every service on an interval until the duration elapses") {
-        val interval = option("--interval", "-i", help = "wait this long between polls, e.g. 1s")
+    command("watch") {
+        help = "poll every service on an interval until the duration elapses"
+        val interval = option(short = 'i', long = "interval", help = "wait this long between polls, e.g. 1s")
             .convert(::parseDuration)
             .range(1.seconds..60.seconds)
             .default(2.seconds)
             .placeholder("DURATION")
-        val duration = option("--duration", "-d", help = "keep polling for this long before stopping, e.g. 30s")
+        val duration = option(
+            short = 'd',
+            long = "duration",
+            help = "keep polling for this long before stopping, e.g. 30s",
+        )
             .convert(::parseDuration)
             .range(1.seconds..300.seconds)
             .default(10.seconds)
@@ -185,7 +200,8 @@ internal fun pulseCli(): Cli = cli("pulse") {
         }
     }
 
-    command("notify", "send a notification to a channel") {
+    command("notify") {
+        help = "send a notification to a channel"
         val channel = argument("channel", "channel to notify")
         val message = argument("message", "message body")
 
@@ -199,25 +215,26 @@ internal fun pulseCli(): Cli = cli("pulse") {
 
     // Synchronous, on purpose: no I/O, so it needs no actionSuspending, and it proves the tree can mix
     // both kinds of command (guide.md "Suspending actions": "the reverse direction is allowed").
-    command("info", "print static build info (no I/O, synchronous)") {
+    command("info") {
+        help = "print static build info (no I/O, synchronous)"
         action(human = { info -> "${info.name} v${info.version} - ${info.serviceCount} known services" }) {
             Ok(BuildInfo(name = "pulse", version = "0.1.0", serviceCount = DEFAULT_SERVICES.size))
         }
     }
 }
 
-private fun ColorScope.renderCheckReport(report: CheckReport): String = buildString {
-    report.results.forEach { s ->
-        val line = if (s.healthy) {
+private fun renderCheckReport(report: CheckReport): Styled {
+    val rows = report.results.map { s ->
+        if (s.healthy) {
             // Explicit unit: a measured Duration renders at nanosecond precision (`40.961158ms`), which is
             // false precision for a health probe. The configured latencies below are whole ms already.
             green("[ok]   ${s.service} (${s.latency.toString(DurationUnit.MILLISECONDS)})")
         } else {
             red("[fail] ${s.service}: ${s.detail}")
         }
-        appendLine(line)
     }
-    append(dim(bold("${report.healthyCount}/${report.total} healthy")))
+    val summary = (bold + dim)("${report.healthyCount}/${report.total} healthy")
+    return (rows + summary).joinToStyled("\n")
 }
 
 /**

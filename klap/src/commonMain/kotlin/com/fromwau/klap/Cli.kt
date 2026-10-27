@@ -1,11 +1,12 @@
 package com.fromwau.klap
 
 import com.fromwau.klap.internal.parse.NameMatch
+import com.fromwau.klap.internal.parse.hoistedToken
 import com.fromwau.klap.internal.parse.resolveName
 import com.fromwau.klap.internal.render.HelpExample
 import com.fromwau.klap.internal.spec.Action
 import com.fromwau.klap.internal.spec.ArgumentSpec
-import com.fromwau.klap.internal.spec.Builtin
+import com.fromwau.klap.internal.spec.BuiltinKind
 import com.fromwau.klap.internal.spec.Display
 import com.fromwau.klap.internal.spec.FlagSpec
 import com.fromwau.klap.internal.spec.HolderSpec
@@ -28,16 +29,24 @@ public open class Command internal constructor(
     internal val constraints: List<InputConstraint> = emptyList(),
     // Cross-input value rules from validateInputs {}, in declaration order. Unlike [constraints], which read
     // only which inputs were supplied, these read the bound values, so they run once binding is complete.
-    internal val validations: List<ActionScope.() -> CliError?> = emptyList(),
+    internal val validations: List<ValueScope.() -> CliError?> = emptyList(),
     public val subcommands: List<Command>,
     internal val action: Action?,
     internal val display: Display = Display(),
     // Non-null only for the completion/docs/__complete nodes cli() injects: names the builtin so parse()
     // routes it to the matching render invocation, since the node carries no action. A user command is null.
-    internal val builtinKind: Builtin? = null,
+    internal val builtinKind: BuiltinKind? = null,
     // Whether THIS node's own sift stops at its first operand rather than permuting past it; see
     // CommandBuilder.optionsEndAtFirstOperand for what that trades away and why it is per-node.
     internal val optionsEndAtFirstOperand: Boolean = false,
+    // The spellings of a command reached as a flag (`--sync`, `-S`), each written as the token it is, the
+    // primary first; empty for a command reached by its word.
+    internal val flagSpellings: List<String> = emptyList(),
+    // Set by `prio = true`: given, this command runs ahead of its parent's required globals and of
+    // `--completion` and `--docs`.
+    internal val prio: Boolean = false,
+    // Set by `ownOptions(...)`: how this command's own segment reads, in place of the tree's settings.
+    internal val ownReading: OwnReading? = null,
 ) {
     internal val arguments: List<ArgumentSpec> get() = specs.filterIsInstance<ArgumentSpec>()
     internal val options: List<OptionSpec> get() = specs.filterIsInstance<OptionSpec>()
@@ -50,7 +59,7 @@ public open class Command internal constructor(
 
     // Derived rather than stored: a second source of truth could disagree with [specs] about which input
     // the digits bind to, and the builder already refuses a second one.
-    internal val numberInput: OptionSpec? get() = options.firstOrNull { it.isNumber }
+    internal val numberInput: OptionSpec? get() = options.firstOrNull { it.number != null }
 
     // Presentation, read straight off [display]; description/epilogue stay public, the rest is the
     // render walk's concern. section/hidden mirror HolderSpec's own, so a subcommand and an input read
@@ -64,12 +73,28 @@ public open class Command internal constructor(
     /** A group prints subcommand help when invoked: it has children and no own action. */
     internal val isGroup: Boolean get() = subcommands.isNotEmpty() && action == null
 
+    /** Whether this command is reached by a flag spelling (`pacman -S`) rather than by its word (`git add`). */
+    internal val isFlagSpelled: Boolean get() = flagSpellings.isNotEmpty()
+
+    /** How a command line and its help name this command: its word, or its primary flag spelling. */
+    internal val token: String get() = flagSpellings.firstOrNull() ?: name
+
+    /** The words this command is typed as: its name and aliases, or none for a flag-spelled command. */
+    internal val words: List<String> get() = if (isFlagSpelled) emptyList() else listOf(name) + aliases
+
+    /** The children reached by their word, the only ones a subcommand token can name. */
+    internal val wordSubcommands: List<Command> get() = subcommands.filterNot { it.isFlagSpelled }
+
+    /** The children reached by a flag spelling, found anywhere among this command's options. */
+    internal val flagSubcommands: List<Command> get() = subcommands.filter { it.isFlagSpelled }
+
     /**
-     * The child named exactly [token], by its own name or one of its aliases, or null. This never resolves
-     * an abbreviation, even under [Abbreviation.All], so it can miss a token that parsing would have matched.
+     * The child named exactly [token], by its own name, one of its aliases, or a flag spelling as written
+     * (`--sync`, `-S`), or null. This never resolves an abbreviation, even under [Abbreviation.All], so it can
+     * miss a token that parsing would have matched.
      */
     public fun subcommand(token: String): Command? =
-        subcommands.firstOrNull { it.name == token || token in it.aliases }
+        subcommands.firstOrNull { it.name == token || token in it.aliases || token in it.flagSpellings }
 }
 
 /** What a typed subcommand token reached. [Ambiguous.candidates] are full spellings, in declaration order. */
@@ -79,6 +104,15 @@ internal sealed interface SubcommandMatch {
     data object None : SubcommandMatch
 }
 
+/** The rules one command's own segment reads by, set by [CommandBuilder.ownOptions]. */
+internal class OwnReading(val shortOptions: ShortOptions, val abbreviation: Abbreviation)
+
+/** How [cmd]'s own segment reads long names and subcommand names: its own call, or the tree's setting. */
+internal fun Cli.abbreviationAt(cmd: Command): Abbreviation = cmd.ownReading?.abbreviation ?: abbreviation
+
+/** How [cmd]'s own segment reads a one-dash word: its own call, or the tree's setting. */
+internal fun Cli.shortOptionsAt(cmd: Command): ShortOptions = cmd.ownReading?.shortOptions ?: shortOptions
+
 /**
  * The child [token] names, exactly or — when [infer] — as an unambiguous abbreviation of a name or alias.
  *
@@ -87,12 +121,14 @@ internal sealed interface SubcommandMatch {
  * command's own name AND one of its aliases is not ambiguous, since both name one command.
  */
 internal fun Command.resolveSubcommand(token: String, infer: Boolean): SubcommandMatch {
-    val pool = subcommands.flatMap { listOf(it.name) + it.aliases }
+    flagSubcommands.firstOrNull { token == it.hoistedToken }?.let { return SubcommandMatch.One(it) }
+    val pool = wordSubcommands.flatMap { it.words }
+    fun named(word: String) = wordSubcommands.firstOrNull { word in it.words }
     return when (val match = resolveName(token, pool, infer)) {
-        is NameMatch.Exact -> subcommand(match.name)?.let { SubcommandMatch.One(it) } ?: SubcommandMatch.None
-        is NameMatch.Prefix -> subcommand(match.name)?.let { SubcommandMatch.One(it) } ?: SubcommandMatch.None
+        is NameMatch.Exact -> named(match.name)?.let { SubcommandMatch.One(it) } ?: SubcommandMatch.None
+        is NameMatch.Prefix -> named(match.name)?.let { SubcommandMatch.One(it) } ?: SubcommandMatch.None
         is NameMatch.Ambiguous -> {
-            val commands = match.candidates.mapNotNull { subcommand(it) }.distinct()
+            val commands = match.candidates.mapNotNull { named(it) }.distinct()
             commands.singleOrNull()?.let { SubcommandMatch.One(it) }
                 ?: SubcommandMatch.Ambiguous(match.candidates)
         }
@@ -117,7 +153,7 @@ public class Cli internal constructor(
     public val version: String?,
     specs: List<HolderSpec>,
     constraints: List<InputConstraint>,
-    validations: List<ActionScope.() -> CliError?> = emptyList(),
+    validations: List<ValueScope.() -> CliError?> = emptyList(),
     subcommands: List<Command>,
     action: Action?,
     internal val globalSpecs: List<NamedSpec> = emptyList(),
@@ -127,8 +163,13 @@ public class Cli internal constructor(
     internal val builtins: Builtins = Builtins.DEFAULT,
     // Root-only, like [builtins]: threaded from here into every scan and sift, since a subcommand node
     // carries no root-only facts of its own.
-    internal val abbreviation: Abbreviation = Abbreviation.None,
+    internal val abbreviation: Abbreviation = Abbreviation.LongOptions,
+    // Root-only too: what an option given twice does wherever its own `.repeated()` says nothing.
+    internal val repeatedOptions: RepeatedOptions = RepeatedOptions.LastWins,
+    // Root-only too: whether a one-dash word may hold several shorts.
+    internal val shortOptions: ShortOptions = ShortOptions.Clustered,
     optionsEndAtFirstOperand: Boolean = false,
+    ownReading: OwnReading? = null,
 ) : Command(
     name = name,
     aliases = emptyList(),
@@ -139,6 +180,7 @@ public class Cli internal constructor(
     action = action,
     display = display,
     optionsEndAtFirstOperand = optionsEndAtFirstOperand,
+    ownReading = ownReading,
 ) {
     init {
         val reserved = subcommands
@@ -165,35 +207,39 @@ public class Cli internal constructor(
     internal val metaOptions: Boolean get() = action != null
 
     /**
-     * Every long spelling declared anywhere in this tree, dashes stripped: each node's own options and
-     * flags, plus each negatable flag's negative half, folded over the whole subcommand walk.
-     *
-     * Held rather than derived per call, unlike the other spec views above: the scans that run before the
-     * subcommand walk resolve an abbreviation against it on every parse, and the tree is immutable once
-     * built, so the walk can only ever produce the same list.
+     * The longs each command shares with its flag-spelled family, dashes stripped: a command with flag-spelled
+     * children and those children read one table, as pacman's operations are options of one getopt_long table
+     * (`pacman -Q --no` is ambiguous among every `--no...` pacman has). A command outside any family has none.
      */
-    internal val declaredLongs: List<String> by lazy { subtreeLongs() }
+    internal val sharedLongs: Map<Command, List<String>> by lazy {
+        mutableMapOf<Command, List<String>>().also { collectFlagFamilies(it) }
+    }
 
     /**
      * The qualified path of the first command in this tree declared with `actionSuspending { }`, or null
      * when none is.
      *
-     * Held rather than derived per call, for the same reason as [declaredLongs]: `run` and `main` read this
-     * on every call, the walk allocates a path string per node visited, and the tree is immutable once
-     * built, so it can only ever produce the same answer.
+     * Held rather than derived per call: `run` and `main` read this on every call, the walk allocates a path
+     * string per node visited, and the tree is immutable once built, so it can only ever produce the same answer.
      */
     internal val suspendingPath: String? by lazy { firstSuspendingPath() }
 }
 
-private fun Command.subtreeLongs(): List<String> =
-    namedInputs.flatMap { it.longs } +
-            flags.filter { it.negatable }.flatMap { it.negativeLongs } +
-            subcommands.flatMap { it.subtreeLongs() }
+private fun Command.collectFlagFamilies(into: MutableMap<Command, List<String>>) {
+    if (flagSubcommands.isNotEmpty()) {
+        val family = listOf(this) + flagSubcommands
+        val longs = family.flatMap { member ->
+            member.namedInputs.flatMap { it.longs } + member.flags.filter { it.negatable }.flatMap { it.negativeLongs }
+        } + flagSubcommands.flatMap { sub -> sub.flagSpellings.filter { it.startsWith("--") }.map { it.drop(2) } }
+        family.forEach { into[it] = into[it].orEmpty() + longs }
+    }
+    subcommands.forEach { it.collectFlagFamilies(into) }
+}
 
 private fun Command.firstSuspendingPath(prefix: String = name): String? {
     if (action?.suspending == true) return prefix
     for (sub in subcommands) {
-        sub.firstSuspendingPath("$prefix ${sub.name}")?.let { return it }
+        sub.firstSuspendingPath("$prefix ${sub.token}")?.let { return it }
     }
     return null
 }

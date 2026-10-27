@@ -1,6 +1,6 @@
 package com.fromwau.example
 
-import com.fromwau.kern.terminal.Terminal
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.Cli
 import com.fromwau.klap.run
 import kotlin.random.Random
@@ -16,14 +16,6 @@ internal const val DUE_EARLIER = "2999-12-30"
 
 internal const val DUE_LATER = "2999-12-31"
 
-/** Collects written text so a test can assert on rendered output and exit code, never real stdio. */
-internal class RecordingTerminal : Terminal {
-    val out = StringBuilder()
-    val err = StringBuilder()
-    override fun out(text: String) { out.append(text) }
-    override fun err(text: String) { err.append(text) }
-}
-
 /** What one `run` produced: the exit code plus everything written to each stream. */
 internal data class RunResult(val exitCode: Int, val out: String, val err: String)
 
@@ -31,7 +23,7 @@ internal data class RunResult(val exitCode: Int, val out: String, val err: Strin
 internal fun Cli.capture(argv: List<String>): RunResult {
     val terminal = RecordingTerminal()
     val code = run(argv, terminal)
-    return RunResult(code, terminal.out.toString(), terminal.err.toString())
+    return RunResult(code, terminal.out, terminal.err)
 }
 
 internal fun Cli.capture(vararg argv: String): RunResult = capture(argv.toList())

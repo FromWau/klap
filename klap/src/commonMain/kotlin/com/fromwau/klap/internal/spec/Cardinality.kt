@@ -5,5 +5,5 @@ internal sealed interface Cardinality {
     data object Required : Cardinality
     data object Optional : Cardinality
     data class Default(val value: Any?) : Cardinality
-    data class Multiple(val min: Int) : Cardinality
+    data class Multiple(val min: Int, val max: Int = Int.MAX_VALUE) : Cardinality
 }

@@ -38,10 +38,20 @@ internal data class ArgumentHelp(
     val help: String,
     val required: Boolean,
     val repeatable: Boolean,
+    val min: Int? = null,
+    val max: Int? = null,
     val default: String? = null,
     val choices: List<String>? = null,
-    val absentWith: String? = null,
-    val optionalWith: String? = null,
+    val absentWhen: String? = null,
+    val optionalWhen: String? = null,
+    val atMostWhen: List<CapHelp>? = null,
+)
+
+/** One `.atMostWhen` cap: while [input] is given, the operand takes at most [max] values. */
+@Serializable
+internal data class CapHelp(
+    val input: String,
+    val max: Int,
 )
 
 @Serializable
@@ -51,6 +61,8 @@ internal data class OptionHelp(
     val value: String? = null,
     val required: Boolean = false,
     val repeatable: Boolean = false,
+    val min: Int? = null,
+    val max: Int? = null,
     val default: String? = null,
     val choices: List<String>? = null,
     val section: String? = null,
@@ -75,6 +87,7 @@ internal fun Command.helpJson(
     qualifiedName: String,
     globalSpecs: List<NamedSpec>,
     rootVersioned: Boolean,
+    rootMetaOptions: Boolean,
     builtins: Builtins,
 ): HelpJson = HelpJson(
     command = qualifiedName,
@@ -82,9 +95,11 @@ internal fun Command.helpJson(
     description = description,
     arguments = arguments.filter { !it.hidden }.map { it.toHelp() },
     options = namedInputs.filter { !it.hidden }.map { it.toHelp() },
-    commands = subcommands.filter { !it.hidden }.map { CommandHelp(it.name, it.aliases, it.description, it.section) },
+    commands = subcommands.filter { !it.hidden }.map {
+        CommandHelp(it.token, it.aliases + it.flagSpellings.drop(1), it.description, it.section)
+    },
     globalOptions = globalSpecs.filter { !it.hidden }.map { it.toHelp() } +
-        builtinOptions(rootVersioned, builtins).map { it.toHelp() },
+        builtinOptions(rootVersioned, rootMetaOptions, builtins).map { it.toHelp() },
     examples = examples.map { ExampleHelp(it.command, it.description) },
     epilogue = epilogue.ifEmpty { null },
     author = (this as? Cli)?.author?.takeUnless { it.isBlank() },
@@ -95,14 +110,16 @@ internal fun Command.helpJsonText(
     qualifiedName: String,
     globalSpecs: List<NamedSpec>,
     rootVersioned: Boolean,
+    rootMetaOptions: Boolean,
     builtins: Builtins,
     recursive: Boolean,
 ): String {
     if (!recursive) {
-        return Json.encodeToString(HelpJson.serializer(), helpJson(qualifiedName, globalSpecs, rootVersioned, builtins))
+        val page = helpJson(qualifiedName, globalSpecs, rootVersioned, rootMetaOptions, builtins)
+        return Json.encodeToString(HelpJson.serializer(), page)
     }
     val all = visibleTree(qualifiedName).map { (node, path) ->
-        node.helpJson(path, globalSpecs, rootVersioned, builtins)
+        node.helpJson(path, globalSpecs, rootVersioned, rootMetaOptions, builtins)
     }
     return Json.encodeToString(ListSerializer(HelpJson.serializer()), all)
 }
@@ -113,15 +130,24 @@ private fun BuiltinOption.toHelp(): OptionHelp =
 private fun Cardinality.isRequired(): Boolean =
     this == Cardinality.Required || (this is Cardinality.Multiple && min > 0)
 
+/** A `.multiple()` input's declared minimum, null when it is zero, as text help leaves it unsaid. */
+private val Cardinality.minCount: Int? get() = (this as? Cardinality.Multiple)?.min?.takeIf { it > 0 }
+
+/** A `.multiple()` input's declared maximum, null when it has none. */
+private val Cardinality.maxCount: Int? get() = (this as? Cardinality.Multiple)?.max?.takeIf { it != Int.MAX_VALUE }
+
 private fun ArgumentSpec.toHelp(): ArgumentHelp = ArgumentHelp(
     name = displayName(),
     help = help,
     required = cardinality.isRequired(),
     repeatable = cardinality is Cardinality.Multiple,
+    min = cardinality.minCount,
+    max = cardinality.maxCount,
     default = (cardinality as? Cardinality.Default)?.let { display(it.value) },
-    choices = choices,
-    absentWith = absentWhen?.constraintToken(),
-    optionalWith = relaxedWhen?.constraintToken(),
+    choices = listedChoices,
+    absentWhen = absentWhen?.constraintToken(),
+    optionalWhen = optionalWhen?.constraintToken(),
+    atMostWhen = capsWhen.map { (trigger, n) -> CapHelp(trigger.constraintToken(), n) }.ifEmpty { null },
 )
 
 private fun NamedSpec.toHelp(): OptionHelp = when (this) {
@@ -131,8 +157,10 @@ private fun NamedSpec.toHelp(): OptionHelp = when (this) {
         value = resolvedPlaceholder(),
         required = cardinality.isRequired(),
         repeatable = cardinality is Cardinality.Multiple,
+        min = cardinality.minCount,
+        max = cardinality.maxCount,
         default = (cardinality as? Cardinality.Default)?.let { display(it.value) },
-        choices = choices,
+        choices = listedChoices,
         section = section,
     )
     is FlagSpec -> OptionHelp(

@@ -2,10 +2,11 @@ package com.fromwau.klap
 
 import com.fromwau.kern.fuzzy.didYouMean
 import com.fromwau.kern.result.Err
-import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.ResultError
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.helpText
 import com.fromwau.klap.internal.render.message
 import com.fromwau.klap.internal.render.renderError
@@ -21,7 +22,7 @@ class AuthorTest {
 
     private fun tree(author: String?) = cli("todo") {
         if (author != null) this.author = author
-        description = "manage tasks"
+        help = "manage tasks"
         command("add") { action { Ok("") } }
     }
 
@@ -75,8 +76,8 @@ class AuthorTest {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
-                    flag("--recursive", "-r", "-R", help = "recurse")
-                    flag("--reverse", "-R", help = "reverse")
+                    flag(short = listOf('r', 'R'), long = "recursive", help = "recurse")
+                    flag(short = 'R', long = "reverse", help = "reverse")
                     action { Ok("") }
                 }
             }
@@ -89,8 +90,8 @@ class AuthorTest {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("log") {
                 command("show") {
-                    option("--since", "--after", help = "lower bound")
-                    option("--after", "-a", help = "the same thing again")
+                    option(long = listOf("since", "after"), help = "lower bound")
+                    option(short = 'a', long = "after", help = "the same thing again")
                     action { Ok("") }
                 }
             }
@@ -116,7 +117,7 @@ class AuthorTest {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
-                    flag("-Z", help = "zeta").negatable(default = true)
+                    flag(short = 'Z', help = "zeta").negatable(default = true)
                     action { Ok("") }
                 }
             }
@@ -125,79 +126,33 @@ class AuthorTest {
     }
 
     @Test
-    fun `help text passed positionally is rejected with a pointer to the named parameter`() {
+    fun `a long written with its dashes is rejected and names the bare word`() {
         val ex = assertFailsWith<IllegalArgumentException> {
             cli("app") {
                 command("go") {
-                    flag("--force", "-f", "ignore nonexistent files")
+                    flag(long = "--recursive", help = "recurse")
                     action { Ok("") }
                 }
             }
         }
-        assertTrue("help = " in ex.message.orEmpty(), ex.message)
+        assertTrue("long = \"recursive\"" in ex.message.orEmpty(), ex.message)
     }
 
     @Test
-    fun `one word help text passed positionally is rejected the same way`() {
-        // The whitespace rule cannot see this one: "recurse" is a perfectly well-formed word. The missing
-        // dashes are what catch it, which is the whole reason a spelling carries its own.
-        val ex = assertFailsWith<IllegalArgumentException> {
-            cli("app") {
-                command("go") {
-                    flag("--recursive", "-r", "recurse")
-                    action { Ok("") }
-                }
-            }
-        }
-        assertTrue("help = " in ex.message.orEmpty(), ex.message)
-    }
-
-    @Test
-    fun `a bare name is rejected and names the token it should have been`() {
-        val ex = assertFailsWith<IllegalArgumentException> {
-            cli("app") {
-                command("go") {
-                    flag("recursive", help = "recurse")
-                    action { Ok("") }
-                }
-            }
-        }
-        assertTrue("'--recursive'" in ex.message.orEmpty(), ex.message)
-    }
-
-    @Test
-    fun `a bare one character name is rejected as a short rather than a long`() {
-        val ex = assertFailsWith<IllegalArgumentException> {
-            cli("app") {
-                command("go") {
-                    flag("r", help = "recurse")
-                    action { Ok("") }
-                }
-            }
-        }
-        assertTrue("'-r'" in ex.message.orEmpty(), ex.message)
-    }
-
-    @Test
-    fun `a multi character short is rejected as the cluster the parser would read it`() {
-        val ex = assertFailsWith<IllegalArgumentException> {
-            cli("app") {
-                command("go") {
-                    flag("-rf", help = "recurse and force")
-                    action { Ok("") }
-                }
-            }
-        }
-        assertTrue("--rf" in ex.message.orEmpty(), ex.message)
-    }
-
-    @Test
-    fun `a spelling that is only dashes or carries three is rejected`() {
-        for (spelling in listOf("-", "--", "---x")) {
-            assertFailsWith<IllegalArgumentException>("'$spelling' must not declare an input") {
+    fun `a long that is blank or carries an equals sign or a control character is rejected`() {
+        for (spelling in listOf("", " ", "key=value", "na${Char(1)}me")) {
+            assertFailsWith<IllegalArgumentException>("'$spelling' must not declare an option") {
                 cli("app") {
                     command("go") {
-                        option(spelling, help = "nope")
+                        option(long = listOf(spelling), help = "nope")
+                        action { Ok("") }
+                    }
+                }
+            }
+            assertFailsWith<IllegalArgumentException>("'$spelling' must not declare a flag") {
+                cli("app") {
+                    command("go") {
+                        flag(long = spelling, help = "nope")
                         action { Ok("") }
                     }
                 }
@@ -224,8 +179,8 @@ class AuthorTest {
         lateinit var long: Opt<String?>
         lateinit var short: Flag
         val tree = cli("app") {
-            long = option("--x", help = "the long one")
-            short = flag("-x", help = "the short one")
+            long = option(long = "x", help = "the long one")
+            short = flag(short = 'x', help = "the short one")
             action { Ok("") }
         }
         val parsed = tree.parse(listOf("--x", "value", "-x")).assertSuccess()
@@ -246,10 +201,10 @@ class PublicSurfaceTest {
         lateinit var verbose: Flag
         lateinit var loud: CountFlag
         cli("app") {
-            host = option("--host", "-H")
+            host = option(short = 'H', long = "host")
             file = argument("file")
-            verbose = flag("--verbose", "-v")
-            loud = flag("--loud", "-l").count()
+            verbose = flag(short = 'v', long = "verbose")
+            loud = flag(short = 'l', long = "loud").count()
             action { Ok("") }
         }
         assertEquals("--host", host.name)
@@ -279,7 +234,7 @@ class PublicSurfaceTest {
 
         val term = RecordingTerminal()
         assertEquals(6, renderError(err, json = false, terminal = term))
-        assertEquals("error: out of space\n", term.err.toString())
+        assertEquals("error: out of space\n", term.err)
     }
 
     @Test
@@ -287,7 +242,7 @@ class PublicSurfaceTest {
         // Two lines survive, exactly as they do for Failure: the consumer wrote the sentence.
         val term = RecordingTerminal()
         renderError(CliError.Domain(StoreError.DiskFull, "out of space\n  free some and retry"), json = false, terminal = term)
-        assertTrue("\n  free some and retry" in term.err.toString(), term.err.toString())
+        assertTrue("\n  free some and retry" in term.err, term.err)
     }
 
     @Test
@@ -300,4 +255,4 @@ class PublicSurfaceTest {
     }
 }
 
-private enum class StoreError : IError { DiskFull, NotFound }
+private enum class StoreError : ResultError { DiskFull, NotFound }

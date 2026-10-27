@@ -1,6 +1,7 @@
 package com.fromwau.klap.fixture.tar
 
 import com.fromwau.klap.fixture.ParitySuite
+import com.fromwau.klap.io.CliPath
 import kotlin.test.Test
 
 class TarParityTest {
@@ -14,46 +15,63 @@ class TarParityTest {
             expected = NOTHING_BOUND.copy(
                 create = true,
                 verbose = 1,
-                archive = "backup.tar",
-                files = listOf("src", "docs"),
+                archive = CliPath("backup.tar"),
+                files = listOf(CliPath("src"), CliPath("docs")),
             ),
         )
         // The last character of a cluster is the one that takes a value, attached or separate.
         parity.binds(
             "-cvfout.tar", "src",
-            expected = NOTHING_BOUND.copy(create = true, verbose = 1, archive = "out.tar", files = listOf("src")),
+            expected = NOTHING_BOUND.copy(
+                create = true,
+                verbose = 1,
+                archive = CliPath("out.tar"),
+                files = listOf(CliPath("src")),
+            ),
         )
         parity.binds(
             "-cvvf", "out.tar",
-            expected = NOTHING_BOUND.copy(create = true, verbose = 2, archive = "out.tar"),
+            expected = NOTHING_BOUND.copy(create = true, verbose = 2, archive = CliPath("out.tar")),
         )
         parity.binds(
             "-tf", "backup.tar",
-            expected = NOTHING_BOUND.copy(listContents = true, archive = "backup.tar"),
+            expected = NOTHING_BOUND.copy(listContents = true, archive = CliPath("backup.tar")),
         )
         parity.binds(
             "-tzf", "backup.tar.gz",
-            expected = NOTHING_BOUND.copy(listContents = true, gzip = true, archive = "backup.tar.gz"),
+            expected = NOTHING_BOUND.copy(listContents = true, gzip = true, archive = CliPath("backup.tar.gz")),
         )
         parity.binds(
             "-xf", "a.tar", "--exclude", "*.log", "--exclude", "*.tmp",
-            expected = NOTHING_BOUND.copy(extract = true, archive = "a.tar", exclude = listOf("*.log", "*.tmp")),
+            expected = NOTHING_BOUND.copy(
+                extract = true,
+                archive = CliPath("a.tar"),
+                exclude = listOf("*.log", "*.tmp"),
+            ),
         )
         // A dash-led PATTERN: a required-argument option takes the next token whatever it looks like.
         parity.binds(
             "-cf", "a.tar", "--exclude", "-foo", "src",
-            expected = NOTHING_BOUND.copy(create = true, archive = "a.tar", exclude = listOf("-foo"), files = listOf("src")),
+            expected = NOTHING_BOUND.copy(
+                create = true,
+                archive = CliPath("a.tar"),
+                exclude = listOf("-foo"),
+                files = listOf(CliPath("src")),
+            ),
         )
         // A lone dash is a value, not an option: tar's own spelling for stdout.
-        parity.binds("-cf", "-", "src", expected = NOTHING_BOUND.copy(create = true, archive = "-", files = listOf("src")))
+        parity.binds(
+            "-cf", "-", "src",
+            expected = NOTHING_BOUND.copy(create = true, archive = CliPath("-"), files = listOf(CliPath("src"))),
+        )
         parity.binds(
             "--create", "--file", "a.tar",
-            expected = NOTHING_BOUND.copy(create = true, archive = "a.tar"),
+            expected = NOTHING_BOUND.copy(create = true, archive = CliPath("a.tar")),
         )
         // `--cr` is an unambiguous abbreviation of `--create`, as it is for real tar.
         parity.binds(
             "--cr", "--file", "a.tar",
-            expected = NOTHING_BOUND.copy(create = true, archive = "a.tar"),
+            expected = NOTHING_BOUND.copy(create = true, archive = CliPath("a.tar")),
         )
     }
 
@@ -67,7 +85,7 @@ class TarParityTest {
     }
 
     /**
-     * The two exclusivity rules, enforced by `requireExactlyOne`/`requireAtMostOne` at parse time. The
+     * The two exclusivity rules, enforced by `exactlyOne`/`atMostOne` at parse time. The
      * mode conflict outranks the missing `--file` a later bind would raise, which is GNU tar's order too.
      */
     @Test
@@ -92,7 +110,7 @@ class TarParityTest {
         parity.bindsLoosely(
             "--excl", "*.log", "-cf", "a.tar",
             because = "real tar: option '--excl' is ambiguous; possibilities: '--exclude' '--exclude-from' ...",
-            expected = NOTHING_BOUND.copy(create = true, archive = "a.tar", exclude = listOf("*.log")),
+            expected = NOTHING_BOUND.copy(create = true, archive = CliPath("a.tar"), exclude = listOf("*.log")),
         )
     }
 }

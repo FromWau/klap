@@ -13,18 +13,18 @@ import kotlin.test.assertIs
  * head gives them in a set with that handle, plus a flag to write around the digits and the operands a
  * misread `-NUM` would silently empty.
  *
- * The fold is `lastOneWins`, not `named() ?: direct()`: a loser binds `absentValue()`, which is its
+ * The fold is `lastOf`, not `named() ?: direct()`: a loser binds `absentValue()`, which is its
  * `.default()` when it has one, so the `?:` reading answers with the loser the moment either spelling
  * gains a default.
  */
 private fun headTree(): Cli = cli("head") {
-    val named = option("--lines", "-n").int()
+    val named = option(short = 'n', long = "lines").int()
     val direct = numberOption().int()
-    val bytes = option("--bytes", "-c").int()
-    val lines = lastOneWins(named, direct)
+    val bytes = option(short = 'c', long = "bytes").int()
+    val lines = lastOf(named, direct)
     lastWins(lines, bytes)
-    val quiet = flag("--quiet", "-q")
-    val verbose = flag("--verbose", "-v")
+    val quiet = flag(short = 'q', long = "quiet")
+    val verbose = flag(short = 'v', long = "verbose")
     val files = argument("file").multiple(min = 0)
     action {
         Ok("lines=${lines()} bytes=${bytes()} quiet=${quiet()} verbose=${verbose()} files=${files()}")
@@ -35,7 +35,7 @@ private fun headTree(): Cli = cli("head") {
  * `-<NUM>` is an input of its own, and a maximal run of digits that nothing else has claimed binds to it
  * wherever in the token it sits. GNU head accepts `head -5v f` and rejects `head -v5 f`, because a
  * value-taking short takes the rest of its cluster and only position zero is unambiguous to a reader;
- * klap resolves that from the declarations and accepts both.
+ * klap resolves that from the declarations and, unless `firstWordOnly` asks for head's rule, accepts both.
  */
 class NumberOptionTest {
 
@@ -103,12 +103,13 @@ class NumberOptionTest {
 
     @Test
     fun `a run every character of which is declared is that cluster`() {
-        // POSIX guideline 14, scoped to the run: `-4` is fully covered by the declared short, `-45` is
-        // not, and `-45` with both declared is again. `ping -4` is why this cannot simply be refused.
+        // A token that reads as a group of options is one, as getopt reads it, scoped to the run: `-4` is fully covered
+        // by the declared short, `-45` is not, and `-45` with both declared is again. `ping -4` is why this cannot
+        // simply be refused.
         val one = cli("app") {
             val n = numberOption().int()
-            val four = flag("-4")
-            val verbose = flag("-v")
+            val four = flag(short = '4')
+            val verbose = flag(short = 'v')
             action { Ok("n=${n()} four=${four()} v=${verbose()}") }
         }
         assertEquals("n=null four=true v=false", one.bindText("-4"))
@@ -119,8 +120,8 @@ class NumberOptionTest {
 
         val both = cli("app") {
             val n = numberOption().int()
-            val four = flag("-4")
-            val five = flag("-5")
+            val four = flag(short = '4')
+            val five = flag(short = '5')
             action { Ok("n=${n()} four=${four()} five=${five()}") }
         }
         assertEquals("n=null four=true five=true", both.bindText("-45"))
@@ -133,7 +134,7 @@ class NumberOptionTest {
         // rule 2 calls it the number 25. Rule 2 wins, which is also what klap answers today.
         val tree = cli("app") {
             val n = numberOption().int()
-            val two = option("--two", "-2").int()
+            val two = option(short = '2', long = "two").int()
             action { Ok("n=${n()} two=${two()}") }
         }
         assertEquals("n=25 two=null", tree.bindText("-25"))
@@ -168,7 +169,7 @@ class NumberOptionTest {
 
     @Test
     fun `where the number sits in the command is not constrained`() {
-        // klap does not adopt head's leading-only rule: a dash-led token is an option under guideline 14,
+        // head's leading-only rule is opt-in (`firstWordOnly`): a dash-led token is an option, as getopt reads it,
         // and a CLI declaring a number option has told its users so. `--` and `./` remain the escapes.
         assertEquals(
             "lines=2 bytes=null quiet=true verbose=false files=[f]",
@@ -274,14 +275,14 @@ class NumberOptionTest {
         // collects both; without it the last wins, as a second occurrence of any option would.
         val lastWins = cli("app") {
             val n = numberOption().int()
-            val a = flag("-a")
+            val a = flag(short = 'a')
             action { Ok("n=${n()} a=${a()}") }
         }
         assertEquals("n=2 a=true", lastWins.bindText("-1a2"))
 
         val collected = cli("app") {
             val n = numberOption().int().multiple(min = 0)
-            val a = flag("-a")
+            val a = flag(short = 'a')
             action { Ok("n=${n()} a=${a()}") }
         }
         assertEquals("n=[1, 2] a=true", collected.bindText("-1a2"))
@@ -290,7 +291,7 @@ class NumberOptionTest {
         // cluster rule, so there is nothing left for a second run to be cut from.
         val valueTaking = cli("app") {
             val n = numberOption().int()
-            val a = option("--a-opt", "-a")
+            val a = option(short = 'a', long = "a-opt")
             action { Ok("n=${n()} a=${a()}") }
         }
         assertEquals("n=1 a=2", valueTaking.bindText("-1a2"))
@@ -332,6 +333,7 @@ class NumberOptionTest {
         // not a help request today. Once a run resolves it must be one, or the help ladder and the bind
         // disagree about the same cluster.
         val tree = cli("app") {
+            builtins { help = Help.ByCommand(short = 'h') }
             val n = numberOption().int()
             action { Ok("n=${n()}") }
         }

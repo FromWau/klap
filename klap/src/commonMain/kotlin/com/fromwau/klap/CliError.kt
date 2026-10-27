@@ -1,9 +1,9 @@
 package com.fromwau.klap
 
-import com.fromwau.kern.result.IError
+import com.fromwau.kern.result.ResultError
 import kotlinx.serialization.json.JsonElement
 
-/** POSIX convention: a command-line usage error exits 2. */
+/** A command-line usage error exits 2, as `ls --bogus` and `grep --bogus` do. */
 public const val USAGE_ERROR_EXIT: Int = 2
 
 /**
@@ -13,18 +13,30 @@ public const val USAGE_ERROR_EXIT: Int = 2
  *
  * The token that failed is not repeated here, since [CliError.BadValue.value] already carries it.
  */
-public sealed interface ConversionError : IError {
-    /** `.int()` was given something `toIntOrNull` rejects. */
+public sealed interface ConversionError : ResultError {
+    /** `.int()` was given something that is no decimal `Int`, as GNU tools read one (see `.int()`). */
     public data object NotAnInteger : ConversionError
 
-    /** `.long()` was given something `toLongOrNull` rejects, including an integer past `Long`'s range. */
+    /** `.long()` was given something that is no decimal `Long`, including an integer past `Long`'s range. */
     public data object NotALong : ConversionError
 
-    /** `.double()` was given something `toDoubleOrNull` rejects. */
+    /** `.double()` was given something that is no number as `strtod` reads one whole (see `.double()`). */
     public data object NotADouble : ConversionError
 
     /** `.boolean()` was given anything other than exactly `true` or `false`. */
     public data object NotABoolean : ConversionError
+
+    /**
+     * `.duration()` was given something that is neither Kotlin's duration format nor a bare number of seconds,
+     * or a duration that is negative or infinite.
+     */
+    public data object NotADuration : ConversionError
+
+    /** `.instant()` was given something `kotlin.time.Instant.parse` refuses: no ISO 8601 instant with an offset. */
+    public data object NotAnInstant : ConversionError
+
+    /** `.uuid()` was given something `kotlin.uuid.Uuid.parse` refuses: no 32 hex digits, dashed or plain. */
+    public data object NotAUuid : ConversionError
 
     /**
      * `.choice(...)` or `.enum<E>()` was given a value outside its set. [choices] are the declared spellings
@@ -32,7 +44,7 @@ public sealed interface ConversionError : IError {
      */
     public data class NotOneOf(val choices: List<String>) : ConversionError
 
-    /** A `.map { }` transform threw. klap catches it rather than letting a bad value crash the parse. */
+    /** A `.map { }` transform threw, an `Error` included. klap catches it rather than letting it crash the parse. */
     public data class Threw(val thrown: Throwable) : ConversionError
 
     /**
@@ -42,12 +54,12 @@ public sealed interface ConversionError : IError {
      * match on it.
      *
      * ```kotlin
-     * sealed interface PortError : IError {
+     * sealed interface PortError : ResultError {
      *     data class NotANumber(val given: String) : PortError
      *     data class OutOfRange(val given: Int) : PortError
      * }
      *
-     * option("--port").convert { raw ->
+     * option(long = "port").convert { raw ->
      *     val n = raw.toIntOrNull()
      *         ?: return@convert Err(ConversionError.Domain(PortError.NotANumber(raw), "not a number"))
      *     if (n in 1..65535) Ok(n)
@@ -56,7 +68,7 @@ public sealed interface ConversionError : IError {
      * ```
      */
     public data class Domain(
-        val error: IError,
+        val error: ResultError,
         val detail: String,
         val json: JsonElement? = null,
     ) : ConversionError
@@ -67,7 +79,7 @@ public sealed interface ConversionError : IError {
  * writes the words. Return [Usage], [Failure] or [Domain] from an action; the rest describe parse failures
  * you can match on after calling `parse`.
  */
-public sealed interface CliError : IError {
+public sealed interface CliError : ResultError {
     public val exitCode: Int get() = USAGE_ERROR_EXIT
 
     public data class UnknownSubcommand(
@@ -119,11 +131,8 @@ public sealed interface CliError : IError {
     public data class SubcommandAfterSeparator(val command: String, val parent: String) : CliError
 
     /**
-     * A real subcommand of [parent] read as an operand, because an earlier token stopped subcommand
-     * routing. An option belonging to [parent] itself is the usual cause.
-     *
-     * Declare that option with `globalOption`/`globalFlag` and it can be used alongside a subcommand.
-     * Reordering the line is no remedy: [parent]'s own options are out of scope once a subcommand is named.
+     * A real subcommand of [parent] read as an operand, because an earlier operand of [parent] stopped
+     * subcommand routing: [parent]'s own options before the name route on, its operands do not.
      */
     public data class UnroutedSubcommand(val command: String, val parent: String) : CliError
 
@@ -188,7 +197,7 @@ public sealed interface CliError : IError {
     public data class TooFewOccurrences(val option: String, val min: Int, val actual: Int) : CliError
 
     /**
-     * No member of a [CommandBuilder.requireExactlyOne] set was supplied. [inputs] is the whole set in
+     * No member of a [CommandBuilder.exactlyOne] set was supplied. [inputs] is the whole set in
      * declaration order, each entry in its own `--option` or `<operand>` form, since a set can mix both.
      */
     public data class ExactlyOneRequired(val inputs: List<String>) : CliError
@@ -198,6 +207,19 @@ public sealed interface CliError : IError {
      * in declaration order, prefixed the same way [ExactlyOneRequired.inputs] is.
      */
     public data class MutuallyExclusive(val inputs: List<String>) : CliError
+
+    /**
+     * A command spelled as a flag was named more than once on the line, as `pacman -QQ` or `pacman -Q --query`.
+     * [command] is its primary spelling (`--query`).
+     */
+    public data class RepeatedCommand(val command: String) : CliError
+
+    /**
+     * An option that refuses a repeat was given a second time, as `cp -t d -t e a` is ("multiple target
+     * directories specified"); see [RepeatedOptions.Refuse]. [option] is its primary spelling
+     * (`--target-directory`).
+     */
+    public data class RepeatedOption(val option: String) : CliError
 
     /**
      * A usage error your command detected itself, for a rule klap cannot express as a constraint. It exits
@@ -214,7 +236,7 @@ public sealed interface CliError : IError {
      * [exitCode] exactly as for [Failure]; what it adds is that a `parse` caller can recover [error] and
      * match on it, so your error hierarchy survives instead of flattening to a sentence.
      *
-     * klap never looks inside [error]; [IError] is the only thing asked of it, so your hierarchy keeps its
+     * klap never looks inside [error]; [ResultError] is the only thing asked of it, so your hierarchy keeps its
      * own sealed root and stays exhaustive at the `when` that unwraps it.
      *
      * Under `--json`, klap writes [json] as the failure, so a program reading the output gets your error's
@@ -227,7 +249,7 @@ public sealed interface CliError : IError {
      * Without [json], `--json` writes `{"type":"Domain","detail":...}`.
      */
     public data class Domain(
-        val error: IError,
+        val error: ResultError,
         val detail: String,
         override val exitCode: Int = 1,
         val json: JsonElement? = null,

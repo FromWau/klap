@@ -1,8 +1,9 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Err
-import com.fromwau.kern.result.IError
 import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.ResultError
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlinx.serialization.json.JsonPrimitive
@@ -12,28 +13,31 @@ import kotlinx.serialization.json.put
 /** Under `--json` a failure is data: its variant under `type` and its fields, with no sentence anywhere. */
 class JsonErrorTest {
 
-    private data object DiskFull : IError
+    private data object DiskFull : ResultError
 
     private fun stderr(vararg args: String, build: CliBuilder.() -> Unit): Pair<Int, String> {
         val t = RecordingTerminal()
         val code = cli("tool", build).run(arrayOf(*args), t)
-        return code to t.err.toString()
+        return code to t.err
     }
 
     @Test
     fun `an unknown option is its fields`() {
-        val (code, err) = stderr("--verbos", "--json") {
-            flag("--verbose")
+        val (code, err) = stderr("--verbsoe", "--json") {
+            flag(long = "verbose")
             action { Ok("") }
         }
         assertEquals(2, code)
-        assertEquals("""{"error":{"type":"UnknownOption","token":"--verbos","suggestion":"--verbose"},"code":2}""" + "\n", err)
+        assertEquals(
+            """{"error":{"type":"UnknownOption","token":"--verbsoe","suggestion":"--verbose"},"code":2}""" + "\n",
+            err,
+        )
     }
 
     @Test
     fun `a bad value carries its converter cause`() {
         val (_, err) = stderr("--port", "x", "--json") {
-            val port = option("--port").int()
+            val port = option(long = "port").int()
             action { Ok("${port()}") }
         }
         assertEquals(
@@ -64,7 +68,9 @@ class JsonErrorTest {
     @Test
     fun `a conversion domain error writes the json its converter gave`() {
         val (_, err) = stderr("--size", "huge", "--json") {
-            val size = option("--size").convert { Err(ConversionError.Domain(DiskFull, "too big", JsonPrimitive(1))) }
+            val size = option(
+                long = "size",
+            ).convert<Int> { Err(ConversionError.Domain(DiskFull, "too big", JsonPrimitive(1))) }
             action { Ok("${size()}") }
         }
         assertEquals("""{"error":{"type":"BadValue","name":"--size","value":"huge","cause":1},"code":2}""" + "\n", err)
@@ -99,7 +105,7 @@ class JsonErrorTest {
         val t = RecordingTerminal()
         val code = cli("tool") { command("get") { action { Ok("") } } }.run(arrayOf(), t)
         assertEquals(0, code)
-        assertEquals("", t.err.toString())
-        assertEquals(true, t.out.toString().startsWith("usage: tool"), t.out.toString())
+        assertEquals("", t.err)
+        assertEquals(true, t.out.startsWith("usage: tool"), t.out)
     }
 }

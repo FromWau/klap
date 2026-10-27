@@ -3,6 +3,7 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -11,6 +12,7 @@ import kotlin.test.assertIs
 class DashLedOperandTest {
 
     private fun seekTree(mark: Boolean) = cli("echoctl") {
+        builtins { help = Help.ByCommand(short = 'h') }
         command("seek") {
             val position = if (mark) argument("position").dashLed() else argument("position")
             action { Ok("pos=${position()}") }
@@ -21,7 +23,7 @@ class DashLedOperandTest {
     fun `declaring dashLed leaves an ordinary parse untouched`() {
         val t = RecordingTerminal()
         assertEquals(0, seekTree(mark = true).run(listOf("seek", "5"), t))
-        assertEquals("pos=5\n", t.out.toString())
+        assertEquals("pos=5\n", t.out)
     }
 
     @Test
@@ -34,7 +36,7 @@ class DashLedOperandTest {
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(listOf("go", "7"), t))
-        assertEquals("n=7\n", t.out.toString())
+        assertEquals("n=7\n", t.out)
     }
 
     @Test
@@ -47,7 +49,7 @@ class DashLedOperandTest {
     fun `a cluster resolves in full only when every character does`() {
         val tree = cli("app") {
             command("go") {
-                val verbose = flag("--verbose", "-v")
+                val verbose = flag(short = 'v', long = "verbose")
                 val n = argument("n").dashLed()
                 action { Ok("v=${verbose()} n=${n()}") }
             }
@@ -55,18 +57,18 @@ class DashLedOperandTest {
         // -v resolves, so it stays a flag and never reaches the marked slot.
         val resolved = RecordingTerminal()
         assertEquals(0, tree.run(listOf("go", "-v", "5"), resolved))
-        assertEquals("v=true n=5\n", resolved.out.toString())
+        assertEquals("v=true n=5\n", resolved.out)
         // -v1m does not resolve in full, so the whole word is the operand and -v is NOT counted.
         val admitted = RecordingTerminal()
         assertEquals(0, tree.run(listOf("go", "-v1m"), admitted))
-        assertEquals("v=false n=-v1m\n", admitted.out.toString())
+        assertEquals("v=false n=-v1m\n", admitted.out)
     }
 
     @Test
     fun `a marked slot takes a negative offset`() {
         val t = RecordingTerminal()
         assertEquals(0, seekTree(mark = true).run(listOf("seek", "-1m"), t))
-        assertEquals("pos=-1m\n", t.out.toString())
+        assertEquals("pos=-1m\n", t.out)
     }
 
     @Test
@@ -76,7 +78,7 @@ class DashLedOperandTest {
         // taking hour offsets away.
         val t = RecordingTerminal()
         assertEquals(0, seekTree(mark = true).run(listOf("seek", "-1h"), t))
-        assertEquals("pos=-1h\n", t.out.toString())
+        assertEquals("pos=-1h\n", t.out)
     }
 
     @Test
@@ -91,7 +93,7 @@ class DashLedOperandTest {
         // exists so a long-option typo keeps its did-you-mean instead of being swallowed as an operand.
         val tree = cli("app") {
             command("seek") {
-                flag("--verbose", "-v")
+                flag(short = 'v', long = "verbose")
                 val position = argument("position").dashLed()
                 action { Ok("pos=${position()}") }
             }
@@ -105,7 +107,7 @@ class DashLedOperandTest {
         val tree = cli("app") {
             command("seek") {
                 optionsEndAtFirstOperand = true
-                val verbose = flag("--verbose", "-v")
+                val verbose = flag(short = 'v', long = "verbose")
                 val position = argument("position").dashLed()
                 val rest = argument("rest").multiple()
                 action { Ok("v=${verbose()} pos=${position()} rest=${rest().joinToString(",")}") }
@@ -113,7 +115,7 @@ class DashLedOperandTest {
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(listOf("seek", "-1m", "-v"), t))
-        assertEquals("v=false pos=-1m rest=-v\n", t.out.toString())
+        assertEquals("v=false pos=-1m rest=-v\n", t.out)
     }
 
     @Test
@@ -122,15 +124,15 @@ class DashLedOperandTest {
         // binds as it always has. Without this the marked slot would swallow a token the parser owns.
         val tree = cli("app") {
             command("go") {
-                val verbose = flag("--verbose", "-v")
-                val port = option("--port", "-p").int()
+                val verbose = flag(short = 'v', long = "verbose")
+                val port = option(short = 'p', long = "port").int()
                 val n = argument("n").dashLed().optional()
                 action { Ok("v=${verbose()} port=${port()} n=${n()}") }
             }
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(listOf("go", "-vp8080"), t))
-        assertEquals("v=true port=8080 n=null\n", t.out.toString())
+        assertEquals("v=true port=8080 n=null\n", t.out)
     }
 
     @Test
@@ -173,7 +175,7 @@ class DashLedOperandTest {
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(listOf("seek", "-1m", "--", "-2m"), t))
-        assertEquals("from=-1m to=-2m\n", t.out.toString())
+        assertEquals("from=-1m to=-2m\n", t.out)
     }
 
     @Test
@@ -181,15 +183,15 @@ class DashLedOperandTest {
         val tree = cli("app") {
             abbreviation = Abbreviation.Options
             command("go") {
-                val verbose = flag("--verbose", "-v")
-                val mode = option("--mode")
+                val verbose = flag(short = 'v', long = "verbose")
+                val mode = option(long = "mode")
                 val n = argument("n").dashLed()
                 action { Ok("v=${verbose()} mode=${mode()} n=${n()}") }
             }
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(listOf("go", "-v", "--mod", "x", "5"), t))
-        assertEquals("v=true mode=x n=5\n", t.out.toString())
+        assertEquals("v=true mode=x n=5\n", t.out)
     }
 
     @Test
@@ -203,7 +205,7 @@ class DashLedOperandTest {
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(listOf("go", "-5"), t))
-        assertEquals("lines=5 rest=null\n", t.out.toString())
+        assertEquals("lines=5 rest=null\n", t.out)
     }
 
     @Test
@@ -214,7 +216,7 @@ class DashLedOperandTest {
         // cannot reach it.
         val t = RecordingTerminal()
         assertEquals(0, seekTree(mark = true).run(listOf("seek", "--", "-h"), t))
-        assertEquals("pos=-h\n", t.out.toString())
+        assertEquals("pos=-h\n", t.out)
     }
 
     @Test
@@ -227,7 +229,7 @@ class DashLedOperandTest {
         }
         val t = RecordingTerminal()
         assertEquals(0, tree.run(listOf("go", "-1m", "-2m"), t))
-        assertEquals("ns=-1m,-2m\n", t.out.toString())
+        assertEquals("ns=-1m,-2m\n", t.out)
     }
 
     @Test
@@ -271,5 +273,52 @@ class DashLedOperandTest {
             listOf("saw -2m"),
             tree.completeCandidates(listOf("go", "-1m", "-2m", "")).map { it.value },
         )
+    }
+
+    @Test
+    fun `a dash led word the operand takes completes from its provider`() {
+        val tree = cli("chmod") {
+            flag(short = 'R', long = "recursive")
+            val mode = argument("mode")
+                .dashLed(gather = ",") { word -> word.drop(1).all { it in "rwx" } }
+                .completeWith { candidates(listOf("-w", "-x", "644")) }
+            val files = argument("file").multiple()
+            action<String>(human = { it }) { Ok("mode=${mode()} files=${files()}") }
+        }
+        assertEquals("mode=-w files=[f]", tree.bindText("-w", "f"))
+        assertEquals(listOf("-w"), tree.offered("-w"))
+    }
+
+    @Test
+    fun `a word only an option takes completes from the names`() {
+        val tree = chmodLike()
+        assertEquals("mode=u+x files=[f] recursive=true", tree.bindText("--rec", "u+x", "f"))
+        assertEquals(listOf("--recursive"), tree.offered("--rec"))
+    }
+
+    @Test
+    fun `a lone dash offers the names and the dash led operand's values`() {
+        val tree = chmodLike()
+        assertEquals("mode=- files=[f] recursive=false", tree.bindText("-", "f"))
+        assertEquals(
+            listOf("--recursive", "-R", "--help", "--version", "-w", "-x"),
+            tree.offered("-"),
+        )
+    }
+
+    private fun chmodLike() = cli("chmod") {
+        version = Version.Of("9.12")
+        builtins {
+            json = Builtin.Off
+            color = Builtin.Off
+            completion = Builtin.Off
+            docs = Builtin.Off
+        }
+        val recursive = flag(short = 'R', long = "recursive")
+        val mode = argument("mode")
+            .dashLed(gather = ",") { word -> word.drop(1).all { it in "rwx" } }
+            .completeWith { candidates(listOf("-w", "-x", "644")) }
+        val files = argument("file").multiple()
+        action<String>(human = { it }) { Ok("mode=${mode()} files=${files()} recursive=${recursive()}") }
     }
 }

@@ -6,28 +6,17 @@ pluginManagement {
     includeBuild("build-logic")
 
     repositories {
-        google {
-            mavenContent {
-                includeGroupAndSubgroups("androidx")
-                includeGroupAndSubgroups("com.android")
-                includeGroupAndSubgroups("com.google")
-            }
-        }
         mavenCentral()
         gradlePluginPortal()
+        maven("https://maven.frommhund.xyz/releases") {
+            mavenContent { includeGroupAndSubgroups("com.fromwau") }
+        }
     }
 }
 
 dependencyResolutionManagement {
     repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS
     repositories {
-        google {
-            mavenContent {
-                includeGroupAndSubgroups("androidx")
-                includeGroupAndSubgroups("com.android")
-                includeGroupAndSubgroups("com.google")
-            }
-        }
         mavenCentral()
         maven("https://maven.frommhund.xyz/releases") {
             mavenContent { includeGroupAndSubgroups("com.fromwau") }
@@ -46,6 +35,8 @@ gradle.lifecycle.beforeProject {
 }
 
 include(":klap")
+include(":klap-datetime")
+include(":klap-io")
 include(":example:chmod")
 include(":example:cp")
 include(":example:curl")
@@ -54,13 +45,11 @@ include(":example:find")
 include(":example:git")
 include(":example:head")
 include(":example:ls")
-include(":example:mkdir")
 include(":example:mv")
 include(":example:pacman")
 include(":example:parity")
 include(":example:pulse")
 include(":example:rm")
-include(":example:rsync")
 include(":example:ssh")
 include(":example:tar")
 include(":example:task-manager")

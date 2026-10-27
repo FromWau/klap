@@ -1,5 +1,6 @@
 package com.fromwau.klap.fixture.pulse
 
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.Invocation
 import com.fromwau.klap.parse
 import com.fromwau.klap.run
@@ -35,7 +36,7 @@ class MixedTreeGuardTest {
     @Test
     fun `parse + runAction drives the sync command directly, unaffected by suspending siblings`() {
         val execute = assertIs<Invocation.Execute>(pulseCli().parse(listOf("info")).assertSuccess())
-        val info = assertIs<BuildInfo>(execute.runAction().assertSuccess())
+        val info = assertIs<BuildInfo>(execute.runAction(RecordingTerminal()).assertSuccess())
         assertEquals(6, info.serviceCount)
     }
 

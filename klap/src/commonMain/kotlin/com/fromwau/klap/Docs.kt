@@ -14,7 +14,7 @@ public enum class DocFormat {
     ;
 
     public companion object {
-        public fun fromOrNull(raw: String): DocFormat? = when (raw.lowercase()) {
+        public fun fromOrNull(raw: String): DocFormat? = when (raw) {
             "markdown", "md" -> MARKDOWN
             "man", "roff" -> MAN
             else -> null
@@ -72,7 +72,7 @@ public fun Cli.renderMarkdownDocs(): String {
         }
         nodes.forEach { (node, path) ->
             appendLine()
-            append(markdownFor(node, path, globalSpecs, version != null, builtins))
+            append(markdownFor(node, path, globalSpecs, version != null, metaOptions, builtins))
         }
         author?.takeUnless { it.isBlank() }?.let {
             appendLine()
@@ -103,7 +103,7 @@ public fun Cli.renderManPage(date: String? = null): String {
         val titleManual = "${roffEscape(name)} Manual"
         appendLine(".TH \"$titleName\" 1 \"$titleDate\" \"$titleSource\" \"$titleManual\"")
         appendLine(".SH NAME")
-        // The POSIX NAME section is one line ("name \- summary"); collapse a multi-line description so an
+        // The man page NAME section is one line ("name \- summary"); collapse a multi-line description so an
         // embedded newline does not split it into a broken second roff line.
         val nameSummary = description
             .lineSequence()
@@ -118,13 +118,14 @@ public fun Cli.renderManPage(date: String? = null): String {
                         path,
                         globalSpecs,
                         version != null,
+                        metaOptions,
                         builtins,
                     )
                 )
             }
         } else {
             val (node, path) = nodes.single()
-            append(manBodyFor(node, path, globalSpecs, version != null, builtins))
+            append(manBodyFor(node, path, globalSpecs, version != null, metaOptions, builtins))
         }
         author?.takeUnless { it.isBlank() }?.let {
             appendLine(".SH AUTHOR")
