@@ -365,7 +365,7 @@ val files   = argument("files").file().multiple(min = 1)                       /
 | `.repeated(policy)`            | option, flag                    | what a second occurrence does, over the root's `repeatedOptions` (see [An option given twice](#an-option-given-twice))                                                                                                                                                                                                                                          |
 | `.optionalValue()`             | option                          | `--opt=V` binds `OptionalValue.Given(V)`, a bare `--opt` binds `OptionalValue.Bare`, and the space form never binds; declare converters before it (see [Options whose value is optional](#options-whose-value-is-optional))                                                                                                                                 |
 | `.gluedValue()`                | option                          | `-O3` and `--opt=3` bind `3`, and a bare `-O` or `--opt` is `MissingOptionValue`, `-O 3` included; not a getopt form (see [Options whose value must be glued](#options-whose-value-must-be-glued))                                                                                                                                                          |
-| `.multiple(min = 0)`           | argument, option                | collects every occurrence into a `List`, and `min` is enforced. A command may declare **one** variadic argument, but any number of repeatable options                                                                                                                                                                                                           |
+| `.multiple(min = 0)`           | argument, option                | collects every occurrence into a `List`, and `min` is enforced. A command may declare **one** variadic argument, but any number of repeatable options; `.default(list)` after it binds `list` when none is given (see below)                                                                                                                                    |
 | `.multiple(min, max)`          | argument                        | as above, and an operand past `max` is `TooManyArguments`: `.multiple(min = 1, max = 2)` refuses a third operand. Unbounded by default, as GNU operand lists are                                                                                                                                                                                                |
 | `.absentWhen(input)`           | argument                        | removes this operand slot entirely whenever `input` was supplied, so the operands after it keep their own positions (see [Operands that depend on an option](#operands-that-depend-on-an-option))                                                                                                                                                               |
 | `.optionalWhen(input)`         | argument                        | drops this operand's declared minimum to zero whenever `input` was supplied; the slot itself stays, so nothing shifts. Only a `.multiple()` operand carries a minimum to relax, so any other cardinality is rejected when the tree is constructed (reach for `.absentWhen()` to remove a slot instead)                                                          |
@@ -505,10 +505,21 @@ the end, so `cp a b c` gives `[a, b]` and `c`, and `cp a b` gives `[a]` and `b`.
 follow a variadic — an optional one is genuinely ambiguous, since a single leftover token would have no
 rule saying which of the two it feeds, and klap rejects that at construction.
 
-`.multiple()` and `.default()` do not combine either: `.default` is declared on the nullable `Opt<T?>` /
-un-narrowed `Arg<T>` receiver, but `.multiple()` already returns a non-nullable `List<T>`-typed holder
-that defaults to an empty list on its own. Reach for `.multiple(min = 1)` (or any `min > 0`) instead if
-you want a required, non-empty list.
+A `.multiple()` input binds an empty list when no value is given, and `.default(list)` after it binds
+`list` instead, as argparse's `nargs='*', default=[...]` does. `check [file...]` reading standard input
+when no file is given is
+
+```kotlin
+val files = argument("file").file().multiple().default(listOf("-"))   // check -> [-], check a b -> [a, b]
+val patterns = option(short = 'e', long = "regexp").multiple().default(listOf("."))  // no -e -> [.]
+```
+
+The default needs a `min` of 0: with any minimum a value is always given, so the default could never
+apply, and `.multiple(min = 1).default(...)` is refused when the tree is constructed. `.default()` goes
+after `.multiple()`, since before it the default is a single value. Help shows the values space
+separated, as `(repeatable; default: -)`, each quoted as a shell would need it (`default: 'a b' c`), and
+`--help --json` gives the same text in `default`. Reach for `.multiple(min = 1)` (or any `min > 0`)
+instead if you want a required, non-empty list.
 
 ### Converters from other modules
 
@@ -553,7 +564,10 @@ val file = argument("file").input().optional()
 action {
     (file() ?: CliInput.StandardInput).readBytes(terminal)
         .map { it.decodeToString() }
-        .mapError { CliError.Domain(it, "cannot read: $it") }
+        .mapError { error ->
+            val name = (error as? InputError.File)?.path?.text?.shellQuoted() ?: "standard input"
+            CliError.Domain(error, "cannot read $name")
+        }
 }
 ```
 
@@ -1492,11 +1506,23 @@ didYouMean("lst", listOf("list", "add")) // "list"
 didYouMean("zzzzzzzz", listOf("list"))   // null - nothing close enough
 ```
 
-Both `Usage.detail` and `Failure.detail` are yours to word, so a newline in one renders as a real line
-break (a `hint:` continuation line works, and survives `--json` as a proper string escape). Everything
-else is neutralized on the way out, including escape codes: a detail almost always interpolates a token
-from argv, and klap cannot tell a color you applied from one a caller injected. Color your `Ok` output,
-not your errors.
+Both `Usage.detail` and `Failure.detail` are yours to word, and klap prints them as you wrote them, as
+GNU's `error()` prints its message: a newline renders as a real line break (a `hint:` continuation line
+works, and survives `--json` as a proper string escape). So quote or escape what comes from input as you
+build the detail, as GNU's tools do before they call `error()`, with kern-terminal's `shellQuoted()` for a
+name and `escapeControls()` for other text:
+
+```kotlin
+Err(CliError.Failure("no environment ${env.shellQuoted()}\nhint: did you mean 'prod'?"))
+```
+
+A raw escape sequence from a caller would otherwise act on the terminal. Color your `Ok` output, not your
+errors.
+
+A token klap names in its own errors is quoted as GNU quotes an option, through kern-terminal's
+`shellQuoted(always = true)`: `unknown option '--nope'`, `'--a b'`, `"--it's"`, and a control character in
+`$'…'` (`'--'$'\033''[31mx'`), so it shows instead of acting on the terminal. To quote a file name in your
+own message the same way, use `shellQuoted()`.
 
 ## Suspending actions
 

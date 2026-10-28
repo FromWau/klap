@@ -8,6 +8,7 @@ import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.FlagSpec
 import com.fromwau.klap.internal.spec.NamedSpec
 import com.fromwau.klap.internal.spec.OptionSpec
+import com.fromwau.klap.internal.spec.ValueSpec
 import com.fromwau.klap.internal.spec.constraintToken
 import com.fromwau.klap.internal.spec.longs
 import com.fromwau.klap.internal.spec.negativeLongs
@@ -136,6 +137,13 @@ private val Cardinality.minCount: Int? get() = (this as? Cardinality.Multiple)?.
 /** A `.multiple()` input's declared maximum, null when it has none. */
 private val Cardinality.maxCount: Int? get() = (this as? Cardinality.Multiple)?.max?.takeIf { it != Int.MAX_VALUE }
 
+private val ValueSpec.shownDefault: String?
+    get() = when (val c = cardinality) {
+        is Cardinality.Default -> display(c.value)
+        is Cardinality.Multiple -> c.default?.let { displayAll(it) }
+        else -> null
+    }
+
 private fun ArgumentSpec.toHelp(): ArgumentHelp = ArgumentHelp(
     name = displayName(),
     help = help,
@@ -143,7 +151,7 @@ private fun ArgumentSpec.toHelp(): ArgumentHelp = ArgumentHelp(
     repeatable = cardinality is Cardinality.Multiple,
     min = cardinality.minCount,
     max = cardinality.maxCount,
-    default = (cardinality as? Cardinality.Default)?.let { display(it.value) },
+    default = shownDefault,
     choices = listedChoices,
     absentWhen = absentWhen?.constraintToken(),
     optionalWhen = optionalWhen?.constraintToken(),
@@ -159,7 +167,7 @@ private fun NamedSpec.toHelp(): OptionHelp = when (this) {
         repeatable = cardinality is Cardinality.Multiple,
         min = cardinality.minCount,
         max = cardinality.maxCount,
-        default = (cardinality as? Cardinality.Default)?.let { display(it.value) },
+        default = shownDefault,
         choices = listedChoices,
         section = section,
     )

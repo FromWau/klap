@@ -21,7 +21,10 @@ import com.fromwau.klap.Opt
  * action {
  *     (file() ?: CliInput.StandardInput).readBytes(terminal)
  *         .map { it.decodeToString() }
- *         .mapError { CliError.Domain(it, "cannot read: $it") }
+ *         .mapError { error ->
+ *             val name = (error as? InputError.File)?.path?.text?.shellQuoted() ?: "standard input"
+ *             CliError.Domain(error, "cannot read $name")
+ *         }
  * }
  * ```
  */

@@ -11,6 +11,7 @@ import com.fromwau.kern.result.assertSuccess
 import com.fromwau.kern.result.map
 import com.fromwau.kern.result.mapError
 import com.fromwau.kern.terminal.ReadError
+import com.fromwau.kern.terminal.shellQuoted
 import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.CliError
 import com.fromwau.klap.cliOf
@@ -117,7 +118,10 @@ class InputConverterTest {
             action {
                 (file() ?: CliInput.StandardInput).readBytes(terminal)
                     .map { it.decodeToString() }
-                    .mapError { CliError.Domain(it, "cannot read: $it") }
+                    .mapError { error ->
+                        val name = (error as? InputError.File)?.path?.text?.shellQuoted() ?: "standard input"
+                        CliError.Domain(error, "cannot read $name")
+                    }
             }
             projection { file() }
         }
@@ -125,5 +129,25 @@ class InputConverterTest {
 
         assertEquals(0, cat.cli.run(emptyList(), terminal))
         assertEquals("piped\n", terminal.out)
+    }
+
+    @Test
+    fun `the guide's example names a missing file quoted as GNU names it`() {
+        val cat = cliOf("cat") {
+            val file = argument("file").input().optional()
+            action {
+                (file() ?: CliInput.StandardInput).readBytes(terminal)
+                    .map { it.decodeToString() }
+                    .mapError { error ->
+                        val name = (error as? InputError.File)?.path?.text?.shellQuoted() ?: "standard input"
+                        CliError.Domain(error, "cannot read $name")
+                    }
+            }
+            projection { file() }
+        }
+        val terminal = RecordingTerminal()
+
+        assertEquals(1, cat.cli.run(listOf("${scratch / "my file"}"), terminal))
+        assertEquals("error: cannot read '${scratch / "my file"}'\n", terminal.err)
     }
 }
