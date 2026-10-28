@@ -121,7 +121,9 @@ private fun bindOptions(
                         BindPolicy.Lenient -> Unit
                     }
                 }
-                if (raws.size >= c.min || policy == BindPolicy.Lenient) {
+                if (raws.isEmpty() && c.default != null) {
+                    sink[opt] = c.default
+                } else if (raws.size >= c.min || policy == BindPolicy.Lenient) {
                     when (val converted = opt.convertOccurrences(raws, inferValues)) {
                         // Lenient leaves it unbound: one bad occurrence must not blank its siblings.
                         is Result.Error -> if (policy != BindPolicy.Lenient) return converted
@@ -277,7 +279,9 @@ internal fun Command.bindPositionals(
                 // "nothing typed yet" is truthfully an empty list, and binding it keeps a provider that
                 // reads this input alive instead of aborting it. Strict/DeferRequired already returned
                 // above when the slice was empty or short.
-                when (val converted = spec.convertAll(slice, inferValues)) {
+                if (slice.isEmpty() && c.default != null) {
+                    sink[spec] = c.default
+                } else when (val converted = spec.convertAll(slice, inferValues)) {
                     is Result.Error -> if (policy != BindPolicy.Lenient) return converted
                     is Result.Success -> sink[spec] = converted.value
                 }

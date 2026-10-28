@@ -4,6 +4,8 @@ import com.fromwau.kern.terminal.BROKEN_PIPE_EXIT
 import com.fromwau.kern.terminal.Stream
 import com.fromwau.kern.terminal.Terminal
 import com.fromwau.kern.terminal.WriteError
+import com.fromwau.kern.terminal.escapeControls
+import com.fromwau.kern.terminal.shellQuoted
 import com.fromwau.klap.CliError
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.internal.spec.ActionError
@@ -18,81 +20,64 @@ private fun String?.didYouMean(): String = if (this == null) "" else ". Did you 
 private fun List<String>.andJoined(): String =
     if (size < 2) joinToString(", ") else dropLast(1).joinToString(", ") + " and " + last()
 
-/**
- * Escapes ASCII control bytes (0x00-0x1F, 0x7F) as `\xNN` so text embedded in an `error: ...` line cannot
- * inject raw ANSI/control sequences into the terminal, or forge a second line in whatever reads stderr.
- * Applied on both the human and `--json` paths so every [com.fromwau.klap.CliError] variant is neutralized
- * consistently; on the `--json` path kotlinx then escapes the resulting text normally. It is applied there
- * too because kotlinx escapes 0x00-0x1F but not 0x7F/DEL, so the paths would otherwise diverge.
- *
- * [allowWhitespace] keeps a literal newline and tab, and [renderError] sets it only for the two variants
- * whose sentence the consumer writes ([CliError.Usage], [CliError.Failure]), where a `hint:` continuation
- * line is a deliberate layout choice rather than something echoed out of argv. Nothing else survives there,
- * not even an ESC the consumer embedded on purpose: such a detail almost always interpolates an argv token,
- * so klap cannot tell a color the author applied from one the caller injected.
- */
-private fun stripTerminalEscapes(text: String, allowWhitespace: Boolean = false): String = buildString {
-    for (ch in text) {
-        val code = ch.code
-        val control = code in 0x00..0x1F || code == 0x7F
-        if (control && !(allowWhitespace && (ch == '\n' || ch == '\t'))) {
-            append("\\x")
-            append(code.toString(16).padStart(2, '0').uppercase())
-        } else {
-            append(ch)
-        }
-    }
-}
+/** This token set apart in a sentence as GNU quotes one, `'--nope'`, its control characters in `$'…'`. */
+private fun String.quoted(): String = shellQuoted(always = true)
 
 /** The one place a CliError becomes human text; nothing upstream produces user-facing strings. */
 internal fun CliError.message(): String = when (this) {
-    is CliError.UnknownSubcommand -> "unknown subcommand '$token' for '$parent'" + suggestion.didYouMean()
-    is CliError.MissingSubcommand -> "missing subcommand for '$parent'"
+    is CliError.UnknownSubcommand ->
+        "unknown subcommand ${token.quoted()} for ${parent.quoted()}" + suggestion.didYouMean()
+    is CliError.MissingSubcommand -> "missing subcommand for ${parent.quoted()}"
     is CliError.AmbiguousSubcommand ->
-        "subcommand '$token' is ambiguous; possibilities: ${candidates.joinToString(" ") { "'$it'" }}"
+        "subcommand ${token.quoted()} is ambiguous; possibilities: ${candidates.joinToString(" ") { it.quoted() }}"
 
     is CliError.UnknownOption ->
-        "unknown option '$token'" + cluster?.let { " (in '$it')" }.orEmpty() + suggestion.didYouMean()
+        "unknown option ${token.quoted()}" + cluster?.let { " (in ${it.quoted()})" }.orEmpty() +
+            suggestion.didYouMean()
     is CliError.AmbiguousOption ->
-        "option '$token' is ambiguous; possibilities: ${candidates.joinToString(" ") { "'$it'" }}"
+        "option ${token.quoted()} is ambiguous; possibilities: ${candidates.joinToString(" ") { it.quoted() }}"
 
     is CliError.UnroutedSubcommand ->
-        "'$command' is a command of '$parent', but the tokens before it already ended command parsing; " +
-            "run '$parent $command' on its own"
+        "${command.quoted()} is a command of ${parent.quoted()}, " +
+            "but the tokens before it already ended command parsing; " +
+            "run ${"$parent $command".quoted()} on its own"
 
     is CliError.SubcommandAfterSeparator ->
-        "'$command' is a command of '$parent', but '--' ends command parsing; put '--' after the command"
+        "${command.quoted()} is a command of ${parent.quoted()}, but '--' ends command parsing; " +
+            "put '--' after the command"
 
-    is CliError.MissingArgument -> "missing required argument <$argument> for '$command'"
+    is CliError.MissingArgument -> "missing required argument <$argument> for ${command.quoted()}"
     is CliError.MissingRequiredOption -> "missing required option $option"
     is CliError.MissingOptionValue -> "option $option requires a value"
     is CliError.FlagTakesNoValue ->
-        "flag '$flag' does not take a value" + (negationHint?.let { "; use --$it to turn it off" } ?: "")
+        "flag ${flag.quoted()} does not take a value" + (negationHint?.let { "; use --$it to turn it off" } ?: "")
 
-    is CliError.BadValue -> "invalid value '$value' for $name: $reason"
+    is CliError.BadValue -> "invalid value ${value.quoted()} for $name: ${reason.escapeControls()}"
     is CliError.InvalidChoice ->
-        "invalid value '$value' for $name (choose from ${choices.joinToString(", ")})" + suggestion.didYouMean()
+        "invalid value ${value.quoted()} for $name (choose from ${choices.joinToString(", ")})" +
+            suggestion.didYouMean()
 
     is CliError.AmbiguousValue ->
-        "value '$value' for $name is ambiguous; possibilities: ${candidates.joinToString(" ") { "'$it'" }}"
+        "value ${value.quoted()} for $name is ambiguous; possibilities: ${candidates.joinToString(" ") { it.quoted() }}"
 
     is CliError.MixedClusterAfterOperands ->
-        "'$cluster' mixes the global '$global' with a local option after the first operand; " +
-            "write '$global' before the operands"
+        "${cluster.quoted()} mixes the global ${global.quoted()} with a local option after the first operand; " +
+            "write ${global.quoted()} before the operands"
 
     is CliError.TooManyArguments ->
-        "unexpected extra argument${if (extras.size > 1) "s" else ""}: ${extras.joinToString(" ")}" +
-            (suggestion?.let { ". Did you mean the '$it' command?" } ?: "")
+        "unexpected extra argument${if (extras.size > 1) "s" else ""}: " +
+            extras.joinToString(" ") { it.shellQuoted() } +
+            (suggestion?.let { ". Did you mean the ${it.quoted()} command?" } ?: "")
 
     is CliError.TooFewOccurrences ->
         // Noun-neutral: this error covers both a repeated option (`--h a --h b`) and a repeated positional
         // `argument(...).multiple(min)`, so it names the input by its bare name rather than assuming `--`.
-        "'$option' must be given at least $min time${if (min > 1) "s" else ""} (got $actual)"
+        "${option.quoted()} must be given at least $min time${if (min > 1) "s" else ""} (got $actual)"
 
     is CliError.ExactlyOneRequired -> "exactly one of ${inputs.joinToString(", ")} is required"
     is CliError.MutuallyExclusive -> "${inputs.andJoined()} are mutually exclusive"
-    is CliError.RepeatedCommand -> "'$command' may be given only once"
-    is CliError.RepeatedOption -> "'$option' may be given only once"
+    is CliError.RepeatedCommand -> "${command.quoted()} may be given only once"
+    is CliError.RepeatedOption -> "${option.quoted()} may be given only once"
 
     is CliError.Usage -> detail
     is CliError.Failure -> detail
@@ -113,7 +98,7 @@ internal fun renderActionError(error: ActionError, json: Boolean, terminal: Term
             terminal.err(jsonErrorEnvelope(encodeFailureJson("EncodeFailed", error.message), 1) + "\n")
 
         is ActionError.RenderFailed ->
-            terminal.err("error: ${stripTerminalEscapes("could not render output: ${error.message}")}\n")
+            terminal.err("error: ${"could not render output: ${error.message}".escapeControls()}\n")
     }
     return 1
 }
@@ -133,7 +118,7 @@ internal fun renderWriteFailed(error: WriteError, json: Boolean, terminal: Termi
                 Stream.Out -> "standard output"
                 Stream.Err -> "standard error"
             }
-            val reason = error.detail?.let { ": ${stripTerminalEscapes(it)}" }.orEmpty()
+            val reason = error.detail?.let { ": ${it.escapeControls()}" }.orEmpty()
             terminal.err("error: cannot write to $name$reason\n")
         }
         1
@@ -149,11 +134,10 @@ internal fun renderError(error: CliError, json: Boolean, terminal: Terminal): In
         terminal.err(jsonErrorEnvelope(error.toJson(), code) + "\n")
         return code
     }
-    // Who wrote the sentence picks the sanitizer. A Usage, Failure or Domain detail is the consumer's own
-    // prose, so its newlines and tabs survive; every other variant echoes a token straight from argv, where a
-    // newline would let a caller forge a second `error:` line.
-    val authored = error is CliError.Usage || error is CliError.Failure || error is CliError.Domain
-    terminal.err("error: ${stripTerminalEscapes(error.message(), allowWhitespace = authored)}\n")
+    // Each piece of input is quoted or escaped where its sentence is built, klap's own here and a consumer's detail
+    // by the consumer, as GNU's tools quote before they call error(); escaping the sentence again would double the
+    // backslashes of what was already escaped.
+    terminal.err("error: ${error.message()}\n")
     return code
 }
 

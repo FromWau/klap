@@ -3,6 +3,8 @@ package com.fromwau.klap
 import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.assertError
+import com.fromwau.kern.terminal.escapeControls
+import com.fromwau.kern.terminal.shellQuoted
 import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.message
 import com.fromwau.klap.internal.render.renderError
@@ -207,24 +209,22 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun `failure embedded escape sequence is stripped on the human path`() {
-        // A detail is written by the consumer but almost always interpolates an argv token, so klap cannot
-        // tell a color the author applied from one a caller injected, and neutralizes both. This overturns
-        // the earlier trust-boundary exemption, which let any Failure detail reach the terminal verbatim.
+    fun `a consumer's detail is printed as the consumer wrote it`() {
+        // As GNU's error() prints its message: the consumer quotes or escapes the input it puts in a detail.
         val esc = Char(27)
         val t = RecordingTerminal()
         val code = renderError(CliError.Failure("$esc[31mboom$esc[0m"), json = false, terminal = t)
         assertEquals(1, code)
-        assertEquals("error: \\x1B[31mboom\\x1B[0m\n", t.err)
+        assertEquals("error: $esc[31mboom$esc[0m\n", t.err)
     }
 
     @Test
-    fun `usage embedded escape sequence is stripped on the human path`() {
-        val esc = Char(27)
+    fun `a piece the consumer escaped is printed once`() {
         val t = RecordingTerminal()
-        val code = renderError(CliError.Usage("bad operand '$esc[31m'"), json = false, terminal = t)
+        val detail = "bad operand ${"\u001B[31m".escapeControls()} in ${"my file".shellQuoted()}"
+        val code = renderError(CliError.Usage(detail), json = false, terminal = t)
         assertEquals(2, code)
-        assertEquals("error: bad operand '\\x1B[31m'\n", t.err)
+        assertEquals("error: bad operand \\033[31m in 'my file'\n", t.err)
     }
 
     @Test
@@ -247,23 +247,56 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun `echoed token newline is escaped so a caller cannot forge a second error line`() {
-        // The counterpart to the test above: an argv token is not authored prose, so its newline stays
-        // escaped. Otherwise `app --n=$'x\nerror: disk wiped'` prints a second, fabricated error line.
+    fun `echoed token newline is quoted so a caller cannot forge a second error line`() {
+        // The counterpart to the test above: an argv token is not authored prose, so its newline is quoted as GNU
+        // quotes one. Otherwise `app --n=$'x\nerror: disk wiped'` prints a second, fabricated error line.
         val t = RecordingTerminal()
         renderError(CliError.BadValue("n", "x\nerror: forged", "bad"), json = false, terminal = t)
-        assertEquals("error: invalid value 'x\\x0Aerror: forged' for n: bad\n", t.err)
+        assertEquals("error: invalid value 'x'\$'\\n''error: forged' for n: bad\n", t.err)
     }
 
     @Test
-    fun `bad value real escape sequence in the echoed value is still stripped on the human path`() {
-        // BadValue echoes a user-supplied value straight from argv, so an embedded ESC is neutralized to
-        // the literal string "\x1B" here, exactly as in an authored detail but without the newline carve-out.
+    fun `a token is quoted as GNU quotes an option in its errors`() {
+        fun rendered(error: CliError): String = RecordingTerminal().also { renderError(error, false, it) }.err
+
+        assertEquals("error: unknown option '--nope'\n", rendered(CliError.UnknownOption("--nope")))
+        assertEquals("error: unknown option '--a b'\n", rendered(CliError.UnknownOption("--a b")))
+        assertEquals("error: unknown option \"--it's\"\n", rendered(CliError.UnknownOption("--it's")))
+        assertEquals("error: unknown option '--'\$'\\033''[31mx'\n", rendered(CliError.UnknownOption("--\u001B[31mx")))
+    }
+
+    @Test
+    fun `a quoted token is not escaped a second time on the human path`() {
+        // klap's own sentence quotes its token, which leaves only printable text; escaping the sentence again would
+        // turn `$'\033'` into `$'\\033'`, which no shell or reader decodes back to the escape that was typed.
+        val t = RecordingTerminal()
+        renderError(CliError.UnknownSubcommand(parent = "git", token = "\u001B"), json = false, terminal = t)
+        assertEquals("error: unknown subcommand ''\$'\\033' for 'git'\n", t.err)
+    }
+
+    @Test
+    fun `a converter's reason is escaped once beside a quoted value`() {
+        val t = RecordingTerminal()
+        renderError(CliError.BadValue("n", "a\u001Bb", "saw \u001B"), json = false, terminal = t)
+        assertEquals("error: invalid value 'a'\$'\\033''b' for n: saw \\033\n", t.err)
+    }
+
+    @Test
+    fun `an extra operand is quoted only when it needs it as GNU names a file`() {
+        val t = RecordingTerminal()
+        renderError(CliError.TooManyArguments("cp", listOf("c", "my file")), json = false, terminal = t)
+        assertEquals("error: unexpected extra arguments: c 'my file'\n", t.err)
+    }
+
+    @Test
+    fun `bad value real escape sequence in the echoed value is quoted on the human path`() {
+        // BadValue echoes a user-supplied value straight from argv, so an embedded ESC is quoted as GNU quotes one,
+        // `$'\033'`, and shows instead of acting on the terminal.
         val esc = Char(27)
         val t = RecordingTerminal()
         val code = renderError(CliError.BadValue("n", "$esc[31m", "bad"), json = false, terminal = t)
         assertEquals(2, code)
-        assertEquals("error: invalid value '\\x1B[31m' for n: bad\n", t.err)
+        assertEquals("error: invalid value ''\$'\\033''[31m' for n: bad\n", t.err)
     }
 
     @Test

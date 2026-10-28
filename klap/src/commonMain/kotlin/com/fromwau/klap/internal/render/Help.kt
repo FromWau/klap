@@ -4,6 +4,7 @@ import com.fromwau.kern.terminal.Styled
 import com.fromwau.kern.terminal.bold
 import com.fromwau.kern.terminal.joinToStyled
 import com.fromwau.kern.terminal.plain
+import com.fromwau.kern.terminal.shellQuoted
 import com.fromwau.klap.Builtins
 import com.fromwau.klap.COLOR_MODE_NAMES
 import com.fromwau.klap.COMPLETION_SHELL_NAMES
@@ -113,6 +114,9 @@ internal fun ValueSpec.display(value: Any?): String {
     return choices?.firstOrNull { it.equals(text, ignoreCase = true) } ?: text
 }
 
+/** A `.multiple()` default as help shows it: its values as they would be typed, each quoted where it needs it. */
+internal fun ValueSpec.displayAll(values: List<Any?>): String = values.joinToString(" ") { display(it).shellQuoted() }
+
 /**
  * The word-form of an option/flag: every spelling, shorts first, or the display label when it has no
  * spelling at all (an option adds its value as GNU writes it, see [optionWords]; a negatable flag shows
@@ -216,7 +220,13 @@ internal fun ValueSpec.metaHint(): String {
             // leave the row contradicting the usage line about whether zero is allowed.
             is Cardinality.Multiple -> {
                 val max = if (c.max == Int.MAX_VALUE) "" else ", max ${c.max}"
-                add(if (c.min > 0) "repeatable, min ${c.min}$max" else "optional; repeatable$max")
+                add(
+                    when {
+                        c.min > 0 -> "repeatable, min ${c.min}$max"
+                        c.default != null -> "repeatable$max; default: ${displayAll(c.default)}"
+                        else -> "optional; repeatable$max"
+                    },
+                )
             }
         }
     }
