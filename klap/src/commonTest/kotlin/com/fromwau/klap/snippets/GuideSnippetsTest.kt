@@ -209,6 +209,17 @@ class GuideSnippetsTest {
             assertContains(thrown.message.orEmpty(), "not one of fast, slow")
         }
     }
+
+    @Test
+    fun `the guides multiple default snippet binds its list when no value is given`() {
+        val check = cli("check") {
+            val files = argument("file").file().multiple().default(listOf("-"))
+            val patterns = option(short = 'e', long = "regexp").multiple().default(listOf("."))
+            action<String>(human = { it }) { Ok("${files()} ${patterns()}") }
+        }
+        assertEquals("[-] [.]", check.bindText())
+        assertEquals("[a, b] [x]", check.bindText("a", "b", "-e", "x"))
+    }
 }
 
 // --- "Converters and validators": the guide's typed-ConversionError snippet, transcribed ---

@@ -1,10 +1,10 @@
 [versions]
-klapVersion = "0.6.0"
+klapVersion = "0.6.1"
 
 jdk = "25"
 
 dotenv-gradle = "0.1.0"
-kern = "0.6.0"
+kern = "0.6.3"
 kotlin = "2.4.21"
 kotlinx-coroutines = "1.11.0"
 kotlinx-datetime = "0.8.0"
@@ -15,6 +15,8 @@ kotlinx-serialization = "1.11.0"
 dotenv-gradlePlugin = { module = "com.fromwau:dotenv-gradle", version.ref = "dotenv-gradle" }
 kern-result = { module = "com.fromwau.kern:result", version.ref = "kern" }
 kern-terminal = { module = "com.fromwau.kern:terminal", version.ref = "kern" }
+kern-fs = { module = "com.fromwau.kern:fs", version.ref = "kern" }
+kern-fs-test = { module = "com.fromwau.kern:fs-test", version.ref = "kern" }
 kern-fuzzy = { module = "com.fromwau.kern:fuzzy", version.ref = "kern" }
 kern-result-test = { module = "com.fromwau.kern:result-test", version.ref = "kern" }
 kern-terminal-test = { module = "com.fromwau.kern:terminal-test", version.ref = "kern" }
