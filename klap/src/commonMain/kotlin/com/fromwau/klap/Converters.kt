@@ -185,6 +185,15 @@ private fun ValueSpec.canonicalDefaultOrThrow(value: Any?): Any? {
     return canonical
 }
 
+private fun ValueSpec.multipleWithDefault(multiple: Cardinality.Multiple, value: List<*>): Cardinality.Multiple {
+    val label = if (this is OptionSpec) "option" else "argument"
+    require(multiple.min == 0) {
+        "$label '$name': .default() needs .multiple(min = 0), since a default never applies when a value is required"
+    }
+    // An empty default is what `.multiple()` binds anyway, and help would show it as `default: ` with nothing.
+    return multiple.copy(default = value.ifEmpty { null }?.map { canonicalDefaultOrThrow(it) })
+}
+
 // Shared bodies behind the mirrored Arg/Opt converter pairs (which differ only in their typed wrapper).
 
 private fun ValueSpec.applyChoice(choices: List<String>, ignoreCase: Boolean) {
@@ -457,13 +466,22 @@ public abstract class ConverterScope internal constructor() {
     /**
      * Common case: [Arg] is already non-null (straight from [CommandBuilder.argument]/a non-nullable
      * converter); switches Required to a default without changing nullability.
+     *
+     * After `.multiple()`, [value] is the list bound when no operand is given, so
+     * `argument("file").multiple().default(listOf("-"))` binds `[-]` with no operands and `[a, b]` with two.
+     * Only a `.multiple()` of `min = 0` takes one, since any minimum means an operand is always given.
      */
     public fun <T : Any> Arg<T>.default(value: T): Arg<T> {
-        // Enforces at build time the no-combine invariant the type system cannot express for Arg (unlike Opt).
-        require(spec.cardinality !is Cardinality.Multiple) {
-            "argument '${spec.name}': .default() cannot be combined with .multiple()"
+        val multiple = spec.cardinality as? Cardinality.Multiple
+        spec.cardinality = if (multiple == null) {
+            Cardinality.Default(spec.canonicalDefaultOrThrow(value))
+        } else {
+            // A handle kept from before `.multiple()` still types [value] as one element.
+            require(value is List<*>) {
+                "argument '${spec.name}': .default() after .multiple() takes a list of values"
+            }
+            spec.multipleWithDefault(multiple, value)
         }
-        spec.cardinality = Cardinality.Default(spec.canonicalDefaultOrThrow(value))
         return Arg(spec)
     }
 
@@ -491,8 +509,11 @@ public abstract class ConverterScope internal constructor() {
      */
     public fun <T> Arg<T>.multiple(min: Int = 0, max: Int = Int.MAX_VALUE): Arg<List<T>> {
         // Enforces at build time the no-combine invariant the type system cannot express for Arg (unlike Opt).
-        require(spec.cardinality !is Cardinality.Default && spec.cardinality !is Cardinality.Optional) {
-            "argument '${spec.name}': .multiple() cannot be combined with .default()/.optional()"
+        require(spec.cardinality !is Cardinality.Default) {
+            "argument '${spec.name}': put .default(list) after .multiple(), not before it"
+        }
+        require(spec.cardinality !is Cardinality.Optional) {
+            "argument '${spec.name}': .multiple() cannot be combined with .optional()"
         }
         require(max >= 1 && max >= min) {
             "argument '${spec.name}': .multiple(min = $min, max = $max) needs a max of at least 1 and at least min"
@@ -975,14 +996,30 @@ public abstract class ConverterScope internal constructor() {
     }
 
     /**
+     * Gives this `.multiple()` option the list it binds when it is absent: `option(long = "regexp").multiple()
+     * .default(listOf("a"))` binds `[a]` without `--regexp` and `[x]` for `--regexp x`. Only a `.multiple()` of
+     * `min = 0` takes one, since any minimum means the option is always given.
+     */
+    public fun <T> Opt<List<T>>.default(value: List<T>): Opt<List<T>> {
+        // An Opt<List<T>> is also what `.map { listOf(it) }.required()` returns.
+        val multiple = spec.cardinality as? Cardinality.Multiple
+        require(multiple != null) { "option '${spec.name}': this .default() is for a .multiple() option" }
+        spec.cardinality = spec.multipleWithDefault(multiple, value)
+        return Opt(spec)
+    }
+
+    /**
      * Collects every occurrence into a list. min = 0 (default) stays zero-or-more; min >= 1 is
      * enforced in bind as TooFewOccurrences.
      */
     public fun <T> Opt<T?>.multiple(min: Int = 0): Opt<List<T>> {
         // Same aliasing hole again: a sibling wrapper may have already set .required()/.default() on the
         // shared spec before this call.
-        require(spec.cardinality !is Cardinality.Default && spec.cardinality !is Cardinality.Required) {
-            "option '${spec.name}': .multiple() cannot be combined with .default()/.required()"
+        require(spec.cardinality !is Cardinality.Default) {
+            "option '${spec.name}': put .default(list) after .multiple(), not before it"
+        }
+        require(spec.cardinality !is Cardinality.Required) {
+            "option '${spec.name}': .multiple() cannot be combined with .required()"
         }
         spec.cardinality = Cardinality.Multiple(min)
         return Opt(spec)

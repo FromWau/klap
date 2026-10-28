@@ -225,10 +225,20 @@ public sealed interface CliError : ResultError {
      * A usage error your command detected itself, for a rule klap cannot express as a constraint. It exits
      * [USAGE_ERROR_EXIT], the same code klap's own usage errors use, which is what separates it from
      * [Failure]. There is no exit code to choose: a usage error that exits anything else is not one.
+     *
+     * klap prints [detail] as you wrote it, line breaks included. Quote a name from input with kern-terminal's
+     * `shellQuoted()` and escape other input with its `escapeControls()` as you build it, as GNU's tools quote what
+     * they put in a message: `Failure("no environment ${env.shellQuoted()}")`.
      */
     public data class Usage(val detail: String) : CliError
 
-    /** A command's own runtime failure, reported from an action. Edge-level: the handler owns the message. */
+    /**
+     * A command's own runtime failure, reported from an action. Edge-level: the handler owns the message.
+     *
+     * klap prints [detail] as you wrote it, line breaks included. Quote a name from input with kern-terminal's
+     * `shellQuoted()` and escape other input with its `escapeControls()` as you build it, as GNU's tools quote what
+     * they put in a message: `Failure("no environment ${env.shellQuoted()}")`.
+     */
     public data class Failure(val detail: String, override val exitCode: Int = 1) : CliError
 
     /**
@@ -247,6 +257,10 @@ public sealed interface CliError : ResultError {
      * ```
      *
      * Without [json], `--json` writes `{"type":"Domain","detail":...}`.
+     *
+     * klap prints [detail] as you wrote it, line breaks included. Quote a name from input with kern-terminal's
+     * `shellQuoted()` and escape other input with its `escapeControls()` as you build it, as GNU's tools quote what
+     * they put in a message: `Failure("no environment ${env.shellQuoted()}")`.
      */
     public data class Domain(
         val error: ResultError,

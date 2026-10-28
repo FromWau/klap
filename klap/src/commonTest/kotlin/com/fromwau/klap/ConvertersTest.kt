@@ -251,7 +251,7 @@ class ConvertersTest : ConverterScope() {
         assertFailsWith<IllegalArgumentException> {
             cli("x") {
                 command("c") {
-                    argument("t").multiple().default(listOf("a"))
+                    argument("t").multiple(min = 1).default(listOf("a"))
                     action { Ok("") }
                 }
             }
