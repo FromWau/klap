@@ -346,6 +346,7 @@ val files   = argument("files").file().multiple(min = 1)                       /
 | `.instant()`                   | argument, option                | `kotlin.time.Instant` through `Instant.parse`: ISO 8601 with seconds and an offset (`2026-01-31T12:00:00Z`, `+02:00`, `+02`, a fraction, a lowercase `t` or `z`). No seconds, no offset, or a space for the `T` is refused                                                                                                                                      |
 | `.uuid()`                      | argument, option                | `kotlin.uuid.Uuid` through `Uuid.parse`: 32 hex digits in either case, dashed or plain. Braces and anything else are refused; the value prints dashed in lower case                                                                                                                                                                                             |
 | `.path()`                      | argument, option                | `CliPath`, from `klap-io`: the word as typed, its trailing slash kept, plus the kotlinx-io `Path`. Completes as a file, as `.file()` does, and refuses nothing (see [Converters from other modules](#converters-from-other-modules))                                                                                                                            |
+| `.input()`                     | argument, option                | `CliInput`, from `klap-io`: `-` is `StandardInput`, any other word a `File` holding its `CliPath`; `readBytes(terminal)` reads either. Completes as a file, and refuses nothing (see [Converters from other modules](#converters-from-other-modules))                                                                                                           |
 | `.localDate()`                 | argument, option                | `kotlinx.datetime.LocalDate`, from `klap-datetime`, through `LocalDate.parse`: `2026-01-31`. Another form, or a day the calendar lacks, is refused                                                                                                                                                                                                              |
 | `.localDateTime()`             | argument, option                | `kotlinx.datetime.LocalDateTime`, from `klap-datetime`, through `LocalDateTime.parse`: `2026-01-31T12:00`, seconds and a fraction optional. A date alone, an offset, or a space for the `T` is refused                                                                                                                                                          |
 | `.timeZone()`                  | argument, option                | `kotlinx.datetime.TimeZone`, from `klap-datetime`, through `TimeZone.of`: `Europe/Vienna`, `UTC`, `+02:00`. An id the time zone database lacks is refused                                                                                                                                                                                                       |
@@ -516,7 +517,7 @@ depends on that library only when it asks for one. Both are published beside kla
 
 ```kotlin
 dependencies {
-    implementation("com.fromwau:klap-io:$klapVersion")        // .path(), kotlinx-io
+    implementation("com.fromwau:klap-io:$klapVersion")        // .path(), .input(), kotlinx-io, kern-fs
     implementation("com.fromwau:klap-datetime:$klapVersion")  // .localDate(), .localDateTime(), .timeZone()
 }
 ```
@@ -542,6 +543,25 @@ action {
 ```
 
 Two `CliPath`s are equal when their text is, so `a/` and `a` differ, and one prints as its text.
+
+`.input()` reads a word as many tools do: `-` is standard input, as in `cat -` or `head -`, and anything else is a
+file. It binds a `CliInput`, and `readBytes` reads either one: standard input through the action's `terminal`, and a
+file through kern-fs, which also reads a FIFO such as `<(...)` to its end:
+
+```kotlin
+val file = argument("file").input().optional()
+action {
+    (file() ?: CliInput.StandardInput).readBytes(terminal)
+        .map { it.decodeToString() }
+        .mapError { CliError.Domain(it, "cannot read: $it") }
+}
+```
+
+- Whether a missing operand means standard input is yours to say, as `?: CliInput.StandardInput` does above.
+- A failure is an `InputError`: `StandardInput` with kern-terminal's `ReadError`, or `File` with the path as typed and
+  kern-fs's `FileError`.
+- `readBytes(terminal, maxBytes)` refuses either input past `maxBytes` bytes, with the `TooLarge` of its error type.
+- In a test, `RecordingTerminal(input = …)` from `kern:terminal-test` is what `-` reads.
 
 The datetime converters refuse a value with a `ConversionError.Domain` whose `error` is a `DateTimeError`
 (`NotALocalDate`, `NotALocalDateTime`, `NotATimeZone`), so a `parse` caller can match on it.
