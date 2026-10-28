@@ -25,10 +25,10 @@ dependencies {
 }
 ```
 
-Two opt-in modules convert to types outside the standard library, each bringing klap with it:
-`com.fromwau:klap-io` adds `.path()`, which keeps the path as typed, trailing slash included, and
-`com.fromwau:klap-datetime` adds `.localDate()`, `.localDateTime()` and `.timeZone()`. `.duration()`,
-`.instant()` and `.uuid()` are in klap itself.
+Two opt-in modules convert to types outside the standard library, each bringing klap with it.
+`com.fromwau:klap-io` adds `.path()`, which keeps the path as typed, trailing slash included, and `.input()`,
+which reads `-` as standard input and any other word as a file. `com.fromwau:klap-datetime` adds `.localDate()`,
+`.localDateTime()` and `.timeZone()`. `.duration()`, `.instant()` and `.uuid()` are in klap itself.
 
 Add `kotlin("plugin.serialization")` only if an action returns an `@Serializable` type. The JSON runtime
 is exposed as `api`, so it arrives transitively. KMP consumers put the dependency in `commonMain`.
