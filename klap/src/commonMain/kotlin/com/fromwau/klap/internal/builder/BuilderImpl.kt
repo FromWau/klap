@@ -11,17 +11,19 @@ import com.fromwau.klap.CliError
 import com.fromwau.klap.Command
 import com.fromwau.klap.CommandBuilder
 import com.fromwau.klap.ConversionError
+import com.fromwau.klap.Exit
 import com.fromwau.klap.Flag
 import com.fromwau.klap.Input
 import com.fromwau.klap.Opt
+import com.fromwau.klap.OwnReading
 import com.fromwau.klap.Projection
 import com.fromwau.klap.RepeatedOptions
-import com.fromwau.klap.OwnReading
 import com.fromwau.klap.ShortOptions
 import com.fromwau.klap.ValueScope
 import com.fromwau.klap.Version
 import com.fromwau.klap.holderSpec
 import com.fromwau.klap.internal.render.HelpExample
+import com.fromwau.klap.internal.render.KLAP_EXITS
 import com.fromwau.klap.internal.spec.ArgumentSpec
 import com.fromwau.klap.internal.spec.BuiltinKind
 import com.fromwau.klap.internal.spec.ConstraintArity
@@ -65,6 +67,7 @@ internal class BuilderImpl(
     override var aliases: Collection<String> = emptyList()
     override var version: Version = Version.Off
     override var author: String? = null
+    override var manDate: String? = null
     override var abbreviation: Abbreviation = Abbreviation.LongOptions
     override var repeatedOptions: RepeatedOptions = RepeatedOptions.LastWins
     override var shortOptions: ShortOptions = ShortOptions.Clustered
@@ -232,6 +235,18 @@ internal class BuilderImpl(
         examples += HelpExample(command, description)
     }
 
+    private val exits = mutableListOf<Exit>()
+
+    override fun exits(vararg exits: Exit) {
+        for (exit in exits) {
+            val code = exit.code
+            require(code in 1..255) { "exit code $code of '$name' must be from 1 to 255; 0 is success" }
+            require(exit !in KLAP_EXITS) { "exit code $code of '$name' is klap's own, which every page lists already" }
+            require(this.exits.none { it.code == code }) { "exit code $code of '$name' is declared twice" }
+            this.exits += exit
+        }
+    }
+
     override fun <R> command(name: String, block: CommandBuilder.() -> R): R =
         child(name, emptyList(), block)
 
@@ -303,6 +318,7 @@ internal class BuilderImpl(
                 description = help,
                 examples = examples.toList(),
                 epilogue = epilogue,
+                exits = exits.toList(),
                 section = section,
                 hidden = hidden,
             ),

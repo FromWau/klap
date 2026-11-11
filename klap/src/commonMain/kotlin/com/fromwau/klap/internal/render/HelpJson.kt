@@ -29,6 +29,7 @@ internal data class HelpJson(
     val commands: List<CommandHelp>,
     val globalOptions: List<OptionHelp>,
     val examples: List<ExampleHelp>,
+    val exits: List<ExitHelp>,
     val epilogue: String? = null,
     val author: String? = null,
 )
@@ -83,6 +84,14 @@ internal data class ExampleHelp(
     val description: String,
 )
 
+/** One meaning of an exit code: klap's own, then each the command declares, so a code may come twice. */
+@Serializable
+internal data class ExitHelp(
+    val code: Int,
+    val meaning: String,
+    val success: Boolean,
+)
+
 /** This node's help as data; hidden inputs and subcommands are left out, as text help leaves them out. */
 internal fun Command.helpJson(
     qualifiedName: String,
@@ -102,6 +111,7 @@ internal fun Command.helpJson(
     globalOptions = globalSpecs.filter { !it.hidden }.map { it.toHelp() } +
         builtinOptions(rootVersioned, rootMetaOptions, builtins).map { it.toHelp() },
     examples = examples.map { ExampleHelp(it.command, it.description) },
+    exits = (KLAP_HELP_EXITS + exits).sortedBy { it.code }.map { ExitHelp(it.code, it.meaning, it.success) },
     epilogue = epilogue.ifEmpty { null },
     author = (this as? Cli)?.author?.takeUnless { it.isBlank() },
 )

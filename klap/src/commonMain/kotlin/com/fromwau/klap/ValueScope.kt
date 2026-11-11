@@ -31,9 +31,24 @@ public sealed class ValueScope {
     public operator fun CountFlag.invoke(): Int = read(spec)
 
     /**
+     * Whether a single-dash word filled this operand as its `dashLed` lets one, before any `--`; for a variadic
+     * operand, whether any of its words did, and for `dashLed(gather)`, whether it gathered one. So a command can tell
+     * `set -x` from `set -- -x`, which give it the same value, and answer each in its own way:
+     *
+     * ```kotlin
+     * val value = argument("value").dashLed()
+     * action {
+     *     if (value.isDashLed && !isNumber(value())) Err(CliError.UnknownOption(value())) else Ok(store(value()))
+     * }
+     * ```
+     */
+    public val Arg<*>.isDashLed: Boolean get() = spec in line.dashLedOperands
+
+    /**
      * Every occurrence of [inputs] on the line, in the order they were written, for settings that several
-     * options assign in turn. GNU cp reads `-d` as `--no-dereference --preserve=links`, so `cp -d -L` follows
-     * links and `cp -L -d` does not; replaying the occurrences decides it as cp's own option loop does:
+     * options assign in turn, or for files given both as an option and as operands. GNU cp reads `-d` as
+     * `--no-dereference --preserve=links`, so `cp -d -L` follows links and `cp -L -d` does not; replaying the
+     * occurrences decides it as cp's own option loop does:
      *
      * ```kotlin
      * projection {
@@ -49,18 +64,16 @@ public sealed class ValueScope {
      * ```
      *
      * A flag occurs each time it is written, a cluster's letters in the order they stand. Every occurrence of an
-     * option is listed, a `.multiple()` one's and a single-valued one's alike. An input that last-wins overrides
-     * keeps its occurrences here, since they are what was written. In a completion provider, an occurrence whose
-     * value does not convert is left out.
+     * option is listed, a `.multiple()` one's and a single-valued one's alike, and an operand occurs once for each
+     * value it took, at the place it stood; a `dashLed(gather)` operand's words are one value, at the first of them. An
+     * input that last-wins overrides keeps its occurrences here, since they are what was written. In a completion
+     * provider, an occurrence whose value does not convert is left out, and so is the operand being typed.
      *
-     * @param inputs the flags and options to list; an operand has no occurrences and is refused.
+     * @param inputs the flags, options and operands to list.
      * @return each occurrence with the handle you passed as its [Occurrence.input].
      */
     public fun inOrder(vararg inputs: Input): List<Occurrence> {
-        val wanted = inputs.associateBy { input ->
-            require(input !is Arg<*>) { "inOrder: '${input.name}' is an operand; only flags and options occur" }
-            input.holderSpec()
-        }
+        val wanted = inputs.associateBy { it.holderSpec() }
         val order = line
         return order.written.mapNotNull { written ->
             val input = wanted[written.spec] ?: return@mapNotNull null
@@ -89,7 +102,8 @@ public sealed class ValueScope {
  *   `when (occurrence.input)` matching your handles needs no `else` branch, which a `when` over the sealed [Input]
  *   would.
  * @property value what this occurrence gave: `true` for a flag, `false` for a flag's negative spelling, and for an
- *   option the value of this occurrence after its converters ran (an [OptionalValue] for `.optionalValue()`).
+ *   option or operand the value of this occurrence after its converters ran (an [OptionalValue] for
+ *   `.optionalValue()`).
  */
 public data class Occurrence(
     val input: Any,

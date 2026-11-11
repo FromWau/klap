@@ -1,12 +1,16 @@
 package com.fromwau.klap
 
+import com.fromwau.klap.internal.render.exitMeanings
 import com.fromwau.klap.internal.render.helpSections
 import com.fromwau.klap.internal.render.manBodyFor
 import com.fromwau.klap.internal.render.manSectionFor
 import com.fromwau.klap.internal.render.markdownFor
 import com.fromwau.klap.internal.render.mdAnchor
+import com.fromwau.klap.internal.render.mdProseCell
 import com.fromwau.klap.internal.render.mdText
 import com.fromwau.klap.internal.render.roffEscape
+import com.fromwau.klap.internal.render.roffProse
+import com.fromwau.klap.internal.render.usageLine
 import com.fromwau.klap.internal.render.visibleTree
 
 public enum class DocFormat {
@@ -74,6 +78,14 @@ public fun Cli.renderMarkdownDocs(): String {
             appendLine()
             append(markdownFor(node, path, globalSpecs, version != null, metaOptions, builtins))
         }
+        appendLine()
+        appendLine("## Exit status")
+        appendLine()
+        appendLine("| Code | Meaning |")
+        appendLine("|---|---|")
+        exitMeanings(nodes).forEach { (code, meanings) ->
+            appendLine("| $code | ${mdProseCell(meanings.joinToString("; "))} |")
+        }
         author?.takeUnless { it.isBlank() }?.let {
             appendLine()
             appendLine("## Author")
@@ -89,10 +101,10 @@ public fun Cli.renderMarkdownDocs(): String {
  * Renders the whole CLI as a roff man page, one section per command, from the same rows `--help` shows. A
  * tool with no subcommands renders as a single body rather than a section per command.
  *
- * @param date fills the date field of the man header. klap leaves it empty rather than guessing, since it
- *   has no clock of its own; pass your build date to have one.
+ * @param date fills the date field of the man header, [Cli.manDate] unless given. klap leaves it empty rather than
+ *   guessing, since it has no clock of its own; set your build date to have one.
  */
-public fun Cli.renderManPage(date: String? = null): String {
+public fun Cli.renderManPage(date: String? = manDate): String {
     val stamp = date.orEmpty()
     val source = listOfNotNull(name, version).joinToString(" ")
     val nodes = visibleTree(name)
@@ -109,9 +121,20 @@ public fun Cli.renderManPage(date: String? = null): String {
             .lineSequence()
             .joinToString(" ") { it.trim() }
             .trim()
-        appendLine("${roffEscape(name)} \\- ${roffEscape(nameSummary)}")
+        val summary = if (nameSummary.isEmpty()) "" else " \\- ${roffEscape(nameSummary)}"
+        appendLine("${roffEscape(name)}$summary")
+        appendLine(".SH SYNOPSIS")
+        nodes.forEachIndexed { index, (node, path) ->
+            if (index > 0) appendLine(".br")
+            appendLine(".B ${roffEscape(node.usageLine(path).removePrefix("usage: "))}")
+        }
+        if (description.isNotEmpty()) {
+            appendLine(".SH DESCRIPTION")
+            appendLine(roffProse(description))
+        }
+        // SYNOPSIS and DESCRIPTION carry the root's usage line and description, so its own section leaves them out.
         if (nodes.size > 1) {
-            nodes.forEach { (node, path) ->
+            nodes.forEachIndexed { index, (node, path) ->
                 append(
                     manSectionFor(
                         node,
@@ -120,12 +143,21 @@ public fun Cli.renderManPage(date: String? = null): String {
                         version != null,
                         metaOptions,
                         builtins,
+                        showsIntro = index > 0,
                     )
                 )
             }
         } else {
             val (node, path) = nodes.single()
-            append(manBodyFor(node, path, globalSpecs, version != null, metaOptions, builtins))
+            // With no description to follow, the rows would read as part of the synopsis above them.
+            if (description.isEmpty()) appendLine(".SH OPTIONS")
+            append(manBodyFor(node, path, globalSpecs, version != null, metaOptions, builtins, showsIntro = false))
+        }
+        appendLine(".SH EXIT STATUS")
+        exitMeanings(nodes).forEach { (code, meanings) ->
+            appendLine(".TP")
+            appendLine(".B $code")
+            appendLine(roffProse(meanings.joinToString("; ")))
         }
         author?.takeUnless { it.isBlank() }?.let {
             appendLine(".SH AUTHOR")
@@ -135,7 +167,7 @@ public fun Cli.renderManPage(date: String? = null): String {
 }
 
 /** Renders the docs in [format], which is what the built-in `docs <format>` command calls. */
-public fun Cli.renderDocs(format: DocFormat, date: String? = null): String = when (format) {
+public fun Cli.renderDocs(format: DocFormat, date: String? = manDate): String = when (format) {
     DocFormat.MARKDOWN -> renderMarkdownDocs()
     DocFormat.MAN -> renderManPage(date)
 }

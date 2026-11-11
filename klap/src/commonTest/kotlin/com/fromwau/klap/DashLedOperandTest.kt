@@ -19,6 +19,161 @@ class DashLedOperandTest {
         }
     }
 
+    private fun refusing(slot: CommandBuilder.() -> Arg<*>) = cli("set") {
+        val value = slot()
+        action { Ok("value=${value()}") }
+    }
+
+    private fun Cli.errorFor(vararg words: String): String {
+        val terminal = RecordingTerminal()
+        assertEquals(USAGE_ERROR_EXIT, run(words.toList(), terminal))
+        return terminal.err.lines().first()
+    }
+
+    @Test
+    fun `a word a full slot's test refuses is an unknown option`() {
+        val digits = refusing { argument("value").dashLed { word -> word.drop(1).firstOrNull()?.isDigit() == true } }
+        assertEquals("error: unknown option '-x'", digits.errorFor("1", "-x"))
+        assertEquals("error: unknown option '-x'", digits.errorFor("-5", "-x"))
+        assertEquals("error: unknown option '-x'", digits.errorFor("1", "2", "-x"))
+    }
+
+    @Test
+    fun `a word a slot's test refuses before --help or --version is an unknown option as one no slot takes`() {
+        val digits = cli("set") {
+            version = Version.Of("1.0")
+            val value = argument("value").dashLed { word -> word.drop(1).firstOrNull()?.isDigit() == true }
+            action { Ok("value=${value()}") }
+        }
+        assertEquals("error: unknown option '-x'", digits.errorFor("-x", "--help"))
+        assertEquals("error: unknown option '-x'", digits.errorFor("-x", "--version"))
+    }
+
+    @Test
+    fun `a word refused past a variadic slot's maximum is an unknown option`() {
+        val digits = refusing {
+            argument("value").dashLed { word -> word.drop(1).firstOrNull()?.isDigit() == true }.multiple(max = 2)
+        }
+        assertEquals("error: unknown option '-x'", digits.errorFor("-1", "-2", "-x"))
+    }
+
+    @Test
+    fun `a dash word past a full slot with no test is an unknown option`() {
+        val any = refusing { argument("value").dashLed() }
+        assertEquals("error: unknown option '-x'", any.errorFor("1", "-x"))
+        assertEquals("error: unknown option '-x'", any.errorFor("-5", "-x"))
+        assertEquals("error: unexpected extra argument: 2", any.errorFor("1", "2"))
+    }
+
+    @Test
+    fun `a dash word a full slot's test takes is an extra argument`() {
+        val digits = refusing { argument("value").dashLed { word -> word.drop(1).firstOrNull()?.isDigit() == true } }
+        assertEquals("error: unexpected extra argument: -5", digits.errorFor("1", "-5"))
+    }
+
+    @Test
+    fun `in a provider isDashLed counts a finished word the slot's test takes and a word it refuses fills no slot`() {
+        val tree = cli("set") {
+            val value = argument("value")
+                .dashLed { word -> word.drop(1).firstOrNull()?.isDigit() == true }
+                .completeWith { candidate("value") }
+            argument("next").completeWith { candidate("${value.isDashLed}") }
+            action { Ok("") }
+        }
+        assertEquals(listOf("true"), tree.completeCandidates(listOf("-5", "")).map { it.value })
+        assertEquals(listOf("value"), tree.completeCandidates(listOf("-x", "")).map { it.value })
+    }
+
+    @Test
+    fun `in a provider isDashLed does not count the word being typed`() {
+        val tree = cli("rm") {
+            val files = argument("file").dashLed().multiple()
+            files.completeWith { candidate("-x${files.isDashLed}") }
+            action { Ok("") }
+        }
+        assertEquals(listOf("-xfalse"), tree.completeCandidates(listOf("a", "-x")).map { it.value })
+        assertEquals(listOf("-xtrue"), tree.completeCandidates(listOf("-y", "-x")).map { it.value })
+    }
+
+    private fun Cli.offered(
+        vararg words: String,
+        cursor: Int,
+    ): List<String> = completeCandidates(words.toList(), cursor).map { it.value }
+
+    @Test
+    fun `a gathered word being typed is no occurrence and no dash word for its own provider`() {
+        val tree = cli("chmod") {
+            val mode = argument("mode").dashLed(",") { it.startsWith("-w") || it.startsWith("-x") }
+            val files = argument("file").multiple()
+            files.completeWith {
+                val order = inOrder(files, mode).joinToString(",") { "${it.value}" }
+                candidate("-w files=${files().joinToString(",")} order=$order dash=${mode.isDashLed}")
+            }
+            mode.completeWith {
+                val order = inOrder(files, mode).joinToString(",") { "${it.value}" }
+                candidate("-w files=${files().joinToString(",")} order=$order dash=${mode.isDashLed}")
+            }
+            action { Ok("") }
+        }
+        assertEquals(listOf("-w files=a,b order=a,b dash=false"), tree.offered("-w", "a", "b", cursor = 0))
+        assertEquals(listOf("-w files=a,b order=a,b dash=false"), tree.offered("a", "-w", "b", cursor = 1))
+        assertEquals(listOf("-w files=a,b order=-x,a,b dash=true"), tree.offered("-x", "-w", "a", "b", cursor = 1))
+    }
+
+    @Test
+    fun `Tab offers an operand's values a test takes while the word is still partial`() {
+        val tree = cli("set") {
+            argument("value")
+                .dashLed { it == "-inf" || it.drop(1).firstOrNull()?.isDigit() == true }
+                .completeWith { candidates(listOf("-inf", "-1", "7")) }
+            action { Ok("") }
+        }
+        assertEquals(listOf("-inf"), tree.offered("-i", cursor = 0))
+        assertEquals(listOf("-inf"), tree.offered("-in", cursor = 0))
+        assertEquals(true, tree.offered("-", cursor = 0).containsAll(listOf("-inf", "-1")))
+    }
+
+    @Test
+    fun `Tab asks a slot's test only about a word the parser would give it`() {
+        val tree = cli("set") {
+            argument("value")
+                .dashLed { it[1].isDigit() }
+                .completeWith { candidate("-1") }
+            action { Ok("") }
+        }
+        assertEquals(true, "-1" in tree.offered("-", cursor = 0))
+    }
+
+    @Test
+    fun `a word refused by the test of a slot its trigger removed is an unknown option`() {
+        val tree = cli("t") {
+            val all = flag(long = "all")
+            val value = argument("v").dashLed { word -> word.drop(1).firstOrNull()?.isDigit() == true }.absentWhen(all)
+            action { Ok("${value.isDashLed}") }
+        }
+        assertEquals("error: unknown option '-x'", tree.errorFor("--all", "-x"))
+    }
+
+    @Test
+    fun `a dash word for a removed slot with no test is an unknown option`() {
+        val tree = cli("t") {
+            val all = flag(long = "all")
+            val value = argument("v").dashLed().absentWhen(all)
+            action { Ok("${value.isDashLed}") }
+        }
+        assertEquals("error: unknown option '-x'", tree.errorFor("--all", "-x"))
+    }
+
+    @Test
+    fun `a dash word a removed slot's test takes is an extra argument`() {
+        val tree = cli("t") {
+            val all = flag(long = "all")
+            val value = argument("v").dashLed { word -> word.drop(1).firstOrNull()?.isDigit() == true }.absentWhen(all)
+            action { Ok("${value.isDashLed}") }
+        }
+        assertEquals("error: unexpected extra argument: -5", tree.errorFor("--all", "-5"))
+    }
+
     @Test
     fun `declaring dashLed leaves an ordinary parse untouched`() {
         val t = RecordingTerminal()
@@ -37,6 +192,21 @@ class DashLedOperandTest {
         val t = RecordingTerminal()
         assertEquals(0, tree.run(listOf("go", "7"), t))
         assertEquals("n=7\n", t.out)
+    }
+
+    @Test
+    fun `a dashLed filter binds the dash words it accepts and leaves the others unknown options`() {
+        val tree = cli("app") {
+            command("set") {
+                val value = argument("value").dashLed { word -> word.drop(1).firstOrNull()?.isDigit() == true }
+                action { Ok("value=${value()}") }
+            }
+        }
+        val t = RecordingTerminal()
+        assertEquals(0, tree.run(listOf("set", "-5"), t))
+        assertEquals("value=-5\n", t.out)
+        val refused = tree.parse(listOf("set", "-x")).assertError<CliError.UnknownOption>()
+        assertEquals(CliError.UnknownOption("-x"), refused)
     }
 
     @Test
@@ -233,11 +403,9 @@ class DashLedOperandTest {
     }
 
     @Test
-    fun `a dash led token past the last slot is an extra argument`() {
-        // It lands in no slot at all, so the honest error is the one `seek a b` gets rather than the
-        // unknown-option report the same input draws on an unmarked command.
-        val error = seekTree(mark = true).parse(listOf("seek", "-1m", "-2m")).assertError<CliError.TooManyArguments>()
-        assertEquals(CliError.TooManyArguments("echoctl seek", listOf("-2m")), error)
+    fun `a dash led token past the last slot is an unknown option as on an unmarked command`() {
+        val error = seekTree(mark = true).parse(listOf("seek", "-1m", "-2m")).assertError<CliError.UnknownOption>()
+        assertEquals(CliError.UnknownOption("-2m"), error)
     }
 
     @Test
@@ -290,6 +458,22 @@ class DashLedOperandTest {
     }
 
     @Test
+    fun `a dashLed test is not asked about a word being typed so Tab offers its candidates beside the names`() {
+        val tree = cli("app") {
+            flag(short = 'v', long = "verbose")
+            val value = argument("value")
+                .dashLed { word -> word.drop(1).firstOrNull()?.isDigit() == true }
+                .completeWith { candidates(listOf("-5", "-9")) }
+            action<String>(human = { it }) { Ok("value=${value()}") }
+        }
+        assertEquals(listOf("-5"), tree.offered("-5"))
+        assertEquals(
+            listOf("--verbose", "-v", "--help", "--json", "--color", "--completion", "--docs", "-5", "-9"),
+            tree.offered("-"),
+        )
+    }
+
+    @Test
     fun `a word only an option takes completes from the names`() {
         val tree = chmodLike()
         assertEquals("mode=u+x files=[f] recursive=true", tree.bindText("--rec", "u+x", "f"))
@@ -320,5 +504,94 @@ class DashLedOperandTest {
             .completeWith { candidates(listOf("-w", "-x", "644")) }
         val files = argument("file").multiple()
         action<String>(human = { it }) { Ok("mode=${mode()} files=${files()} recursive=${recursive()}") }
+    }
+
+    /** A one-operand tree that prints the operand and whether a dash word filled it. */
+    private fun telling(declare: CommandBuilder.() -> Arg<*>) = cli("tell") {
+        val word = declare()
+        action { Ok("${word()} ${word.isDashLed}") }
+    }
+
+    private fun told(cli: Cli, vararg line: String): String {
+        val t = RecordingTerminal()
+        assertEquals(0, cli.run(line.toList(), t), t.err)
+        return t.out
+    }
+
+    @Test
+    fun `isDashLed is true for a dash word before the end of options`() {
+        val tree = telling { argument("word").dashLed() }
+        assertEquals("-5 true\n", told(tree, "-5"))
+    }
+
+    @Test
+    fun `isDashLed is false for the same word after the end of options`() {
+        val tree = telling { argument("word").dashLed() }
+        assertEquals("-5 false\n", told(tree, "--", "-5"))
+    }
+
+    @Test
+    fun `isDashLed is false for a plain word`() {
+        val tree = telling { argument("word").dashLed() }
+        assertEquals("5 false\n", told(tree, "5"))
+    }
+
+    @Test
+    fun `isDashLed is false without dashLed even for a dash word after the end of options`() {
+        val tree = telling { argument("word") }
+        assertEquals("-5 false\n", told(tree, "--", "-5"))
+    }
+
+    @Test
+    fun `isDashLed tells a dash word the slot's test takes from the same word after the end of options`() {
+        val tree = telling { argument("word").dashLed { true } }
+        assertEquals("-5 true\n", told(tree, "-5"))
+        assertEquals("-5 false\n", told(tree, "--", "-5"))
+    }
+
+    @Test
+    fun `isDashLed is false for an operand left out`() {
+        val tree = telling { argument("word").dashLed().optional() }
+        assertEquals("null false\n", told(tree))
+    }
+
+    @Test
+    fun `isDashLed on a variadic operand is true when any of its words was a dash word`() {
+        val tree = telling { argument("word").dashLed().multiple() }
+        assertEquals("[a, -5] true\n", told(tree, "a", "-5"))
+        assertEquals("[a, -5] false\n", told(tree, "a", "--", "-5"))
+    }
+
+    @Test
+    fun `isDashLed is true only on the operand a dash word filled`() {
+        val tree = cli("tell") {
+            val first = argument("first").dashLed()
+            val second = argument("second").dashLed()
+            action { Ok("${first.isDashLed} ${second.isDashLed}") }
+        }
+        assertEquals("false true\n", told(tree, "a", "-5"))
+        assertEquals("true false\n", told(tree, "-5", "a"))
+    }
+
+    @Test
+    fun `isDashLed on a gathering operand is true when it gathered a dash word`() {
+        val tree = cli("tell") {
+            val mode = argument("mode").dashLed(gather = ",") { true }.optional()
+            val rest = argument("rest").optional()
+            action { Ok("${mode()} ${rest()} ${mode.isDashLed}") }
+        }
+        assertEquals("-w null true\n", told(tree, "-w"))
+        assertEquals("a null false\n", told(tree, "a"))
+    }
+
+    @Test
+    fun `in a provider isDashLed tells a dash word from a plain one`() {
+        val tree = cli("tell") {
+            val first = argument("first").dashLed()
+            val second = argument("second").completeWith { candidates(listOf("dash=${first.isDashLed}")) }
+            action { Ok("${first()} ${second()}") }
+        }
+        assertEquals(listOf("dash=true"), tree.completeCandidates(listOf("-5", "")).map { it.value })
+        assertEquals(listOf("dash=false"), tree.completeCandidates(listOf("5", "")).map { it.value })
     }
 }

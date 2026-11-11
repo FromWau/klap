@@ -91,7 +91,7 @@ class HelpSettingTest {
     @Test
     fun `a group run bare under All shows the tree from that group as --help does`() {
         val tree = tree(Help.All())
-        val bare = tree.out("remote")
+        val bare = RecordingTerminal().also { tree.run(listOf("remote"), it) }.err
         assertTrue("usage: app remote add" in bare, bare)
         assertEquals(tree.out("remote", "--help"), bare)
     }
@@ -213,7 +213,7 @@ class HelpSettingTest {
         val byTree = tree(Help.ByTree(allDescription = "show every command"))
         assertTrue(Candidate("--help-all", "show every command") in byTree.completeCandidates(listOf("--help-")))
         val byDefault = tree(Help.ByTree()).completeCandidates(listOf("--"))
-        assertTrue(Candidate("--help-all", "Show help for every subcommand") in byDefault, "$byDefault")
+        assertTrue(Candidate("--help-all", "display help for every subcommand and exit") in byDefault, "$byDefault")
     }
 
     // --- docs ---

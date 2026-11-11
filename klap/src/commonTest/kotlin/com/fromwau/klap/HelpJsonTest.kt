@@ -44,12 +44,16 @@ class HelpJsonTest {
                 """"options":[{"names":["-r","--raw"],"help":"print it raw"},""" +
                 """{"names":["--mode"],"help":"how to read it","value":"fast|slow","default":"fast",""" +
                 """"choices":["fast","slow"]}],"commands":[],""" +
-                """"globalOptions":[{"names":["--help"],"help":"Show this help"},""" +
-                """{"names":["--json"],"help":"Output as JSON"},""" +
-                """{"names":["--color"],"help":"Colorize output: auto, always, or never",""" +
+                """"globalOptions":[{"names":["--help"],"help":"display this help and exit"},""" +
+                """{"names":["--json"],"help":"print the output as JSON"},""" +
+                """{"names":["--color"],"help":"colorize the output: auto, always, or never",""" +
                 """"value":"auto|always|never",""" +
-                """"choices":["auto","always","never"]},{"names":["--version"],"help":"Show the version"}],""" +
-                """"examples":[{"command":"tool get name","description":"one key"}]}""" + "\n",
+                """"choices":["auto","always","never"]},""" +
+                """{"names":["--version"],"help":"output version information and exit"}],""" +
+                """"examples":[{"command":"tool get name","description":"one key"}],""" +
+                """"exits":[{"code":0,"meaning":"success","success":true},""" +
+                """{"code":1,"meaning":"a failure","success":false},{"code":2,"meaning":"a usage error, such as """ +
+                """an unknown option or a value that does not parse","success":false}]}""" + "\n",
             out,
         )
     }

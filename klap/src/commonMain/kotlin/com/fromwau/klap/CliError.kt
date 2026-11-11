@@ -1,6 +1,7 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.ResultError
+import com.fromwau.klap.internal.render.words
 import kotlinx.serialization.json.JsonElement
 
 /** A command-line usage error exits 2, as `ls --bogus` and `grep --bogus` do. */
@@ -14,6 +15,12 @@ public const val USAGE_ERROR_EXIT: Int = 2
  * The token that failed is not repeated here, since [CliError.BadValue.value] already carries it.
  */
 public sealed interface ConversionError : ResultError {
+    /**
+     * Why the value was refused, in klap's words, such as `not an integer`, or your [Domain.detail]: the fragment klap
+     * prints after the input's name and value, its control characters escaped there.
+     */
+    public val message: String get() = words()
+
     /** `.int()` was given something that is no decimal `Int`, as GNU tools read one (see `.int()`). */
     public data object NotAnInteger : ConversionError
 
@@ -80,7 +87,14 @@ public sealed interface ConversionError : ResultError {
  * you can match on after calling `parse`.
  */
 public sealed interface CliError : ResultError {
-    public val exitCode: Int get() = USAGE_ERROR_EXIT
+    /**
+     * This error as one readable sentence, the text klap prints after `error: `. For [Usage], [Failure] and [Domain]
+     * it is their `detail` as you wrote it.
+     */
+    public val message: String get() = words()
+
+    /** What the process exits with: [Exit.Usage] for a usage error, or what a [Failure] or [Domain] carries. */
+    public val exit: Exit get() = Exit.Usage
 
     public data class UnknownSubcommand(
         val parent: String,
@@ -239,11 +253,11 @@ public sealed interface CliError : ResultError {
      * `shellQuoted()` and escape other input with its `escapeControls()` as you build it, as GNU's tools quote what
      * they put in a message: `Failure("no environment ${env.shellQuoted()}")`.
      */
-    public data class Failure(val detail: String, override val exitCode: Int = 1) : CliError
+    public data class Failure(val detail: String, override val exit: Exit = Exit.Failure) : CliError
 
     /**
-     * Your own typed error, carried through with its payload intact. klap renders [detail] and exits
-     * [exitCode] exactly as for [Failure]; what it adds is that a `parse` caller can recover [error] and
+     * Your own typed error, carried through with its payload intact. klap renders [detail] and exits with
+     * [exit] exactly as for [Failure]; what it adds is that a `parse` caller can recover [error] and
      * match on it, so your error hierarchy survives instead of flattening to a sentence.
      *
      * klap never looks inside [error]; [ResultError] is the only thing asked of it, so your hierarchy keeps its
@@ -265,7 +279,7 @@ public sealed interface CliError : ResultError {
     public data class Domain(
         val error: ResultError,
         val detail: String,
-        override val exitCode: Int = 1,
+        override val exit: Exit = Exit.Failure,
         val json: JsonElement? = null,
     ) : CliError
 }

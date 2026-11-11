@@ -33,7 +33,7 @@ class TaskStoreLockTest {
 
         val result = store.withLock { Ok(Unit) }
 
-        assertEquals(EXIT_STORE_BUSY, result.assertError<CliError.Failure>().exitCode)
+        assertEquals(TaskExit.StoreBusy, result.assertError<CliError.Failure>().exit)
     }
 
     @Test
@@ -48,7 +48,7 @@ class TaskStoreLockTest {
     fun `the lock is released when the block returns an error`() = withTempStore { path ->
         val store = TaskStore(Path(path))
 
-        store.withLock { Err(CliError.Failure("boom", exitCode = EXIT_NOT_FOUND)) }.assertError<CliError.Failure>()
+        store.withLock { Err(CliError.Failure("boom", exit = TaskExit.NotFound)) }.assertError<CliError.Failure>()
         assertEquals(false, SystemFileSystem.exists(store.lockPath))
     }
 

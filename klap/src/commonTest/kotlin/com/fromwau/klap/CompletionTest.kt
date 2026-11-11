@@ -155,6 +155,7 @@ class GeneratedShellScriptTest {
     fun `zsh delegates every completion to complete`() {
         val script = sampleTree().renderCompletion(CompletionShell.ZSH)
         assertTrue("#compdef todo" in script, script)
+        assertTrue("compdef _todo todo" in script, script)
         assertTrue("__complete" in script, script)
         assertTrue($$"compadd -d descriptions -- \"${values[@]}\"" in script, script)
     }
@@ -320,7 +321,8 @@ class CompleteBuiltinRoundTripTest {
 
         val zsh = tree.renderCompletion(CompletionShell.ZSH)
         assertTrue($$"compadd -d descriptions -- \"${values[@]}\"" in zsh, zsh)
-        assertTrue("eval" !in zsh, zsh)
+        // As a word: the script reads zsh's own $zsh_eval_context to tell how it was loaded.
+        assertTrue(!Regex("\\beval\\b").containsMatchIn(zsh), zsh)
 
         val fish = tree.renderCompletion(CompletionShell.FISH)
         assertTrue($$"for line in $response" in fish, fish)

@@ -7,7 +7,6 @@ import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.parse.LongPool
 import com.fromwau.klap.internal.parse.NameMatch
 import com.fromwau.klap.internal.parse.resolveLong
-import com.fromwau.klap.internal.render.message
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -221,7 +220,7 @@ class AbbreviationTest {
         // but a parity rejection only claims the line failed; the wording itself is pinned here.
         val err = head().parse(listOf("--ver", "f")).assertError<CliError.AmbiguousOption>()
         assertEquals(CliError.AmbiguousOption("--ver", listOf("--verbose", "--version")), err)
-        assertEquals("option '--ver' is ambiguous; possibilities: '--verbose' '--version'", err.message())
+        assertEquals("option '--ver' is ambiguous; possibilities: '--verbose' '--version'", err.message)
     }
 
     private fun dispatcher() = cli("app") {

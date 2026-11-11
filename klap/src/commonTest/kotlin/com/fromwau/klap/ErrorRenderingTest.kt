@@ -6,7 +6,6 @@ import com.fromwau.kern.result.assertError
 import com.fromwau.kern.terminal.escapeControls
 import com.fromwau.kern.terminal.shellQuoted
 import com.fromwau.kern.terminal.test.RecordingTerminal
-import com.fromwau.klap.internal.render.message
 import com.fromwau.klap.internal.render.renderError
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -35,14 +34,14 @@ class ErrorRenderingTest {
 
     @Test
     fun `unknown option message`() {
-        assertEquals("unknown option '--nope'", CliError.UnknownOption("--nope").message())
+        assertEquals("unknown option '--nope'", CliError.UnknownOption("--nope").message)
     }
 
     @Test
     fun `unknown option message with suggestion`() {
         assertEquals(
             "unknown option '--verbos'. Did you mean --verbose?",
-            CliError.UnknownOption("--verbos", "--verbose").message(),
+            CliError.UnknownOption("--verbos", "--verbose").message,
         )
     }
 
@@ -50,7 +49,7 @@ class ErrorRenderingTest {
     fun `ambiguous option lists the possibilities like gnu`() {
         assertEquals(
             "option '--re' is ambiguous; possibilities: '--recursive' '--reference'",
-            CliError.AmbiguousOption("--re", listOf("--recursive", "--reference")).message(),
+            CliError.AmbiguousOption("--re", listOf("--recursive", "--reference")).message,
         )
     }
 
@@ -58,7 +57,7 @@ class ErrorRenderingTest {
     fun `an ambiguous subcommand reads like an ambiguous option`() {
         assertEquals(
             "subcommand 'st' is ambiguous; possibilities: 'stash' 'status'",
-            CliError.AmbiguousSubcommand("app", "st", listOf("stash", "status")).message(),
+            CliError.AmbiguousSubcommand("app", "st", listOf("stash", "status")).message,
         )
     }
 
@@ -66,7 +65,7 @@ class ErrorRenderingTest {
     fun `unknown subcommand message with suggestion`() {
         assertEquals(
             "unknown subcommand 'confi' for 'app'. Did you mean config?",
-            CliError.UnknownSubcommand("app", "confi", "config").message(),
+            CliError.UnknownSubcommand("app", "confi", "config").message,
         )
     }
 
@@ -74,7 +73,7 @@ class ErrorRenderingTest {
     fun `subcommand after separator message`() {
         assertEquals(
             "'build' is a command of 'app', but '--' ends command parsing; put '--' after the command",
-            CliError.SubcommandAfterSeparator("build", "app").message(),
+            CliError.SubcommandAfterSeparator("build", "app").message,
         )
     }
 
@@ -82,7 +81,7 @@ class ErrorRenderingTest {
     fun `too many arguments pluralizes`() {
         assertEquals(
             "unexpected extra arguments: a b",
-            CliError.TooManyArguments("add", listOf("a", "b")).message(),
+            CliError.TooManyArguments("add", listOf("a", "b")).message,
         )
     }
 
@@ -90,7 +89,7 @@ class ErrorRenderingTest {
     fun `too many arguments singular with command suggestion`() {
         assertEquals(
             "unexpected extra argument: biuld. Did you mean the 'build' command?",
-            CliError.TooManyArguments("app", listOf("biuld"), "build").message(),
+            CliError.TooManyArguments("app", listOf("biuld"), "build").message,
         )
     }
 
@@ -98,7 +97,7 @@ class ErrorRenderingTest {
     fun `invalid choice lists choices`() {
         assertEquals(
             "invalid value 'x' for level (choose from low, high)",
-            CliError.InvalidChoice("level", "x", listOf("low", "high")).message(),
+            CliError.InvalidChoice("level", "x", listOf("low", "high")).message,
         )
     }
 
@@ -106,43 +105,43 @@ class ErrorRenderingTest {
     fun `an ambiguous value names the option it belongs to`() {
         assertEquals(
             "value 'h' for --priority is ambiguous; possibilities: 'high' 'highest'",
-            CliError.AmbiguousValue("--priority", "h", listOf("high", "highest")).message(),
+            CliError.AmbiguousValue("--priority", "h", listOf("high", "highest")).message,
         )
     }
 
     @Test
     fun `flag takes no value names the short form as typed`() {
-        assertEquals("flag '-v' does not take a value", CliError.FlagTakesNoValue("-v").message())
+        assertEquals("flag '-v' does not take a value", CliError.FlagTakesNoValue("-v").message)
     }
 
     @Test
     fun `flag takes no value names the long form as typed`() {
-        assertEquals("flag '--verbose' does not take a value", CliError.FlagTakesNoValue("--verbose").message())
+        assertEquals("flag '--verbose' does not take a value", CliError.FlagTakesNoValue("--verbose").message)
     }
 
     @Test
     fun `flag takes no value negation hint is prefixed and correct`() {
         assertEquals(
             "flag '--color' does not take a value; use --no-color to turn it off",
-            CliError.FlagTakesNoValue("--color", "no-color").message(),
+            CliError.FlagTakesNoValue("--color", "no-color").message,
         )
     }
 
     @Test
     fun `missing required option message`() {
-        assertEquals("missing required option --host", CliError.MissingRequiredOption("--host").message())
+        assertEquals("missing required option --host", CliError.MissingRequiredOption("--host").message)
     }
 
     @Test
     fun `missing option value message`() {
-        assertEquals("option --host requires a value", CliError.MissingOptionValue("--host").message())
+        assertEquals("option --host requires a value", CliError.MissingOptionValue("--host").message)
     }
 
     @Test
     fun `too few occurrences pluralizes min`() {
         assertEquals(
             "'header' must be given at least 2 times (got 1)",
-            CliError.TooFewOccurrences("header", 2, 1).message(),
+            CliError.TooFewOccurrences("header", 2, 1).message,
         )
     }
 
@@ -150,13 +149,13 @@ class ErrorRenderingTest {
     fun `too few occurrences singular for min one`() {
         assertEquals(
             "'tag' must be given at least 1 time (got 0)",
-            CliError.TooFewOccurrences("tag", 1, 0).message(),
+            CliError.TooFewOccurrences("tag", 1, 0).message,
         )
     }
 
     @Test
     fun `exit code defaults to two`() {
-        assertEquals(2, CliError.UnknownOption("-z").exitCode)
+        assertEquals(2, CliError.UnknownOption("-z").exit.code)
     }
 
     @Test
@@ -165,9 +164,9 @@ class ErrorRenderingTest {
         // `-1m` is told about `-1`, and looks for it in vain.
         assertEquals(
             "unknown option '-1' (in '-1m')",
-            CliError.UnknownOption("-1", cluster = "-1m").message(),
+            CliError.UnknownOption("-1", cluster = "-1m").message,
         )
-        assertEquals("unknown option '-z'", CliError.UnknownOption("-z").message())
+        assertEquals("unknown option '-z'", CliError.UnknownOption("-z").message)
     }
 
     @Test
@@ -195,7 +194,7 @@ class ErrorRenderingTest {
     fun `missing argument message pins the full string including the for command clause`() {
         assertEquals(
             "missing required argument <text> for 'add'",
-            CliError.MissingArgument("add", "text").message(),
+            CliError.MissingArgument("add", "text").message,
         )
     }
 
@@ -315,6 +314,6 @@ class ErrorRenderingTest {
         val err = tree.parse(listOf("go", "somevalue")).assertError<CliError.BadValue>()
         assertEquals("conversion failed", err.reason)
         assertIs<IllegalStateException>(assertIs<ConversionError.Threw>(err.cause).thrown)
-        assertEquals("invalid value 'somevalue' for n: conversion failed", err.message())
+        assertEquals("invalid value 'somevalue' for n: conversion failed", err.message)
     }
 }

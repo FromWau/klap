@@ -4,6 +4,7 @@ import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.fold
 import com.fromwau.kern.terminal.Terminal
 import com.fromwau.kern.terminal.defaultTerminal
+import com.fromwau.kern.terminal.err
 import com.fromwau.kern.terminal.out
 import com.fromwau.kern.terminal.plain
 import com.fromwau.kern.terminal.withAnsi
@@ -142,7 +143,13 @@ private inline fun Invocation.render(
 
             else -> command.styledHelp(qualifiedName, globalSpecs, style, rootVersioned, rootMetaOptions, builtins)
         }
-        terminal.outputLine(text)
+        // A missing command is a usage error, as GNU tools treat it: the help goes where errors go.
+        if (missingCommand) {
+            terminal.err(plain(text, "\n"))
+            USAGE_ERROR_EXIT
+        } else {
+            terminal.outputLine(text)
+        }
     }
 
     is Invocation.ShowVersion -> {
@@ -172,10 +179,17 @@ private fun Invocation.Execute.renderOutcome(outcome: Result<Rendered, ActionErr
     outcome.fold(
         onError = { renderActionError(it, globals.json, terminal) },
         onSuccess = { rendered ->
-            if (rendered.text.isNotEmpty()) terminal.out(plain(rendered.text, "\n"))
+            val ending = if (rendered.endsLine) "\n" else ""
+            if (rendered.text.isNotEmpty()) terminal.out(plain(rendered.text, ending))
             // Clamped at the render boundary like a failure's code, but from 0 rather than 1: a success may
             // report any code, while [renderError] keeps a failure from ever claiming 0.
-            rendered.exitCode.coerceIn(0, 255)
+            val exit = rendered.exit ?: return@fold 0
+            val code = exit.code.coerceIn(0, 255)
+            if (code == 0) return@fold 0
+            val written = terminal.writeResult()
+            if (written !is Result.Error) return@fold code
+            // An answering exit is no failure, so a lost write overrides it as runCore makes it override 0.
+            renderWriteFailed(written.error, globals.json, terminal, failure = code.takeUnless { exit.success })
         },
     )
 

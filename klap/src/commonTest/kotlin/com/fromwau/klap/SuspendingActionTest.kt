@@ -184,7 +184,7 @@ class SuspendingActionTest {
             // A fail-only action can't infer T from Err (that would be Nothing); name it explicitly.
             actionSuspending<String> {
                 delay(10.milliseconds)
-                Err(CliError.Failure("fail", exitCode = 3))
+                Err(CliError.Failure("fail", exit = exitOf(3)))
             }
         }
         val t = RecordingTerminal()

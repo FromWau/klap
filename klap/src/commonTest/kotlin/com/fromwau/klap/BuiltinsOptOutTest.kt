@@ -21,7 +21,8 @@ private fun Cli.helpOutput(vararg argv: String = arrayOf("--help")): String {
 }
 
 /** The `Global options:` block alone, where every built-in row renders. */
-private fun Cli.globalOptionsBlock(): String = helpOutput().substringAfter("Global options:").trim()
+private fun Cli.globalOptionsBlock(): String =
+    helpOutput().substringAfter("Global options:").substringBefore("\n\nExit status:").trim()
 
 private fun Cli.execute(vararg argv: String): Invocation.Execute =
     assertIs<Invocation.Execute>(parse(argv.toList()).assertSuccess())

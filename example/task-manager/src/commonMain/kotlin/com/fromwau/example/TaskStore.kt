@@ -112,15 +112,15 @@ internal class TaskStore(private val file: Path, private val lockTimeout: Durati
 }
 
 private fun corruptStore(file: Path) =
-    CliError.Failure("task store $file is not valid JSON", exitCode = EXIT_CORRUPT_STORE)
+    CliError.Failure("task store $file is not valid JSON", exit = TaskExit.CorruptStore)
 
 private fun storeBusy(file: Path, lock: Path) = CliError.Failure(
     "task store $file is busy; if no other invocation is running, remove $lock",
-    exitCode = EXIT_STORE_BUSY,
+    exit = TaskExit.StoreBusy,
 )
 
 private fun storeIoError(file: Path, cause: IOException) =
-    CliError.Failure("could not access task store $file: ${cause.reason()}", exitCode = EXIT_IO_ERROR)
+    CliError.Failure("could not access task store $file: ${cause.reason()}", exit = TaskExit.IoError)
 
 // kotlinx-io renders these as "Failed to <op> <path> with <reason>", so keeping only the trailing reason
 // stops the path printing twice; a message in any other shape has no " with " and survives whole.

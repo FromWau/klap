@@ -67,6 +67,7 @@ public open class Command internal constructor(
     public val description: String get() = display.description
     public val epilogue: String get() = display.epilogue
     internal val examples: List<HelpExample> get() = display.examples
+    internal val exits: List<Exit> get() = display.exits
     internal val section: String? get() = display.section
     internal val hidden: Boolean get() = display.hidden
 
@@ -151,6 +152,8 @@ public class Cli internal constructor(
     public val author: String?,
     /** The version `--version` reports, or null when the CLI declares none, which also removes the flag. */
     public val version: String?,
+    /** The date the man page's header shows, or null to leave it empty; see [CliBuilder.manDate]. */
+    public val manDate: String?,
     specs: List<HolderSpec>,
     constraints: List<InputConstraint>,
     validations: List<ValueScope.() -> CliError?> = emptyList(),

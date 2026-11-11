@@ -9,7 +9,7 @@ import com.fromwau.klap.CliError
 import com.fromwau.klap.Command
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.OptionalValue
-import com.fromwau.klap.internal.render.reason
+import com.fromwau.klap.internal.spec.ArgumentSpec
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.ConstraintArity
 import com.fromwau.klap.internal.spec.FlagSpec
@@ -207,12 +207,15 @@ internal fun Command.bindPositionals(
     sink: MutableMap<HolderSpec, Any?>,
     sifted: Sifted,
     inferValues: Boolean,
+    dashLedOperands: MutableSet<ArgumentSpec>,
+    // Gets the indices into [values] each slot took, for [com.fromwau.klap.ValueScope.inOrder].
+    operands: MutableMap<ArgumentSpec, List<Int>>,
     policy: BindPolicy = BindPolicy.Strict,
     // Defaulted for the completion caller, whose Lenient policy discards every error built here.
     qualifiedName: String = name,
-    // The operand a variadic slot leaves out of its value while still counting it toward the slots: the word
-    // completion is typing, which is not a finished value yet.
-    skipOperand: Int? = null,
+    // The word completion is typing, which is not a finished value yet: it counts toward the slots, a variadic slot
+    // leaves it out of its value, and it is no occurrence for inOrder and no dash word for isDashLed.
+    typedOperand: Int? = null,
 ): Result<Unit, CliError> {
     val overridden = lastWinsLosers(sifted)
     val args = activeArguments(sifted, overridden)
@@ -221,10 +224,12 @@ internal fun Command.bindPositionals(
     // is not in [args] either once it took a word, and binds those words joined.
     for (spec in arguments.filterNot { it in args }) {
         val gather = spec.gather
-        if (gather == null || !spec.gathersOn(sifted) || removedByTrigger(spec, sifted, overridden)) {
+        val finished = sifted.gathered.isNotEmpty()
+        if (gather == null || !finished || !spec.gathersOn(sifted) || removedByTrigger(spec, sifted, overridden)) {
             sink[spec] = spec.absentValue()
             continue
         }
+        dashLedOperands += spec
         when (val outcome = spec.convertOne(sifted.gathered.joinToString(gather.separator), inferValues)) {
             is Result.Error -> if (policy != BindPolicy.Lenient) return outcome
             is Result.Success -> sink[spec] = outcome.value ?: (spec.cardinality as? Cardinality.Default)?.value
@@ -249,19 +254,25 @@ internal fun Command.bindPositionals(
                     .coerceAtLeast(0)
                     .coerceAtLeast(minOf(min, left))
                     .coerceAtMost(operandCap(spec, sifted, overridden))
-                val slice = values
-                    .subList(i, i + take)
-                    .filterIndexed { offset, _ -> i + offset != skipOperand }
+                val taken = (i until i + take).filter { it != typedOperand }
+                operands[spec] = taken
+                val slice = taken.map { values[it] }
                 // Rule 3: the sift is permissive (it admits when ANY argument on the command is marked), so
                 // the slot a value actually lands in is only known here. Keyed on what the sift admitted
                 // rather than on the token's shape, so a `--`-escaped operand still binds in an unmarked
                 // slot. Reported as the unknown option it is, naming the whole word rather than a cluster
                 // character the user never typed. Checked before the min count below, so a rejected token
                 // is never also blamed for the slice coming up short.
-                if (policy != BindPolicy.Lenient && !spec.dashLed) {
-                    (i until i + take).firstOrNull { it in sifted.dashLedAdmitted }?.let {
+                if (policy != BindPolicy.Lenient) {
+                    val refused = (i until i + take).firstOrNull {
+                        it in sifted.dashLedAdmitted && !spec.takesDashWord(values[it])
+                    }
+                    refused?.let {
                         return Result.Error(CliError.UnknownOption(values[it]))
                     }
+                }
+                if (taken.any { it in sifted.dashLedAdmitted && spec.takesDashWord(values[it]) }) {
+                    dashLedOperands += spec
                 }
                 // Keyed on min alone: multiple() defaults to min = 0, which means the operand list is
                 // genuinely optional (`tar -tf a.tar` names no FILE). Erroring on any empty slice regardless
@@ -299,9 +310,13 @@ internal fun Command.bindPositionals(
                         }
                     }
                 } else {
+                    if (i != typedOperand) operands[spec] = listOf(i)
                     // Rule 3, same as the Multiple branch above.
-                    if (policy != BindPolicy.Lenient && i in sifted.dashLedAdmitted && !spec.dashLed) {
+                    if (policy != BindPolicy.Lenient && i in sifted.dashLedAdmitted && !spec.takesDashWord(raw)) {
                         return Result.Error(CliError.UnknownOption(raw))
+                    }
+                    if (i != typedOperand && i in sifted.dashLedAdmitted && spec.takesDashWord(raw)) {
+                        dashLedOperands += spec
                     }
                     when (val outcome = spec.convertOne(raw, inferValues)) {
                         is Result.Error -> if (policy != BindPolicy.Lenient) return outcome
@@ -316,11 +331,19 @@ internal fun Command.bindPositionals(
             }
         }
         if (isLast && i < values.size && policy != BindPolicy.Lenient) {
+            // A dash word no slot has room for is a typo, as in GNU `ls f -j`, unless this slot's test takes it.
+            (i until values.size).firstOrNull { it in sifted.dashLedAdmitted && !spec.testTakes(values[it]) }?.let {
+                return Result.Error(CliError.UnknownOption(values[it]))
+            }
             return Result.Error(tooManyArguments(values.drop(i), qualifiedName))
         }
     }
 
     if (args.isEmpty() && values.isNotEmpty() && policy != BindPolicy.Lenient) {
+        // Every slot is gone, so a dash word no slot's test takes is a typo.
+        values.indices.firstOrNull { at ->
+            at in sifted.dashLedAdmitted && arguments.none { it.testTakes(values[at]) }
+        }?.let { return Result.Error(CliError.UnknownOption(values[it])) }
         return Result.Error(tooManyArguments(values, qualifiedName))
     }
     return Result.Success(Unit)
@@ -367,7 +390,7 @@ internal fun OptionSpec.convertOccurrence(raw: String?, inferValues: Boolean): R
  * sees the raw token, since the converter closes over its choices at declaration time and cannot know the
  * root's [Abbreviation] mode itself.
  */
-private fun ValueSpec.convertOne(raw: String, inferValues: Boolean): Result<Any?, CliError> {
+internal fun ValueSpec.convertOne(raw: String, inferValues: Boolean): Result<Any?, CliError> {
     val resolved = if (!inferValues || !choiceAbbreviates || choices == null) {
         raw
     } else {
@@ -382,7 +405,7 @@ private fun ValueSpec.convertOne(raw: String, inferValues: Boolean): Result<Any?
         throw e
     } catch (e: Throwable) {
         val threw = ConversionError.Threw(e)
-        return Result.Error(CliError.BadValue(name, raw, threw.reason(), threw))
+        return Result.Error(CliError.BadValue(name, raw, threw.message, threw))
     }
     val value = converted.getOrElse { cause -> return Result.Error(refusal(raw, cause)) }
     // A converter that succeeds with null is treated as absent (see the bind-site "?: default"
@@ -399,7 +422,7 @@ private fun ValueSpec.convertOne(raw: String, inferValues: Boolean): Result<Any?
 private fun ValueSpec.refusal(raw: String, cause: ConversionError): CliError = when {
     cause is ConversionError.Domain && cause.error == CheckRefused -> CliError.BadValue(name, raw, cause.detail)
     choices != null -> CliError.InvalidChoice(name, raw, choices!!, didYouMean(raw, choices!!))
-    else -> CliError.BadValue(name, raw, cause.reason(), cause)
+    else -> CliError.BadValue(name, raw, cause.message, cause)
 }
 
 /** [resolveChoice], reading this spec's own [ValueSpec.name] as the error's [CliError.AmbiguousValue.name]. */
@@ -469,9 +492,10 @@ internal fun Cli.completionValues(
     sifted: Sifted,
     globals: GlobalSift,
     inferValues: Boolean,
-    skipOperand: Int? = null,
+    typedOperand: Int? = null,
 ): BoundLine {
     val sink = mutableMapOf<HolderSpec, Any?>()
+    val dashLedOperands = mutableSetOf<ArgumentSpec>()
     // Same order parse() binds in: the command's own inputs, then the globals the segment sift topped up.
     // Every Result is discarded: Lenient never errors, and it defers nothing.
     bindFlagsAndOptions(
@@ -484,14 +508,17 @@ internal fun Cli.completionValues(
         inferValues,
         BindPolicy.Lenient,
     )
+    val operands = mutableMapOf<ArgumentSpec, List<Int>>()
     cmd.bindPositionals(
         sifted.positionals,
         sink,
         sifted,
         inferValues,
+        dashLedOperands,
+        operands,
         BindPolicy.Lenient,
-        skipOperand = skipOperand,
+        typedOperand = typedOperand,
     )
     bindGlobals(globalSpecs, globals, sink, inferValues, BindPolicy.Lenient)
-    return BoundLine(sink, lineOrder(sifted, globals, inferValues))
+    return BoundLine(sink, lineOrder(sifted, globals, inferValues, dashLedOperands, operands))
 }

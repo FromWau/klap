@@ -6,7 +6,6 @@ import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 
 /**
  * `inOrder(...)`: the occurrences of some inputs in the order the line gives them, each with its value, for a
@@ -165,13 +164,100 @@ class InOrderTest {
     }
 
     @Test
-    fun `an operand has no occurrences to give`() {
-        val tree = cliOf("cp") {
-            val source = argument("source")
+    fun `an operand occurs once for each value at its place on the line`() {
+        val tree = cliOf("check") {
+            val file = option(short = 'f').multiple()
+            val names = argument("file").multiple()
             action { Ok("") }
-            projection { inOrder(source) }
+            projection { inOrder(file, names).map { "${it.name}=${it.value}" } }
         }
-        assertFailsWith<IllegalArgumentException> { tree.parse(listOf("a")) }
+        assertEquals(listOf("file=b", "-f=a", "file=c"), tree.parse(listOf("b", "-f", "a", "c")).assertSuccess())
+    }
+
+    @Test
+    fun `an operand occurrence carries its converted value`() {
+        val tree = cliOf("sum") {
+            val first = argument("first").int()
+            val rest = argument("rest").int().multiple()
+            action { Ok("") }
+            projection { inOrder(rest, first).map { it.value } }
+        }
+        assertEquals(listOf(1, 2, 3), tree.parse(listOf("1", "2", "3")).assertSuccess())
+    }
+
+    @Test
+    fun `a completion provider leaves out the operand being typed`() {
+        val tree = cli("cp") {
+            val dereference = flag(short = 'L')
+            val source = argument("source").multiple()
+            source.completeWith {
+                candidate(inOrder(dereference, source).joinToString("") { "${it.value}" })
+            }
+            action { Ok("") }
+        }
+        assertEquals(listOf("xtrue"), tree.completeCandidates(listOf("x", "-L", "")).map { it.value })
+    }
+
+    private fun chmod() = cliOf("chmod") {
+        val verbose = flag(short = 'v')
+        val mode = argument("mode").dashLed(",") { it.startsWith("-w") || it.startsWith("-x") }
+        val file = argument("file").multiple()
+        action { Ok("") }
+        projection { inOrder(mode, verbose, file).map { "${it.name}=${it.value}" } }
+    }
+
+    @Test
+    fun `a gathering operand occurs once at its first word with the value it bound`() {
+        assertEquals(
+            listOf("mode=-w,-x", "-v=true", "file=f"),
+            chmod().parse(listOf("-w", "-v", "-x", "f")).assertSuccess(),
+        )
+    }
+
+    @Test
+    fun `a gathering operand filled by a plain word occurs as any operand does`() {
+        assertEquals(
+            listOf("-v=true", "mode=u+x", "file=f"),
+            chmod().parse(listOf("-v", "u+x", "f")).assertSuccess(),
+        )
+    }
+
+    @Test
+    fun `a gathering operand that takes nothing does not occur`() {
+        val tree = cliOf("chmod") {
+            val verbose = flag(short = 'v')
+            val mode = argument("mode").dashLed(",") { it.startsWith("-w") }.optional()
+            action { Ok("") }
+            projection { inOrder(mode, verbose).map { "${it.name}=${it.value}" } }
+        }
+        assertEquals(listOf("-v=true"), tree.parse(listOf("-v")).assertSuccess())
+    }
+
+    @Test
+    fun `a provider sees the words a gathering operand finished`() {
+        val tree = cli("chmod") {
+            val mode = argument("mode").dashLed(",") { it.startsWith("-w") || it.startsWith("-x") }
+            val file = argument("file").multiple()
+            file.completeWith {
+                candidate("-x" + inOrder(mode).joinToString(",") { "${it.value}" } + ":" + mode.isDashLed)
+            }
+            action { Ok("") }
+        }
+        assertEquals(listOf("-x-w:true"), tree.completeCandidates(listOf("-w", "")).map { it.value })
+    }
+
+    @Test
+    fun `a provider leaves out the single operand being typed as it does a variadic one`() {
+        val tree = cli("cp") {
+            val dereference = flag(short = 'L')
+            val source = argument("source")
+            source.completeWith {
+                candidate("ca" + inOrder(dereference, source).joinToString(",") { "${it.value}" })
+            }
+            action { Ok("") }
+        }
+        assertEquals(listOf("catrue"), tree.completeCandidates(listOf("-L", "")).map { it.value })
+        assertEquals(listOf("catrue"), tree.completeCandidates(listOf("-L", "ca")).map { it.value })
     }
 }
 

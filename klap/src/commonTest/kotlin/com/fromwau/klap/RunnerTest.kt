@@ -21,11 +21,13 @@ private object ThrowingToString {
     override fun toString(): String = throw RuntimeException("kaboom")
 }
 
+private val failed = exitOf(3)
+
 private fun app(): Cli = cli("todo") {
     version = Version.Of("1.0.0")
     command("ping") { action { Ok("pong") } }
     // A fail-only action can't infer T from Err (that would be Nothing); name it explicitly.
-    command("fail") { action<String> { Err(CliError.Failure("fail", exitCode = 3)) } }
+    command("fail") { action<String> { Err(CliError.Failure("fail", exit = failed)) } }
     command("add") {
         val text = argument("text")
         action { Ok("added ${text()}") }
@@ -110,6 +112,61 @@ class RunnerTest {
         )
     }
 
+    private val answering = cli("differ") {
+        val differ = object : Exit {
+            override val code = 4
+            override val meaning = "the files differ"
+            override val success = true
+        }
+        action(exit = { differ }) { Ok("the answer") }
+    }
+
+    private val failing = cli("lookup") { action(exit = { exitOf(4) }) { Ok("what was found before it failed") } }
+
+    @Test
+    fun `a refused write keeps the code of a failure exit an action returns and prints why`() {
+        val terminal = failingWith(WriteError.Refused(Stream.Out, "No space left on device"))
+        assertEquals(4, failing.run(arrayOf(), terminal))
+        assertEquals("error: cannot write to standard output: No space left on device\n", terminal.err)
+    }
+
+    @Test
+    fun `a refused write under json reports the code of a failure exit an action returns`() {
+        val terminal = failingWith(WriteError.Refused(Stream.Out, "No space left on device"))
+        assertEquals(4, failing.run(arrayOf("--json"), terminal))
+        assertEquals(
+            """{"error":{"type":"WriteFailed","stream":"stdout","message":"No space left on device"},""" +
+                """"code":4}""" + "\n",
+            terminal.err,
+        )
+    }
+
+    @Test
+    fun `a closed pipe keeps the code of a failure exit an action returns`() {
+        val terminal = failingWith(WriteError.BrokenPipe(Stream.Out))
+        assertEquals(4, failing.run(arrayOf(), terminal))
+        assertEquals("", terminal.err)
+    }
+
+    @Test
+    fun `a refused write under json turns an answering exit into a WriteFailed envelope with code 1`() {
+        val terminal = failingWith(WriteError.Refused(Stream.Out, "No space left on device"))
+        assertEquals(1, answering.run(arrayOf("--json"), terminal))
+        assertTrue(terminal.err.endsWith(""""code":1}""" + "\n"), terminal.err)
+    }
+
+    @Test
+    fun `a refused write turns an answering exit into exit 1 with a message`() {
+        val terminal = failingWith(WriteError.Refused(Stream.Out, "No space left on device"))
+        assertEquals(1, answering.run(arrayOf(), terminal))
+        assertEquals("error: cannot write to standard output: No space left on device\n", terminal.err)
+    }
+
+    @Test
+    fun `a closed pipe turns an answering exit into 141`() {
+        assertEquals(141, answering.run(arrayOf(), failingWith(WriteError.BrokenPipe(Stream.Out))))
+    }
+
     @Test
     fun `a failed write keeps a failure's own code`() {
         assertEquals(3, app().run(arrayOf("fail"), failingWith(WriteError.Refused(Stream.Out, null))))
@@ -127,7 +184,7 @@ class RunnerTest {
         val fail = assertIs<Invocation.Execute>(
             app().parse(listOf("fail")).assertSuccess(),
         )
-        assertEquals(Result.Error(CliError.Failure("fail", exitCode = 3)), fail.runAction(RecordingTerminal()))
+        assertEquals(Result.Error(CliError.Failure("fail", exit = failed)), fail.runAction(RecordingTerminal()))
     }
 
     @Test
@@ -198,19 +255,19 @@ class RunnerTest {
 
     @Test
     fun `failure exit code zero coerces to one`() {
-        val code = cli("x") { action<String> { Err(CliError.Failure("boom", exitCode = 0)) } }.run(arrayOf(), RecordingTerminal())
+        val code = cli("x") { action<String> { Err(CliError.Failure("boom", exit = exitOf(0))) } }.run(arrayOf(), RecordingTerminal())
         assertEquals(1, code)
     }
 
     @Test
     fun `failure exit code above range coerces to 255`() {
-        val code = cli("x") { action<String> { Err(CliError.Failure("boom", exitCode = 300)) } }.run(arrayOf(), RecordingTerminal())
+        val code = cli("x") { action<String> { Err(CliError.Failure("boom", exit = exitOf(300))) } }.run(arrayOf(), RecordingTerminal())
         assertEquals(255, code)
     }
 
     @Test
     fun `failure exit code below range coerces to one`() {
-        val code = cli("x") { action<String> { Err(CliError.Failure("boom", exitCode = -1)) } }.run(arrayOf(), RecordingTerminal())
+        val code = cli("x") { action<String> { Err(CliError.Failure("boom", exit = exitOf(-1))) } }.run(arrayOf(), RecordingTerminal())
         assertEquals(1, code)
     }
 
@@ -229,7 +286,7 @@ class RunnerTest {
     @Test
     fun `json envelope code field matches the coerced exit code`() {
         val t = RecordingTerminal()
-        val code = cli("x") { action<String> { Err(CliError.Failure("boom", exitCode = 0)) } }.run(arrayOf("--json"), t)
+        val code = cli("x") { action<String> { Err(CliError.Failure("boom", exit = exitOf(0))) } }.run(arrayOf("--json"), t)
         assertEquals(1, code)
         assertTrue("\"code\":1" in t.err, t.err)
     }

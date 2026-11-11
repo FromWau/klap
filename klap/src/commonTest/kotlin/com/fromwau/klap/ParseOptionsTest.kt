@@ -7,7 +7,6 @@ import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
 import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.helpText
-import com.fromwau.klap.internal.render.message
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -262,9 +261,9 @@ class ShortClusterErrorTest {
     @Test
     fun `short and long boolean flag inline value render the flag as typed`() {
         val shortErr = clusterTree().parse(listOf("run", "-v=x")).assertError<CliError.FlagTakesNoValue>()
-        assertEquals("flag '-v' does not take a value", shortErr.message())
+        assertEquals("flag '-v' does not take a value", shortErr.message)
         val longErr = clusterTree().parse(listOf("run", "--verbose=x")).assertError<CliError.FlagTakesNoValue>()
-        assertEquals("flag '--verbose' does not take a value", longErr.message())
+        assertEquals("flag '--verbose' does not take a value", longErr.message)
     }
 
     @Test
@@ -1366,7 +1365,7 @@ class MultipleSpellingsTest {
             }
         }
         val err = tree.parse(listOf("dial", "--host")).assertError<CliError.MissingOptionValue>()
-        assertEquals("option --host requires a value", err.message())
+        assertEquals("option --host requires a value", err.message)
     }
 
     @Test

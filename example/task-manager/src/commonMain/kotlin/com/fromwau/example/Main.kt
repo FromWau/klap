@@ -85,6 +85,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
     }
 
     command("add") {
+        exits(*STORE_EXITS)
         help = "create a new task"
         // Per-command, unlike the root's: `klapExample add --help` closes with this one, never the root's.
         epilogue = "Repeat --tag to attach several labels; --done records work that is already finished."
@@ -149,6 +150,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
     }
 
     command("list") {
+        exits(TaskExit.CorruptStore, TaskExit.IoError)
         help = "show your tasks"
         aliases = listOf("ls")
         val status = option(short = 's', long = "status", help = "filter by status").choice("pending", "done")
@@ -196,6 +198,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
     }
 
     command("done") {
+        exits(*STORE_EXITS, TaskExit.NotFound, TaskExit.AlreadyDone)
         help = "mark a task complete"
         // Only pending tasks can be completed, so a done task is not a completion candidate.
         val id = argument("id", "task id").int()
@@ -217,6 +220,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
     }
 
     command("rm") {
+        exits(*STORE_EXITS, TaskExit.NotFound)
         help = "delete a task"
         val id = argument("id", "task id").int()
             .completeWith { taskIdCandidates() }
@@ -235,6 +239,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
     command("tag") {
         help = "manage a task's tags"
         command("add") {
+            exits(*STORE_EXITS, TaskExit.NotFound)
             help = "attach a tag to a task"
             val id = argument("id", "task id").int()
                 .completeWith { taskIdCandidates() }
@@ -265,6 +270,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
         }
 
         command("rm") {
+            exits(*STORE_EXITS, TaskExit.NotFound)
             help = "remove a tag from a task"
             val id = argument("id", "task id").int()
                 .completeWith { taskIdCandidates() }
@@ -306,6 +312,7 @@ internal fun taskManagerCli(): Cli = cli("klapExample") {
     // where every `tag` subcommand acts on one task. Exact spellings beat prefixes, so both full names
     // stay reachable; the cost is that `t` and `ta` now name two commands and stop resolving.
     command("tags") {
+        exits(TaskExit.CorruptStore, TaskExit.IoError)
         help = "list every tag in use"
         action(
             human = { tags -> if (tags.isEmpty()) "no tags" else tags.map { cyan(it) }.joinToStyled("\n") },
@@ -367,7 +374,7 @@ private fun String.isPastDue(): Boolean =
 private fun pastDue(due: String) =
     CliError.Usage("--due $due is earlier than today; pass --done to record work already finished")
 
-private fun notFound(id: Int) = CliError.Failure("no task with id $id", exitCode = EXIT_NOT_FOUND)
+private fun notFound(id: Int) = CliError.Failure("no task with id $id", exit = TaskExit.NotFound)
 
 private fun alreadyDone(id: Int) =
-    CliError.Failure("task $id is already done", exitCode = EXIT_ALREADY_DONE)
+    CliError.Failure("task $id is already done", exit = TaskExit.AlreadyDone)

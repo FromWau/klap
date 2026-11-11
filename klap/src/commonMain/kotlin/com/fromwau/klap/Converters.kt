@@ -2,7 +2,6 @@ package com.fromwau.klap
 
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.ResultError
-import com.fromwau.klap.internal.render.reason
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.DashLedGather
 import com.fromwau.klap.internal.spec.OptionSpec
@@ -115,7 +114,7 @@ private fun ValueSpec.andThenConvert(typeChanging: Boolean = false, next: (Strin
     val converted = next(declaredDefault.value as String)
     require(converted is Result.Success) {
         "$label '$name': default value '${declaredDefault.value}' is invalid: " +
-                (converted as Result.Error).error.reason()
+                (converted as Result.Error).error.message
     }
     cardinality = Cardinality.Default(converted.value)
 }
@@ -257,7 +256,7 @@ internal fun judge(check: (Any?) -> String?, value: Any): String? = try {
 } catch (e: CancellationException) {
     throw e
 } catch (e: Throwable) {
-    ConversionError.Threw(e).reason()
+    ConversionError.Threw(e).message
 }
 
 /**
@@ -644,10 +643,28 @@ public abstract class ConverterScope internal constructor() {
      * In exchange, a single-dash **typo** on this command binds here instead of being reported as an
      * unknown option. Long options are unaffected and keep their did-you-mean. Prefer this on a command
      * whose own value error names the grammar it accepts, since that error is what a mistyped short now
-     * produces.
+     * produces. Once this slot is full, a further dash word is an unknown option again.
      */
     public fun <T> Arg<T>.dashLed(): Arg<T> {
         spec.dashLed = true
+        return Arg(spec)
+    }
+
+    /**
+     * Lets this operand take a single-dash token that resolves to nothing, as [dashLed] does, but only one that
+     * [accepts] takes; a word it refuses is an unknown option, so a typo still reads as one.
+     * BSD seq reads a negative number this way, before getopt can take it for an option.
+     *
+     * ```kotlin
+     * val value = argument("value").dashLed { word -> word.drop(1).firstOrNull()?.isDigit() == true }
+     * ```
+     *
+     * @param accepts whether a dash word, written whole with its dash (`-5`, `-inf`), is this operand's value.
+     *   Called while the line is parsed, so keep it a pure test of the word.
+     */
+    public fun <T> Arg<T>.dashLed(accepts: (word: String) -> Boolean): Arg<T> {
+        spec.dashLed = true
+        spec.dashLedAccepts = accepts
         return Arg(spec)
     }
 

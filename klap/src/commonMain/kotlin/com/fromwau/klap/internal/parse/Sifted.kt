@@ -33,9 +33,20 @@ internal data class Sifted(
     val flagHits: List<FlagHit> = emptyList(),
     // The dash words the command's `dashLed(gather) { }` slot took, in line order.
     val gathered: List<String> = emptyList(),
-    // Where the first of [positionals] stood.
-    val firstPositionalAt: ClusterPosition? = null,
+    // Where each of [gathered] stood, parallel to it.
+    val gatheredPositions: List<ClusterPosition> = emptyList(),
+    // Where each of [positionals] stood, parallel to it.
+    val positionalPositions: List<ClusterPosition> = emptyList(),
+    // Completion took the word it is typing out of [gathered]; the slot still gathers, so operands stay in their slots.
+    val gathersTypedWord: Boolean = false,
 ) {
+    /** These words without the gathered one at [index], which completion is typing. */
+    fun withoutGathered(index: Int): Sifted = copy(
+        gathered = gathered.filterIndexed { at, _ -> at != index },
+        gatheredPositions = gatheredPositions.filterIndexed { at, _ -> at != index },
+        gathersTypedWord = true,
+    )
+
     /** [error] with where it stood. */
     val refusal: Refusal? get() = error?.let { e -> errorAt?.let { Refusal(e, it) } }
 }

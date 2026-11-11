@@ -12,7 +12,7 @@ import com.fromwau.klap.testing.Suggestion
  */
 
 /** git's own help options carry no description, so a cell names them with klap's words, which G45 settles. */
-internal const val HELP_WORDS: String = "Show this help"
+internal const val HELP_WORDS: String = "display this help and exit"
 
 /** Each of [spellings] described by [help]. */
 private fun described(

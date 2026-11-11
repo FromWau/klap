@@ -242,7 +242,7 @@ val lines = numberOption(help = "print the first NUM lines").int().range(1..1000
 It gets a help row of its own, under the label errors name it by:
 
 ```
-  -<NUM>   print the first NUM lines (1..1000; optional)
+  -<NUM>   print the first NUM lines (1..1000)
 ```
 
 The run is maximal and, by default, it may stand in any word and anywhere in the token: `-12v` is twelve then
@@ -309,7 +309,25 @@ wins, a short you give `--help` included, and a cluster counts as resolved only 
 The trade is on that command only. A mistyped short option now binds as the operand instead of being
 reported as an unknown option, so reach for this where the command's own value error names the grammar it
 accepts. Long options are unaffected and keep their did-you-mean, and `seek -- -1m` still works and needs no
-declaration.
+declaration. Once the slot is full, a further dash word is an unknown option again, as `ls f -j` is in GNU.
+
+To keep a typo an unknown option, give the slot a test of the word: it takes only the dash words the test
+accepts, and any other is reported as an unknown option. BSD seq reads a negative number this way.
+
+```kotlin
+val value = argument("value").dashLed { word -> word.drop(1).firstOrNull()?.isDigit() == true }
+// set -5  binds -5;  set -x  is "unknown option '-x'"
+```
+
+A slot's `isDashLed` tells a word that filled it this way from the same word after `--`, for a command that answers
+them differently: `set -x` can be a typo to report, where `set -- -x` was meant.
+
+```kotlin
+val value = argument("value").dashLed()
+action {
+    if (value.isDashLed && !isNumber(value())) Err(CliError.UnknownOption(value())) else Ok(store(value()))
+}
+```
 
 GNU chmod reads a dash-led mode differently: every dash word made of mode characters joins the one mode, wherever
 it stands, so `chmod -w -x f` sets the mode `-w,-x` and `chmod u+x -w f` sets `-w` on the files `u+x` and `f`.
@@ -428,7 +446,7 @@ when (val own = (cause as? ConversionError.Domain)?.error) {
 
 klap's own converters report their own cases rather than a `Domain`, so `.int()` on `"abc"` yields
 `ConversionError.NotAnInteger` and `.enum<Temp>()` on `"x"` yields `ConversionError.NotOneOf(["c", "f", "k"])`.
-The English for those lives in klap's renderer, which is why the cases carry no message. `cause` is null
+klap writes the English for those, and `cause.message` reads it, as `not an integer`. `cause` is null
 for the errors klap raises without running a converter, notably a `.validate()` or `.range()` rejection:
 those take a message string from you at declaration, so there is no error object to keep.
 
@@ -477,11 +495,11 @@ constraints here; a rule weighing one input against another belongs in
 bound, and genuine business logic belongs in `action { }` with a typed `Err`.
 
 klap appends its own hint to a help row based on the input's shape, so you do not repeat it in your help
-text: `(required)`, `(optional)` (any nullable input, not only `.optional()`), `(default: v)`,
+text: `(required)`, `(optional)` on an argument (any nullable one, not only `.optional()`), `(default: v)`,
 `(repeatable)` (from `.multiple()` / `.count()`, shown as `(repeatable, min N)` when a minimum is set),
 and the range from `.range(a..b)`. A choice-backed argument shows `(one of: a, b)`, while a choice-backed
-option shows its choices in its value instead (`--fmt=a|b|c`). Write only the plain
-description.
+option shows its choices in its value instead (`--fmt=a|b|c`). An option row never says `(optional)`, as GNU
+help marks none: an option is optional unless its row says `(required)`. Write only the plain description.
 
 On an option, `.required()` narrows `Opt<T?>` to `Opt<T>`, so it has to run last in the chain:
 `.validate(...).required()` compiles, but `.required().validate(...)` does not, since `.validate` (and
@@ -1054,7 +1072,9 @@ Each `Occurrence` carries the handle you passed as its `input`, typed `Any` so t
 its `value`: `true` for a flag (`false` for its negative spelling), and for an option that occurrence's value
 after its converters ran. A cluster's letters occur in the order they stand, every occurrence of a
 single-valued option is listed though only the last binds, and an input that loses a `lastWins` set keeps its
-occurrences. An operand has none, and passing one is refused.
+occurrences. An operand occurs once for each value it took, at the place it stood, so files given both as `-f a`
+and as operands come back in the order they were typed; a `dashLed(gather)` operand's words are one value, at the
+first of them.
 
 ### `requiredWhen`: a conditional requirement
 
@@ -1214,7 +1234,9 @@ answers, as GNU tools answer `--help` and `--version`: `mytool --help --version`
 
 A dispatcher's `completion` / `docs` subcommands sit in that same second bucket, so
 `mytool completion bash --help` describes that command instead of emitting the script. `--json` and
-`--color` sit in neither bucket: they never answer a line, only shape whatever does.
+`--color` sit in neither bucket: they never answer a line, only shape whatever does. A completion script and a man
+page have no JSON form, so `--json` with `completion`, `docs`, `--completion` or `--docs` is a usage error, and the
+help of those commands leaves it out.
 
 A command declared with `prio = true` runs ahead of the second bucket; see [Commands that answer ahead of the
 line](#commands-that-answer-ahead-of-the-line).
@@ -1330,8 +1352,51 @@ cli("cp") {
 
 An `action { }` returns `Result<T, CliError>`:
 
-- `Ok(value)` succeeds; klap renders `value` and exits `0`, or with the code an `action(exitCode = …)` returns.
-- `Err(error)` fails; klap prints the message and exits with `error.exitCode`.
+- `Ok(value)` succeeds; klap renders `value` and exits `0`, or with the [`Exit`](#exit-codes) an `action(exit = …)`
+  returns.
+  The rendered text ends with a line break; a command that prints a file the user reads back byte for byte, such as
+  one without a final newline, declares `action(endsLine = false)` and prints exactly what it renders.
+- `Err(error)` fails; klap prints the message and exits with `error.exit`. `error.message` gives that text, klap's
+  wording for every `CliError`, so a `parse()` caller can show the same words.
+
+### Exit codes
+
+An exit is an `Exit`: a `code`, the `meaning` help prints, and whether it is a `success` rather than a failure. klap's
+own are `Exit.Success` (0), `Exit.Failure` (1), `Exit.Usage` (2) and `Exit.BrokenPipe` (141, standard output closed
+early). Define your own as an enum, declare each on the commands that give it with `exits(...)`, and return the same
+object where it happens:
+
+```kotlin
+enum class ToolExit(
+    override val code: Int,
+    override val meaning: String,
+    override val success: Boolean = false,
+) : Exit {
+    NoMatch(3, "no line matched the pattern"),
+    Differ(1, "the files differ", success = true),
+}
+
+command("search") {
+    exits(ToolExit.NoMatch)
+    action {
+        val lines = search(pattern())
+        if (lines.isEmpty()) Err(CliError.Failure("no match for ${pattern()}", exit = ToolExit.NoMatch)) else Ok(lines)
+    }
+}
+command("diff") {
+    exits(ToolExit.Differ)
+    action(exit = { if (it.isEmpty()) null else ToolExit.Differ }) { Ok(diff()) }
+}
+```
+
+Every command's `--help` has an `Exit status` section after its examples, listing 0, 1 and 2 and then the exits the
+command declares; a declared code that is also klap's shows after klap's meaning, as `1  a failure; the files differ
+(not a failure)`. `--help --json` lists them as `exits`, one entry per meaning with its `code` and `success`. The man
+page and the markdown page list klap's four and each declared exit once, however many commands declare it, and a
+command's markdown section lists its own. Where commands declare more than one exit on the same code, the pages
+name before each meaning the commands declaring it: were a `cmp` command to declare its own exit 3, the line would read
+`3  tool search: no line matched the pattern; tool cmp: the stores differ (not a failure)`. klap does
+not check that an action returns only what it declares.
 
 `Result` is not klap's own type. It comes from
 [`com.fromwau.kern:result`](https://github.com/FromWau/kern/blob/master/result/README.md), which klap
@@ -1410,7 +1475,8 @@ inside `action { }` is treated as a programmer error and propagates uncaught (it
 `error:` line). The `.map` / `.convert` converters are the deliberate exception, wrapping a thrown
 parse error into a clean `BadValue` for you.
 
-The catch-all is `CliError.Failure(detail, exitCode = 1)`. Map your own failures to it at the boundary:
+The catch-all is `CliError.Failure(detail)`, which exits with `Exit.Failure` unless given another `exit`.
+Map your own failures to it at the boundary:
 
 ```kotlin
 action {
@@ -1483,8 +1549,8 @@ payload intact. klap renders `detail` and exits, exactly as it does for `Failure
 being flattened into a sentence at the boundary:
 
 ```kotlin
-// StoreError as declared under "Typed results and errors" above.
-action { Err(CliError.Domain(StoreError.DiskFull, "out of space", exitCode = 6)) }
+// StoreError as declared under "Typed results and errors" above, StoreExit an Exit enum as under "Exit codes".
+action { Err(CliError.Domain(StoreError.DiskFull, "out of space", exit = StoreExit.DiskFull)) }
 
 // and at the call site, if you drive parse() yourself:
 val payload = (error as? CliError.Domain)?.error as? StoreError
@@ -1667,8 +1733,9 @@ a stale `human` renders wrong prose while `--json` stays correct; klap cannot ch
 by hand.
 
 Errors follow suit: under `--json` a failure prints `{"error":{...},"code":n}` to stderr, so a pipeline
-sees JSON on both streams. The error is data, never a sentence: its variant under `type` and its fields,
-such as `{"error":{"type":"UnknownOption","token":"--verbos","suggestion":"--verbose"},"code":2}`. A
+sees JSON on both streams. The error is data: its variant under `type` and its fields, such as
+`{"error":{"type":"UnknownOption","token":"--verbos","suggestion":"--verbose"},"code":2}`. A `BadValue` also
+holds its `reason`, the words the text form prints, as a `.validate` message is all that refusal has to say. A
 `CliError.Domain` writes the `json` you give it, so a program reading the output gets your error's own
 structure:
 
@@ -1692,11 +1759,14 @@ not apply.
 Where help covers the tree (`--help-all` under `Help.ByTree`, `--help` under `Help.All`), `--json` prints an array of
 that, one per command.
 
-A command that only groups subcommands, run without one, shows its help, except under `--json`: there it is
-the usage error `{"error":{"type":"MissingSubcommand","parent":"..."},"code":2}`, since help text is not data.
+A command that only groups subcommands, run without one, is a usage error, as GNU tools treat a missing command: it
+prints its help on standard error and exits 2, while `--help` prints the same help on standard output and exits 0.
+Under `--json` it is the usage error `{"error":{"type":"MissingSubcommand","parent":"..."},"code":2}`, since help
+text is not data. Without `--json`, a `parse()` caller gets `ShowHelp` for both, `missingCommand` true for the bare
+group.
 `--version` honours `--json` too, printing `{"name":"...","version":"..."}` instead of the
 plain line, so a script asking a tool its version gets a parseable answer. A failure's exit code is
-clamped to `1..255` (a `Failure(exitCode = 0)` becomes `1`, since a failure must not report success).
+clamped to `1..255` (a `Failure` carrying an `Exit` of code 0 exits `1`, since a failure must not report success).
 
 A `@Serializable sealed interface` / `sealed class` works too: `kotlinx.serialization` adds a `"type"`
 discriminator field, defaulting to the fully qualified class name (package plus enclosing type and
@@ -1757,21 +1827,22 @@ placeholder's. The human renderer hides it, because the placeholder renders to n
 
 ### When a non-zero exit is the answer
 
-A success exits 0 unless the command says otherwise. `exitCode` declares what it says, as a function of
-the value, beside the `human` that turns the same value into text:
+A success exits 0 unless the command says otherwise. `exit` declares what it says, as a function of
+the value, beside the `human` that turns the same value into text; null keeps 0:
 
 ```kotlin
 command("check") {
+    exits(CheckExit.SomeFailed)
     action(
         human = { it.report() },
-        exitCode = { if (it.failed == 0) 0 else 1 },
+        exit = { if (it.failed == 0) null else CheckExit.SomeFailed },
     ) { Ok(runChecks()) }
 }
 ```
 
 That is `diff`'s and `grep`'s convention, where a non-zero exit is the answer rather than a failure: the
 value still goes to stdout, `--json` still serializes it, and only the process's exit code changes. The
-projection runs on the success path alone. A returned `CliError` keeps its own `exitCode`, so one run
+projection runs on the success path alone. A returned `CliError` keeps its own `exit`, so one run
 never has two answers.
 
 The two codes are clamped differently, and the asymmetry is the point. A failure is clamped to `1..255`,
@@ -1780,7 +1851,7 @@ exit therefore no longer implies a failure, while `exit 0` still implies success
 
 Reach for this instead of printing the value yourself and returning a placeholder. That shape renders on
 two paths, and the placeholder is a second document on stdout under `--json`, invisible until someone
-pipes it into `jq`. With `exitCode` there is one renderer, klap's, on every path.
+pipes it into `jq`. With `exit` there is one renderer, klap's, on every path.
 
 ### When the output cannot be written
 
@@ -1790,8 +1861,10 @@ would. When the system refuses the write, as on a full disk or a closed stdout, 
 `error: cannot write to standard output: No space left on device` on stderr, or
 `{"error":{"type":"WriteFailed","stream":"stdout","message":"No space left on device"},"code":1}` under
 `--json`. A write to stderr that fails is named as standard error, `"stream":"stderr"`. On the JVM
-the two cannot be told apart, so a lost write there always exits 141 without a message. A run that already
-failed keeps its own exit code.
+the two cannot be told apart, so a lost write there exits 141 without a message. An exit an action returns from
+`exit` gives way the same when it is marked `success`. A run that already failed keeps its own exit code. So does
+an exit from `exit` not marked `success`, and a refused write then still prints its message, under `--json` with
+that exit's code as the envelope's `code`.
 
 ## Color output
 
@@ -1872,7 +1945,7 @@ case; native targets are unaffected, since they check stdout alone.
 
 ## Command groups and nesting
 
-A command with subcommands and no `action` is a group; klap prints its help when invoked bare. Nest
+A command with subcommands and no `action` is a group; invoked bare it is a usage error that prints its help. Nest
 with `command(name) { }` to any depth, a `help = "..."` inside the block giving the subcommand's
 description. A group's own `option`/`flag` stands before its child's name and the child's `action` reads it, as
 git's root options are read by every git command; given alone, the group shows its help. A positional on an
@@ -2099,6 +2172,18 @@ single-command tool, so it also gets the `--completion` / `--docs` option form, 
 subcommand alongside its own. The two options work on every command below such a root, so each subcommand's
 help lists them under `Global options:` and Tab offers them there.
 
+Each shell loads the script with one line in its startup file, which `myapp completion --help` lists too (a
+single-command tool spells it `myapp --completion bash` and so on):
+
+```sh
+source <(myapp completion bash)                               # ~/.bashrc
+source <(myapp completion zsh)                                # ~/.zshrc, after compinit
+myapp completion fish | source                                # ~/.config/fish/config.fish
+myapp completion powershell | Out-String | Invoke-Expression  # $PROFILE
+```
+
+The zsh script also works saved as `_myapp` in a directory on `$fpath`, the way packages install it.
+
 `pwsh` is accepted as a silent alias for `powershell` in both forms (`completion pwsh` /
 `--completion pwsh`), though only `powershell` is listed among `--help`'s choices.
 
@@ -2194,7 +2279,8 @@ so `myapp --file other.json tag 3 <TAB>` offers the tags of task 3 in *that* sto
 `words` by hand. Defaults apply, so an option the user has not typed reads the value it would have at
 runtime. A scalar input the half-typed line has not supplied — a required argument not yet reached, or a
 value that failed to convert — stays unbound, and reading it aborts the provider so Tab simply offers
-nothing. That is normally what you want: a provider that cannot see the input it depends on has nothing to
+nothing; `orNull()` reads it as null instead, for a provider that can fall back on something else. Aborting is
+normally what you want: a provider that cannot see the input it depends on has nothing to
 offer. A `multiple()` input is the exception: it reads back whatever is on the line, which may be
 empty or shorter than its declared minimum, so don't assume the arity an `action { }` can rely on. A
 provider on that input does not see the word it is completing among those values: they are the ones already
@@ -2204,15 +2290,15 @@ An input typed after the cursor reads the same way. A provider can only name a h
 when the input it needs comes later on the line, attach `.completeWith` once that handle exists:
 
 ```kotlin
-command("get") {
-    val filter = argument("filter")
+command("show") {
+    val column = argument("column")
     val file = argument("file").file()
-    filter.completeWith { candidates(keysAt(file(), current)) }
-    action { Ok(get(filter(), file())) }
+    column.completeWith { candidates(columnsOf(file(), current)) }
+    action { Ok(show(column(), file())) }
 }
 ```
 
-so `mytool get .own<TAB> conf.toml` offers the keys of `conf.toml`, although the file comes after the cursor.
+so `mytool show na<TAB> people.csv` offers the columns of `people.csv`, although the file comes after the cursor.
 That works in bash, zsh and PowerShell. fish shows a completion the line only up to the end of the word being
 completed, so there an input reads as absent while it stands after the cursor, and `current` is that whole word
 even with the cursor inside it. To complete from an input in every shell, take it as an option the user types
@@ -2269,9 +2355,10 @@ markdown|man`; a single-command tool gets it as an option instead, `myapp --docs
 prints the same output, so a user can pipe it straight to a file.
 
 Your help text (a `description`, `epilogue`, or example note) is rendered as markdown in the markdown
-output: klap escapes a backslash and a backtick (and, in a table cell, a pipe `|` and newline) so a
-Windows path, stray backtick, or table-breaking pipe survives, and it escapes `<` and `>` to `&lt;`/`&gt;`
-so nothing in your help text can open an HTML tag. It does not neutralize the rest of markdown, so a `#`,
+output. A pair of backticks is a code span: it stays code in markdown and prints bold in the man page, as man
+pages print literals. Outside one, klap escapes a backslash and a lone backtick (and, in a table cell, a pipe `|`
+and newline) so a Windows path, stray backtick, or table-breaking pipe survives, and it escapes `<` and `>` to
+`&lt;`/`&gt;` so nothing in your help text can open an HTML tag. It does not neutralize the rest of markdown, so a `#`,
 `[link](...)`, or `*emphasis*` in your help text renders as markdown. That is your own authored content,
 so treat generated docs as trusted: if you publish a tool's docs, keep in mind the help strings become
 live markup — but raw HTML is not one of the things that survives.
