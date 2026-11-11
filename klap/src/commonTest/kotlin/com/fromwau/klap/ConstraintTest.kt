@@ -7,7 +7,6 @@ import com.fromwau.kern.result.map
 import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.completeCandidates
 import com.fromwau.klap.internal.render.helpText
-import com.fromwau.klap.internal.render.message
 import com.fromwau.klap.internal.render.usageLine
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -44,7 +43,7 @@ class ExactlyOneTest {
     fun `none given is an error`() {
         val error = tarTree().parse(listOf("run", "-f", "a.tar")).assertError<CliError.ExactlyOneRequired>()
         assertEquals(CliError.ExactlyOneRequired(listOf("--create", "--extract", "--list")), error)
-        assertEquals("exactly one of --create, --extract, --list is required", error.message())
+        assertEquals("exactly one of --create, --extract, --list is required", error.message)
     }
 
     @Test
@@ -59,7 +58,7 @@ class ExactlyOneTest {
     fun `two given is an error`() {
         val error = tarTree().parse(listOf("run", "-c", "-x", "-f", "a.tar")).assertError<CliError.MutuallyExclusive>()
         assertEquals(CliError.MutuallyExclusive(listOf("--create", "--extract")), error)
-        assertEquals("--create and --extract are mutually exclusive", error.message())
+        assertEquals("--create and --extract are mutually exclusive", error.message)
     }
 
     @Test
@@ -68,7 +67,7 @@ class ExactlyOneTest {
             .parse(listOf("run", "-c", "-x", "-t", "-f", "a.tar"))
             .assertError<CliError.MutuallyExclusive>()
         // Comma-then-"and", so a three-way conflict does not read as "a and b and c".
-        assertEquals("--create, --extract and --list are mutually exclusive", error.message())
+        assertEquals("--create, --extract and --list are mutually exclusive", error.message)
     }
 
     @Test
@@ -105,7 +104,7 @@ class AtMostOneTest {
             .parse(listOf("run", "-c", "-z", "-j", "-f", "a.tar"))
             .assertError<CliError.MutuallyExclusive>()
         assertEquals(CliError.MutuallyExclusive(listOf("--gzip", "--bzip2")), error)
-        assertEquals("--gzip and --bzip2 are mutually exclusive", error.message())
+        assertEquals("--gzip and --bzip2 are mutually exclusive", error.message)
     }
 }
 
@@ -224,7 +223,7 @@ class ConstraintReadsSuppliedNessTest {
         assertEquals("dest= target=out\n", tree.out(listOf("go", "-T", "out")))
         val error = tree.parse(listOf("go", "out", "-T", "other")).assertError<CliError.MutuallyExclusive>()
         assertEquals(CliError.MutuallyExclusive(listOf("<dest>", "--target")), error)
-        assertEquals("<dest> and --target are mutually exclusive", error.message())
+        assertEquals("<dest> and --target are mutually exclusive", error.message)
     }
 }
 
@@ -446,7 +445,7 @@ class ConstraintHelpTest {
         assertTrue("(" !in help.lineSequence().first { "a plain flag" in it }, help)
         assertTrue("a counted flag (repeatable)" in help, help)
         assertTrue("a negatable flag (default: on)" in help, help)
-        assertTrue("an option (optional)" in help, help)
+        assertTrue(help.lines().any { it.endsWith("an option") }, help)
         assertTrue("a defaulted option (default: x)" in help, help)
     }
 
@@ -979,7 +978,7 @@ class RequiredWhenTest {
     fun `the condition without the option is a usage error`() {
         val error = tree().parse(listOf("--remote")).assertError<CliError.MissingRequiredOption>()
         assertEquals(CliError.MissingRequiredOption("--token"), error)
-        assertEquals("missing required option --token", error.message())
+        assertEquals("missing required option --token", error.message)
     }
 
     @Test

@@ -58,7 +58,7 @@ class EmptyStoreFileTest {
         writeRawStore(path, "not json at all")
 
         val result = taskManagerCli().captureWithFile(path, "list")
-        assertEquals(EXIT_CORRUPT_STORE, result.exitCode, result.err)
+        assertEquals(TaskExit.CorruptStore.code, result.exitCode, result.err)
         assertContains(result.err, "task store ${Path(path)} is not valid JSON")
     }
 }

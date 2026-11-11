@@ -126,7 +126,7 @@ class HelpTest {
         val help = cmd.helpText()
         assertTrue(help.startsWith("usage: tally <files>"), help)
         // Assert the option token, not the bare word: "completion" also occurs inside the built-in's
-        // description ("Print a shell completion script"), so it would pass even if the signature row
+        // description ("print a shell completion script"), so it would pass even if the signature row
         // were dropped. The `--completion` signature is emitted by helpSections for a metaOptions tool.
         assertTrue("--completion" in help, help)
     }
@@ -158,6 +158,18 @@ class HelpTest {
     }
 
     @Test
+    fun `the completion command's help shows how to load the script in each shell`() {
+        val cmd = cli("tool") { command("get") { action { Ok("") } } }
+        val term = RecordingTerminal()
+        assertEquals(0, cmd.run(arrayOf("completion", "--help"), term))
+        val examples = term.out.substringAfter("Examples:")
+        assertTrue("source <(tool completion bash)" in examples, examples)
+        assertTrue("source <(tool completion zsh)" in examples, examples)
+        assertTrue("tool completion fish | source" in examples, examples)
+        assertTrue("tool completion powershell | Out-String | Invoke-Expression" in examples, examples)
+    }
+
+    @Test
     fun `help shows choices required optional default`() {
         val cmd = cli("cvt") {
             option(long = "from").choice("celsius", "fahrenheit").required()
@@ -171,6 +183,30 @@ class HelpTest {
         assertTrue("(required)" in help, help)
         assertTrue("(default: 2)" in help, help)
         assertTrue("(optional)" in help, help)
+    }
+
+    @Test
+    fun `an optional option's help row carries no optional note`() {
+        val help = cli("run") {
+            option(long = "mode", help = "the mode")
+            option(long = "tag", help = "a tag").multiple()
+            action { Ok("") }
+        }.helpText()
+        val rows = help.lines()
+        assertTrue(rows.any { it.endsWith("the mode") }, help)
+        assertTrue(rows.any { it.endsWith("a tag (repeatable)") }, help)
+        assertFalse("optional" in help, help)
+    }
+
+    @Test
+    fun `an optional argument's help row still says optional`() {
+        val help = cli("run") {
+            argument("file", help = "the file").optional()
+            argument("rest", help = "the rest").multiple()
+            action { Ok("") }
+        }.helpText()
+        assertTrue("the file (optional)" in help, help)
+        assertTrue("the rest (optional; repeatable)" in help, help)
     }
 
     @Test
@@ -478,7 +514,7 @@ class HelpTest {
         val esc = Char(27)
         assertFalse(esc in cmd.styledHelp().render(ansi = false), "plain help must carry no escape codes")
         val colored = cmd.styledHelp().render(ansi = true)
-        assertTrue("\n  $esc[1m-m, --mode=value$esc[0m${" ".repeat(27)}the mode (optional)\n" in colored, colored)
+        assertTrue("\n  $esc[1m-m, --mode=value$esc[0m${" ".repeat(27)}the mode\n" in colored, colored)
         assertTrue("\n\n$esc[1mGlobal options:$esc[0m\n" in colored, colored)
     }
 
@@ -550,9 +586,13 @@ class HelpTest {
             append("  <text>                           the task text (required)\n")
             append("  -d, --done                       mark it done\n\n")
             append("Global options:\n")
-            append("      --help                       Show this help\n")
-            append("      --json                       Output as JSON\n")
-            append("      --color[=auto|always|never]  Colorize output: auto, always, or never (bare: always)")
+            append("      --help                       display this help and exit\n")
+            append("      --json                       print the output as JSON\n")
+            append("      --color[=auto|always|never]  colorize the output: auto, always, or never (bare: always)\n\n")
+            append("Exit status:\n")
+            append("  0  success\n")
+            append("  1  a failure\n")
+            append("  2  a usage error, such as an unknown option or a value that does not parse")
         }
         assertEquals(expected, add.helpText("app add"))
     }
@@ -1004,7 +1044,7 @@ class OptionalValueHelpTest {
             .split(Regex(" {2,}"))
         assertEquals("--colour[=auto|always|never]", row(declared, "--colour").first())
         assertEquals(
-            listOf("--color[=auto|always|never]", "Colorize output: auto, always, or never (bare: always)"),
+            listOf("--color[=auto|always|never]", "colorize the output: auto, always, or never (bare: always)"),
             row(builtin, "--color"),
         )
     }

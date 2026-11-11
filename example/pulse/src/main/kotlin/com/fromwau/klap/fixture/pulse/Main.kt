@@ -15,6 +15,7 @@ import com.fromwau.kern.terminal.joinToStyled
 import com.fromwau.kern.terminal.red
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
+import com.fromwau.klap.Exit
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.Version
 import com.fromwau.klap.cli
@@ -115,13 +116,14 @@ internal fun pulseCli(): Cli = cli("pulse") {
             val name = argument("name", "service name")
             actionSuspending(human = { svc -> "${svc.name}: base ${svc.baseLatency}, failure mode ${svc.failureMode}" }) {
                 val svc = repo.findService(name())
-                    ?: return@actionSuspending Err(CliError.Failure("no service named '${name()}'", exitCode = 2))
+                    ?: return@actionSuspending Err(CliError.Failure("no service named '${name()}'", exit = Exit.Usage))
                 Ok(svc)
             }
         }
     }
 
     command("check") {
+        exits(PulseExit.Timeout)
         help = "concurrently probe every service and report health"
         val timeout = option(
             short = 't',
@@ -149,7 +151,7 @@ internal fun pulseCli(): Cli = cli("pulse") {
                     CliError.Domain(
                         BatchTimeout(budget),
                         "check timed out after $budget",
-                        exitCode = 4,
+                        exit = PulseExit.Timeout,
                     ),
                 )
 
@@ -201,6 +203,7 @@ internal fun pulseCli(): Cli = cli("pulse") {
     }
 
     command("notify") {
+        exits(PulseExit.Unreachable)
         help = "send a notification to a channel"
         val channel = argument("channel", "channel to notify")
         val message = argument("message", "message body")
@@ -208,7 +211,10 @@ internal fun pulseCli(): Cli = cli("pulse") {
         // No `human`: the action already returns the line to print, which is what klap prints by default.
         actionSuspending {
             notifier.notify(channel(), message())
-                .mapError { CliError.Domain(it, "failed to notify ${channel()}: channel unreachable", exitCode = 5) }
+                .mapError {
+                    val detail = "failed to notify ${channel()}: channel unreachable"
+                    CliError.Domain(it, detail, exit = PulseExit.Unreachable)
+                }
                 .map { "sent to ${channel()}" }
         }
     }
@@ -272,3 +278,9 @@ private fun parseDuration(raw: String): Result<Duration, ConversionError> =
     } catch (_: IllegalArgumentException) {
         Err(ConversionError.Domain(DurationError.Malformed(raw), "not a valid duration, try 3s, 1m30s, or 2h"))
     }
+
+/** The exits pulse adds to klap's own. */
+private enum class PulseExit(override val code: Int, override val meaning: String) : Exit {
+    Timeout(4, "the check ran out of its time budget"),
+    Unreachable(5, "the channel could not be reached"),
+}

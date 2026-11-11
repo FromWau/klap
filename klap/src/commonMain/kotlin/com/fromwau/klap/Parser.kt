@@ -264,15 +264,29 @@ public fun Cli.parse(argv: Collection<String>): Result<Invocation, CliError> = p
 private fun Cli.parseTokens(typed: List<String>): Result<Invocation, CliError> {
     val line = readBuiltins(typed)
     refusalBeforeWalk(line)?.let { return Result.Error(it) }
-    metaOptionAnswer(line)?.let { return it }
+    metaOptionAnswer(line)?.let { return it.refusingJson(line, dashes = "--") }
     val walked = walkToCommand(line).getOrElse { return Result.Error(it) }
     helpOrVersionAnswer(line, walked, readHelpRequest(line, walked))?.let { return it }
     refusalBeforeBind(line, walked)?.let { return Result.Error(it) }
     // A resolved built-in renders the whole tree via this root, so route it straight to its Show* invocation
     // using `this`, with no binding, no action, no self-reference. Its node exists only to be listed/documented.
     // Placed after --help (so `completion --help` shows the node's help) and after the hard global-sift error.
-    walked.cmd.builtinKind?.let { return routeBuiltin(it, walked.rest, walked.qualifiedName) }
+    walked.cmd.builtinKind?.let { return routeBuiltin(it, walked.rest, walked.qualifiedName).refusingJson(line) }
     return bindCommand(line, walked)
+}
+
+/** A completion script or a man page, which `--json` has no form for, refused when [line] asks for JSON. */
+private fun Result<Invocation, CliError>.refusingJson(
+    line: BuiltinLine,
+    dashes: String = "",
+): Result<Invocation, CliError> {
+    if (!line.json) return this
+    val asked = when ((this as? Result.Success)?.value) {
+        is Invocation.ShowCompletion -> "completion"
+        is Invocation.ShowDocs -> "docs"
+        else -> return this
+    }
+    return Result.Error(CliError.MutuallyExclusive(listOf("--json", dashes + asked)))
 }
 
 /** The built-ins a line carries, read before the walk, and the line left for the walk once they are stripped. */
@@ -651,6 +665,7 @@ private fun Cli.bindCommand(line: BuiltinLine, walked: WalkedCommand): Result<In
                             metaOptions,
                             recursive = builtins.helpTree,
                             builtins = builtins,
+                            missingCommand = true,
                         ),
                     )
                 }

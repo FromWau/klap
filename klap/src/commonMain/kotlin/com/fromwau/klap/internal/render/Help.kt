@@ -12,6 +12,7 @@ import com.fromwau.klap.Cli
 import com.fromwau.klap.Command
 import com.fromwau.klap.DOC_FORMAT_NAMES
 import com.fromwau.klap.internal.spec.ArgumentSpec
+import com.fromwau.klap.internal.spec.BuiltinKind
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.ConstraintArity
 import com.fromwau.klap.internal.spec.FlagSpec
@@ -42,18 +43,18 @@ internal data class HelpSection(val title: String?, val rows: List<InputRow>)
 internal data class HelpExample(val command: String, val description: String = "")
 
 /**
- * Wording for the five built-in options, shared between this file's [helpSections] (the `Global
- * options` rows) and Completion.kt's candidate descriptions, so `--help` and tab completion can
- * never disagree on what a built-in flag does.
+ * Wording for the built-in options, lowercase as GNU's help words an option, shared between this file's
+ * [helpSections] (the `Global options` rows) and Completion.kt's candidate descriptions, so `--help` and tab
+ * completion can never disagree on what a built-in flag does.
  */
 internal object BuiltinOptionHelp {
-    const val HELP = "Show this help"
-    const val JSON = "Output as JSON"
-    const val VERSION = "Show the version"
-    const val COMPLETION = "Print a shell completion script"
-    const val DOCS = "Print generated documentation"
-    const val COLOR = "Colorize output: auto, always, or never"
-    const val HELP_ALL = "Show help for every subcommand"
+    const val HELP = "display this help and exit"
+    const val JSON = "print the output as JSON"
+    const val VERSION = "output version information and exit"
+    const val COMPLETION = "print a shell completion script"
+    const val DOCS = "print generated documentation"
+    const val COLOR = "colorize the output: auto, always, or never"
+    const val HELP_ALL = "display help for every subcommand and exit"
 }
 
 // --- formatting helpers ---
@@ -176,10 +177,14 @@ internal fun FlagSpec.metaHint(): String {
     return if (hints.isEmpty()) "" else " (${hints.joinToString("; ")})"
 }
 
-/** A trailing `  (...)` note on an arg/option row: choices, and its required/optional/default/repeatable rule. */
+/**
+ * A trailing `  (...)` note on an arg/option row: choices, and its required/optional/default/repeatable rule.
+ * Only an argument says "optional": an option is optional unless it says otherwise, as GNU help marks none.
+ */
 internal fun ValueSpec.metaHint(): String {
-    val absentWhen = (this as? ArgumentSpec)?.absentWhen
-    val optionalWhen = (this as? ArgumentSpec)?.optionalWhen
+    val argument = this as? ArgumentSpec
+    val absentWhen = argument?.absentWhen
+    val optionalWhen = argument?.optionalWhen
     val hints = buildList {
         // An option normally shows its choices inside the value placeholder (see [resolvedPlaceholder]), so
         // repeating them here would duplicate. A placeholder replaces that placeholder, and an argument's
@@ -207,7 +212,7 @@ internal fun ValueSpec.metaHint(): String {
             // A constrained input is optional only in isolation: the hint above already states whether the
             // SET is required, so a bare "optional" beside it would read as a contradiction ("one of --a,
             // --b; required; optional"). Every other cardinality still says its own piece.
-            Cardinality.Optional -> if (constraintHint == null) add("optional")
+            Cardinality.Optional -> if (argument != null && constraintHint == null) add("optional")
             is Cardinality.Default -> {
                 // An empty-string default renders as bare "default: " (dangling space before the
                 // closing paren); word-wrap then treats "(default:" and ")" as separate tokens and can
@@ -215,16 +220,17 @@ internal fun ValueSpec.metaHint(): String {
                 val rendered = display(c.value)
                 add("default: ${rendered.ifEmpty { "\"\"" }}")
             }
-            // min == 0 states "optional" as well: every other cardinality says whether it is required in
-            // words here, and the usage line renders this one as [name...], so a bare "repeatable" would
-            // leave the row contradicting the usage line about whether zero is allowed.
+            // An argument's min == 0 states "optional" as well: every other cardinality says whether it is
+            // required in words here, and the usage line renders this one as [name...], so a bare
+            // "repeatable" would leave the row contradicting the usage line about whether zero is allowed.
             is Cardinality.Multiple -> {
                 val max = if (c.max == Int.MAX_VALUE) "" else ", max ${c.max}"
                 add(
                     when {
                         c.min > 0 -> "repeatable, min ${c.min}$max"
                         c.default != null -> "repeatable$max; default: ${displayAll(c.default)}"
-                        else -> "optional; repeatable$max"
+                        argument != null -> "optional; repeatable$max"
+                        else -> "repeatable$max"
                     },
                 )
             }
@@ -426,7 +432,8 @@ internal fun Command.builtinOptions(
     if (builtins.helpAll && subcommands.any { !it.hidden }) {
         add(BuiltinOption(listOf("--help-all"), builtins.helpAllText))
     }
-    if (builtins.json) add(BuiltinOption(listOf("--json"), builtins.jsonText))
+    val hasJsonForm = builtinKind != BuiltinKind.Completion && builtinKind != BuiltinKind.Docs
+    if (builtins.json && hasJsonForm) add(BuiltinOption(listOf("--json"), builtins.jsonText))
     // --color is universal (like --json), so it advertises on every node the tree still offers it on.
     if (builtins.color) add(BuiltinOption(listOf("--color"), builtins.colorText, COLOR_MODE_NAMES, bare = "always"))
     val node = this@builtinOptions
@@ -597,6 +604,16 @@ internal fun Command.styledHelp(
                 if (ex.description.isEmpty()) continue
                 style.wrapExampleDescription(ex.description).forEach { add("\n$it") }
             }
+        }
+
+        val shownExits = byCode(KLAP_HELP_EXITS + exits)
+            .map { (code, meanings) -> code to meanings.joinToString("; ") }
+        add("\n\n")
+        add(bold("Exit status:"))
+        val width = shownExits.maxOf { it.first.toString().length }
+        for ((code, meaning) in shownExits) {
+            add("\n")
+            add(style.renderRow(InputRow(code.toString(), meaning), width))
         }
 
         if (epilogue.isNotEmpty()) {

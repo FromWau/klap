@@ -7,7 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Completion with words after the cursor: `get .ow<TAB> conf.toml`, where the slot under the cursor needs an
+ * Completion with words after the cursor: `get .ow<TAB> conf.conf`, where the slot under the cursor needs an
  * input the user typed further along the line.
  */
 class CompletionWholeLineTest {
@@ -30,8 +30,8 @@ class CompletionWholeLineTest {
 
     @Test
     fun `a provider reads an input typed after the cursor`() {
-        assertEquals(listOf(".ow|conf.toml|false"), tool().offeredAt(1, "get", ".ow", "conf.toml"))
-        assertEquals(listOf(".ow|conf.toml|true"), tool().offeredAt(1, "get", ".ow", "-r", "conf.toml"))
+        assertEquals(listOf(".ow|conf.conf|false"), tool().offeredAt(1, "get", ".ow", "conf.conf"))
+        assertEquals(listOf(".ow|conf.conf|true"), tool().offeredAt(1, "get", ".ow", "-r", "conf.conf"))
     }
 
     @Test
@@ -49,7 +49,7 @@ class CompletionWholeLineTest {
 
     @Test
     fun `the word under the cursor keeps its slot so a later word lands in its own`() {
-        assertEquals(listOf("|conf.toml|false"), tool().offeredAt(1, "get", "", "conf.toml"))
+        assertEquals(listOf("|conf.conf|false"), tool().offeredAt(1, "get", "", "conf.conf"))
     }
 
     @Test
@@ -65,7 +65,7 @@ class CompletionWholeLineTest {
 
     @Test
     fun `a provider reads the word under the cursor through its own input`() {
-        assertEquals(listOf(".ow|conf.toml"), tool().offeredAt(1, "query", ".ow", "conf.toml"))
+        assertEquals(listOf(".ow|conf.conf"), tool().offeredAt(1, "query", ".ow", "conf.conf"))
     }
 
     @Test
@@ -232,9 +232,9 @@ class CompletionWholeLineTest {
     @Test
     fun `complete takes the cursor before the end of options marker`() {
         val terminal = RecordingTerminal()
-        val code = tool().run(arrayOf("__complete", "--cursor", "1", "--", "get", ".ow", "conf.toml"), terminal)
+        val code = tool().run(arrayOf("__complete", "--cursor", "1", "--", "get", ".ow", "conf.conf"), terminal)
         assertEquals(0, code)
-        assertEquals(".ow|conf.toml|false", terminal.out.trim())
+        assertEquals(".ow|conf.conf|false", terminal.out.trim())
     }
 
     @Test

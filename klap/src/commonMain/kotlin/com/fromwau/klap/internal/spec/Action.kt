@@ -8,6 +8,7 @@ import com.fromwau.kern.result.fold
 import com.fromwau.kern.terminal.Styled
 import com.fromwau.klap.ActionScope
 import com.fromwau.klap.CliError
+import com.fromwau.klap.Exit
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
@@ -27,10 +28,10 @@ internal sealed interface ActionError : ResultError {
 
 /**
  * What a successful action leaves for the runner: the text to print, still [Styled] when the action styled it, and
- * the code to exit with. They travel as a pair because the code is a projection of the value, which is erased by the
- * time [text] is.
+ * the [exit] it returned, null for 0. They travel as a pair because the exit is a projection of the value, which is
+ * erased by the time [text] is.
  */
-internal class Rendered(val text: CharSequence, val exitCode: Int)
+internal class Rendered(val text: CharSequence, val exit: Exit?, val endsLine: Boolean)
 
 /** The erased, non-generic face of an [ActionSpec]: run the action for its rendered output, or for its raw value. */
 internal sealed interface Action {
@@ -65,7 +66,8 @@ internal class ActionSpec<T>(
     override val suspending: Boolean,
     private val serializer: () -> KSerializer<T>,
     private val human: (ActionScope.(T) -> CharSequence)?,
-    private val exitCode: (ActionScope.(T) -> Int)?,
+    private val exit: (ActionScope.(T) -> Exit?)?,
+    private val endsLine: Boolean,
 ) : Action {
     override suspend fun renderOutput(scope: ActionScope, json: Boolean): Result<Rendered, ActionError> =
         scope.block().fold(
@@ -77,8 +79,8 @@ internal class ActionSpec<T>(
         // Only on this arm: an error carries its own exit code, so consulting the projection there would
         // give two answers for one run. Guarded like [renderHuman], because it is consumer code running
         // inside klap's never-throw boundary.
-        val code = try {
-            exitCode?.invoke(scope, value) ?: 0
+        val returned = try {
+            exit?.invoke(scope, value)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -86,7 +88,7 @@ internal class ActionSpec<T>(
         }
         return when (val text = if (json) renderJson(value) else renderHuman(scope, value)) {
             is Result.Error -> text
-            is Result.Success -> Ok(Rendered(text.value, code))
+            is Result.Success -> Ok(Rendered(text.value, returned, endsLine = json || endsLine))
         }
     }
 

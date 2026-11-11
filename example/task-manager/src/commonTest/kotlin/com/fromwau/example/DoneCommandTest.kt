@@ -10,7 +10,7 @@ class DoneCommandTest {
     @Test
     fun `done on an unknown id exits with the programs not found code`() = withTempStore { path ->
         val result = taskManagerCli().captureWithFile(path, "done", "42")
-        assertEquals(EXIT_NOT_FOUND, result.exitCode, result.err)
+        assertEquals(TaskExit.NotFound.code, result.exitCode, result.err)
         assertContains(result.err, "no task with id 42")
     }
 
@@ -20,7 +20,7 @@ class DoneCommandTest {
         cli.captureWithFile(path, "add", "Ship it", "--done")
 
         val result = cli.captureWithFile(path, "done", "1")
-        assertEquals(EXIT_ALREADY_DONE, result.exitCode, result.err)
+        assertEquals(TaskExit.AlreadyDone.code, result.exitCode, result.err)
         assertContains(result.err, "task 1 is already done")
     }
 }

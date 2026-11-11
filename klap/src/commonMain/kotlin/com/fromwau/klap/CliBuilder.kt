@@ -20,6 +20,13 @@ public abstract class CliBuilder internal constructor() : CommandBuilder() {
     /** The tool's author, rendered in `--help`'s footer, the man page's `AUTHOR` section, and generated docs. */
     public abstract var author: String?
 
+    /**
+     * The date the man page's header shows, such as `2026-10-29`, which the built-in `docs man` and
+     * [renderManPage] print. Give the tool's build date, generated at build time, so each build dates its page and a
+     * release shows its own day; null, the default, leaves the field empty, as klap has no clock.
+     */
+    public abstract var manDate: String?
+
     /** How far klap resolves a partially typed name; see [Abbreviation]. */
     public abstract var abbreviation: Abbreviation
 
@@ -275,7 +282,7 @@ private fun <T> build(name: String, block: CliBuilder.() -> T): Pair<Cli, T> {
     val injected = buildList {
         if (builtins.completion) add(completeCommand())
         if (base.action == null) {
-            if (builtins.completion) add(completionCommand(builtins.completionText))
+            if (builtins.completion) add(completionCommand(base.name, builtins.completionText))
             if (builtins.docs) add(docsCommand(builtins.docsText))
         }
     }
@@ -284,6 +291,7 @@ private fun <T> build(name: String, block: CliBuilder.() -> T): Pair<Cli, T> {
         name = base.name,
         author = builder.author,
         version = (builder.version as? Version.Of)?.number,
+        manDate = builder.manDate,
         specs = base.specs,
         constraints = base.constraints,
         subcommands = base.subcommands + injected,
@@ -305,11 +313,18 @@ private fun <T> build(name: String, block: CliBuilder.() -> T): Pair<Cli, T> {
  * docs, and completion can list it, but the parser routes it to [Cli.renderCompletion] (see `routeBuiltin`)
  * rather than executing it, so the node needs no reference to the root it renders.
  */
-private fun completionCommand(description: String): Command = builtin("completion", BuiltinKind.Completion) {
+private fun completionCommand(
+    name: String,
+    description: String,
+): Command = builtin("completion", BuiltinKind.Completion) {
     // klap's own words name the shells here, which the option form lists as its value instead.
     help = if (description == BuiltinOptionHelp.COMPLETION) "$description (bash|zsh|fish|powershell)" else description
     // .enum surfaces the shell choices in help/docs; the parser reads the value through CompletionShell.fromOrNull.
     argument("shell", help = "Shell to generate the script for").enum<CompletionShell>()
+    example("source <($name completion bash)", "in ~/.bashrc")
+    example("source <($name completion zsh)", "in ~/.zshrc, after compinit")
+    example("$name completion fish | source", "in ~/.config/fish/config.fish")
+    example("$name completion powershell | Out-String | Invoke-Expression", "in \$PROFILE")
 }
 
 /**

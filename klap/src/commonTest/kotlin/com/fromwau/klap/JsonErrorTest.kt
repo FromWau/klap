@@ -10,7 +10,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-/** Under `--json` a failure is data: its variant under `type` and its fields, with no sentence anywhere. */
+/** Under `--json` a failure is data: its variant under `type` and its fields. */
 class JsonErrorTest {
 
     private data object DiskFull : ResultError
@@ -41,7 +41,21 @@ class JsonErrorTest {
             action { Ok("${port()}") }
         }
         assertEquals(
-            """{"error":{"type":"BadValue","name":"--port","value":"x","cause":{"type":"NotAnInteger"}},"code":2}""" + "\n",
+            """{"error":{"type":"BadValue","name":"--port","value":"x","reason":"not an integer",""" +
+                """"cause":{"type":"NotAnInteger"}},"code":2}""" + "\n",
+            err,
+        )
+    }
+
+    @Test
+    fun `a bad value refused by validate carries the reason the text form prints`() {
+        val (code, err) = stderr("--port", "0", "--json") {
+            val port = option(long = "port").int().validate("must be positive") { it > 0 }
+            action { Ok("${port()}") }
+        }
+        assertEquals(2, code)
+        assertEquals(
+            """{"error":{"type":"BadValue","name":"--port","value":"0","reason":"must be positive"},"code":2}""" + "\n",
             err,
         )
     }
@@ -53,7 +67,7 @@ class JsonErrorTest {
             put("free", 0)
         }
         val (code, err) = stderr("--json") {
-            action<String> { Err(CliError.Domain(DiskFull, "disk full", exitCode = 6, json = encoded)) }
+            action<String> { Err(CliError.Domain(DiskFull, "disk full", exit = exitOf(6), json = encoded)) }
         }
         assertEquals(6, code)
         assertEquals("""{"error":{"type":"DiskFull","free":0},"code":6}""" + "\n", err)
@@ -73,7 +87,11 @@ class JsonErrorTest {
             ).convert<Int> { Err(ConversionError.Domain(DiskFull, "too big", JsonPrimitive(1))) }
             action { Ok("${size()}") }
         }
-        assertEquals("""{"error":{"type":"BadValue","name":"--size","value":"huge","cause":1},"code":2}""" + "\n", err)
+        assertEquals(
+            """{"error":{"type":"BadValue","name":"--size","value":"huge","reason":"too big",""" +
+                """"cause":1},"code":2}""" + "\n",
+            err,
+        )
     }
 
     @Test
@@ -101,11 +119,11 @@ class JsonErrorTest {
     }
 
     @Test
-    fun `a group run without a subcommand shows its help without json`() {
+    fun `a group run without a subcommand shows its help on standard error without json`() {
         val t = RecordingTerminal()
         val code = cli("tool") { command("get") { action { Ok("") } } }.run(arrayOf(), t)
-        assertEquals(0, code)
-        assertEquals("", t.err)
-        assertEquals(true, t.out.startsWith("usage: tool"), t.out)
+        assertEquals(USAGE_ERROR_EXIT, code)
+        assertEquals("", t.out)
+        assertEquals(true, t.err.startsWith("usage: tool"), t.err)
     }
 }

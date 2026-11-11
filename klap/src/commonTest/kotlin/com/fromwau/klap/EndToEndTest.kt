@@ -34,11 +34,11 @@ class EndToEndTest {
     }
 
     @Test
-    fun `root help falls back when no subcommand`() {
+    fun `root help goes to standard error when no subcommand is given`() {
         val t = RecordingTerminal()
         val code = todo().run(arrayOf(), t)
-        assertEquals(0, code)
-        assertEquals(true, t.out.startsWith("usage: todo"))
+        assertEquals(USAGE_ERROR_EXIT, code)
+        assertEquals(true, t.err.startsWith("usage: todo"))
     }
 
     @Test

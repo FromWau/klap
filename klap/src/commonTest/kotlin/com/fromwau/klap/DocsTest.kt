@@ -145,8 +145,21 @@ class DocsTest {
     @Test
     fun `man page separates usage from description with a paragraph break`() {
         val man = sampleTree().renderManPage()
-        // Without the .PP, roff fills the description onto the bolded usage line; assert the break is present.
-        assertTrue(".PP\nManage a todo list" in man, man)
+        // Without the .PP, roff fills a command's description onto its bolded usage line.
+        assertTrue(".B usage: todo add <text> [options]\n.PP\nAdd a task" in man, man)
+        assertTrue(".SH DESCRIPTION\nManage a todo list\n" in man, man)
+    }
+
+    @Test
+    fun `the built-in docs man shows the date the tool sets`() {
+        val tree = cli("app") {
+            manDate = "2026-10-29"
+            command("go") { action { Ok("") } }
+        }
+        val t = RecordingTerminal()
+        tree.run(listOf("docs", "man"), t)
+        assertTrue(".TH \"APP\" 1 \"2026\\-10\\-29\"" in t.out, t.out)
+        assertTrue(".TH \"APP\" 1 \"2026\\-10\\-29\"" in tree.renderManPage(), tree.renderManPage())
     }
 
     @Test
@@ -389,8 +402,7 @@ class DocsTest {
     @Test
     fun `single command tool man page has no redundant root section`() {
         // The man page's per-node ".SH <PATH>" wrapper is redundant for a single-command tool: the
-        // root's own content would just duplicate ".SH NAME". It must appear exactly zero times, with
-        // the command's usage/options folded directly after NAME instead.
+        // root's own content would just duplicate ".SH NAME". It must appear exactly zero times.
         val tree = cli("wc") {
             argument("f")
             action { Ok("") }
@@ -398,8 +410,7 @@ class DocsTest {
         val man = tree.renderManPage()
         assertTrue(".SH NAME" in man, man)
         assertTrue(".SH WC" !in man, man)
-        // The command's own content (usage line) must still be present, just without the wrapper.
-        assertTrue("usage: wc <f>" in man, man)
+        assertTrue(".SH SYNOPSIS\n.B wc <f>\n" in man, man)
     }
 
     @Test
@@ -442,11 +453,9 @@ class DocsTest {
     }
 
     @Test
-    fun `markdown escapes backslash and backtick in description and epilog paragraph text`() {
+    fun `markdown escapes backslash and a lone backtick in description and epilog paragraph text`() {
         // A raw backslash in free paragraph text is unsafe: a real CommonMark renderer reads `\.` as an
-        // escape sequence and eats the backslash, corrupting a Windows path. Table cells already go
-        // through mdCell; description/epilogue are appended raw and must be escaped the same way a
-        // paragraph-text escaper would, without collapsing structure the way mdCell does.
+        // escape sequence and eats the backslash, corrupting a Windows path.
         val tree = cli("app") {
             help = "Config lives at C:\\Users\\name\\.refrc, see `docs`."
             epilogue = "Backup path: D:\\backup\\app`s data."
@@ -454,7 +463,7 @@ class DocsTest {
         }
         val md = tree.renderMarkdownDocs()
         assertTrue("C:\\\\Users\\\\name\\\\.refrc" in md, md)
-        assertTrue("\\`docs\\`" in md, md)
+        assertTrue("see `docs`." in md, md)
         assertTrue("D:\\\\backup\\\\app\\`s data." in md, md)
 
         // The man page's own roff escaping is independent of the markdown escaping above and stays unaffected by it.
@@ -603,16 +612,28 @@ class DocsTest {
     }
 
     @Test
-    fun `markdown escapes backtick in table cell instead of replacing with apostrophe`() {
+    fun `a code span in help text stays code in a markdown table cell`() {
         val tree = cli("app") {
             command("run") {
-                option(short = 'm', long = "mode", help = "use `raw` mode")
+                option(short = 'm', long = "mode", help = "use `raw` mode, `a|b` or `<x>`, not app`s")
                 action { Ok("") }
             }
         }
         val md = tree.renderMarkdownDocs()
-        assertTrue("use \\`raw\\` mode" in md, md)
-        assertTrue("use 'raw' mode" !in md, md)
+        assertTrue("use `raw` mode, `a\\|b` or `<x>`, not app\\`s |" in md, md)
+    }
+
+    @Test
+    fun `a code span in help text is bold in the man page`() {
+        val man = cli("app") {
+            help = "read `-` as standard input, not app`s"
+            command("run") {
+                option(short = 'm', long = "mode", help = "use `raw` mode")
+                action { Ok("") }
+            }
+        }.renderManPage()
+        assertTrue("read \\fB\\-\\fP as standard input, not app`s" in man, man)
+        assertTrue("use \\fBraw\\fP mode" in man, man)
     }
 
     @Test
@@ -648,5 +669,17 @@ class DocsTest {
         val md = tree.renderMarkdownDocs()
         assertTrue("| &lt;name&gt; |" in md, md)
         assertTrue("| <name> |" !in md, md)
+    }
+
+    @Test
+    fun `a tool with no description keeps its options out of the synopsis under a heading of their own`() {
+        val man = cli("wc") {
+            flag(short = 'v', long = "verbose")
+            action { Ok("") }
+        }.renderManPage()
+        val synopsis = man.substringAfter(".SH SYNOPSIS").substringBefore(".SH ")
+        assertTrue("--verbose" !in synopsis.substringAfter("\n.B ").substringAfter("\n"), synopsis)
+        assertTrue(".SH OPTIONS" in man, man)
+        assertTrue(".SH NAME\nwc\n" in man, man)
     }
 }

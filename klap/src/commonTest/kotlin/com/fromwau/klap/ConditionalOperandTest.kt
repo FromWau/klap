@@ -51,7 +51,7 @@ class ConditionalOperandTest {
     fun `a minimum holds when the trigger is absent`() {
         val err = rmLike().parse(emptyList()).assertError<CliError.MissingArgument>()
         assertEquals(CliError.MissingArgument("rm", "file"), err)
-        assertEquals(USAGE_ERROR_EXIT, err.exitCode)
+        assertEquals(USAGE_ERROR_EXIT, err.exit.code)
     }
 
     @Test
@@ -81,7 +81,7 @@ class ConditionalOperandTest {
             action { Ok("") }
         }.helpLines().first()
         assertEquals("usage: tool [file] [options]", usage { argument("file").optional().absentWhen(it) })
-        assertEquals("usage: tool [file=a.toml] [options]", usage { argument("file").default("a.toml").absentWhen(it) })
+        assertEquals("usage: tool [file=a.conf] [options]", usage { argument("file").default("a.conf").absentWhen(it) })
     }
 
     @Test

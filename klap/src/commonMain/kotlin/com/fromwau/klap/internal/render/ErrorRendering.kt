@@ -23,8 +23,8 @@ private fun List<String>.andJoined(): String =
 /** This token set apart in a sentence as GNU quotes one, `'--nope'`, its control characters in `$'…'`. */
 private fun String.quoted(): String = shellQuoted(always = true)
 
-/** The one place a CliError becomes human text; nothing upstream produces user-facing strings. */
-internal fun CliError.message(): String = when (this) {
+/** The one place a CliError becomes human text, read through [CliError.message]. */
+internal fun CliError.words(): String = when (this) {
     is CliError.UnknownSubcommand ->
         "unknown subcommand ${token.quoted()} for ${parent.quoted()}" + suggestion.didYouMean()
     is CliError.MissingSubcommand -> "missing subcommand for ${parent.quoted()}"
@@ -107,29 +107,33 @@ internal fun renderActionError(error: ActionError, json: Boolean, terminal: Term
  * A run that succeeded but whose output was lost. A closed pipe is the reader's choice, so it exits 141 and
  * says nothing, as a tool killed by SIGPIPE would; so does a failure the platform cannot explain. A write the
  * system refused, such as on a full disk, is an error the user needs to see, named by its stream.
+ *
+ * [failure] is the code of a run that had already failed, which the lost write keeps rather than replaces.
  */
-internal fun renderWriteFailed(error: WriteError, json: Boolean, terminal: Terminal): Int = when (error) {
-    is WriteError.BrokenPipe, is WriteError.Unknown -> BROKEN_PIPE_EXIT
-    is WriteError.Refused -> {
-        if (json) {
-            terminal.err(jsonErrorEnvelope(writeFailedJson(error.stream, error.detail), 1) + "\n")
-        } else {
-            val name = when (error.stream) {
-                Stream.Out -> "standard output"
-                Stream.Err -> "standard error"
+internal fun renderWriteFailed(error: WriteError, json: Boolean, terminal: Terminal, failure: Int? = null): Int =
+    when (error) {
+        is WriteError.BrokenPipe, is WriteError.Unknown -> failure ?: BROKEN_PIPE_EXIT
+        is WriteError.Refused -> {
+            val code = failure ?: 1
+            if (json) {
+                terminal.err(jsonErrorEnvelope(writeFailedJson(error.stream, error.detail), code) + "\n")
+            } else {
+                val name = when (error.stream) {
+                    Stream.Out -> "standard output"
+                    Stream.Err -> "standard error"
+                }
+                val reason = error.detail?.let { ": ${it.escapeControls()}" }.orEmpty()
+                terminal.err("error: cannot write to $name$reason\n")
             }
-            val reason = error.detail?.let { ": ${it.escapeControls()}" }.orEmpty()
-            terminal.err("error: cannot write to $name$reason\n")
+            code
         }
-        1
     }
-}
 
 internal fun renderError(error: CliError, json: Boolean, terminal: Terminal): Int {
-    // A CliError.Failure's exitCode is caller-supplied and unvalidated (0 would read as success; an
+    // A CliError's exit is caller-supplied and unvalidated (0 would read as success; an
     // out-of-range value would wrap on the OS), so it is clamped here at the render boundary, and the
     // JSON envelope's `code` field uses the same clamped value so it always matches the actual exit.
-    val code = error.exitCode.coerceIn(1, 255)
+    val code = error.exit.code.coerceIn(1, 255)
     if (json) {
         terminal.err(jsonErrorEnvelope(error.toJson(), code) + "\n")
         return code
@@ -137,18 +141,18 @@ internal fun renderError(error: CliError, json: Boolean, terminal: Terminal): In
     // Each piece of input is quoted or escaped where its sentence is built, klap's own here and a consumer's detail
     // by the consumer, as GNU's tools quote before they call error(); escaping the sentence again would double the
     // backslashes of what was already escaped.
-    terminal.err("error: ${error.message()}\n")
+    terminal.err("error: ${error.message}\n")
     return code
 }
 
 /**
- * The words for a conversion failure. They live here rather than on [ConversionError] so the cases stay
- * data a caller can branch on, and this render layer stays the only place that picks English.
+ * The words for a conversion failure, read through [ConversionError.message], so this render layer stays the only
+ * place that picks English.
  *
  * Phrased as a fragment: [CliError.BadValue]'s rendering supplies the input's name and the offending token
  * around it, printing `invalid value 'abc' for --port: not an integer`.
  */
-internal fun ConversionError.reason(): String = when (this) {
+internal fun ConversionError.words(): String = when (this) {
     ConversionError.NotAnInteger -> "not an integer"
     ConversionError.NotALong -> "not a long"
     ConversionError.NotADouble -> "not a number"

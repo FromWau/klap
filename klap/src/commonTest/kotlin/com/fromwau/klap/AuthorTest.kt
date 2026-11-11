@@ -8,7 +8,6 @@ import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
 import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.helpText
-import com.fromwau.klap.internal.render.message
 import com.fromwau.klap.internal.render.renderError
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -228,8 +227,8 @@ class PublicSurfaceTest {
 
     @Test
     fun `a domain error renders its detail and keeps its typed payload recoverable`() {
-        val err: CliError = CliError.Domain(StoreError.DiskFull, "out of space", exitCode = 6)
-        assertEquals("out of space", err.message())
+        val err: CliError = CliError.Domain(StoreError.DiskFull, "out of space", exit = exitOf(6))
+        assertEquals("out of space", err.message)
         assertEquals(StoreError.DiskFull, (err as CliError.Domain).error)
 
         val term = RecordingTerminal()
@@ -248,7 +247,7 @@ class PublicSurfaceTest {
     @Test
     fun `a domain error survives an action and carries its exit code`() {
         val tree = cli("app") {
-            action<String> { Err(CliError.Domain(StoreError.DiskFull, "out of space", exitCode = 6)) }
+            action<String> { Err(CliError.Domain(StoreError.DiskFull, "out of space", exit = exitOf(6))) }
         }
         val term = RecordingTerminal()
         assertEquals(6, tree.run(arrayOf(), term))

@@ -47,7 +47,7 @@ class RealShellCompletionTest {
         }
         // A launcher the way a JVM CLI installs one on Windows, which PowerShell calls differently.
         stub.copyTo(File(bin, "tool.bat")).setExecutable(true)
-        File(dir, "conf.toml").writeText("")
+        File(dir, "conf.conf").writeText("")
     }
 
     @AfterTest
@@ -168,7 +168,9 @@ class RealShellCompletionTest {
                         fi
                       done
                     }
+                    compdef() { :; }
                     source "$1"
+                    _tool
                     """.trimIndent(),
                     "zsh", script.path,
                 ) to env + mapOf(
@@ -278,8 +280,8 @@ class RealShellCompletionTest {
     fun `bash zsh and powershell send the words after the cursor`() {
         for (shell in installed(listOf(CompletionShell.BASH, CompletionShell.ZSH, CompletionShell.POWERSHELL))) {
             assertEquals(
-                listOf("__complete", "--cursor", "1", "--", "get", ".ow", "conf.toml"),
-                complete(shell, "tool get .ow conf.toml", cursor = "tool get .ow".length).call,
+                listOf("__complete", "--cursor", "1", "--", "get", ".ow", "conf.conf"),
+                complete(shell, "tool get .ow conf.conf", cursor = "tool get .ow".length).call,
                 "$shell",
             )
         }
@@ -289,8 +291,8 @@ class RealShellCompletionTest {
     fun `bash zsh and powershell send an empty word for a cursor between two words`() {
         for (shell in installed(listOf(CompletionShell.BASH, CompletionShell.ZSH, CompletionShell.POWERSHELL))) {
             assertEquals(
-                listOf("__complete", "--cursor", "1", "--", "get", "", "conf.toml"),
-                complete(shell, "tool get  conf.toml", cursor = "tool get ".length).call,
+                listOf("__complete", "--cursor", "1", "--", "get", "", "conf.conf"),
+                complete(shell, "tool get  conf.conf", cursor = "tool get ".length).call,
                 "$shell",
             )
         }
@@ -302,14 +304,14 @@ class RealShellCompletionTest {
             // PowerShell hands its own completers the whole word wherever the cursor sits in it.
             val word = if (shell == CompletionShell.POWERSHELL) ".owner" else ".o"
             assertEquals(
-                listOf("__complete", "--cursor", "1", "--", "get", word, "conf.toml"),
-                complete(shell, "tool get .owner conf.toml", cursor = "tool get .o".length).call,
+                listOf("__complete", "--cursor", "1", "--", "get", word, "conf.conf"),
+                complete(shell, "tool get .owner conf.conf", cursor = "tool get .o".length).call,
                 "$shell",
             )
             // A cursor at the start of a word is in that word, with nothing of it typed yet.
             assertEquals(
                 listOf("__complete", "--cursor", "1", "--", "get", ""),
-                complete(shell, "tool get conf.toml", cursor = "tool get ".length).call,
+                complete(shell, "tool get conf.conf", cursor = "tool get ".length).call,
                 "$shell",
             )
         }
@@ -319,8 +321,8 @@ class RealShellCompletionTest {
     fun `powershell sends an empty word in legacy argument passing too`() {
         for (shell in installed(listOf(CompletionShell.POWERSHELL))) {
             assertEquals(
-                listOf("__complete", "--cursor", "1", "--", "get", "", "conf.toml"),
-                complete(shell, "tool get  conf.toml", cursor = "tool get ".length, argumentPassing = "Legacy").call,
+                listOf("__complete", "--cursor", "1", "--", "get", "", "conf.conf"),
+                complete(shell, "tool get  conf.conf", cursor = "tool get ".length, argumentPassing = "Legacy").call,
             )
         }
     }
@@ -330,10 +332,10 @@ class RealShellCompletionTest {
         // Windows mode, PowerShell's default on Windows, passes arguments to a `.bat` the Legacy way.
         for (shell in installed(listOf(CompletionShell.POWERSHELL))) {
             assertEquals(
-                listOf("__complete", "--cursor", "1", "--", "get", "", "conf.toml"),
+                listOf("__complete", "--cursor", "1", "--", "get", "", "conf.conf"),
                 complete(
                     shell,
-                    "tool.bat get  conf.toml",
+                    "tool.bat get  conf.conf",
                     cursor = "tool.bat get ".length,
                     argumentPassing = "Windows",
                     program = cliNamed("tool.bat"),
@@ -580,10 +582,10 @@ class RealShellCompletionTest {
             // The rest of the word after the cursor stays on the line, as bash's own file completion leaves it.
             val typed = "tool get . co".length
             val inside = complete(shell, "tool get . cox", cursor = typed, answer = "$COMPLETE_FILES\n")
-            assertEquals(listOf("conf.toml"), inside.candidates)
+            assertEquals(listOf("conf.conf"), inside.candidates)
             // Right after `=` COMP_WORDS holds the `=` itself, which is no part of the path.
             val attached = complete(shell, "tool get --file=", answer = "$COMPLETE_FILES--file=\n").candidates
-            assertTrue("conf.toml" in attached, "$attached")
+            assertTrue("conf.conf" in attached, "$attached")
             assertTrue(attached.none { it.startsWith("=") || it.startsWith("-") }, "$attached")
         }
     }
@@ -593,8 +595,41 @@ class RealShellCompletionTest {
         for (shell in installed()) {
             val offered = complete(shell, "tool get . con", answer = "$COMPLETE_FILES\n").candidates
             // zsh's file completion is stood in for, so it shows the stand-in's marker instead of the file.
-            val expected = if (shell == CompletionShell.ZSH) "FILES" else "conf.toml"
+            val expected = if (shell == CompletionShell.ZSH) "FILES" else "conf.conf"
             assertTrue(offered.any { expected in it }, "$shell: $offered")
+        }
+    }
+
+    // --- loading the script ---
+
+    @Test
+    fun `zsh registers the completion whether the script is sourced or autoloaded from fpath`() {
+        if (!isInstalled(CompletionShell.ZSH)) return
+        val functions = File(dir, "functions").apply { mkdirs() }
+        File(functions, "_tool").writeText(tool.renderCompletion(CompletionShell.ZSH))
+        // compinit finds an autoloaded script on $fpath as it starts, and a sourced one needs the compdef it defines.
+        val loads = mapOf(
+            "autoloaded" to ($$"fpath=($${functions.path} $fpath)" to ""),
+            "sourced" to ("" to "source ${File(functions, "_tool").path}"),
+            "sourced by its bare name" to ("" to "cd ${functions.path}; source _tool"),
+        )
+        for ((how, load) in loads) {
+            val (beforeCompinit, afterCompinit) = load
+            val script = $$"""
+                $$beforeCompinit
+                autoload -U compinit
+                compinit -u -D
+                $$afterCompinit
+                print -r -- "$_comps[tool]"
+            """.trimIndent()
+            val process = ProcessBuilder("zsh", "-f", "-c", script)
+                .directory(dir)
+                .redirectError(errors)
+                .start()
+            val out = process.inputStream.bufferedReader().readText()
+            assertTrue(process.waitFor(60, TimeUnit.SECONDS), "zsh did not finish")
+            assertEquals("", errors.readText(), "zsh wrote to standard error when the script was $how")
+            assertEquals("_tool", out.trim(), "the script $how")
         }
     }
 }

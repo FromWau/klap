@@ -158,6 +158,15 @@ internal class ArgumentSpec(
     // like, so there is nothing for a flag to opt into there.
     var dashLed: Boolean = false
 
+    // Set by Arg.dashLed { }: the dash words this slot takes, the others staying unknown options.
+    var dashLedAccepts: ((String) -> Boolean)? = null
+
+    /** Whether this slot takes [word], a dash word that resolves to no option. */
+    fun takesDashWord(word: String): Boolean = dashLed && dashLedAccepts?.invoke(word) != false
+
+    /** Whether this slot's own test takes [word], so past a full slot it reads as one value too many. */
+    fun testTakes(word: String): Boolean = dashLed && dashLedAccepts?.invoke(word) == true
+
     // Set by Arg.dashLed(gather) { }: this slot collects every accepted dash word on the line instead.
     var gather: DashLedGather? = null
 

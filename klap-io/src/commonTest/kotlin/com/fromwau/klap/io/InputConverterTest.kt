@@ -54,7 +54,7 @@ class InputConverterTest {
     @Test
     fun `an option reads a dash as standard input`() {
         assertEquals(CliInput.StandardInput, inputsOf("-c", "-").first)
-        assertEquals(CliInput.File(CliPath("c.toml")), inputsOf("--config=c.toml").first)
+        assertEquals(CliInput.File(CliPath("c.conf")), inputsOf("--config=c.conf").first)
         assertEquals(null, inputsOf().first)
     }
 

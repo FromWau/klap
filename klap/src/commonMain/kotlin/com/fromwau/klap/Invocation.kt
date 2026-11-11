@@ -48,6 +48,11 @@ public sealed interface Invocation {
         internal val builtins: Builtins = Builtins.DEFAULT,
         // Set by --json: print the help as data rather than text.
         internal val json: Boolean = false,
+        /**
+         * True when a group ran without a command rather than help being asked for: a usage error, so print the help
+         * on standard error and exit [USAGE_ERROR_EXIT], as `run` does.
+         */
+        val missingCommand: Boolean = false,
     ) : Invocation
     /** [json] prints the version as a JSON object rather than the plain `name version` line. */
     public data class ShowVersion(val cli: Cli, val json: Boolean = false) : Invocation

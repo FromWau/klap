@@ -76,6 +76,29 @@ public class CompletionScope internal constructor(
                 "yet, its value failed to convert, or it belongs to another command",
         )
 
+    /**
+     * This operand's value, or null when the line has not given it yet: not typed, not converting, or the input
+     * of another command. Invoking the handle gives up the provider there; this lets one fall back on something
+     * else.
+     *
+     * ```kotlin
+     * layout.completeWith {
+     *     val kind = value.orNull()?.let(::kindOf) ?: kindAt(path.orNull() ?: return@completeWith)
+     *     candidates(layoutsFor(kind))
+     * }
+     * ```
+     */
+    public fun <T> Arg<T>.orNull(): T? = readOrNull(spec)
+
+    /**
+     * This option's value, or null when it cannot be read yet, as a value that does not convert; an option not
+     * written reads its default, as invoking it does. See [Arg.orNull].
+     */
+    public fun <T> Opt<T>.orNull(): T? = readOrNull(spec)
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> readOrNull(spec: HolderSpec): T? = values[spec] as T?
+
     internal val collected: MutableList<Candidate> = mutableListOf()
 
     /**
@@ -343,7 +366,12 @@ private fun Cli.renderZsh(): String = $$"""
       fi
       compadd -d descriptions -- "${values[@]}"
     }
-    _$$name "$@"
+    # Autoloaded from $fpath this file is the function's body; sourced, it registers the function instead.
+    if [[ $zsh_eval_context[-1] == (shfunc|loadautofunc) ]]; then
+      _$$name "$@"
+    else
+      compdef _$$name $$name
+    fi
     """.trimIndent()
 
 private fun Cli.renderFish(): String = $$"""

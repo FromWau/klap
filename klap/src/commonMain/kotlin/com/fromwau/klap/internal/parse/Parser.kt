@@ -19,7 +19,6 @@ import com.fromwau.klap.RepeatedOptions
 import com.fromwau.klap.ShortOptions
 import com.fromwau.klap.SubcommandMatch
 import com.fromwau.klap.builtinLongTable
-import com.fromwau.klap.internal.render.reason
 import com.fromwau.klap.internal.spec.ArgumentSpec
 import com.fromwau.klap.internal.spec.Cardinality
 import com.fromwau.klap.internal.spec.ConstraintArity
@@ -173,7 +172,8 @@ internal val Command.optionsEndAt: Int?
 internal val Command.gatheringSlot: ArgumentSpec? get() = arguments.firstOrNull { it.gather != null }
 
 /** Whether [spec] is the gathering slot and the line gave it a word. */
-internal fun ArgumentSpec.gathersOn(sifted: Sifted): Boolean = gather != null && sifted.gathered.isNotEmpty()
+internal fun ArgumentSpec.gathersOn(sifted: Sifted): Boolean =
+    gather != null && (sifted.gathered.isNotEmpty() || sifted.gathersTypedWord)
 
 /**
  * A command the walk passed on its way to the one it reached: its own segment read by [sifted], the line's
@@ -207,14 +207,24 @@ internal fun Command.bind(
     // A group given only its own options shows its help, as `git -C .` prints git's usage.
     if (isGroup) return Result.Success(Invocation.ShowHelp(this, qualifiedName))
     bindOptions(sifted, sink, inferValues)?.let { return Result.Error(it) }
-    bindPositionals(sifted.positionals, sink, sifted, inferValues, qualifiedName = qualifiedName)
+    val dashLedOperands = mutableSetOf<ArgumentSpec>()
+    val operands = mutableMapOf<ArgumentSpec, List<Int>>()
+    bindPositionals(
+        sifted.positionals,
+        sink,
+        sifted,
+        inferValues,
+        dashLedOperands,
+        operands,
+        qualifiedName = qualifiedName,
+    )
         .getOrElse { return Result.Error(it) }
     checkConditionalRequirements(sifted, globalAcc)?.let { return Result.Error(it) }
     // Placeholder scope: parse() attaches the completed snapshot (command inputs + globals) via copy().
     // Unreachable: a group returned through the isGroup branch above, and a command with neither an
     // action nor subcommands is rejected at build. Help keeps parse() total rather than throwing.
     val resolved = action ?: return Result.Success(Invocation.ShowHelp(this, qualifiedName))
-    val line = lineOrder(sifted, globalSift, inferValues)
+    val line = lineOrder(sifted, globalSift, inferValues, dashLedOperands, operands)
     return Result.Success(Invocation.Execute(this, globals, resolved, BoundInputs(emptyMap(), json = false, line = line)))
 }
 
@@ -231,7 +241,7 @@ private fun Command.unroutedOperand(
     qualifiedName: String,
     globalAcc: GlobalAccumulator?,
 ): Refusal? {
-    val at = sifted.firstPositionalAt ?: return null
+    val at = sifted.positionalPositions.firstOrNull() ?: return null
     val token = sifted.positionals.first()
     val separator = segment.indexOf(END_OF_OPTIONS).takeIf { it >= 0 }?.let { positions.getOrNull(it) ?: it }
     val routable = resolveSubcommand(token, globalAcc?.inferSubcommands ?: false) is SubcommandMatch.One
@@ -754,9 +764,10 @@ private class SegmentSift(
     private val negations = mutableMapOf<FlagSpec, Boolean>()
     private val optionValues = mutableMapOf<OptionSpec, MutableList<String?>>()
     private val positionals = mutableListOf<String>()
-    private var firstPositionalAt: ClusterPosition? = null
+    private val positionalPositions = mutableListOf<ClusterPosition>()
     private val dashLedAdmitted = mutableSetOf<Int>()
     private val gathered = mutableListOf<String>()
+    private val gatheredPositions = mutableListOf<ClusterPosition>()
     private var error: CliError? = null
     private var errorAt: ClusterPosition? = null
     private val flagPositions = mutableMapOf<FlagSpec, ClusterPosition>()
@@ -794,7 +805,8 @@ private class SegmentSift(
             optionValuePositions,
             flagHits,
             gathered,
-            firstPositionalAt,
+            gatheredPositions,
+            positionalPositions,
         )
     }
 
@@ -838,8 +850,8 @@ private class SegmentSift(
     }
 
     private fun addPositional(token: String, at: ClusterPosition) {
-        if (positionals.isEmpty()) firstPositionalAt = at
         positionals += token
+        positionalPositions += at
     }
 
     private fun hit(flag: FlagSpec, polarity: Boolean, at: ClusterPosition) {
@@ -973,10 +985,12 @@ private class SegmentSift(
         // all, the arm above claims it, so long-option typos keep their did-you-mean.
         val resolvesInFull = cmd.shortClusterResolvesInFull(chars, globalAcc, firstWord)
         if (gather != null && !resolvesInFull && gather.accepts(token)) {
+            gatheredPositions += tokenAt
             gathered += token
             return 1
         }
-        if (dashLedSlot && !resolvesInFull) {
+        // A word no slot's test takes is no operand anywhere, so it is refused here, where `--help` cannot pass it.
+        if (dashLedSlot && !resolvesInFull && cmd.specs.any { it is ArgumentSpec && it.takesDashWord(token) }) {
             dashLedAdmitted += positionals.size
             // It is an operand, so it ends options where the command opted out of permutation, exactly as
             // the not-flag-like route does; which operand ends them cannot depend on its spelling.

@@ -104,11 +104,11 @@ class ArgvOrderInvarianceTest {
         val operandUnit = listOf("out.txt")
         val baseline = assertOrderInvariant(
             app = app,
-            units = listOf(listOf("-v"), listOf("--config", "prod.toml"), nameUnit, operandUnit),
+            units = listOf(listOf("-v"), listOf("--config", "prod.conf"), nameUnit, operandUnit),
             // An operand ahead of the name is a different line: it would be the ROOT's operand.
             legal = { it.indexOf(operandUnit) > it.indexOf(nameUnit) },
         ) { "verbose=${verbose()} config=${config()} file=${file()}" }
-        assertEquals("Execute(build json=false verbose=true config=prod.toml file=out.txt)", baseline)
+        assertEquals("Execute(build json=false verbose=true config=prod.conf file=out.txt)", baseline)
     }
 
     // CONVENTION - git: `git commit -m msg f` and `git commit f -m msg` commit the same file.
@@ -160,11 +160,11 @@ class ArgvOrderInvarianceTest {
         val describe: ValueScope.() -> String = {
             "verbose=${verbose()} force=${force()} config=${config()} file=${file()}"
         }
-        val expected = "Execute(build json=false verbose=true force=true config=prod.toml file=out.txt)"
+        val expected = "Execute(build json=false verbose=true force=true config=prod.conf file=out.txt)"
         listOf(listOf("-vf"), listOf("-fv")).forEach { clusterUnit ->
             val baseline = assertOrderInvariant(
                 app = app,
-                units = listOf(nameUnit, clusterUnit, listOf("--config", "prod.toml"), operandUnit),
+                units = listOf(nameUnit, clusterUnit, listOf("--config", "prod.conf"), operandUnit),
                 // The cluster carries a LOCAL character, so like the operand it belongs after the name.
                 legal = {
                     it.indexOf(clusterUnit) > it.indexOf(nameUnit) &&
@@ -275,7 +275,7 @@ class ArgvOrderInvarianceTest {
                 clusterUnit,
                 nodeUnit,
                 drainUnit,
-                listOf("--config", "prod.toml"),
+                listOf("--config", "prod.conf"),
                 listOf("-v"),
                 operandUnit,
             ),
@@ -287,7 +287,7 @@ class ArgvOrderInvarianceTest {
                 clusterAt < nodeAt && nodeAt < drainAt && drainAt < it.indexOf(operandUnit)
             },
         ) { "config=${config()} verbose=${verbose()} node=${node()}" }
-        assertEquals("Execute(drain json=false config=prod.toml verbose=true node=n1)", baseline)
+        assertEquals("Execute(drain json=false config=prod.conf verbose=true node=n1)", baseline)
     }
 
     // GUIDE: "--version does honour it, printing {name, version} instead of the plain line", and --json is

@@ -16,7 +16,7 @@ private data class Report(val failed: Int, val total: Int)
 private fun diffLike(hunks: List<String>) = cli("diff") {
     action(
         human = { it.joinToString("\n") },
-        exitCode = { if (it.isEmpty()) 0 else 1 },
+        exit = { if (it.isEmpty()) null else exitOf(1) },
     ) { Ok(hunks) }
 }
 
@@ -34,7 +34,7 @@ class ActionExitCodeTest {
     fun `a declared code reaches the exit while the value still reaches stdout`() {
         val t = RecordingTerminal()
         val tree = cli("app") {
-            action(exitCode = { 3 }) { Ok("printed anyway") }
+            action(exit = { exitOf(3) }) { Ok("printed anyway") }
         }
         assertEquals(3, tree.run(emptyList(), t))
         assertEquals("printed anyway\n", t.out)
@@ -57,10 +57,10 @@ class ActionExitCodeTest {
     @Test
     fun `a code outside the byte range is clamped`() {
         val high = RecordingTerminal()
-        assertEquals(255, cli("app") { action(exitCode = { 900 }) { Ok("x") } }.run(emptyList(), high))
+        assertEquals(255, cli("app") { action(exit = { exitOf(900) }) { Ok("x") } }.run(emptyList(), high))
 
         val low = RecordingTerminal()
-        assertEquals(0, cli("app") { action(exitCode = { -7 }) { Ok("x") } }.run(emptyList(), low))
+        assertEquals(0, cli("app") { action(exit = { exitOf(-7) }) { Ok("x") } }.run(emptyList(), low))
     }
 
     @Test
@@ -68,11 +68,11 @@ class ActionExitCodeTest {
         var consulted = false
         val tree = cli("app") {
             action<String>(
-                exitCode = {
+                exit = {
                     consulted = true
-                    3
+                    exitOf(3)
                 },
-            ) { Err(CliError.Failure("boom", 4)) }
+            ) { Err(CliError.Failure("boom", exitOf(4))) }
         }
         val t = RecordingTerminal()
         assertEquals(4, tree.run(emptyList(), t))
@@ -87,7 +87,7 @@ class ActionExitCodeTest {
         val tree = cli("app") {
             action(
                 human = { "${it.failed} of ${it.total} failed" },
-                exitCode = { if (it.failed == 0) 0 else 1 },
+                exit = { if (it.failed == 0) null else exitOf(1) },
             ) { Ok(Report(failed = 2, total = 5)) }
         }
         assertEquals(1, tree.run(listOf("--json"), t))
@@ -98,7 +98,7 @@ class ActionExitCodeTest {
     @Test
     fun `the projection reads the scope so it can differ by render mode`() {
         val tree = cli("app") {
-            action(exitCode = { if (json) 2 else 1 }) { Ok("x") }
+            action(exit = { if (json) exitOf(2) else exitOf(1) }) { Ok("x") }
         }
         assertEquals(1, tree.run(emptyList(), RecordingTerminal()))
         assertEquals(2, tree.run(listOf("--json"), RecordingTerminal()))
@@ -108,7 +108,7 @@ class ActionExitCodeTest {
     fun `a suspending action declares its code the same way`() = runTest {
         val t = RecordingTerminal()
         val tree = cli("app") {
-            actionSuspending(exitCode = { if (it.isEmpty()) 0 else 1 }) { Ok(listOf("drift")) }
+            actionSuspending(exit = { if (it.isEmpty()) null else exitOf(1) }) { Ok(listOf("drift")) }
         }
         assertEquals(1, tree.runSuspending(emptyArray(), t))
         assertEquals("[drift]\n", t.out)

@@ -13,8 +13,9 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.putJsonArray
 
 /**
- * A failure as `--json` writes it: the variant's name under `type`, then its data. No sentence is part of it, so
- * a program reading the output branches on `type` and the fields, never on wording.
+ * A failure as `--json` writes it: the variant's name under `type`, then its data, so a program reading the output
+ * branches on `type` and the fields. A [CliError.BadValue] also writes its `reason`, the text form's words, since a
+ * `.validate` message is all that refusal has to say; a converter's refusal adds the `cause` a program branches on.
  */
 internal fun CliError.toJson(): JsonElement = when (this) {
     is CliError.UnknownSubcommand -> typed("UnknownSubcommand") {
@@ -60,6 +61,7 @@ internal fun CliError.toJson(): JsonElement = when (this) {
     is CliError.BadValue -> typed("BadValue") {
         put("name", name)
         put("value", value)
+        put("reason", reason)
         cause?.let { put("cause", it.toJson()) }
     }
     is CliError.InvalidChoice -> typed("InvalidChoice") {

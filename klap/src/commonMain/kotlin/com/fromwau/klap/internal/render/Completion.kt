@@ -220,7 +220,11 @@ private class TabLine(
         } else {
             wholeSifted
         }
-        val skipOperand = sifted.positionals.size.takeIf { variadic && target is ArgumentSpec }
+        // A dash word the slot gathers stands in no operand's place, so the operands stay in theirs.
+        val typedGathered = sifted.gathered.size.takeIf {
+            target is ArgumentSpec && wholeSifted.gathered.getOrNull(it) == typedValue
+        }
+        val typedOperand = sifted.positionals.size.takeIf { target is ArgumentSpec && typedGathered == null }
         // Read after [wholeSifted], which tops [wholeAcc] up with a global hidden in a short cluster.
         val globals = wholeAcc.toGlobalSift()
         val boundGlobals = if (option != null && global) {
@@ -241,7 +245,8 @@ private class TabLine(
         } else {
             globals
         }
-        cli.completionValues(cmd, bound, boundGlobals, wholeAcc.inferValues, skipOperand)
+        val finished = typedGathered?.let { bound.withoutGathered(it) } ?: bound
+        cli.completionValues(cmd, finished, boundGlobals, wholeAcc.inferValues, typedOperand)
     }
 
     // The operand slot the word under the cursor binds to, when it is an operand.
@@ -480,7 +485,8 @@ private class TabLine(
 
 /**
  * The operand a single-dash [word] no option takes binds to, as [sift] reads it: the gathering slot when it
- * accepts the word, else [positional], the slot under the cursor, when that is `dashLed()`.
+ * accepts the word, else [positional], the slot under the cursor, when that is `dashLed()`. Its test is not asked:
+ * it judges whole words, and this one is still being typed.
  */
 private fun Command.dashLedOperandFor(
     word: String,

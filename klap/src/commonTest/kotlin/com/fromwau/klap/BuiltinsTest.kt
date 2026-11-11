@@ -163,14 +163,35 @@ class BuiltinsTest {
     }
 
     @Test
-    fun `json beside the completion meta option is the json builtin`() {
+    fun `json beside the completion meta option is refused`() {
         // --json ahead of --completion or after its shell is the built-in; between them it is the shell asked
         // for, as getopt_long takes a required argument (getopt -o '' -l completion:,json -- --completion --json).
         val tree = greet()
-        val leading = tree.parse(listOf("--json", "--completion", "bash")).assertSuccess()
-        assertIs<Invocation.ShowCompletion>(leading)
-        assertEquals(CompletionShell.BASH, leading.shell)
-        assertEquals(leading, tree.parse(listOf("--completion", "bash", "--json")).assertSuccess())
+        val refused = CliError.MutuallyExclusive(listOf("--json", "--completion"))
+        assertEquals(refused, tree.parse(listOf("--json", "--completion", "bash")).assertError())
+        assertEquals(refused, tree.parse(listOf("--completion", "bash", "--json")).assertError())
+        assertEquals(
+            CliError.MutuallyExclusive(listOf("--json", "--docs")),
+            tree.parse(listOf("--docs", "man", "--json")).assertError(),
+        )
+    }
+
+    @Test
+    fun `json with the completion and docs commands is refused and their help leaves it out`() {
+        val tree = app()
+        val completion = CliError.MutuallyExclusive(listOf("--json", "completion"))
+        assertEquals(completion, tree.parse(listOf("--json", "completion", "bash")).assertError())
+        assertEquals(completion, tree.parse(listOf("completion", "bash", "--json")).assertError())
+        assertEquals(
+            CliError.MutuallyExclusive(listOf("--json", "docs")),
+            tree.parse(listOf("docs", "man", "--json")).assertError(),
+        )
+        for (command in listOf("completion", "docs")) {
+            val term = RecordingTerminal()
+            tree.run(arrayOf(command, "--help"), term)
+            assertFalse("--json" in term.out, term.out)
+            assertFalse("--json" in tree.completeCandidates(listOf(command, "--")).map { it.value })
+        }
     }
 
     @Test
