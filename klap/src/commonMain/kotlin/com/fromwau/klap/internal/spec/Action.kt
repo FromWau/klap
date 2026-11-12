@@ -93,10 +93,12 @@ internal class ActionSpec<T>(
     }
 
     private fun renderJson(value: T): Result<String, ActionError> {
-        // Neither needs the return type to be serializable, so `action<Styled?>` and `action<StringBuilder>` render.
+        // None needs the return type to be serializable, so `action<Styled?>` and `action<StringBuilder>` render.
         when (value) {
             null -> return Ok(klapJson.encodeToString(JsonNull.serializer(), JsonNull))
             is CharSequence -> return Ok(klapJson.encodeToString(String.serializer(), value.toString()))
+            // A command that returns Unit has no output, under --json as without it.
+            Unit -> return Ok("")
         }
         val resolved = try {
             serializer()

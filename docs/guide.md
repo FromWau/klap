@@ -1701,9 +1701,12 @@ worked through in a real program, SIGINT handling included.
 The value you return from `Ok` renders two ways, chosen by the global `--json` flag:
 
 - **Without `--json`:** an optional `human` renderer passed to the action builder, falling back to the
-  value itself when it is text (a `String` or `Styled`) and to `value.toString()` otherwise.
+  value itself when it is text (a `String` or `Styled`), to nothing for `Unit`, and to `value.toString()`
+  otherwise.
 - **With `--json`:** `kotlinx.serialization` encoding of the value. A `String` becomes a bare JSON
   string, and so does a `Styled` value, as its plain text; an `@Serializable` type becomes its object/array.
+  `Unit` prints nothing here too, so a command with no output prints no JSON document and its exit code
+  says whether it succeeded.
 
 ```kotlin
 @Serializable
