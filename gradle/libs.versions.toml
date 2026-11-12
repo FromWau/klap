@@ -4,7 +4,7 @@ klapVersion = "0.6.2"
 jdk = "25"
 
 dotenv-gradle = "0.1.0"
-kern = "0.6.4"
+kern = "0.6.5"
 kotlin = "2.4.21"
 kotlinx-coroutines = "1.11.0"
 kotlinx-datetime = "0.8.0"

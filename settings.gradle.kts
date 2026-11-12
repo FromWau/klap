@@ -18,6 +18,10 @@ dependencyResolutionManagement {
     repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS
     repositories {
         mavenCentral()
+        // kern 0.6.5 is in Maven local only until it is released; remove this then.
+        mavenLocal {
+            mavenContent { includeGroup("com.fromwau.kern") }
+        }
         maven("https://maven.frommhund.xyz/releases") {
             mavenContent { includeGroupAndSubgroups("com.fromwau") }
         }
