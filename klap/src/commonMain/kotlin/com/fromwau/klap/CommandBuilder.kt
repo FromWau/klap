@@ -349,10 +349,10 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * For work that suspends, use [actionSuspending] instead.
      *
      * @param human turns the returned value into the line printed on success. Without it a value that is text,
-     *   such as a `String` or kern's `Styled`, is printed as it is, and anything else by its `toString()`. Styled
-     *   text is coloured only when colour is on, so `--color=never` and a pipe print it plain. A `--json` run
-     *   serializes the value instead of calling this, so [T] must be `@Serializable` for a CLI that offers
-     *   `--json`; `Styled` is written as its plain text.
+     *   such as a `String` or kern's `Styled`, is printed as it is, `Unit` prints nothing, and anything else is
+     *   printed by its `toString()`. Styled text is coloured only when colour is on, so `--color=never` and a pipe
+     *   print it plain. A `--json` run serializes the value instead of calling this, so [T] must be
+     *   `@Serializable` for a CLI that offers `--json`; `Styled` is written as its plain text.
      * @param exit what the process exits with when [block] succeeds; without it, or when it gives null, a success
      *   exits 0. Use it for the `diff` and `grep` convention, where a non-zero exit is the answer rather than a
      *   failure: the value is still printed and still serialized, and only the exit code changes. Declare the
@@ -390,10 +390,10 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * refuse it, because without a caller-supplied scope nothing could resume it.
      *
      * @param human turns the returned value into the line printed on success. Without it a value that is text,
-     *   such as a `String` or kern's `Styled`, is printed as it is, and anything else by its `toString()`. Styled
-     *   text is coloured only when colour is on, so `--color=never` and a pipe print it plain. A `--json` run
-     *   serializes the value instead of calling this, so [T] must be `@Serializable` for a CLI that offers
-     *   `--json`; `Styled` is written as its plain text.
+     *   such as a `String` or kern's `Styled`, is printed as it is, `Unit` prints nothing, and anything else is
+     *   printed by its `toString()`. Styled text is coloured only when colour is on, so `--color=never` and a pipe
+     *   print it plain. A `--json` run serializes the value instead of calling this, so [T] must be
+     *   `@Serializable` for a CLI that offers `--json`; `Styled` is written as its plain text.
      * @param exit what the process exits with when [block] succeeds; without it, or when it gives null, a success
      *   exits 0. Use it for the `diff` and `grep` convention, where a non-zero exit is the answer rather than a
      *   failure: the value is still printed and still serialized, and only the exit code changes. Declare the

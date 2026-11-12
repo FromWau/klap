@@ -89,6 +89,14 @@ class StructuredJsonTest {
     }
 
     @Test
+    fun `an action that returns Unit prints nothing`() {
+        val t = RecordingTerminal()
+        val code = cli("quiet") { action { Ok(Unit) } }.run(emptyArray(), t)
+        assertEquals(0, code)
+        assertEquals("", t.out)
+    }
+
+    @Test
     fun `an empty success value prints nothing plain but encodes as a json string`() {
         // Two different "nothings": run() suppresses the line for an empty rendering, but "" is a legal
         // value that --json must encode. So an action cannot lean on Ok("") to stay quiet on both paths.

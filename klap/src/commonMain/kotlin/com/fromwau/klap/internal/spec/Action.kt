@@ -114,7 +114,13 @@ internal class ActionSpec<T>(
     }
 
     private fun renderHuman(scope: ActionScope, value: T): Result<CharSequence, ActionError> = try {
-        Ok(human?.invoke(scope, value) ?: value as? CharSequence ?: value?.toString().orEmpty())
+        Ok(
+            human?.invoke(scope, value) ?: when (value) {
+                is CharSequence -> value
+                Unit, null -> ""
+                else -> value.toString()
+            },
+        )
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

@@ -1,5 +1,5 @@
 [versions]
-klapVersion = "0.6.2"
+klapVersion = "0.6.3"
 
 jdk = "25"
 
