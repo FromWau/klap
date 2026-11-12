@@ -1,7 +1,10 @@
 [versions]
 klapVersion = "0.6.3"
 
-jdk = "25"
+# The JDK Gradle compiles with, and the one a consumer needs: the JVM artifacts are Java 17 bytecode, and
+# -Xjdk-release refuses any JDK API newer than that.
+jdk-build = "25"
+jdk-target = "17"
 
 dotenv-gradle = "0.1.0"
 kern = "0.6.5"

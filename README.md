@@ -47,7 +47,7 @@ implementing kern's `ResultError`, `CliError` included.
 Sources are published for every target, so an API question is answered by your IDE's own quick-doc and
 step-into rather than by reading a decompiled stub.
 
-**Toolchain floor.** The JVM artifact is Java 25 bytecode. It declares that as `org.gradle.jvm.version`, so
+**Toolchain floor.** The JVM artifact is Java 17 bytecode. It declares that as `org.gradle.jvm.version`, so
 Gradle reports an unmet requirement instead of letting it surface later as a `class file has wrong version`
 error from `javac`. The native targets have no floor.
 
