@@ -5,7 +5,7 @@ plugins {
 val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
 
 kotlin {
-    jvmToolchain(libs.findVersion("jdk").get().requiredVersion.toInt())
+    jvmToolchain(libs.findVersion("jdk-build").get().requiredVersion.toInt())
 }
 
 // Shows the notes ParitySuite.rejects prints where klap refuses a line for another reason than the real tool.
