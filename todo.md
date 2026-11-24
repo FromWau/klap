@@ -569,6 +569,61 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
   refusal goes, since it described the mechanism, not a reason; argparse (`nargs='*', default=[…]`) allows the same.
   **Built in klap 0.6.1 (94f15f2), ticked 2026-11-12:** `MultipleDefaultTest`; the guide's refusal paragraph is gone.
 
+- [x] **188. A public `CommandSpec`: something that builds a command, mountable into any tree (2026-11-19, from
+  kortex SH-9).** `Command` is `open class Command internal constructor` (`Cli.kt:23`), so another library cannot
+  hand klap a command of its own. Wanted: `public interface CommandSpec { val name: String; fun CommandBuilder.build() }`
+  and `CommandBuilder.command(spec: CommandSpec)` (same as `command(spec.name) { with(spec) { build() } }`), so a
+  library can let its users contribute subtrees. kortex's `Surface : CommandSpec, KortexSurface` mounts every surface
+  of a shell under one klap tree, run in a daemon with `Cli.runSuspending(argv, terminal)` on a terminal that writes
+  back over a socket. Owner decided A in kortex's walkthrough (SH-9).
+  **Built on branch `command-spec`, ticked 2026-11-19:** `CommandSpecTest`, seen failing against a `command(spec)` that
+  mounted nothing. The spec is the name and `build()` only: `command(name) { }` takes no help or aliases either, both
+  are set inside `build()`. A flag-spelled command has no spec form. The guide's "Commands defined elsewhere" says so.
+
+- [x] **189. `runSuspending` asks `writeResult()`, never `awaitWriteResult()` (2026-11-19, from kortex SH-10b).** A
+  terminal whose write failures arrive after the write returns, as a daemon's socket to a forwarding client does
+  (kern says Node does too), answers success at once and the failure only from `awaitWriteResult()`. On such a terminal
+  `runSuspending(listOf("--help-all"), terminal)` exits 0 where a `RecordingTerminal` failed with `BrokenPipe` exits
+  141 (probe on `command-spec`, the kotoml-shaped tree of `DaemonPathTest`). Options: A, `runSuspending` awaits the
+  write result where `run` reads it, both checks (`runCore`, `renderOutcome`) taking how to ask; B, leave klap, and a
+  daemon's terminal blocks in `writeResult()` until the client acknowledges every frame; C, leave it, and a daemon
+  accepts exit 0 when the client's reader went away.
+  **Owner, 2026-11-19: A.** `runSuspending` awaits the terminal's write result where `run` reads it, so a forwarded
+  run piped into `head` exits 141 like a terminal one.
+  **Built on branch `command-spec`, ticked 2026-11-19:** `runCore` and `renderOutcome` take how to ask, `run` reading
+  `writeResult()` and `runSuspending` awaiting `awaitWriteResult()`. `DaemonPathTest` `a write failure the terminal
+  reports late ...` (help, 0 before) and `... outranks an answering exit` (`format --check`, 4 before), each seen
+  failing; the guide's "When the output cannot be written" and `runSuspending`'s KDoc say so.
+- [x] **190. A run's caller: working directory and environment (2026-11-19, from kortex SH-10b).** A tree run in a
+  daemon behind a forwarding client sees the daemon's process: relative paths, `~`/`HOME` and `completeFiles()`
+  resolve on the daemon's side, and `CompletionScope` has no terminal or context to learn the caller's.
+  **Owner, 2026-11-19: A.** klap gains a per-run caller context (working directory, environment), passed to actions
+  (`ActionScope`) and completion providers (`CompletionScope`); `completeFiles()` resolves against it; it defaults to
+  the process's own, so a plain CLI sees no change (`runSuspending(argv, terminal, caller = Caller(cwd, env))`).
+  **Built on branch `command-spec`, ticked 2026-11-20:** `data class Caller(workingDirectory: String, environment:
+  Map<String, String>)`, `Caller.process()` the default of `run`, `runSuspending`, `runAction`, `runActionSuspending`
+  and `suggestionsFor`; `main` always runs as the process. `ActionScope.caller` and `CompletionScope.caller` read it.
+  The environment is the map kern's `BaseDirs.fromXdg` takes, so home and XDG roots come from kern `dirs`; klap
+  resolves no `~` or home path anywhere and does not depend on `dirs`. klap-io's `readBytes(terminal, maxBytes,
+  caller)` and `CliPath.from(caller)` read a relative file from the caller's folder. `completeFiles()` and `.file()`
+  needed nothing: the shell lists the files, in its own folder. `CallerTest` (working directory, dirs through
+  `BaseDirs.fromXdg`, a Tab provider) and klap-io's `CallerInputTest` (a relative input, a provider listing the
+  caller's folder), each seen failing against a stub that ignored the caller; the guide's "Who a run is for".
+
+- [x] **191. An action that forgets `caller = caller` reads the daemon's folder (2026-11-20, from 190).**
+  `CliInput.readBytes(terminal, maxBytes, caller = Caller.process())` defaults to this process, so inside a daemon a
+  call without `caller = caller` silently reads the daemon's working directory.
+  **Owner, 2026-11-20: A.** An overload for use inside an action, `context(action: ActionScope) fun
+  CliInput.readBytes(maxBytes)`, taking the run's terminal and caller from the action, so there is nothing to forget.
+  **Built on branch `command-spec`, ticked 2026-11-20:** the overload is in klap-io; `CallerInputTest` `inside an
+  action readBytes reads from the folder of the caller the run is for`, seen failing against a stub that read this
+  process, and one reading standard input from the run's terminal. The guide's klap-io example and table row use it;
+  the explicit form stays for reading outside an action.
+- [x] **192. `CliPath.from(caller)` reads as a factory (2026-11-20, from 190).** `from` is kern's and klap's factory
+  word (`fromXdg`, `fromOrNull`); this one resolves a typed path against the run's working directory.
+  **Owner, 2026-11-20: A.** Renamed `resolvedFor(caller)`.
+  **Built on branch `command-spec`, ticked 2026-11-20:** renamed in klap-io, no alias; `CallerInputTest` pins it.
+
 ## Owner calls
 
 - [x] **185. `Ok(Unit)` printed `kotlin.Unit`, and `{}` under `--json` (2026-11-12, branch `unit-prints-nothing`).**

@@ -51,6 +51,12 @@ public class ActionScope internal constructor(
      * What you write lands ahead of the line your returned value prints.
      */
     public val terminal: Terminal,
+    /**
+     * Who this run is for: the folder it was started in and its environment. Read a relative path from its folder,
+     * and resolve directories from its environment, so a run a daemon makes for a client reads them as the client's
+     * shell does.
+     */
+    public val caller: Caller,
 ) : ValueScope() {
     override fun unbound(spec: HolderSpec): Nothing = unboundInCommand(spec)
 }
@@ -61,8 +67,11 @@ internal class BoundInputs(
     val json: Boolean,
     override val line: Line,
 ) : ValueScope() {
-    /** The scope an action runs in, writing to [terminal]. */
-    fun actionScope(terminal: Terminal): ActionScope = ActionScope(values, json, line, terminal)
+    /** The scope an action runs in, writing to [terminal] for [caller]. */
+    fun actionScope(
+        terminal: Terminal,
+        caller: Caller,
+    ): ActionScope = ActionScope(values, json, line, terminal, caller)
 
     override fun unbound(spec: HolderSpec): Nothing = unboundInCommand(spec)
 }

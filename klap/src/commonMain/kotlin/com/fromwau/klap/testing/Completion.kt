@@ -1,6 +1,7 @@
 package com.fromwau.klap.testing
 
 import com.fromwau.klap.COMPLETE_FILES
+import com.fromwau.klap.Caller
 import com.fromwau.klap.Cli
 import com.fromwau.klap.internal.render.completeCandidates
 import com.fromwau.klap.internal.render.forShell
@@ -24,17 +25,19 @@ private fun wordStart(
  * What Tab offers for [line] with the cursor at [cursor], its end by default, the way every generated shell
  * script asks klap: the words after the program name, the word under the cursor as far as it is typed, and the
  * words after it. A cursor right after whitespace is on no word. The words are split at whitespace only, as a
- * shell hands them over once it has taken their quoting off.
+ * shell hands them over once it has taken their quoting off. [caller] is who the Tab press is for, as a provider
+ * reads it; this process by default.
  */
 public fun Cli.suggestionsFor(
     line: String,
     cursor: Int = line.length,
+    caller: Caller = Caller.process(),
 ): List<Suggestion> {
     val start = wordStart(line, cursor)
     val before = line.take(start).split(' ', '\t').filter { it.isNotEmpty() }
     val after = line.drop(cursor).dropWhile { !it.isWhitespace() }.split(' ', '\t').filter { it.isNotEmpty() }
     val words = before.drop(1) + line.substring(start, cursor) + after
-    return completeCandidates(words, before.size - 1)
+    return completeCandidates(words, before.size - 1, caller)
         .mapNotNull { it.forShell() }
         .map { Suggestion(it.value, it.description) }
 }
@@ -52,13 +55,14 @@ public fun acceptSuggestion(
 /**
  * [line] after one Tab press with the cursor at [cursor]: the one suggestion taken, or what all of them share
  * put in place of what is typed, as every shell does. A file directive is the shell's own to complete, so the
- * line stays as it is.
+ * line stays as it is. [caller] is who the Tab press is for, as a provider reads it; this process by default.
  */
 public fun Cli.tab(
     line: String,
     cursor: Int = line.length,
+    caller: Caller = Caller.process(),
 ): String {
-    val suggestions = suggestionsFor(line, cursor)
+    val suggestions = suggestionsFor(line, cursor, caller)
     if (suggestions.isEmpty() || suggestions.first().value.startsWith(COMPLETE_FILES)) return line
     val shared = suggestions.map { it.value }.reduce { shared, value -> shared.commonPrefixWith(value) }
     val typed = line.substring(wordStart(line, cursor), cursor)

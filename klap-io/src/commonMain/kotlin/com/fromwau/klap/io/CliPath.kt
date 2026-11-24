@@ -2,6 +2,7 @@ package com.fromwau.klap.io
 
 import com.fromwau.kern.result.Ok
 import com.fromwau.klap.Arg
+import com.fromwau.klap.Caller
 import com.fromwau.klap.ConverterScope
 import com.fromwau.klap.Opt
 import kotlinx.io.files.Path
@@ -24,6 +25,12 @@ import kotlinx.io.files.Path
 public class CliPath(public val text: String) {
     /** [text] as a kotlinx-io [Path], which drops a trailing slash (`a/` is `a`) and on the JVM a doubled one. */
     public val path: Path = Path(text)
+
+    /**
+     * This path as [caller] names it: as it is when absolute, and inside the caller's working directory otherwise, so
+     * a run made for another process reads that process's file.
+     */
+    public fun resolvedFor(caller: Caller): Path = if (path.isAbsolute) path else Path(caller.workingDirectory, text)
 
     /** Whether [text] ends with `/`, as `a/`, `./a/` and `/` do; a Windows `\` does not count. */
     public val endsWithSlash: Boolean get() = text.endsWith('/')

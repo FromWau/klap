@@ -1,8 +1,9 @@
 package com.fromwau.klap
 
+import com.fromwau.kern.result.EmptyResult
 import com.fromwau.kern.result.Result
-import com.fromwau.kern.result.fold
 import com.fromwau.kern.terminal.Terminal
+import com.fromwau.kern.terminal.WriteError
 import com.fromwau.kern.terminal.defaultTerminal
 import com.fromwau.kern.terminal.err
 import com.fromwau.kern.terminal.out
@@ -38,8 +39,14 @@ import com.fromwau.klap.internal.spec.completeWithoutSuspending
  *
  * A CLI declaring any `actionSuspending { }` is refused here with an [IllegalArgumentException], since this
  * entry point cannot drive one; use [runSuspending].
+ *
+ * @param caller who the run is for, which actions and Tab providers read as `caller`; this process by default.
  */
-public fun Cli.run(argv: Collection<String>, terminal: Terminal): Int {
+public fun Cli.run(
+    argv: Collection<String>,
+    terminal: Terminal,
+    caller: Caller = Caller.process(),
+): Int {
     val path = suspendingPath
     require(path == null) {
         // A root-level actionSuspending puts the CLI's own name in `path`, so naming it again as a
@@ -48,7 +55,9 @@ public fun Cli.run(argv: Collection<String>, terminal: Terminal): Int {
         "$subject uses actionSuspending { }, which the synchronous entry points cannot drive; call " +
             "runSuspending(argv, terminal) from a coroutine instead"
     }
-    return runCore(argv, terminal) { invocation, output -> invocation.executeAndRender(output) }
+    return runCore(argv, terminal, caller, { it.writeResult() }) { invocation, output ->
+        invocation.executeAndRender(output, caller)
+    }
 }
 
 /**
@@ -61,18 +70,38 @@ public fun Cli.run(argv: Collection<String>, terminal: Terminal): Int {
  *     exitProcess(code)
  * }
  * ```
+ *
+ * Whether the output was written is read from the terminal's `awaitWriteResult()`, so a terminal whose write failures
+ * arrive later, as a socket's to a remote client do, still turns a closed reader into exit 141.
+ *
+ * A daemon running a line for a client passes the client's [caller], so its actions and Tab providers read the
+ * client's working directory and environment:
+ *
+ * ```kotlin
+ * val code = app.runSuspending(argv, socketTerminal, Caller(request.cwd, request.environment))
+ * ```
+ *
+ * @param caller who the run is for, which actions and Tab providers read as `caller`; this process by default.
  */
-public suspend fun Cli.runSuspending(argv: Collection<String>, terminal: Terminal): Int =
-    runCore(argv, terminal) { invocation, output -> invocation.executeAndRenderSuspending(output) }
+public suspend fun Cli.runSuspending(
+    argv: Collection<String>,
+    terminal: Terminal,
+    caller: Caller = Caller.process(),
+): Int = runCore(argv, terminal, caller, { it.awaitWriteResult() }) { invocation, output ->
+    invocation.executeAndRenderSuspending(output, caller)
+}
 
 /**
  * The shared body of [run] and [runSuspending]. `inline`, so [execute] may suspend when the caller does;
  * that is what lets one implementation serve both without the parse and render work being written twice.
- * [execute] writes to the terminal it is handed, which carries this line's colour decision.
+ * [execute] writes to the terminal it is handed, which carries this line's colour decision. [written] asks that
+ * terminal whether its writes landed: at once for [run], and once they have for [runSuspending].
  */
 private inline fun Cli.runCore(
     argv: Collection<String>,
     terminal: Terminal,
+    caller: Caller,
+    written: (Terminal) -> EmptyResult<WriteError>,
     execute: (Invocation.Execute, Terminal) -> Int,
 ): Int {
     val argList = argv.toList()
@@ -97,13 +126,13 @@ private inline fun Cli.runCore(
     // code means a change over there cannot break `runSuspending`'s compilation over here.
     val code = when (val parsed = parse(argList)) {
         is Result.Error -> renderError(parsed.error, json, output)
-        is Result.Success -> parsed.value.render(style, output, execute)
+        is Result.Success -> parsed.value.render(style, output, caller, execute)
     }
 
     if (code != 0) return code
-    return when (val written = output.writeResult()) {
+    return when (val result = written(output)) {
         is Result.Success -> code
-        is Result.Error -> renderWriteFailed(written.error, json, output)
+        is Result.Error -> renderWriteFailed(result.error, json, output)
     }
 }
 
@@ -118,6 +147,7 @@ private inline fun Cli.runCore(
 private inline fun Invocation.render(
     style: HelpStyle,
     terminal: Terminal,
+    caller: Caller,
     execute: (Invocation.Execute, Terminal) -> Int,
 ): Int = when (this) {
     is Invocation.ShowHelp -> {
@@ -166,7 +196,7 @@ private inline fun Invocation.render(
         // No candidates prints nothing (not a blank line), matching a leaf action that returns "".
         // Each candidate renders as one line, `value` or `value\tdescription`, and the per-shell scripts
         // decode the tab; a value that would break that format is dropped (Candidate.forShell()).
-        val text = cli.completeCandidates(words, cursor).mapNotNull { it.toCompletionLine() }.joinToString("\n")
+        val text = cli.completeCandidates(words, cursor, caller).mapNotNull { it.toCompletionLine() }.joinToString("\n")
         if (text.isNotEmpty()) terminal.out(text + "\n")
         0
     }
@@ -174,31 +204,48 @@ private inline fun Invocation.render(
     is Invocation.Execute -> execute(this, terminal)
 }
 
-/** Turn a finished action outcome into output on [terminal] and an exit code. Shared by both paths. */
-private fun Invocation.Execute.renderOutcome(outcome: Result<Rendered, ActionError>, terminal: Terminal): Int =
-    outcome.fold(
-        onError = { renderActionError(it, globals.json, terminal) },
-        onSuccess = { rendered ->
-            val ending = if (rendered.endsLine) "\n" else ""
-            if (rendered.text.isNotEmpty()) terminal.out(plain(rendered.text, ending))
-            // Clamped at the render boundary like a failure's code, but from 0 rather than 1: a success may
-            // report any code, while [renderError] keeps a failure from ever claiming 0.
-            val exit = rendered.exit ?: return@fold 0
-            val code = exit.code.coerceIn(0, 255)
-            if (code == 0) return@fold 0
-            val written = terminal.writeResult()
-            if (written !is Result.Error) return@fold code
-            // An answering exit is no failure, so a lost write overrides it as runCore makes it override 0.
-            renderWriteFailed(written.error, globals.json, terminal, failure = code.takeUnless { exit.success })
-        },
-    )
+/**
+ * Turn a finished action outcome into output on [terminal] and an exit code. Shared by both paths, which differ only
+ * in how [written] asks whether the writes landed; `inline` and a local `when` so that ask may suspend, as in
+ * [runCore].
+ */
+private inline fun Invocation.Execute.renderOutcome(
+    outcome: Result<Rendered, ActionError>,
+    terminal: Terminal,
+    written: (Terminal) -> EmptyResult<WriteError>,
+): Int {
+    val rendered = when (outcome) {
+        is Result.Error -> return renderActionError(outcome.error, globals.json, terminal)
+        is Result.Success -> outcome.value
+    }
+    val ending = if (rendered.endsLine) "\n" else ""
+    if (rendered.text.isNotEmpty()) terminal.out(plain(rendered.text, ending))
+    // Clamped at the render boundary like a failure's code, but from 0 rather than 1: a success may
+    // report any code, while [renderError] keeps a failure from ever claiming 0.
+    val exit = rendered.exit ?: return 0
+    val code = exit.code.coerceIn(0, 255)
+    if (code == 0) return 0
+    val result = written(terminal)
+    if (result !is Result.Error) return code
+    // An answering exit is no failure, so a lost write overrides it as runCore makes it override 0.
+    return renderWriteFailed(result.error, globals.json, terminal, failure = code.takeUnless { exit.success })
+}
 
-private fun Invocation.Execute.executeAndRender(terminal: Terminal): Int =
-    renderOutcome(completeWithoutSuspending { action.renderOutput(scope.actionScope(terminal), globals.json) }, terminal)
+private fun Invocation.Execute.executeAndRender(
+    terminal: Terminal,
+    caller: Caller,
+): Int = renderOutcome(
+    completeWithoutSuspending { action.renderOutput(scope.actionScope(terminal, caller), globals.json) },
+    terminal,
+) { it.writeResult() }
 
-/** [executeAndRender] for the suspending path, where the action is awaited rather than bridged. */
-private suspend fun Invocation.Execute.executeAndRenderSuspending(terminal: Terminal): Int =
-    renderOutcome(action.renderOutput(scope.actionScope(terminal), globals.json), terminal)
+/** [executeAndRender] for the suspending path, where the action and the write result are awaited. */
+private suspend fun Invocation.Execute.executeAndRenderSuspending(
+    terminal: Terminal,
+    caller: Caller,
+): Int = renderOutcome(action.renderOutput(scope.actionScope(terminal, caller), globals.json), terminal) {
+    it.awaitWriteResult()
+}
 
 /** Write [text] as a line to stdout, coloured when it is styled and stdout takes colour; the exit code is 0. */
 private fun Terminal.outputLine(text: CharSequence): Int {
@@ -218,15 +265,19 @@ private fun Terminal.outputLine(text: CharSequence): Int {
  * resolved, so a mixed tree still drives a synchronous command through `parse` + `runAction`.
  *
  * @param terminal what the action's [ActionScope.terminal] writes to, used as given.
+ * @param caller what the action reads as [ActionScope.caller]; this process by default.
  */
-public fun Invocation.Execute.runAction(terminal: Terminal): Result<Any?, CliError> {
+public fun Invocation.Execute.runAction(
+    terminal: Terminal,
+    caller: Caller = Caller.process(),
+): Result<Any?, CliError> {
     // The resolved action, not the tree: on a mixed tree a sync command is drivable even though some
     // sibling suspends, and the root's aggregate cannot tell the difference.
     require(!action.suspending) {
         "command '${command.name}' uses actionSuspending { }, which runAction(terminal) cannot drive; " +
             "call runActionSuspending(terminal) from a coroutine instead"
     }
-    return completeWithoutSuspending { action.evaluate(scope.actionScope(terminal)) }
+    return completeWithoutSuspending { action.evaluate(scope.actionScope(terminal, caller)) }
 }
 
 /**
@@ -234,16 +285,26 @@ public fun Invocation.Execute.runAction(terminal: Terminal): Result<Any?, CliErr
  * [terminal]; the value arrives as `Any?`, so cast it to what your action returns.
  *
  * @param terminal what the action's [ActionScope.terminal] writes to, used as given.
+ * @param caller what the action reads as [ActionScope.caller]; this process by default.
  */
-public suspend fun Invocation.Execute.runActionSuspending(terminal: Terminal): Result<Any?, CliError> =
-    action.evaluate(scope.actionScope(terminal))
+public suspend fun Invocation.Execute.runActionSuspending(
+    terminal: Terminal,
+    caller: Caller = Caller.process(),
+): Result<Any?, CliError> = action.evaluate(scope.actionScope(terminal, caller))
 
 /** [run] over the `Array` that Kotlin's own `main` hands you. */
-public fun Cli.run(argv: Array<String>, terminal: Terminal): Int = run(argv.toList(), terminal)
+public fun Cli.run(
+    argv: Array<String>,
+    terminal: Terminal,
+    caller: Caller = Caller.process(),
+): Int = run(argv.toList(), terminal, caller)
 
 /** [runSuspending] over the `Array` that Kotlin's own `main` hands you. */
-public suspend fun Cli.runSuspending(argv: Array<String>, terminal: Terminal): Int =
-    runSuspending(argv.toList(), terminal)
+public suspend fun Cli.runSuspending(
+    argv: Array<String>,
+    terminal: Terminal,
+    caller: Caller = Caller.process(),
+): Int = runSuspending(argv.toList(), terminal, caller)
 
 /**
  * Runs the CLI and exits the process with its code, the one-line way to wire up a `main`:

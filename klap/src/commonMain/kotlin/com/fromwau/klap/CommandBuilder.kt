@@ -131,6 +131,11 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
     public abstract fun <R> command(name: String, block: CommandBuilder.() -> R): R
 
     /**
+     * Mounts [spec] as a subcommand reached by its name, the same as `command(spec.name) { with(spec) { build() } }`.
+     */
+    public fun command(spec: CommandSpec): Unit = command(spec.name) { with(spec) { build() } }
+
+    /**
      * Declares a subcommand reached by a flag spelling rather than a word, as pacman's operations are: `-S` or
      * `--sync`, never `sync`. The spelling may stand anywhere among the options, before the command's own
      * (`pacman -i -Q pkg`) or inside a cluster with them (`pacman -iQ pkg`), and two commands of one parent on a

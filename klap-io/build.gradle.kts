@@ -17,6 +17,7 @@ kotlin {
             implementation(libs.kern.result.test)
             implementation(libs.kern.terminal.test)
             implementation(libs.kern.fs.test)
+            implementation(libs.kern.dirs)
         }
     }
 }

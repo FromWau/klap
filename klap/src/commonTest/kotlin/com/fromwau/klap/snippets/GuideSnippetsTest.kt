@@ -13,6 +13,7 @@ import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Cli
 import com.fromwau.klap.CliError
 import com.fromwau.klap.CommandBuilder
+import com.fromwau.klap.CommandSpec
 import com.fromwau.klap.ConversionError
 import com.fromwau.klap.Invocation
 import com.fromwau.klap.Opt
@@ -447,5 +448,41 @@ class ColorOutputSnippetTest {
         assertEquals("$esc[1;33mwarning: no targets matched$esc[0m\n", output("build"))
         assertEquals("warning: no targets matched\n", output("--color=never", "build"))
         assertEquals("\"warning: no targets matched\"\n", output("--json", "build"))
+    }
+}
+
+// --- "Commands defined elsewhere": a CommandSpec mounted at the root and inside another spec ---
+
+private object Greet : CommandSpec {
+    override val name = "greet"
+
+    override fun CommandBuilder.build() {
+        help = "say hello"
+        aliases = listOf("hi")
+        val who = argument("name")
+        action { Ok("hello, ${who()}") }
+    }
+}
+
+private class Plugins(private val specs: List<CommandSpec>) : CommandSpec {
+    override val name = "plugins"
+
+    override fun CommandBuilder.build() {
+        help = "commands the installed plugins add"
+        specs.forEach { command(it) }
+    }
+}
+
+class CommandSpecSnippetTest {
+
+    private val app = cli("app") {
+        command(Greet)
+        command(Plugins(listOf(Greet)))
+    }
+
+    @Test
+    fun `the guides specs mount at the root and under another spec`() {
+        assertEquals("hello, Ada", app.bindText("greet", "Ada"))
+        assertEquals("hello, Ada", app.bindText("plugins", "hi", "Ada"))
     }
 }

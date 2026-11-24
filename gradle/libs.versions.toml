@@ -1,5 +1,5 @@
 [versions]
-klapVersion = "0.6.3"
+klapVersion = "0.7.0"
 
 # The JDK Gradle compiles with, and the one a consumer needs: the JVM artifacts are Java 17 bytecode, and
 # -Xjdk-release refuses any JDK API newer than that.
@@ -19,6 +19,7 @@ dotenv-gradlePlugin = { module = "com.fromwau:dotenv-gradle", version.ref = "dot
 kern-result = { module = "com.fromwau.kern:result", version.ref = "kern" }
 kern-terminal = { module = "com.fromwau.kern:terminal", version.ref = "kern" }
 kern-fs = { module = "com.fromwau.kern:fs", version.ref = "kern" }
+kern-dirs = { module = "com.fromwau.kern:dirs", version.ref = "kern" }
 kern-fs-test = { module = "com.fromwau.kern:fs-test", version.ref = "kern" }
 kern-fuzzy = { module = "com.fromwau.kern:fuzzy", version.ref = "kern" }
 kern-result-test = { module = "com.fromwau.kern:result-test", version.ref = "kern" }

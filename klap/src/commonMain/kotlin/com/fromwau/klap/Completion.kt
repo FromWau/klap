@@ -61,6 +61,11 @@ public class CompletionScope internal constructor(
     // Lazy: a Tab press whose slot has no provider must never run a user converter or validator. NONE, not
     // the default SYNCHRONIZED — one completion resolves on one thread, so the lock would only cost.
     private val resolved: Lazy<BoundLine>,
+    /**
+     * Who the Tab press is for: the folder of the shell it was pressed in and its environment, the same an action
+     * reads as `caller`. A provider that reads files reads them from here.
+     */
+    public val caller: Caller,
 ) : ValueScope() {
 
     override val values: Map<HolderSpec, Any?> get() = resolved.value.values

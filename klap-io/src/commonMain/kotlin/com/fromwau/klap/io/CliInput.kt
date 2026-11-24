@@ -8,7 +8,9 @@ import com.fromwau.kern.result.ResultError
 import com.fromwau.kern.result.mapError
 import com.fromwau.kern.terminal.ReadError
 import com.fromwau.kern.terminal.Terminal
+import com.fromwau.klap.ActionScope
 import com.fromwau.klap.Arg
+import com.fromwau.klap.Caller
 import com.fromwau.klap.ConverterScope
 import com.fromwau.klap.Opt
 
@@ -19,7 +21,7 @@ import com.fromwau.klap.Opt
  * ```kotlin
  * val file = argument("file").input().optional()
  * action {
- *     (file() ?: CliInput.StandardInput).readBytes(terminal)
+ *     (file() ?: CliInput.StandardInput).readBytes()
  *         .map { it.decodeToString() }
  *         .mapError { error ->
  *             val name = (error as? InputError.File)?.path?.text?.shellQuoted() ?: "standard input"
@@ -53,16 +55,45 @@ public sealed interface InputError : ResultError {
  * character device is read to its end too, as `<(...)` and `/dev/stdin` name one; a directory, a socket or a block
  * device is refused.
  *
- * @param terminal the action's terminal, whose standard input `-` reads; a `RecordingTerminal` feeds a test its input.
+ * Inside an action, call `readBytes(maxBytes)` instead, which takes the run's terminal and caller for you; this form is
+ * for reading an input outside one.
+ *
+ * @param terminal whose standard input `-` reads; a `RecordingTerminal` feeds a test its input.
+ * @param caller whose working directory a relative path is read from; `Caller.process()` for this process's.
  * @param maxBytes the most bytes read; past it the read is refused with `TooLarge`. Null reads it all.
  */
 public fun CliInput.readBytes(
     terminal: Terminal,
+    caller: Caller,
     maxBytes: Long? = null,
 ): Result<ByteArray, InputError> = when (this) {
     CliInput.StandardInput -> terminal.readIn(maxBytes).mapError { InputError.StandardInput(it) }
-    is CliInput.File -> path.path.readBytes(maxBytes, streams = true).mapError { InputError.File(path, it) }
+    is CliInput.File -> path.resolvedFor(caller)
+        .readBytes(maxBytes, streams = true)
+        .mapError { InputError.File(path, it) }
 }
+
+/**
+ * Every byte this input holds, read inside your action: standard input from the run's terminal, and a relative file
+ * from the folder of the caller the run is for.
+ *
+ * ```kotlin
+ * val file = argument("file").input()
+ * action {
+ *     file().readBytes()
+ *         .map { it.decodeToString() }
+ *         .mapError { error ->
+ *             val name = (error as? InputError.File)?.path?.text ?: "standard input"
+ *             CliError.Domain(error, "cannot read $name")
+ *         }
+ * }
+ * ```
+ *
+ * @param maxBytes the most bytes read; past it the read is refused with `TooLarge`. Null reads it all.
+ */
+context(action: ActionScope)
+public fun CliInput.readBytes(maxBytes: Long? = null): Result<ByteArray, InputError> =
+    readBytes(action.terminal, action.caller, maxBytes)
 
 /**
  * Reads this operand as a [CliInput]: `-` is [CliInput.StandardInput] and any other word a [CliInput.File], kept as

@@ -21,11 +21,11 @@ ships, so if you are building against a release, read this file at that release'
 | [Suspending actions](#suspending-actions)                  | `actionSuspending`, `runSuspending`, the caller-owned scope, no suspending `main` |
 | [Structured `--json`](#structured---json)                  | one `Ok(value)`, two renderings, actions that print as they go                    |
 | [Color output](#color-output)                              | styled text, `NO_COLOR`, `--color`                                                |
-| [Command groups and nesting](#command-groups-and-nesting)  | subcommand trees and help sections                                                |
+| [Command groups and nesting](#command-groups-and-nesting)  | subcommand trees, help sections, commands defined elsewhere                       |
 | [Help output](#help-output)                                | layout, wrapping, examples, epilogue                                              |
 | [Shell completion](#shell-completion)                      | bash/zsh/fish/powershell, value-aware providers                                   |
 | [Generated docs](#generated-docs)                          | markdown and man pages                                                            |
-| [Escape hatch](#escape-hatch)                              | driving the parser yourself, and testing your CLI                                 |
+| [Escape hatch](#escape-hatch)                              | driving the parser yourself, who a run is for, and testing your CLI               |
 | [GNU conformance](#gnu-conformance)                        | how klap reads a line, rule by rule, as getopt_long does                          |
 ## Quick start
 
@@ -364,7 +364,7 @@ val files   = argument("files").file().multiple(min = 1)                       /
 | `.instant()`                   | argument, option                | `kotlin.time.Instant` through `Instant.parse`: ISO 8601 with seconds and an offset (`2026-01-31T12:00:00Z`, `+02:00`, `+02`, a fraction, a lowercase `t` or `z`). No seconds, no offset, or a space for the `T` is refused                                                                                                                                      |
 | `.uuid()`                      | argument, option                | `kotlin.uuid.Uuid` through `Uuid.parse`: 32 hex digits in either case, dashed or plain. Braces and anything else are refused; the value prints dashed in lower case                                                                                                                                                                                             |
 | `.path()`                      | argument, option                | `CliPath`, from `klap-io`: the word as typed, its trailing slash kept, plus the kotlinx-io `Path`. Completes as a file, as `.file()` does, and refuses nothing (see [Converters from other modules](#converters-from-other-modules))                                                                                                                            |
-| `.input()`                     | argument, option                | `CliInput`, from `klap-io`: `-` is `StandardInput`, any other word a `File` holding its `CliPath`; `readBytes(terminal)` reads either. Completes as a file, and refuses nothing (see [Converters from other modules](#converters-from-other-modules))                                                                                                           |
+| `.input()`                     | argument, option                | `CliInput`, from `klap-io`: `-` is `StandardInput`, any other word a `File` holding its `CliPath`; `readBytes()` in an action reads either. Completes as a file, and refuses nothing (see [Converters from other modules](#converters-from-other-modules))                                                                                                      |
 | `.localDate()`                 | argument, option                | `kotlinx.datetime.LocalDate`, from `klap-datetime`, through `LocalDate.parse`: `2026-01-31`. Another form, or a day the calendar lacks, is refused                                                                                                                                                                                                              |
 | `.localDateTime()`             | argument, option                | `kotlinx.datetime.LocalDateTime`, from `klap-datetime`, through `LocalDateTime.parse`: `2026-01-31T12:00`, seconds and a fraction optional. A date alone, an offset, or a space for the `T` is refused                                                                                                                                                          |
 | `.timeZone()`                  | argument, option                | `kotlinx.datetime.TimeZone`, from `klap-datetime`, through `TimeZone.of`: `Europe/Vienna`, `UTC`, `+02:00`. An id the time zone database lacks is refused                                                                                                                                                                                                       |
@@ -575,12 +575,13 @@ Two `CliPath`s are equal when their text is, so `a/` and `a` differ, and one pri
 
 `.input()` reads a word as many tools do: `-` is standard input, as in `cat -` or `head -`, and anything else is a
 file. It binds a `CliInput`, and `readBytes` reads either one: standard input through the action's `terminal`, and a
-file through kern-fs, which also reads a FIFO such as `<(...)` to its end:
+file through kern-fs, which also reads a FIFO such as `<(...)` to its end. Inside an action it takes the run's
+terminal, and reads a relative file from the folder of the run's `caller` (see [Who a run is for](#who-a-run-is-for)):
 
 ```kotlin
 val file = argument("file").input().optional()
 action {
-    (file() ?: CliInput.StandardInput).readBytes(terminal)
+    (file() ?: CliInput.StandardInput).readBytes()
         .map { it.decodeToString() }
         .mapError { error ->
             val name = (error as? InputError.File)?.path?.text?.shellQuoted() ?: "standard input"
@@ -592,7 +593,8 @@ action {
 - Whether a missing operand means standard input is yours to say, as `?: CliInput.StandardInput` does above.
 - A failure is an `InputError`: `StandardInput` with kern-terminal's `ReadError`, or `File` with the path as typed and
   kern-fs's `FileError`.
-- `readBytes(terminal, maxBytes)` refuses either input past `maxBytes` bytes, with the `TooLarge` of its error type.
+- `readBytes(maxBytes)` refuses either input past `maxBytes` bytes, with the `TooLarge` of its error type.
+- Outside an action, `readBytes(terminal, caller, maxBytes)` names both itself; `Caller.process()` is this process.
 - In a test, `RecordingTerminal(input = …)` from `kern:terminal-test` is what `-` reads.
 
 The datetime converters refuse a value with a `ConversionError.Domain` whose `error` is a `DateTimeError`
@@ -1869,6 +1871,10 @@ the two cannot be told apart, so a lost write there exits 141 without a message.
 an exit from `exit` not marked `success`, and a refused write then still prints its message, under `--json` with
 that exit's code as the envelope's `code`.
 
+`run` asks the terminal at once whether its writes landed. `runSuspending` waits for the answer through the
+terminal's `awaitWriteResult()`, so a terminal of your own whose failures arrive after the write returns, such as one
+writing to a client over a socket, reports a reader that went away as 141 too.
+
 ## Color output
 
 klap has one color story: its own help and anything your action colors are kern `Styled` text, and klap
@@ -2021,6 +2027,44 @@ command("list") {
 `fleet ls` now resolves exactly like `fleet list`: alias lookup is part of subcommand routing itself,
 not a separate mechanism, and a near-miss typo close to an alias is suggested the same way a near-miss
 of the real name is.
+
+### Commands defined elsewhere
+
+A `CommandSpec` is a command defined apart from the tree it joins: a `name` and a `build()` holding what a
+`command(name) { }` block would. `command(spec)` mounts it. A library uses it to hand your CLI a command, or a
+whole subtree, to mount wherever you choose:
+
+```kotlin
+object Greet : CommandSpec {
+    override val name = "greet"
+
+    override fun CommandBuilder.build() {
+        help = "say hello"
+        aliases = listOf("hi")
+        val who = argument("name")
+        action { Ok("hello, ${who()}") }
+    }
+}
+
+class Plugins(private val specs: List<CommandSpec>) : CommandSpec {
+    override val name = "plugins"
+
+    override fun CommandBuilder.build() {
+        help = "commands the installed plugins add"
+        specs.forEach { command(it) }
+    }
+}
+
+cli("app") {
+    command(Greet)                     // app greet Ada
+    command(Plugins(listOf(Greet)))    // app plugins greet Ada
+}
+```
+
+`command(spec)` is `command(spec.name) { with(spec) { build() } }`, so the mounted command parses, helps and
+completes exactly as that block would. `build()` runs once per mount, so a spec mounted under two parents gives each
+its own inputs. Its `help` and `aliases` are set inside `build()`, like any other setting. A command spelled as a flag
+has no `CommandSpec` form; declare it with `command(short, long) { }`.
 
 ### Commands spelled as flags
 
@@ -2422,6 +2466,37 @@ the other way, every collection klap hands back is a `List`: `Command.aliases`, 
 One caveat on the widened parameter: argv is a *sequence*, and the order is the input. A `Collection` with
 no meaningful order will parse in whatever order it iterates, which is the caller's error rather than
 something klap can detect.
+
+### Who a run is for
+
+Every action and every `.completeWith { }` provider reads `caller`: the working directory the line was typed in and
+the environment it was typed with. Resolve a path the user typed against `caller.workingDirectory`, as klap-io's
+`CliPath.resolvedFor(caller)` does (an absolute one stays as it is), and hand `caller.environment` to whatever
+resolves directories from it, such as kern's `dirs`, instead of asking the process:
+
+```kotlin
+command("config") {
+    val file = argument("file").path()
+    action {
+        val dirs = BaseDirs.fromXdg(caller.environment, accountHome = null)
+            .getOrElse { return@action Err(CliError.Failure("no home directory")) }
+        Ok("${file().resolvedFor(caller)} under ${dirs.configHome}")
+    }
+}
+```
+
+`run`, `runSuspending` and `main` take it from this process, so a program run from a shell reads the same either
+way. A program that runs lines for another one passes that one's, as a daemon does for the client that forwarded
+the line:
+
+```kotlin
+val code = app.runSuspending(argv, socketTerminal, Caller(request.workingDirectory, request.environment))
+```
+
+`readBytes()` from `klap-io` reads a relative file from the run's `caller` by itself. Tab's own file completion, from
+`.file()` or `completeFiles()`, needs nothing: the shell lists the files, in its own working directory. What reads the
+process instead, such as `java.io.File("notes.txt")` or `System.getenv("HOME")`, reads the process that runs the tree,
+which for a daemon is the daemon, not the client.
 
 ### Testing your CLI
 

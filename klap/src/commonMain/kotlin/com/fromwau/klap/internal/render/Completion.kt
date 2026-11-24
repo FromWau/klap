@@ -2,6 +2,7 @@ package com.fromwau.klap.internal.render
 
 import com.fromwau.klap.COLOR_MODE_NAMES
 import com.fromwau.klap.COMPLETE_FILES
+import com.fromwau.klap.Caller
 import com.fromwau.klap.Cli
 import com.fromwau.klap.Command
 import com.fromwau.klap.CompletionScope
@@ -97,8 +98,12 @@ internal fun List<Candidate>.isNativeFileRequest(): Boolean =
  * Which slot is under the cursor is read from the words up to it, counting how many operands follow it. What a
  * provider reads of the inputs is bound from the whole line, so an input typed further along counts.
  */
-internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.lastIndex): List<Candidate> {
-    val tab = tabLineAt(words, cursor) ?: return emptyList()
+internal fun Cli.completeCandidates(
+    words: List<String>,
+    cursor: Int = words.lastIndex,
+    caller: Caller = Caller.process(),
+): List<Candidate> {
+    val tab = tabLineAt(words, cursor, caller) ?: return emptyList()
     return tab.colorCandidates()
         ?: tab.optionValueCandidates()
         ?: tab.attachedValueCandidates()
@@ -111,7 +116,11 @@ internal fun Cli.completeCandidates(words: List<String>, cursor: Int = words.las
  * The line as Tab reads it with the cursor at [cursor], or null when the flag-spelled commands on it make it a
  * line the parse refuses.
  */
-private fun Cli.tabLineAt(words: List<String>, cursor: Int): TabLine? {
+private fun Cli.tabLineAt(
+    words: List<String>,
+    cursor: Int,
+    caller: Caller,
+): TabLine? {
     // Hold the cursor's own (maybe half-typed) word out of the strips below: stripping it would discard the
     // very context being completed.
     val current = words.getOrNull(cursor).orEmpty()
@@ -129,7 +138,7 @@ private fun Cli.tabLineAt(words: List<String>, cursor: Int): TabLine? {
     val head = pending?.let { rawHead + it.flagSpellings.first() } ?: rawHead
     // The word under the cursor as the command reads it: its own letter only routes, so it is left out.
     val analysed = inCurrent.singleOrNull()?.let { current.withoutLettersOf(it) } ?: current
-    return TabLine(this, words, words.take(cursor + 1), current, rawHead, after, head, analysed)
+    return TabLine(this, words, words.take(cursor + 1), current, rawHead, after, head, analysed, caller)
 }
 
 /**
@@ -151,6 +160,8 @@ private class TabLine(
     private val head: List<String>,
     /** [current] without the letters of a flag-spelled command it names. */
     private val analysed: String,
+    /** Who the Tab press is for, as its providers read it. */
+    private val caller: Caller,
 ) {
     private val line = cli.walkLine(head)
     private val scan = line.scan
@@ -270,7 +281,7 @@ private class TabLine(
             ?.takeUnless { it.hidden || it in cli.refusedBy(cmd, rawHead + after) }
     }
     private val positionalCandidates by lazy(LazyThreadSafetyMode.NONE) {
-        positional?.let { it.candidatesFor(current, typed, valuesFor(it)) }.orEmpty()
+        positional?.let { it.candidatesFor(current, typed, valuesFor(it), caller) }.orEmpty()
     }
 
     /** `--color`'s modes when the cursor is in its attached value. */
@@ -295,7 +306,7 @@ private class TabLine(
         if (valueOption != null) {
             // The line without this occurrence decides: one it refuses takes no value at all.
             if (valueOption in cli.refusedBy(cmd, rawHead.dropLast(1) + after)) return emptyList()
-            return valueOption.candidatesFor(current, typed, valuesFor(valueOption))
+            return valueOption.candidatesFor(current, typed, valuesFor(valueOption), caller)
         }
         // getopt refuses the line at an ambiguous abbreviation, so the word after it is neither a value nor an operand.
         val ambiguous = prev != null && !optionsEnded && cmd.resolvedLong(prev, globalAcc) is NameMatch.Ambiguous
@@ -311,7 +322,7 @@ private class TabLine(
             optionsEnded || !readsAsName(analysed)
         } ?: return null
         if (attachedOption in cli.refusedBy(cmd, rawHead + after)) return emptyList()
-        val values = attachedOption.candidatesFor(partial, typed, valuesFor(attachedOption, partial))
+        val values = attachedOption.candidatesFor(partial, typed, valuesFor(attachedOption, partial), caller)
         // A bare optional-value short with nothing to glue on is completed by its name below.
         val bareShort = partial.isEmpty() && !current.startsWith("--")
         if (bareShort && !values.isGluable()) return null
@@ -323,7 +334,7 @@ private class TabLine(
         if (optionsEnded || operandEnded) return null
         return cmd.dashLedOperandFor(analysed, globalAcc, firstWord) { positional }
             ?.takeUnless { it.hidden || it in cli.refusedBy(cmd, rawHead + after) }
-            ?.let { it.candidatesFor(current, typed, valuesFor(it)) }
+            ?.let { it.candidatesFor(current, typed, valuesFor(it), caller) }
     }
 
     /**
@@ -374,7 +385,7 @@ private class TabLine(
     ): List<Candidate> = spec.shorts.flatMap { short ->
         val glued = (spec as? OptionSpec)
             ?.takeIf { it.valueAttachedOnly }
-            ?.let { it.candidatesFor("", typed, valuesFor(it, "")) }
+            ?.let { it.candidatesFor("", typed, valuesFor(it, ""), caller) }
             ?.takeIf { it.isGluable() }
         glued?.asWholeWord("-$short", spec.help) ?: listOf(Candidate("-$short", help))
     }
@@ -767,9 +778,10 @@ private fun ValueSpec.candidatesFor(
     current: String,
     words: List<String>,
     values: Lazy<BoundLine>,
+    caller: Caller,
 ): List<Candidate> = when {
     isPath -> listOf(Candidate(COMPLETE_FILES))
-    complete != null -> runCatching { CompletionScope(current, words, values).apply(complete!!) }
+    complete != null -> runCatching { CompletionScope(current, words, values, caller).apply(complete!!) }
         .getOrNull()
         ?.let { scope ->
             // The directive starts with a space so it can never collide with a real candidate, which also

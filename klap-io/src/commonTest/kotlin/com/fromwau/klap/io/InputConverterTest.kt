@@ -13,6 +13,7 @@ import com.fromwau.kern.result.mapError
 import com.fromwau.kern.terminal.ReadError
 import com.fromwau.kern.terminal.shellQuoted
 import com.fromwau.kern.terminal.test.RecordingTerminal
+import com.fromwau.klap.Caller
 import com.fromwau.klap.CliError
 import com.fromwau.klap.cliOf
 import com.fromwau.klap.projection
@@ -69,7 +70,7 @@ class InputConverterTest {
         val bytes = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte(), 0x61, 0x0D, 0x0A)
         val terminal = RecordingTerminal(input = bytes)
 
-        assertContentEquals(bytes, CliInput.StandardInput.readBytes(terminal).assertSuccess())
+        assertContentEquals(bytes, CliInput.StandardInput.readBytes(terminal, Caller.process()).assertSuccess())
     }
 
     @Test
@@ -77,7 +78,7 @@ class InputConverterTest {
         val path = scratch / "a.txt"
         path.writeText("a\r\nb").assertSuccess()
 
-        val read = CliInput.File(CliPath("$path")).readBytes(RecordingTerminal()).assertSuccess()
+        val read = CliInput.File(CliPath("$path")).readBytes(RecordingTerminal(), Caller.process()).assertSuccess()
         assertContentEquals("a\r\nb".encodeToByteArray(), read)
     }
 
@@ -85,7 +86,9 @@ class InputConverterTest {
     fun `a missing file is a file error naming the path as typed`() {
         val missing = CliPath("${scratch / "missing.txt"}")
 
-        val error = CliInput.File(missing).readBytes(RecordingTerminal()).assertError<InputError.File>()
+        val error = CliInput.File(missing)
+            .readBytes(RecordingTerminal(), Caller.process())
+            .assertError<InputError.File>()
         assertEquals(missing, error.path)
         assertEquals(FileError.NotFound::class, error.error::class)
     }
@@ -95,7 +98,9 @@ class InputConverterTest {
         val terminal = RecordingTerminal()
         terminal.failWith(ReadError.IsADirectory)
 
-        val error = CliInput.StandardInput.readBytes(terminal).assertError<InputError.StandardInput>()
+        val error = CliInput.StandardInput
+            .readBytes(terminal, Caller.process())
+            .assertError<InputError.StandardInput>()
         assertEquals(ReadError.IsADirectory, error.error)
     }
 
@@ -105,9 +110,13 @@ class InputConverterTest {
         path.writeText("12345").assertSuccess()
         val terminal = RecordingTerminal(input = "12345".encodeToByteArray())
 
-        val fromInput = CliInput.StandardInput.readBytes(terminal, maxBytes = 4).assertError<InputError.StandardInput>()
+        val fromInput = CliInput.StandardInput
+            .readBytes(terminal, Caller.process(), maxBytes = 4)
+            .assertError<InputError.StandardInput>()
         assertEquals(ReadError.TooLarge(4, 5), fromInput.error)
-        val fromFile = CliInput.File(CliPath("$path")).readBytes(terminal, maxBytes = 4).assertError<InputError.File>()
+        val fromFile = CliInput.File(CliPath("$path"))
+            .readBytes(terminal, Caller.process(), maxBytes = 4)
+            .assertError<InputError.File>()
         assertEquals(FileError.TooLarge::class, fromFile.error::class)
     }
 
@@ -116,7 +125,7 @@ class InputConverterTest {
         val cat = cliOf("cat") {
             val file = argument("file").input().optional()
             action {
-                (file() ?: CliInput.StandardInput).readBytes(terminal)
+                (file() ?: CliInput.StandardInput).readBytes()
                     .map { it.decodeToString() }
                     .mapError { error ->
                         val name = (error as? InputError.File)?.path?.text?.shellQuoted() ?: "standard input"
@@ -136,7 +145,7 @@ class InputConverterTest {
         val cat = cliOf("cat") {
             val file = argument("file").input().optional()
             action {
-                (file() ?: CliInput.StandardInput).readBytes(terminal)
+                (file() ?: CliInput.StandardInput).readBytes()
                     .map { it.decodeToString() }
                     .mapError { error ->
                         val name = (error as? InputError.File)?.path?.text?.shellQuoted() ?: "standard input"
