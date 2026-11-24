@@ -5,11 +5,11 @@ import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.Result
 import com.fromwau.kern.result.ResultError
 import com.fromwau.kern.result.fold
+import com.fromwau.kern.result.getOrElse
 import com.fromwau.kern.terminal.Styled
 import com.fromwau.klap.ActionScope
 import com.fromwau.klap.CliError
 import com.fromwau.klap.Exit
-import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.serializer
@@ -18,12 +18,10 @@ import kotlinx.serialization.json.JsonNull
 
 private val klapJson = Json { encodeDefaults = true }
 
-/** Why [Action.renderOutput] could not produce output: the action's own error, or a klap-side render/encode failure. */
+/** Why [Action.renderOutput] could not produce output: the action's own error, or a value klap cannot encode. */
 internal sealed interface ActionError : ResultError {
     data class Failed(val error: CliError) : ActionError
     data object NotSerializable : ActionError
-    data class EncodeFailed(val message: String?) : ActionError
-    data class RenderFailed(val message: String?) : ActionError
 }
 
 /**
@@ -77,19 +75,10 @@ internal class ActionSpec<T>(
 
     private fun renderSuccess(scope: ActionScope, value: T, json: Boolean): Result<Rendered, ActionError> {
         // Only on this arm: an error carries its own exit code, so consulting the projection there would
-        // give two answers for one run. Guarded like [renderHuman], because it is consumer code running
-        // inside klap's never-throw boundary.
-        val returned = try {
-            exit?.invoke(scope, value)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return Err(ActionError.RenderFailed(e.message))
-        }
-        return when (val text = if (json) renderJson(value) else renderHuman(scope, value)) {
-            is Result.Error -> text
-            is Result.Success -> Ok(Rendered(text.value, returned, endsLine = json || endsLine))
-        }
+        // give two answers for one run.
+        val returned = exit?.invoke(scope, value)
+        val text = if (json) renderJson(value).getOrElse { return Err(it) } else renderHuman(scope, value)
+        return Ok(Rendered(text, returned, endsLine = json || endsLine))
     }
 
     private fun renderJson(value: T): Result<String, ActionError> {
@@ -100,34 +89,20 @@ internal class ActionSpec<T>(
             // A command that returns Unit has no output, under --json as without it.
             Unit -> return Ok("")
         }
-        val resolved = try {
-            serializer()
-        } catch (_: SerializationException) {
-            return Err(ActionError.NotSerializable)
-        }
-
+        // A custom serializer's own SerializationException reads as the same refusal: the two cannot be told apart.
         return try {
-            Ok(klapJson.encodeToString(resolved, value))
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Err(ActionError.EncodeFailed(e.message))
+            Ok(klapJson.encodeToString(serializer(), value))
+        } catch (_: SerializationException) {
+            Err(ActionError.NotSerializable)
         }
     }
 
-    private fun renderHuman(scope: ActionScope, value: T): Result<CharSequence, ActionError> = try {
-        Ok(
-            human?.invoke(scope, value) ?: when (value) {
-                is CharSequence -> value
-                Unit, null -> ""
-                else -> value.toString()
-            },
-        )
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        Err(ActionError.RenderFailed(e.message))
-    }
+    private fun renderHuman(scope: ActionScope, value: T): CharSequence =
+        human?.invoke(scope, value) ?: when (value) {
+            is CharSequence -> value
+            Unit, null -> ""
+            else -> value.toString()
+        }
 
     override suspend fun evaluate(scope: ActionScope): Result<Any?, CliError> = scope.block()
 }

@@ -53,30 +53,7 @@ class ConvertersTest : ConverterScope() {
         val spec = optSpec()
         val opt = Opt<String?>(spec).map { it.toInt().seconds }
         assertEquals(Result.Success(5.seconds), spec.convert("5"))
-        // A thrown parse exception becomes a clean error, not a crash.
-        spec.convert("abc").assertError<ConversionError.Threw>()
         boundTo(spec, 5.seconds) { assertEquals(5.seconds, opt()) }
-    }
-
-    @Test
-    fun `an error thrown by a map refuses the value instead of escaping parse`() {
-        val tree = cli("app") {
-            option(long = "later").map<Int> { throw NotImplementedError("converter not written yet") }
-            action { Ok("") }
-        }
-        val refused = tree.parse(listOf("--later", "z")).assertError<CliError.BadValue>()
-        assertTrue(refused.cause is ConversionError.Threw, "cause ${refused.cause}")
-    }
-
-    @Test
-    fun `an error thrown by a validate refuses the value instead of escaping parse`() {
-        val tree = cli("app") {
-            option(long = "before").validate("never") { _: String -> throw NotImplementedError("first check") }.int()
-            option(long = "after").int().validate("never") { throw NotImplementedError("second check") }
-            action { Ok("") }
-        }
-        assertEquals("first check", tree.parse(listOf("--before", "1")).assertError<CliError.BadValue>().reason)
-        assertEquals("second check", tree.parse(listOf("--after", "1")).assertError<CliError.BadValue>().reason)
     }
 
     @Test
@@ -624,6 +601,47 @@ class ConvertersTest : ConverterScope() {
         assertEquals("n=7", tree.bindText("7"))
         assertEquals("must not be blank", tree.parse(listOf(" ")).assertError<CliError.BadValue>().reason)
         assertEquals(ConversionError.NotAnInteger, tree.parse(listOf("x")).assertError<CliError.BadValue>().cause)
+    }
+
+    @Test
+    fun `a validate after multiple is refused when the CLI is built`() {
+        val refused = assertFailsWith<IllegalArgumentException> {
+            cli("app") {
+                argument("n").int().multiple().validate("must be small") { it.size < 3 }
+                action { Ok("") }
+            }
+        }
+        assertEquals("argument 'n': put .validate() before .multiple(), not after it", refused.message)
+    }
+
+    @Test
+    fun `a validate through an option handle kept from before multiple is refused when the CLI is built`() {
+        val refused = assertFailsWith<IllegalArgumentException> {
+            cli("app") {
+                val handle = option(long = "tag")
+                handle.multiple()
+                handle.validate("must not be blank") { it.isNotBlank() }
+                action { Ok("") }
+            }
+        }
+        assertEquals("option '--tag': put .validate() before .multiple(), not after it", refused.message)
+    }
+
+    private fun nullThenBoolean() = cli("app") {
+        val v = option(short = 'v').map { it.ifEmpty { null } }.boolean()
+        argument("rest").completeWith { candidates(listOf("v=${v()}")) }.optional()
+        action { Ok("v=${v()}") }
+    }
+
+    @Test
+    fun `a stage yielding null passes the value on to a later converter as absent`() {
+        assertEquals("v=null", nullThenBoolean().bindText("-v", ""))
+        assertEquals("v=true", nullThenBoolean().bindText("-v", "true"))
+    }
+
+    @Test
+    fun `Tab after a stage yielding null reads the value as absent`() {
+        assertEquals(listOf("v=null"), nullThenBoolean().offered("-v", "", ""))
     }
 
     @Test

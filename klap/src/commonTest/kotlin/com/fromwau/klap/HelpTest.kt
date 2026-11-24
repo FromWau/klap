@@ -20,11 +20,6 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** A value whose toString() throws, to exercise display()'s placeholder fallback (mirrors RunnerTest's ThrowingToString). */
-private object ThrowingDefaultValue {
-    override fun toString(): String = throw RuntimeException("boom")
-}
-
 class HelpTest {
 
     @Test
@@ -768,19 +763,6 @@ class HelpTest {
         }
         val help = cmd.helpText()
         assertTrue("compile the project" in help, help)
-    }
-
-    @Test
-    fun `help renders placeholder when default value toString throws`() {
-        // A positional's .default(v) whose toString() throws must not escape --help rendering: display()
-        // guards it the same way Action.kt's renderHuman guards a throwing result on the action-output
-        // path, falling back to a placeholder instead of letting the exception propagate.
-        val cmd = cli("app") {
-            argument("x").map { ThrowingDefaultValue }.default(ThrowingDefaultValue)
-            action { Ok("") }
-        }
-        val help = cmd.helpText()
-        assertTrue("[x=<unprintable>]" in help, help)
     }
 
     @Test

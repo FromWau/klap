@@ -49,9 +49,9 @@ klap's behaviour and are tested once in klap's tests; a fixture's cells cover wh
 | X10c | `.localDateTime()` (`klap-datetime`) | the list of X81; lowercase `t`; `24:00` |
 | X10d | `.timeZone()` (`klap-datetime`) | the list of X82 |
 | X11 | `.uuid()` (core) | canonical, upper case, without dashes, each as the tool reads it; braces, `urn:uuid:`, outer whitespace, the nil UUID, a misplaced dash (X83) |
-| X12a | `.map { }` to another type | the tool's valid values bind the typed value, the others are refused; a throw becomes a refusal (`ConversionError.Threw`); `null` is absent; a `CancellationException` propagates (X62); stacked stages (X68) |
+| X12a | `.map { }` to another type | the tool's valid values bind the typed value, the others are refused; a throw propagates out of `parse` uncaught; `null` is absent; a `CancellationException` propagates (X62); stacked stages (X68) |
 | X12b | `.convert { }` to another type | the tool's valid values bind the typed value, the others are refused; `Ok(null)` is absent (X67); the `Domain` cause intact (X66); stacked stages (X68) |
-| X13 | `.validate(message) { }` | a value the predicate refuses is refused; a throwing predicate (X62); not run on null or on a default, run per element and on the bare value, seeing the declared choice spelling (X63); after `.multiple()` on an operand is a refusal, not a crash (`ParsePositionalsTest` "validate after multiple yields bad value instead of crashing") |
+| X13 | `.validate(message) { }` | a value the predicate refuses is refused; a throwing predicate propagates (X62); not run on null or on a default, run per element and on the bare value, seeing the declared choice spelling (X63); after `.multiple()` it is refused when the CLI is built, with a message to put `validate` before `multiple()` |
 
 Where a converter does not exist yet (`todo.md` item 24), its cells are targets.
 
@@ -72,7 +72,7 @@ Where a converter does not exist yet (`todo.md` item 24), its cells are targets.
   the owner's open questions (`Infinity`, `-(...)`, no space between units) belong to the human style alone.
 - X10a to X10d: Their valid and invalid forms barely overlap (a zone is required for one and refused for
   another), so one row cannot list the cells; X78 to X82 are the four rows.
-- X12a, X12b: `.map` refuses by throwing (`ConversionError.Threw`) and treats `null` as absent; `.convert` refuses
+- X12a, X12b: `.map` cannot refuse (a throw propagates) and treats `null` as absent; `.convert` refuses
   with a typed `Domain` cause a `parse` caller can match.
 
 ## Evidence
@@ -340,13 +340,12 @@ marked *needs checking* is one where it is not yet confirmed what klap or the pl
 
 | ID | Converter | Cells |
 |---|---|---|
-| X62 | `.validate()` whose predicate throws | an exception becomes a refusal, never a crash; a `CancellationException` from a predicate or `.map` propagates |
+| X62 | `.validate()` whose predicate throws | the throw propagates out of `parse` unchanged, an `Error` and a `CancellationException` alike, as from a `.map` |
 | X63 | what `.validate()` is handed | never `null` (a stage yielding null skips it), the declared choice spelling, each element of a `.multiple()`, the bare value, never a default |
 | X64 | `.range()` at its edges | each end inclusive, one past each end, for `Int`, `Long`, `Double`, `Duration`; a range ending at `Int.MAX_VALUE` |
 | X65 | `.validate()` on special inputs | on a `numberOption()`, on a global option before and after its subcommand, on an optional value's bare form |
 
-- X62: `convertOne` (`Bind.kt`) catches converter and predicate exceptions and rethrows `CancellationException`,
-  as `applyMap` (`Converters.kt`) does. klap only.
+- X62: `convertOne` (`Bind.kt`) and `applyMap` (`Converters.kt`) catch nothing; `UserThrowsTest` pins it. klap only.
 - X63: `convertOne` (`Bind.kt`) skips validate for null; `applyValidate` chains, first failure wins
   (`Converters.kt`).
   `ParseOptionsTest` "nullable map then validate on bad input skips validate" covers null. klap only.
@@ -361,7 +360,7 @@ marked *needs checking* is one where it is not yet confirmed what klap or the pl
 
 | ID | Converter | Cells |
 |---|---|---|
-| X66 | `.convert { }` error payload | a `ConversionError.Domain` arrives intact on `BadValue.cause`; a `.map { }` throw arrives as `ConversionError.Threw` |
+| X66 | `.convert { }` error payload | a `ConversionError.Domain` arrives intact on `BadValue.cause` |
 | X67 | `.convert { }` returning `Ok(null)` | treated as absent: a default substitutes; on a `.required()` option, what binds |
 | X68 | `.map { }` / `.convert { }` stacked | `.map { }.map { }`, `.convert { }.map { }`, `.map { }.convert { }`, a nullable stage feeding a String stage |
 | X69 | `key=value` values | `k=v`, `k=`, `=v`, `k==v`, `k=v=w`, no `=`, the key's case, a space or tab separator (`Port 22`), an unknown key |

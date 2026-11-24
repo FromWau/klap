@@ -9,6 +9,7 @@ import com.fromwau.klap.CompletionScope
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.ShortOptions
 import com.fromwau.klap.SubcommandMatch
+import com.fromwau.klap.UnresolvedInput
 import com.fromwau.klap.colorSpellings
 import com.fromwau.klap.metaOptionValues
 import com.fromwau.klap.withoutJsonAndColor
@@ -766,11 +767,6 @@ private fun colorModeCandidates(current: String): List<Candidate> =
  * This spec's candidates for the word under the cursor, prefix-filtered by [current] by default (matching
  * on each candidate's [Candidate.value] only, never its description). The raw path sentinel
  * ([COMPLETE_FILES]) is exempt, since the shell expands it natively.
- *
- * A `.completeWith` provider is arbitrary user code run synchronously on every Tab press, and the generated
- * scripts call it without redirecting stderr — so [runCatching] here must catch [Throwable], not just
- * [Exception], and treat a failure as no candidates, the same graceful-degradation contract an aborted
- * [CompletionScope] read already has.
  */
 private fun ValueSpec.candidatesFor(
     current: String,
@@ -779,8 +775,7 @@ private fun ValueSpec.candidatesFor(
     caller: Caller,
 ): List<Candidate> = when {
     isPath -> listOf(Candidate(COMPLETE_FILES))
-    complete != null -> runCatching { CompletionScope(current, words, values, caller).apply(complete!!) }
-        .getOrNull()
+    complete != null -> provided(current, words, values, caller)
         ?.let { scope ->
             // The directive starts with a space so it can never collide with a real candidate, which also
             // means it never matches a non-empty current word; completeFiles() already made the collected
@@ -798,6 +793,18 @@ private fun ValueSpec.candidatesFor(
     // matching klap does not know.
     choices != null -> choices!!.filter { it.startsWith(current, ignoreCase = choiceIgnoreCase) }.map { Candidate(it) }
     else -> emptyList()
+}
+
+/** The scope this spec's provider filled, or null when it gave up on an input the line has not resolved. */
+private fun ValueSpec.provided(
+    current: String,
+    words: List<String>,
+    values: Lazy<BoundLine>,
+    caller: Caller,
+): CompletionScope? = try {
+    CompletionScope(current, words, values, caller).apply(complete!!)
+} catch (_: UnresolvedInput) {
+    null
 }
 
 /**

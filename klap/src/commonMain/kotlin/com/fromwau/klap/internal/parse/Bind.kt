@@ -18,8 +18,6 @@ import com.fromwau.klap.internal.spec.OptionSpec
 import com.fromwau.klap.internal.spec.ValueSpec
 import com.fromwau.klap.internal.spec.constraintToken
 import com.fromwau.klap.internal.spec.token
-import com.fromwau.klap.judge
-import kotlin.coroutines.cancellation.CancellationException
 
 // The bind half: turns a completed Sifted walk into bound values, enforcing arity and cross-input constraints.
 
@@ -396,21 +394,10 @@ internal fun ValueSpec.convertOne(raw: String, inferValues: Boolean): Result<Any
     } else {
         resolveChoice(raw, choices!!).getOrElse { return Result.Error(it) }
     }
-    // A converter chain that compiles but is misused (two type converters stacked, or a nullable map
-    // feeding a later String-typed stage) can throw at parse; the parse-never-throws contract turns anything
-    // a converter throws, an Error included, into a BadValue instead of crashing the process.
-    val converted = try {
-        convert(resolved)
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Throwable) {
-        val threw = ConversionError.Threw(e)
-        return Result.Error(CliError.BadValue(name, raw, threw.message, threw))
-    }
-    val value = converted.getOrElse { cause -> return Result.Error(refusal(raw, cause)) }
+    val value = convert(resolved).getOrElse { cause -> return Result.Error(refusal(raw, cause)) }
     // A converter that succeeds with null is treated as absent (see the bind-site "?: default"
     // substitution), and an absent value is never judged, so a non-null predicate never sees a null.
-    val message = value?.let { checked -> validate?.let { judge(it, checked) } }
+    val message = value?.let { checked -> validate?.invoke(checked) }
     message?.let { return Result.Error(CliError.BadValue(name, raw, it)) }
     return Result.Success(value)
 }
@@ -479,7 +466,7 @@ private fun List<Occurrence>.inArgvOrder(): List<String?> =
  * The lenient counterpart to [com.fromwau.klap.parse]'s bind phase, for tab completion: bind everything the
  * half-typed [sifted] segment and [globals] can resolve for [cmd], and leave the rest unbound.
  *
- * Never fails, and [Sifted.error] is deliberately ignored — a malformed token loses only itself, not the
+ * Never returns an error, and [Sifted.error] is deliberately ignored: a malformed token loses only itself, not the
  * inputs around it. Reading an input this leaves unbound throws from the [com.fromwau.klap.CompletionScope]
  * accessor, which the provider seam turns into "no candidates".
  *

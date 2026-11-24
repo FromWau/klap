@@ -22,26 +22,6 @@ private data class Task(val id: Int, val title: String, val priority: String = "
 /** Deliberately not `@Serializable`, to exercise the lazy-serializer path in [nonSerializableTool]. */
 private class Foo
 
-/** `@Serializable`, but throws mid-encode: reported distinctly, not mislabeled "not @Serializable". */
-@Serializable(with = ExplodingSerializer::class)
-private class Exploding
-
-private object ExplodingSerializer : KSerializer<Exploding> {
-    override val descriptor = PrimitiveSerialDescriptor("Exploding", PrimitiveKind.STRING)
-    override fun serialize(encoder: Encoder, value: Exploding): Unit = throw SerializationException("boom")
-    override fun deserialize(decoder: Decoder): Exploding = throw SerializationException("boom")
-}
-
-/** Throws a non-[SerializationException] mid-encode, to prove the catch handles more than that. */
-@Serializable(with = ExplodingRuntimeSerializer::class)
-private class ExplodingRuntime
-
-private object ExplodingRuntimeSerializer : KSerializer<ExplodingRuntime> {
-    override val descriptor = PrimitiveSerialDescriptor("ExplodingRuntime", PrimitiveKind.STRING)
-    override fun serialize(encoder: Encoder, value: ExplodingRuntime): Unit = throw IllegalStateException("boom")
-    override fun deserialize(decoder: Decoder): ExplodingRuntime = throw IllegalStateException("boom")
-}
-
 private fun geo(): Cli = cli("geo") {
     command("point") {
         action(human = { "point(${it.x}, ${it.y})" }) { Ok(Point(1, 2)) }
@@ -62,7 +42,57 @@ private fun nonSerializableTool(): Cli = cli("nstool") {
     action { Ok(Foo()) }
 }
 
+@Serializable
+private data class Ratio(val value: Double)
+
+@Serializable
+private sealed class Shape
+
+@Serializable
+private data class Circle(val r: Int) : Shape()
+
+@Serializable
+private data class Holder(val shape: Shape, val any: Shape?)
+
+/** A subclass the sealed hierarchy of [Shape] does not list, so its polymorphic encode has no serializer. */
+private class Square : Shape()
+
+@Serializable(with = RefusingSerializer::class)
+private class Refused
+
+private object RefusingSerializer : KSerializer<Refused> {
+    override val descriptor = PrimitiveSerialDescriptor("Refused", PrimitiveKind.STRING)
+    override fun serialize(encoder: Encoder, value: Refused): Unit = throw SerializationException("no")
+    override fun deserialize(decoder: Decoder): Refused = throw SerializationException("no")
+}
+
 class StructuredJsonTest {
+
+    private fun jsonRun(cli: Cli): Pair<Int, String> {
+        val t = RecordingTerminal()
+        return cli.run(arrayOf("--json"), t) to t.err
+    }
+
+    @Test
+    fun `a NaN json cannot encode renders NotSerializable and exits one`() {
+        val (code, err) = jsonRun(cli("app") { action { Ok(Ratio(Double.NaN)) } })
+        assertEquals(1, code)
+        assertEquals("""{"error":{"type":"NotSerializable"},"code":1}""" + "\n", err)
+    }
+
+    @Test
+    fun `a serializer refusing with SerializationException renders NotSerializable and exits one`() {
+        val (code, err) = jsonRun(cli("app") { action { Ok(Refused()) } })
+        assertEquals(1, code)
+        assertEquals("""{"error":{"type":"NotSerializable"},"code":1}""" + "\n", err)
+    }
+
+    @Test
+    fun `a subtype without a serializer renders NotSerializable and exits one`() {
+        val (code, err) = jsonRun(cli("app") { action { Ok(Holder(Circle(1), Square())) } })
+        assertEquals(1, code)
+        assertEquals("""{"error":{"type":"NotSerializable"},"code":1}""" + "\n", err)
+    }
 
     @Test
     fun `json emits structured object`() {
@@ -170,25 +200,4 @@ class StructuredJsonTest {
         assertEquals("""{"error":{"type":"NotSerializable"},"code":1}""" + "\n", t.err)
     }
 
-    @Test
-    fun `json encode failure reports its own error not mislabeled as not serializable`() {
-        // The type IS @Serializable (its serializer resolves), but throws mid-encode. That is a
-        // different failure from "no serializer for the type", so it must not be reported as
-        // "not @Serializable" and must surface its own diagnostic, still as a JSON envelope.
-        val t = RecordingTerminal()
-        val code = cli("boom") { action { Ok(Exploding()) } }.run(arrayOf("--json"), t)
-        assertEquals(1, code)
-        assertEquals("""{"error":{"type":"EncodeFailed","message":"boom"},"code":1}""" + "\n", t.err)
-    }
-
-    @Test
-    fun `json encode failure from non serialization exception does not escape as a stack trace`() {
-        // A custom KSerializer can throw anything mid-encode, not just SerializationException. The
-        // encode catch must be broad enough to still render a clean envelope instead of an uncaught
-        // exception reaching the caller.
-        val t = RecordingTerminal()
-        val code = cli("boom2") { action { Ok(ExplodingRuntime()) } }.run(arrayOf("--json"), t)
-        assertEquals(1, code)
-        assertEquals("""{"error":{"type":"EncodeFailed","message":"boom"},"code":1}""" + "\n", t.err)
-    }
 }

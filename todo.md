@@ -632,7 +632,7 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
 
 - [ ] **195. Drop the `mavenLocal()` block once kern 0.6.5 is released** (from 135, 2026-11-23): `settings.gradle.kts`
   reads kern from Maven local until then; after the release, delete the block and build again. Build.
-- [ ] **193. klap catches what consumer code throws in renderers, converters and validation (2026-11-20, from
+- [x] **193. klap catches what consumer code throws in renderers, converters and validation (2026-11-20, from
   kortex SH-20).** kortex's shell fails fast on any throw (a bug ends the daemon, systemd restarts it with the trace),
   but klap catches consumer throws in `human`/`exit` renderers (`internal/spec/Action.kt:86,113,128`, `catch
   Exception`), converters (`internal/parse/Bind.kt:406`, `catch Throwable`, `Error` included) and `validateInputs`
@@ -640,9 +640,51 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
   message. Action blocks are not caught. Question for the owner: should a converter's or renderer's throw be a bug
   that propagates (a converter reports bad input by returning a typed error), with klap catching nothing it did not
   throw; or keep catching, at least never `Error`?
+  **Owner 2026-11-23: catch, consistently.** Every block a user hands klap is wrapped, and what it throws becomes a
+  typed error rather than a crash: converters, `validateInputs`, the `human` and `exit` renderers, completion
+  providers, and the `action` block too (today it is not caught), with exit 1 and `error: <message>` on stderr.
+  Catch every `Throwable` except `Error`, everywhere (today converters and validation catch `Throwable`, renderers
+  `Exception`): `Exception` and a custom `Throwable` are caught, while an `Error` such as `OutOfMemoryError` and a
+  coroutine's `CancellationException` propagate. Not built yet.
 
 ## Owner calls
 
+  **Owner 2026-11-23, F193e A: reversed.** A user's throwing code is the user's bug: klap catches nothing it did not
+  throw. Every block a user hands klap (action, converters, `.validate`, `validateInputs`, renderers, completion
+  providers, help defaults, predicates, projections) lets a throw propagate unchanged; klap's typed errors stay for
+  what klap detects, and bad input stays a typed error because a converter returns one rather than throwing. The
+  decisions F193a to F193d fall away, and the branch `feat/wrap-user-blocks` (which built catching) is kept unmerged
+  as a record. To build: remove the catches that exist on `dev`.
+  **Built (branch `feat/user-throws-propagate`).** Catches removed: `Bind.kt` `convertOne`, `Converters.kt` `applyMap`
+  and `judge`, `Parser.kt` `runValidations`, `Action.kt` `exit`/encode/`human`, `Help.kt` `display`, and
+  `internal/render/Completion.kt`'s `runCatching`, which now catches only klap's own `UnresolvedInput` (a provider
+  reading an input the line has not resolved). Removed: public `ConversionError.Threw`, internal
+  `ActionError.EncodeFailed`/`RenderFailed`, `judge`, the `validateInputs failed:` failure. `UserThrowsTest` (18
+  kinds: action, suspending action, `.map`, `.convert`, `.validate` after and before a converter, `validateInputs`,
+  `human`, a printed value's `toString`, `exit`, a serializer under `--json`, a completion provider, a help default's
+  `toString`, a dash-led predicate, a gather predicate, a predicate asked about a leftover word, a gather predicate's
+  first ask on Tab, a `cliOf` projection; each with an `Exception` and an `Error`, asserting the same instance) saw
+  11 fail first, caught; action,
+  suspending action, dash-led and gather predicates, and `cliOf` projections already propagated. `KlapErrorsRenderTest`
+  pins unknown option, missing argument and a `.convert` returned error at exit 2. Tests pinning catching were
+  removed or turned to the new contract; `example/find`'s grammars return a `Domain` error instead of throwing.
+  Docs: `Cli.run`, both `.map` KDocs, `CompletionScope`, the guide, fixture-parity matrix X. klap `build` green.
+  **Owner 2026-11-23, F193f A:** the generated completion scripts (bash, zsh, fish, PowerShell) drop `__complete`'s
+  stderr, so a provider's throw on Tab offers nothing and leaves the prompt intact; `app __complete ...` run by hand
+  still shows the trace, and klap still catches nothing.
+  **Owner 2026-11-23, F193g A:** `.validate` after `.multiple()` is refused when the CLI is built (a `require` with
+  a message saying to put `validate` before `multiple()`), never at a user's parse; guide.md:375 and matrix X13
+  follow.
+  **Built, code review round (branch `feat/user-throws-propagate`).** A `String?` stage yielding null before a later
+  converter (`.map { it.ifEmpty { null } }.boolean()`) threw klap's own NPE in `andThenConvert`; the null now passes
+  on as absent, pinned through parse and Tab in `ConvertersTest`. A value klap's `Json` cannot encode (`NaN`, an
+  unregistered polymorphic subtype) crashed `run --json`; `SerializationException` from the encode is now
+  `ActionError.NotSerializable` (exit 1, the JSON envelope), a custom serializer's own `SerializationException`
+  included, its other throws still propagating (`StructuredJsonTest`). F193g built: `applyValidate` requires a
+  non-`multiple` cardinality (`ConvertersTest`). F193f built: the four scripts drop `__complete`'s stderr
+  (`RealShellCompletionTest`, run in bash, zsh, fish and pwsh). `example/head`'s `obsoleteCount` returns a `Domain`
+  error through `.convert` instead of throwing. Docs: the `.map` examples cannot throw (`.duration()` in the guide),
+  the guide's provider paragraph, `completionValues` "never returns an error".
 - [x] **185. `Ok(Unit)` printed `kotlin.Unit`, and `{}` under `--json` (2026-11-12, branch `unit-prints-nothing`).**
   dec4c4a made a plain run print nothing for `Unit`; under `--json` it still printed `{}`, kotlinx.serialization's
   encoding of `Unit`, which klap never chose. **Owner 2026-11-12: A**, `Unit` prints nothing under `--json` either:

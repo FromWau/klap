@@ -286,7 +286,7 @@ Disputed (P3): "binds a different record" still passes when two same-typed const
 | P79 | the same member of an exclusive set given twice binds or is refused as the tool reads it | `binds` or `rejects` | `pacman -Q -Q` (pacman target `the operation given twice is refused`) |
 | P80 | an `atMostOne` set refuses two members and accepts none | `rejects` and `binds` | `tar -czjf a.tar f` refused |
 | P81 | a `requiredWhen` option is refused when its trigger is on the line without it, wherever the trigger sits, a global trigger included | `rejects` and `binds` | no fixture yet |
-| P82 | a `validateInputs` refusal, or a block that throws, gives no record; a parent's block never fires for a child's line; help on the same line still yields `null` | `rejects`, `binds`, `parse` gives `null` | no fixture yet (`ValidateInputsTest`) |
+| P82 | a `validateInputs` refusal gives no record, and a block that throws propagates out of `parse`; a parent's block never fires for a child's line; help on the same line still yields `null` | `rejects`, `binds`, `parse` gives `null` | no fixture yet (`ValidateInputsTest`) |
 | P83 | a refusal the fixture makes only inside its `action` body is still a refusal of the line, so `parse` must refuse it | `rejects` (a target while the check lives in the action) | `mv -t d -T a b`; cp's `cp -t d -T a b` and `cp -T a b c` are declared rules now |
 | P84 | a line klap accepts but the real tool refuses is recorded as loose binding, separately from a line klap refuses that the tool accepts | `bindsLoosely` for the first, `rejects` naming the gap or a target for the second | `cp --json a b`; `git remote -v add o u` |
 
@@ -294,7 +294,7 @@ Disputed (P3): "binds a different record" still passes when two same-typed const
 - P79: `checkConstraints` counts members, not occurrences. pacman.
 - P80: `checkConstraints` `AtMostOne`. tar. pacman (no fixture constraint yet): `pacman -Q` refuses 32 modifier pairs, such as `--search --info` ("may not be used together"), a pacman target.
 - P81: `checkConditionalRequirements` with `globalAcc.supplied` (`parse/Parser.kt`); `OpenFindingsTest.a global flag triggers the requirement it advertises`.
-- P82: `runValidations` (`Parser.kt`) runs only on `Execute`, catches exceptions into `CliError.Failure`, and reads only the resolved command's `validations`.
+- P82: `runValidations` (`Parser.kt`) runs only on `Execute`, catches nothing, and reads only the resolved command's `validations`.
 - P83: mv returns `Err(CliError.Failure(...))` from its action (`Mv.kt`), which `parse` never runs. cp declares the same rules instead (`atMostOne(targetDirectory, noTargetDirectory)`, `.atMostWhen(noTargetDirectory, 1)` in `Cp.kt`), so its `-t and -T are refused together` and `-T takes exactly a source and a destination` pass.
 - P84: `ParitySuite.bindsLoosely`. Every fixture.
 

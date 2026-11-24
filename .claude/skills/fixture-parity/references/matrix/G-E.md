@@ -327,7 +327,7 @@ Notes:
 
 | ID | Property | What a cell checks | Example |
 |---|---|---|---|
-| G86 | a provider that throws | `[]`, no error; a sibling slot's provider still works | a fixture provider reading a missing file |
+| G86 | a provider that throws | the throw propagates out of `__complete` | a fixture provider reading a missing file |
 | G87 | past the last operand slot | `[]`, where the parse would report too many arguments | `chmod 644 f ‸` is a file again (variadic), so only a tool with a fixed operand count has this cell |
 | G88 | a cluster with every letter used | `[]`, or only counted letters | `tar -cvzf‸`-like with nothing left |
 | G89 | a value-taking short closing a cluster | `[]` at the end of `cp -rS‸` (its value is the next word or the rest) | cp `-rS‸` |
@@ -335,7 +335,7 @@ Notes:
 
 Notes:
 
-- G86: `render/Completion.kt` `runCatching { ... }.getOrNull()`; `CompletionTest.kt` `complete candidates returns empty when provider throws an error`, `complete candidates returns empty when provider throws but sibling provider still works`. dd, chmod, any provider.
+- G86: `render/Completion.kt` `provided` catches only `UnresolvedInput`; `UserThrowsTest` `a completion provider`. dd, chmod, any provider.
 - G87: `render/Completion.kt` `slotForOperand` returns null. dd, chmod (mode then files), ssh.
 - G88: `render/Completion.kt` inCluster branch `filterNot { it.value[1] in typedShorts && it.value[1] !in counted }`. pacman, tar, cp.
 - G89: `render/Completion.kt` inCluster gate fails, then `startsWith("-rS")` matches nothing, `attachedValueOption` returns null. cp, tar. Overlaps K7f; this row pins the empty list.

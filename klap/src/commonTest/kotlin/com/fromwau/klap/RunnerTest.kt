@@ -16,11 +16,6 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
-/** A result value whose toString() throws, to exercise the human-render fallback's error guard. */
-private object ThrowingToString {
-    override fun toString(): String = throw RuntimeException("kaboom")
-}
-
 private val failed = exitOf(3)
 
 private fun app(): Cli = cli("todo") {
@@ -204,18 +199,6 @@ class RunnerTest {
         assertEquals(Result.Success("done"), go.runAction(terminal))
         assertEquals("tick\n", terminal.out)
         assertEquals("warn\n", terminal.err)
-    }
-
-    @Test
-    fun `throwing toString on result renders clean error not stack trace`() {
-        // A value whose toString() throws must surface a clean error line + a failure exit, never a raw
-        // stack trace escaping to the terminal.
-        val tree = cli("app") { command("go") { action { Ok(ThrowingToString) } } }
-        val t = RecordingTerminal()
-        val code = tree.run(arrayOf("go"), t)
-        assertEquals(1, code)
-        assertTrue("could not render output" in t.err, t.err)
-        assertEquals("", t.out)
     }
 
     @Test

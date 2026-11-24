@@ -47,8 +47,8 @@ internal val COMPLETION_SHELL_NAMES: List<String> =
  *
  * Two costs to know. Reading ANY accessor resolves ALL of them: the command's inputs and every global are
  * converted and validated on that keypress, so a converter or `.validate { }` must be cheap and free of
- * side effects. And a provider that gives up looks exactly like one that found nothing, so a bug in yours
- * surfaces as an empty completion rather than as an error.
+ * side effects. And klap does not catch what your provider, or a converter it resolves, throws: the throw
+ * propagates out of the completion request, so a bug in either surfaces where the shell asked for candidates.
  *
  * Candidates are prefix-filtered by [current] by default, matching on each candidate's value only, never
  * its description; pass `filterByPrefix = false` to `.completeWith` to do fuzzy matching against [current]
@@ -73,10 +73,9 @@ public class CompletionScope internal constructor(
     override val line: Line get() = resolved.value.line
 
     // Not exceptional here, unlike in an action: an input the line has not reached yet is the expected
-    // case, and the provider seam turns this into "no candidates". The message exists for the debugger
-    // who unwraps it, not for a user.
+    // case, and the provider seam turns this into "no candidates".
     override fun unbound(spec: HolderSpec): Nothing =
-        error(
+        throw UnresolvedInput(
             "input '${spec.name}' is not resolved for the command being completed: it has not been typed " +
                 "yet, its value failed to convert, or it belongs to another command",
         )
@@ -159,6 +158,7 @@ internal const val COMPLETE_FILES = " klap:files:"
 // Every shell delegates the whole decision to `program __complete --cursor <k> -- <words>` and prints the
 // returned lines LITERALLY (never re-eval'd, so a candidate like `$(...)` or a backtick can't execute on
 // Tab). A lone COMPLETE_FILES line maps to that shell's native file completion; the rest go out verbatim.
+// Its stderr is dropped, so a provider's stack trace never lands on the prompt; run `__complete` by hand to see it.
 /**
  * The Tab completion script for [shell], which asks this CLI for its candidates through the hidden `__complete`
  * command on each Tab. Under `builtins { completion = Builtin.Off }` the CLI has no `__complete`, so the script has
@@ -244,7 +244,7 @@ private fun Cli.renderBash(): String = $$"""
         (( __klap_starts[i] > COMP_POINT )) && afterWords+=("${__klap_words[i]}")
       done
       local -a lines
-      mapfile -t lines < <("${COMP_WORDS[0]}" __complete --cursor "${#relWords[@]}" -- "${relWords[@]}" "$fullCur" "${afterWords[@]}")
+      mapfile -t lines < <("${COMP_WORDS[0]}" __complete --cursor "${#relWords[@]}" -- "${relWords[@]}" "$fullCur" "${afterWords[@]}" 2>/dev/null)
       # Each line is `value` or `value\tdescription`. bash's menu cannot show a per-candidate description,
       # so drop everything from the FIRST tab on, keeping the value only (a COMPLETE_FILES line has no tab).
       for i in "${!lines[@]}"; do
@@ -321,7 +321,7 @@ private fun Cli.renderZsh(): String = $$"""
       local typedCurrent=${(Q)PREFIX}
       [[ $compstate[quote] == "'" ]] && typedCurrent=$PREFIX
       typedWords[CURRENT]=$typedCurrent
-      lines=("${(@f)$("${words[1]}" __complete --cursor $(( CURRENT - 2 )) -- "${(@)typedWords[2,-1]}")}")
+      lines=("${(@f)$("${words[1]}" __complete --cursor $(( CURRENT - 2 )) -- "${(@)typedWords[2,-1]}" 2>/dev/null)}")
       if [[ ${#lines[@]} -eq 1 && "${lines[1]}" == "$$COMPLETE_FILES"* ]]; then
         # _files matches $PREFIX as a whole path, so move the directive's non-path head (dd's `if=`) into
         # $IPREFIX, which is kept on the line but never matched against.
@@ -387,7 +387,7 @@ private fun Cli.renderFish(): String = $$"""
         set -l current (string unescape -- (commandline -ct))
         # fish does not give a completion the full command line, only up to the token under the cursor, so no
         # word after the cursor can be sent.
-        set -l response ($tokens[1] __complete --cursor (math (count $tokens) - 1) -- $tokens[2..-1] "$current")
+        set -l response ($tokens[1] __complete --cursor (math (count $tokens) - 1) -- $tokens[2..-1] "$current" 2>/dev/null)
         set -l marker (string length -- "$$COMPLETE_FILES")
         if test (count $response) -eq 1; and test (string sub -l $marker -- "$response[1]") = "$$COMPLETE_FILES"
             # The directive's tail is the non-path head of the token (dd's `if=`): complete only what follows
@@ -468,7 +468,7 @@ private fun Cli.renderPowershell(): String = $$"""
         if ($legacy) {
             $relative = @($relative | ForEach-Object { if ($_ -eq '') { '""' } else { $_ } })
         }
-        $lines = @(& $words[0] __complete --cursor ($cursor - 1) -- $relative)
+        $lines = @(& $words[0] __complete --cursor ($cursor - 1) -- $relative 2>$null)
         if ($lines.Count -eq 1 -and $lines[0].StartsWith("$$COMPLETE_FILES")) {
             # The directive's tail is the non-path head of the word (dd's `if=`), which Get-ChildItem would
             # otherwise resolve as part of the path; it is put back below, since the whole word is replaced.
@@ -503,3 +503,6 @@ private fun Cli.renderPowershell(): String = $$"""
         }
     }
     """.trimIndent()
+
+/** Gives up a provider that read an input the line has not resolved; the only throw a provider seam catches. */
+internal class UnresolvedInput(message: String) : RuntimeException(message)

@@ -1,8 +1,12 @@
 package com.fromwau.klap.fixture.head
 
+import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.ResultError
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Builtin
+import com.fromwau.klap.ConversionError
 import com.fromwau.klap.Help
 import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.io.path
@@ -80,7 +84,7 @@ public fun headCli(): TypedCli<HeadInputs> = cliOf("head") {
         firstWordOnly = true,
         suffixes = "bcklm",
     )
-        .map(::obsoleteCount)
+        .convert(::obsoleteCount)
 
     // Real head lets the last of -c, -n and the obsolete count decide the count: `head -c 5 -n 3 f` prints three
     // lines and `head -n 3 -c 5 f` five bytes. That is an override rule, so atMostOne would be wrong here.
@@ -193,7 +197,7 @@ private val HEAD_NUM = Regex("""-?[ \t\n\u000B\f\r]*\+?(?:[0-9]+$UNIT?|$UNIT)"""
  * as `-n` or `-c` would take it. The last unit letter wins: `b`, `k` and `m` count bytes in that multiplier, `c`
  * bytes in ones, and `l` lines in the multiplier so far, so `3bl` is 1536 lines and `3bc` three bytes.
  */
-internal fun obsoleteCount(value: String): Count {
+internal fun obsoleteCount(value: String): Result<Count, ConversionError> {
     val digits = value.takeWhile { it in '0'..'9' }
     var countsBytes = false
     var multiplier = ""
@@ -208,12 +212,15 @@ internal fun obsoleteCount(value: String): Count {
                 multiplier = ""
             }
             'l' -> countsBytes = false
-            else -> throw IllegalArgumentException("'$letter' is no unit letter of head's obsolete count")
+            else -> return Err(ConversionError.Domain(NotAUnit, "'$letter' is no unit letter of head's obsolete count"))
         }
     }
     val num = digits + multiplier
-    return if (countsBytes) Count.Bytes(num) else Count.Lines(num)
+    return Ok(if (countsBytes) Count.Bytes(num) else Count.Lines(num))
 }
+
+/** A letter in the obsolete count that is none of its units. */
+private data object NotAUnit : ResultError
 
 /**
  * What `head --version` prints for GNU coreutils 9.12, the version installed when it was pinned

@@ -107,14 +107,11 @@ internal fun ConversionError.toJson(): JsonElement = when (this) {
     ConversionError.NotAnInstant -> typed("NotAnInstant") {}
     ConversionError.NotAUuid -> typed("NotAUuid") {}
     is ConversionError.NotOneOf -> typed("NotOneOf") { putStrings("choices", choices) }
-    // The throwable's own account is the only data a crashed transform leaves behind.
-    is ConversionError.Threw -> typed("Threw") { putIfPresent("message", thrown.message) }
     is ConversionError.Domain -> json ?: typed("Domain") { put("detail", detail) }
 }
 
-/** klap's own failure to write an action's value under `--json`. */
-internal fun encodeFailureJson(type: String, message: String?): JsonElement =
-    typed(type) { putIfPresent("message", message) }
+/** An action's value klap cannot encode, under `--json`. */
+internal fun notSerializableJson(): JsonElement = typed("NotSerializable") {}
 
 /** Output the system refused to take on [stream]. */
 internal fun writeFailedJson(stream: Stream, message: String?): JsonElement = typed("WriteFailed") {

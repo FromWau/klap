@@ -51,9 +51,6 @@ public sealed interface ConversionError : ResultError {
      */
     public data class NotOneOf(val choices: List<String>) : ConversionError
 
-    /** A `.map { }` transform threw, an `Error` included. klap catches it rather than letting it crash the parse. */
-    public data class Threw(val thrown: Throwable) : ConversionError
-
     /**
      * Your own error from a `.convert { }`, carried through with its payload intact, plus the [detail] klap
      * should print for it and the [json] it writes for it under `--json`. Mirrors [CliError.Domain] one level

@@ -94,8 +94,8 @@ V1 to V11, each split; the first row of each split keeps the original row's mean
 | V10d | candidates added before `completeFiles` | discarded |
 | V10e | candidates added after `completeFiles` | dropped |
 | V10f | `completeFiles` called twice | as V33 |
-| V11a | a provider that throws an `Exception` | nothing offered, no error (V88) |
-| V11b | a provider that throws an `Error` | nothing offered, no error (V89) |
+| V11a | a provider that throws an `Exception` | the throw propagates out of the completion request (V88) |
+| V11b | a provider that throws an `Error` | the throw propagates out of the completion request (V89) |
 | V11c | a provider that reads an unbound required input | nothing offered, no error |
 | V11d | a provider that reads a refused input | nothing offered, no error (V67) |
 | V11e | candidates added before the abort | discarded (V90) |
@@ -183,7 +183,7 @@ Disputed: V13 has the typed prefix matched ignoring case (`--color=AL‸` offers
 | V33 | `completeFiles` called twice | the last call's prefix wins |
 | V34 | `completeFiles` chosen by what is typed (dd) | each branch is a cell: no `=` yet (`dd i‸` offers `if=`, `ibs=`, `iflag=`), a file key (`dd if=/de‸` gives `filesAfter("if=")`), a value key (`dd conv=no‸` offers `conv=nocreat`, `conv=notrunc`, `conv=noerror`), an unknown key (`dd zz=‸` offers nothing) |
 | V35 | `completeFiles(nonPathPrefix)` whose prefix is not the start of `current` | **needs checking**: klap passes the prefix through as given; the shells then differ (fish cuts that many characters blindly, PowerShell and bash only when it matches), so the unit cell asserts `filesAfter(prefix)` and a live test the shells |
-| V36 | `completeFiles` followed by a throw or an unbound read | nothing at all: the directive is lost with the rest of the scope |
+| V36 | `completeFiles` followed by an unbound read | nothing at all: the directive is lost with the rest of the scope |
 | V37 | `completeFiles` with `filterByPrefix = false` | the same lone directive, since the directive is never prefix-filtered |
 
 - V31: `render/Completion.kt` `asWholeWord` (the `isNativeFileRequest()` branch puts `head` in front of the directive's tail); CF `a file option leaves the path to the shell behind what is not part of it` covers `.file()`, not `completeFiles`.
@@ -191,7 +191,7 @@ Disputed: V13 has the typed prefix matched ignoring case (`--color=AL‸` offers
 - V33: `Completion.kt` `completeFiles` (`collected.clear()` then adds); no test.
 - V34: dd `operands.completeWith` (`DD_KEY_HELP`, `DD_FILE_KEYS`, `ddValueCandidates`); dd has no completion tests.
 - V35: `Completion.kt` `renderFish` (`string sub -s`), `renderBash` (`${typedCur#"$nonPath"}`), `renderPowershell` (`StartsWith($nonPath)`).
-- V36: `render/Completion.kt` `candidatesFor` (`runCatching { ... }.getOrNull()` drops the whole scope).
+- V36: `render/Completion.kt` `provided` (catching `UnresolvedInput` drops the whole scope).
 - V37: `render/Completion.kt` `candidatesFor` (`!scope.collected.isNativeFileRequest()`); CT `a provider can hand off to native file completion`.
 
 ## Shaping a provider's candidates
@@ -317,19 +317,19 @@ Disputed: V13 has the typed prefix matched ignoring case (`--color=AL‸` offers
 
 | ID | Source | What a cell checks |
 |---|---|---|
-| V88 | a provider throwing an `Exception` | nothing offered, no error; a sibling provider on the same line unaffected |
-| V89 | a provider throwing an `Error` or a `CancellationException` | nothing offered (`runCatching` takes any `Throwable`) |
-| V90 | candidates added before a throw or an unbound read | discarded with the rest: `[]`, not the partial list |
+| V88 | a provider throwing an `Exception` | the throw propagates out of the completion request unchanged |
+| V89 | a provider throwing an `Error` or a `CancellationException` | propagates as V88; klap catches only its own `UnresolvedInput` |
+| V90 | candidates added before an unbound read | discarded with the rest: `[]`, not the partial list |
 | V91 | candidates added before an early `return@completeWith` | kept |
-| V92 | a converter or validator of another input throwing | an `Exception` leaves only that input unbound (`convertOne` catches it); **needs checking**: an `Error` escapes the bind, so every provider that reads any accessor on that line offers nothing |
+| V92 | a converter or validator of another input throwing | the throw propagates out of the completion request once a provider reads any accessor on that line |
 | V93 | a provider that reads no accessor | no converter or validator runs on that Tab press; klap-level, fixture `n/a` unless a converter's effect is observable |
 | V94 | a provider whose store or resource fails (corrupt JSON, missing file) | nothing offered, as task-manager's `getOrElse { return }` intends |
 
-- V88: `render/Completion.kt` `candidatesFor`; CT `complete candidates returns empty when provider throws but sibling provider still works`.
-- V89: CT `complete candidates returns empty when provider throws an error`; `CancellationException` is not tested.
-- V90: `render/Completion.kt` `candidatesFor` (`getOrNull()` on the whole scope); no test.
+- V88: `render/Completion.kt` `provided`; `UserThrowsTest` `a completion provider`.
+- V89: `UserThrowsTest` `a completion provider` throws an `Error` too; `CancellationException` is not tested.
+- V90: `render/Completion.kt` `provided` (null for the whole scope); no test.
 - V91: plain Kotlin return, `collected` is kept; task-manager `tag rm` (`?: return@completeWith`).
-- V92: `Bind.kt` `convertOne` (`catch (e: Exception)` around `convert` and `validate`); no test.
+- V92: `Bind.kt` `convertOne` catches nothing; CT `a throw from another input's converter reaches the completion caller`.
 - V93: `Completion.kt` `CompletionScope` (`resolved: Lazy`), `render/Completion.kt` `valuesFor`.
 - V94: task-manager `taskIdCandidates`, `knownTagCandidates`; no completion test.
 

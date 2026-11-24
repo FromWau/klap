@@ -11,6 +11,7 @@ import com.fromwau.klap.internal.render.completeCandidates
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
@@ -144,7 +145,7 @@ class GeneratedShellScriptTest {
         assertTrue($$"_todo_words \"${COMP_LINE:0:COMP_POINT}\"" in script, script)
         assertTrue("read -ra" !in script, script)
         assertTrue(
-            $$"__complete --cursor \"${#relWords[@]}\" -- \"${relWords[@]}\" \"$fullCur\" \"${afterWords[@]}\")"
+            $$"__complete --cursor \"${#relWords[@]}\" -- \"${relWords[@]}\" \"$fullCur\" \"${afterWords[@]}\" 2>/dev/null)"
                 in script,
             script,
         )
@@ -917,45 +918,24 @@ class AttachedValueCompletionTest {
     }
 }
 
-/** Provider code runs on every keypress, so a throw must degrade to no candidates, never reach the terminal. */
+/** A provider that cannot answer: it reads an input the line has not given, or another input's converter throws. */
 class ProviderFailureTest {
 
-
     @Test
-    fun `complete candidates returns empty when provider throws but sibling provider still works`() {
-        // A `.completeWith { }` provider is user code invoked synchronously on every Tab press by the
-        // hidden __complete path. If it throws, the exception must not propagate: the generated shell
-        // scripts call __complete without redirecting stderr, so a raw stack trace would dump straight
-        // into the user's terminal on a keypress. It must degrade to "no candidates" instead.
+    fun `a provider reading an input the line has not given offers nothing`() {
         val tree = cli("app") {
             command("run") {
-                argument("bad").completeWith { throw RuntimeException("boom") }
-                action { Ok("") }
-            }
-            command("good") {
-                argument("ok").completeWith { candidates(listOf("alpha", "beta")) }
+                val name = option(long = "name").required()
+                argument("a").completeWith { candidate("name=${name()}") }
                 action { Ok("") }
             }
         }
-        assertEquals(emptyList(), tree.completeCandidates(listOf("run", "")).map { it.value })
-        assertEquals(listOf("alpha", "beta"), tree.completeCandidates(listOf("good", "")).map { it.value })
+        assertEquals(emptyList(), tree.offered("run", ""))
+        assertEquals(listOf("name=n"), tree.offered("run", "--name", "n", ""))
     }
 
     @Test
-    fun `complete candidates returns empty when provider throws an error`() {
-        // Not just Exception: an Error (e.g. a broken invariant in third-party provider code) must be
-        // contained the same way, since this is a keypress-time safety boundary, not routine control flow.
-        val tree = cli("app") {
-            command("run") {
-                argument("bad").completeWith { throw AssertionError("broken invariant") }
-                action { Ok("") }
-            }
-        }
-        assertEquals(emptyList(), tree.completeCandidates(listOf("run", "")).map { it.value })
-    }
-
-    @Test
-    fun `an error thrown by another input's converter leaves a provider the inputs it reads`() {
+    fun `a throw from another input's converter reaches the completion caller`() {
         val tree = cli("app") {
             command("run") {
                 option(long = "later").map<Int> { throw NotImplementedError("converter not written yet") }
@@ -965,7 +945,7 @@ class ProviderFailureTest {
             }
         }
         assertEquals(listOf("name=x"), tree.offered("run", ""))
-        assertEquals(listOf("name=x"), tree.offered("run", "--later", "z", ""))
+        assertFailsWith<NotImplementedError> { tree.offered("run", "--later", "z", "") }
     }
 
     @Test

@@ -1,34 +1,11 @@
 package com.fromwau.klap
 
-import com.fromwau.kern.result.Ok
-import com.fromwau.kern.result.Result
-import com.fromwau.kern.result.assertError
 import com.fromwau.kern.terminal.escapeControls
 import com.fromwau.kern.terminal.shellQuoted
 import com.fromwau.kern.terminal.test.RecordingTerminal
 import com.fromwau.klap.internal.render.renderError
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.descriptors.PrimitiveKind
-import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
-
-/** `@Serializable`, but throws mid-encode with a DEL (0x7F) embedded in the message. */
-@Serializable(with = ExplodingWithControlCharSerializer::class)
-private class ExplodingWithControlChar
-
-private object ExplodingWithControlCharSerializer : KSerializer<ExplodingWithControlChar> {
-    override val descriptor = PrimitiveSerialDescriptor("ExplodingWithControlChar", PrimitiveKind.STRING)
-    override fun serialize(encoder: Encoder, value: ExplodingWithControlChar): Unit =
-        throw IllegalStateException("boom${Char(127)}boom")
-
-    override fun deserialize(decoder: Decoder): ExplodingWithControlChar =
-        throw IllegalStateException("boom${Char(127)}boom")
-}
 
 class ErrorRenderingTest {
 
@@ -177,20 +154,6 @@ class ErrorRenderingTest {
     }
 
     @Test
-    fun `encode failed json envelope strips embedded control characters`() {
-        // Every other message-bearing path (RenderFailed, both CliError paths) runs through
-        // stripTerminalEscapes; EncodeFailed's --json envelope must match, or a throwing custom
-        // serializer could leak a raw control character into structured output.
-        val t = RecordingTerminal()
-        val code = cli("encodeboom") { action { Ok(ExplodingWithControlChar()) } }.run(arrayOf("--json"), t)
-        assertEquals(1, code)
-        assertEquals(
-            """{"error":{"type":"EncodeFailed","message":"boom\u007fboom"},"code":1}""" + "\n",
-            t.err,
-        )
-    }
-
-    @Test
     fun `missing argument message pins the full string including the for command clause`() {
         assertEquals(
             "missing required argument <text> for 'add'",
@@ -298,22 +261,4 @@ class ErrorRenderingTest {
         assertEquals("error: invalid value ''\$'\\033''[31m' for n: bad\n", t.err)
     }
 
-    @Test
-    fun `bad value converter exception with null message does not double the fallback reason`() {
-        // .convert { }, not .map { }: a thrown .map { } exception is caught inside its own applyMap
-        // wrapper before it ever reaches convertOne's catch, so it can never carry a null message through
-        // to that fallback. A raw .convert { } lambda that throws instead of returning Result.Error is
-        // the misuse convertOne's own catch guards against, and IllegalStateException() has a null
-        // message on every platform, making the repro deterministic here.
-        val tree = cli("app") {
-            command("go") {
-                val n = argument("n").convert<Int> { throw IllegalStateException() }
-                action { Ok(n().toString()) }
-            }
-        }
-        val err = tree.parse(listOf("go", "somevalue")).assertError<CliError.BadValue>()
-        assertEquals("conversion failed", err.reason)
-        assertIs<IllegalStateException>(assertIs<ConversionError.Threw>(err.cause).thrown)
-        assertEquals("invalid value 'somevalue' for n: conversion failed", err.message)
-    }
 }

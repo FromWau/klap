@@ -39,6 +39,7 @@ class RealShellCompletionTest {
                 #!/bin/sh
                 printf '%s\037' "$@" >> "$TOOL_LOG"
                 echo >> "$TOOL_LOG"
+                [ -n "$TOOL_STDERR" ] && echo "$TOOL_STDERR" >&2
                 cat "$TOOL_REPLY"
 
                 """.trimIndent(),
@@ -58,12 +59,16 @@ class RealShellCompletionTest {
     /** What one completion did: the arguments `tool` was called with, and the candidates the shell offered. */
     private data class Completed(val call: List<String>, val candidates: List<String>)
 
-    /** Completes [line] with the cursor at [cursor] (its end by default), [answer] being what `tool` prints. */
+    /**
+     * Completes [line] with the cursor at [cursor] (its end by default), [answer] being what `tool` prints and
+     * [stderr] what it writes to standard error.
+     */
     private fun complete(
         shell: CompletionShell,
         line: String,
         cursor: Int = line.length,
         answer: String = "",
+        stderr: String = "",
         argumentPassing: String? = null,
         program: Cli = tool,
     ): Completed {
@@ -81,6 +86,7 @@ class RealShellCompletionTest {
                 environment()["PATH"] = "${bin.path}:${System.getenv("PATH")}"
                 environment()["TOOL_LOG"] = log.path
                 environment()["TOOL_REPLY"] = reply.path
+                environment()["TOOL_STDERR"] = stderr
                 environment().putAll(extraEnv)
             }
             .start()
@@ -561,6 +567,14 @@ class RealShellCompletionTest {
             val offered = complete(shell, "tool get .ow", answer = ".owner\tthe owner\n.ows\n").candidates
             assertTrue(offered.any { it.startsWith(".owner") }, "$shell: $offered")
             assertTrue(offered.any { it.startsWith(".ows") }, "$shell: $offered")
+        }
+    }
+
+    @Test
+    fun `every shell hides what tool writes to standard error and offers nothing from it`() {
+        for (shell in installed()) {
+            val trace = "Exception in thread main java.lang.IllegalStateException: boom"
+            assertEquals(emptyList(), complete(shell, "tool get .ow", stderr = trace).candidates, "$shell")
         }
     }
 

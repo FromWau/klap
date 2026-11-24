@@ -307,7 +307,8 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      * declaration order and the first failure is reported.
      *
      * Only a real invocation runs one — never `--help`, `--version`, completion or docs — and only on the
-     * command that runs, so a block declared on the root does not fire when a subcommand does.
+     * command that runs, so a block declared on the root does not fire when a subcommand does. A throw from
+     * [block] is not caught and propagates out of `parse` and `run`.
      */
     public abstract fun validateInputs(block: ValueScope.() -> CliError?)
 
@@ -369,7 +370,7 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      *   False prints the text exactly as [human] gives it, for a command whose output is a file the user reads
      *   back byte for byte, such as one without a final newline. A `--json` answer always ends its line.
      * @param block the work itself, returning `Ok(value)` or a typed [CliError] that klap renders to stderr
-     *   and turns into the exit code.
+     *   and turns into the exit code. A throw from it, [human] or [exit] is not caught and propagates out of `run`.
      */
     public inline fun <reified T> action(
         noinline human: (ActionScope.(T) -> CharSequence)? = null,
@@ -411,7 +412,8 @@ public abstract class CommandBuilder internal constructor() : ConverterScope() {
      *   False prints the text exactly as [human] gives it, for a command whose output is a file the user reads
      *   back byte for byte, such as one without a final newline. A `--json` answer always ends its line.
      * @param block the work itself, returning `Ok(value)` or a typed [CliError] that klap renders to stderr
-     *   and turns into the exit code. It may suspend.
+     *   and turns into the exit code. It may suspend. A throw from it, [human] or [exit] is not caught and
+     *   propagates out of `run`.
      */
     public inline fun <reified T> actionSuspending(
         noinline human: (ActionScope.(T) -> CharSequence)? = null,

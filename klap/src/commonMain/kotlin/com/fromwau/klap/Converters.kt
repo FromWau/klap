@@ -9,7 +9,6 @@ import com.fromwau.klap.internal.spec.ValueSpec
 import com.fromwau.klap.internal.spec.requireValidSpelling
 import com.fromwau.klap.internal.spec.spellings
 import com.fromwau.klap.internal.spec.token
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.jvm.JvmName
 import kotlin.math.abs
 import kotlin.reflect.typeOf
@@ -86,9 +85,10 @@ private class TypeChangedConverter(private val delegate: (String) -> Result<Any?
 /**
  * Composes [next] after whatever converter is already on this spec, and after the checks declared since,
  * instead of overwriting it, so chained String-input converters (`.choice().map { }`, `.map { }.map { }`,
- * `.choice().int()`, ...) stack. The inner cast to `String` holds only while every prior stage still yields
- * one, so a [typeChanging] stage closes the spec to further converters — which is what catches a second call made
- * through a leaked `Arg<String>`/`Opt<String?>` handle, whose static type never advances to reveal it.
+ * `.choice().int()`, ...) stack. A prior stage yielding null passes it on as absent. The inner cast to `String`
+ * holds only while every prior stage still yields one, so a [typeChanging] stage closes the spec to further
+ * converters. That is what catches a second call made through a leaked `Arg<String>`/`Opt<String?>` handle,
+ * whose static type never advances to reveal it.
  */
 private fun ValueSpec.andThenConvert(typeChanging: Boolean = false, next: (String) -> Result<Any?, ConversionError>) {
     val label = if (this is OptionSpec) "option" else "argument"
@@ -103,7 +103,7 @@ private fun ValueSpec.andThenConvert(typeChanging: Boolean = false, next: (Strin
     validate = null
     val composed: (String) -> Result<Any?, ConversionError> = { raw ->
         when (val p = prior(raw)) {
-            is Result.Success -> next(p.value as String)
+            is Result.Success -> (p.value as String?)?.let(next) ?: p
             is Result.Error -> p
         }
     }
@@ -233,15 +233,7 @@ internal fun ValueSpec.applyMap(
     typeChanging: Boolean,
     transform: (String) -> Any?,
 ) {
-    andThenConvert(typeChanging) { raw ->
-        try {
-            Result.Success(transform(raw))
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            Result.Error(ConversionError.Threw(e))
-        }
-    }
+    andThenConvert(typeChanging) { raw -> Result.Success(transform(raw)) }
 }
 
 /**
@@ -249,15 +241,6 @@ internal fun ValueSpec.applyMap(
  * judges the value inside the chain; the refusal is its [ConversionError.Domain.detail].
  */
 internal data object CheckRefused : ResultError
-
-/** What [check] says of [value]: null to pass, else the refusal, a check that throws refusing with its message. */
-internal fun judge(check: (Any?) -> String?, value: Any): String? = try {
-    check(value)
-} catch (e: CancellationException) {
-    throw e
-} catch (e: Throwable) {
-    ConversionError.Threw(e).message
-}
 
 /**
  * This chain followed by [check] on its value, so a check declared before a later converter still judges the
@@ -269,12 +252,15 @@ private fun ((String) -> Result<Any?, ConversionError>).thenChecked(
     check ?: return this
     return { raw ->
         val converted = this(raw)
-        val refusal = (converted as? Result.Success)?.value?.let { judge(check, it) }
+        val refusal = (converted as? Result.Success)?.value?.let(check)
         if (refusal == null) converted else Result.Error(ConversionError.Domain(CheckRefused, refusal))
     }
 }
 
 private fun <T> ValueSpec.applyValidate(message: String, predicate: (T) -> Boolean) {
+    require(cardinality !is Cardinality.Multiple) {
+        "${if (this is OptionSpec) "option" else "argument"} '$name': put .validate() before .multiple(), not after it"
+    }
     val prior = validate
     // A check declared after `.optionalValue()` is typed over the OptionalValue it binds, while it runs on
     // the converted attached value; a bare occurrence is never checked.
@@ -429,6 +415,7 @@ public abstract class ConverterScope internal constructor() {
      * A [T] other than `String` ends the converter chain: a converter called afterwards through a handle kept
      * from before this one fails when the CLI is built. `.convert { Ok(it.trim()) }.choice("a", "b")` still
      * chains. A [transform] that only ever fails needs [T] spelled out, `.convert<Int> { Err(...) }`.
+     * A throw from [transform] is not caught and propagates out of `parse` and `run`.
      */
     public inline fun <reified T> Arg<String>.convert(
         noinline transform: (String) -> Result<T, ConversionError>,
@@ -438,9 +425,9 @@ public abstract class ConverterScope internal constructor() {
     }
 
     /**
-     * Generic input adapter: reads the raw string and returns a domain type. A thrown exception becomes a
-     * clean parse error (`invalid value …`). e.g. `argument("timeout").map { it.toInt().seconds }`.
-     * Use [convert] instead when you want to control the error message yourself.
+     * Generic input adapter: reads the raw string and returns a domain type, e.g.
+     * `argument("host").map { Host(it.lowercase()) }`. For a transform that can refuse a value, use [convert],
+     * which returns the error; a throw from [transform] is not caught and propagates out of `parse` and `run`.
      *
      * A [T] other than `String` ends the converter chain, as [convert]'s does; `.map { it.lowercase() }` still
      * chains.
@@ -577,11 +564,12 @@ public abstract class ConverterScope internal constructor() {
 
     /**
      * Checks [predicate] on each value as converted so far: `.validate { it.isNotBlank() }.int()` judges the text,
-     * `.int().validate { it > 0 }` the number. Call it before `.multiple()`. Failure renders as CliError.BadValue,
-     * never InvalidChoice.
+     * `.int().validate { it > 0 }` the number. Call it before `.multiple()`: after it, building the CLI fails.
+     * Failure renders as CliError.BadValue, never InvalidChoice.
      *
      * Judges the value alone: it runs during conversion, so no sibling input is readable yet. For a rule
-     * weighing one input against another, see [CommandBuilder.validateInputs].
+     * weighing one input against another, see [CommandBuilder.validateInputs]. A throw from [predicate] is not
+     * caught and propagates out of `parse` and `run`.
      */
     public fun <T> Arg<T>.validate(message: String, predicate: (T) -> Boolean): Arg<T> {
         spec.applyValidate(message, predicate)
@@ -660,7 +648,7 @@ public abstract class ConverterScope internal constructor() {
      * ```
      *
      * @param accepts whether a dash word, written whole with its dash (`-5`, `-inf`), is this operand's value.
-     *   Called while the line is parsed, so keep it a pure test of the word.
+     *   Called while the line is parsed, so keep it a pure test of the word; a throw from it is not caught.
      */
     public fun <T> Arg<T>.dashLed(accepts: (word: String) -> Boolean): Arg<T> {
         spec.dashLed = true
@@ -691,7 +679,8 @@ public abstract class ConverterScope internal constructor() {
      *
      * @param gather the text joining the words taken, in line order, into the value your converter reads.
      * @param accepts whether a dash word, written whole with its dash (`-w`, `-755`), belongs to this slot.
-     *   Called while the line is parsed and on every Tab press, so keep it a pure test of the word.
+     *   Called while the line is parsed and on every Tab press, so keep it a pure test of the word; a throw
+     *   from it is not caught.
      */
     public fun <T> Arg<T>.dashLed(gather: String, accepts: (word: String) -> Boolean): Arg<T> {
         spec.gather = DashLedGather(gather, accepts)
@@ -730,7 +719,8 @@ public abstract class ConverterScope internal constructor() {
      * argument("branch").completeWith { branches().forEach { candidate(it) } }
      * ```
      *
-     * Call `candidate(value, description)` or `candidates(values)` on the [CompletionScope] receiver.
+     * Call `candidate(value, description)` or `candidates(values)` on the [CompletionScope] receiver. A throw
+     * from [provider] is not caught and propagates out of the completion request.
      *
      * @param filterByPrefix keeps only the candidates starting with the word being typed. Pass `false` to
      *   match some other way, filtering against `current` yourself.
@@ -870,6 +860,7 @@ public abstract class ConverterScope internal constructor() {
      * A [T] other than `String` ends the converter chain: a converter called afterwards through a handle kept
      * from before this one fails when the CLI is built. `.convert { Ok(it.trim()) }.choice("a", "b")` still
      * chains. A [transform] that only ever fails needs [T] spelled out, `.convert<Int> { Err(...) }`.
+     * A throw from [transform] is not caught and propagates out of `parse` and `run`.
      */
     public inline fun <reified T> Opt<String?>.convert(
         noinline transform: (String) -> Result<T, ConversionError>,
@@ -879,8 +870,10 @@ public abstract class ConverterScope internal constructor() {
     }
 
     /**
-     * Generic input adapter for an option: reads the raw string and returns a domain type; a thrown
-     * exception becomes a clean parse error. e.g. `option(short = 't', long = "timeout").map { it.toInt().seconds }`.
+     * Generic input adapter for an option: reads the raw string and returns a domain type, e.g.
+     * `option(short = 'H', long = "host").map { Host(it.lowercase()) }`. For a transform that can refuse a value,
+     * use [convert], which returns the error; a throw from [transform] is not caught and propagates out of `parse`
+     * and `run`.
      *
      * A [T] other than `String` ends the converter chain, as [convert]'s does; `.map { it.lowercase() }` still
      * chains.
@@ -1048,6 +1041,7 @@ public abstract class ConverterScope internal constructor() {
      * Checks [predicate] on the value as converted so far, at its place in the chain as for an operand; failure
      * renders as CliError.BadValue, never InvalidChoice.
      * Judges the value alone; for one weighed against another input, see [CommandBuilder.validateInputs].
+     * A throw from [predicate] is not caught and propagates out of `parse` and `run`.
      */
     public fun <T> Opt<T?>.validate(message: String, predicate: (T) -> Boolean): Opt<T?> {
         spec.applyValidate(message, predicate)
@@ -1095,7 +1089,7 @@ public abstract class ConverterScope internal constructor() {
 
     /**
      * The option's counterpart of [Arg.completeWith]: supplies this option's tab-completion candidates when
-     * the user presses Tab, computed there and then.
+     * the user presses Tab, computed there and then. A throw from [provider] is not caught.
      *
      * @param filterByPrefix keeps only the candidates starting with the word being typed. Pass `false` to
      *   match some other way, filtering against `current` yourself.

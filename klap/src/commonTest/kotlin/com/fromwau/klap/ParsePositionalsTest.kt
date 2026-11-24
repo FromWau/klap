@@ -161,20 +161,6 @@ class ParsePositionalsTest {
         assertContains(thrown.message.orEmpty(), "type-changing converter")
     }
 
-    // --- converter/validate chains must never throw at parse (never-throw contract) ---
-
-    @Test
-    fun `validate after multiple yields bad value instead of crashing`() {
-        // validate runs per element (each a String), but the predicate expects the List; casting the
-        // String element to List throws at parse, which the never-throw contract turns into BadValue.
-        val tree = cli("app") {
-            val files = argument("files").multiple().validate("need at least two") { it.size >= 2 }
-            action { Ok(files().joinToString(",")) }
-        }
-        val err = tree.parse(listOf("a")).assertError<CliError.BadValue>()
-        // reason is the platform-dependent cast exception message, so only the type and name are pinned.
-        assertEquals("files", err.name)
-    }
 }
 
 private fun variadicTree(): Cli = cli("tar") {

@@ -1224,18 +1224,6 @@ class NeverThrowContractTest {
         assertEquals("null\n", tree.execAndCapture(listOf("dial", "--port", "abc")))
     }
 
-    @Test
-    fun `nullable map feeding null into a later string stage yields bad value not a crash`() {
-        // .map { ifEmpty { null } } produces null, which the following .boolean() stage casts to String;
-        // that throws at parse, and the never-throw contract must turn it into BadValue, not a crash.
-        val tree = cli("app") {
-            val v = option(short = 'v').map { it.ifEmpty { null } }.boolean()
-            action { Ok(v().toString()) }
-        }
-        val err = tree.parse(listOf("-v", "")).assertError<CliError.BadValue>()
-        // reason is the platform-dependent cast exception message, so only the type and name are pinned.
-        assertEquals("-v", err.name)
-    }
 }
 
 /** An option declared with no long form at all. */

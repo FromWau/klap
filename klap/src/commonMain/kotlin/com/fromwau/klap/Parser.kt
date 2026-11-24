@@ -33,7 +33,6 @@ import com.fromwau.klap.internal.spec.BuiltinKind
 import com.fromwau.klap.internal.spec.FlagSpec
 import com.fromwau.klap.internal.spec.HolderSpec
 import com.fromwau.klap.internal.spec.shorts
-import kotlin.coroutines.cancellation.CancellationException
 
 /** How `--color` resolves; see [colorMode] (lenient extraction) and `parse` (the strict, error-reporting form). */
 internal enum class ColorMode {
@@ -773,20 +772,9 @@ private fun Cli.routeBuiltin(
  * Runs the command's `validateInputs {}` blocks in declaration order, stopping at the first failure. They
  * read bound values, so this is the earliest point they can run — and, being before the action, still early
  * enough that a refused line does nothing.
- *
- * Guarded like `.validate()`, the counterpart these docs point authors at: both are consumer code reached
- * from [parse], so a rule moved from one to the other must not lose the never-throw boundary on the way.
  */
 private fun runValidations(exec: Invocation.Execute): CliError? =
-    exec.command.validations.firstNotNullOfOrNull { rule ->
-        try {
-            rule(exec.scope)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            CliError.Failure("validateInputs failed: ${e.message?.takeIf { it.isNotBlank() } ?: "no message"}")
-        }
-    }
+    exec.command.validations.firstNotNullOfOrNull { rule -> rule(exec.scope) }
 
 /**
  * `__complete [--cursor <k>] -- <words>`, the end-of-options marker dropped so `words` is exactly what was typed.

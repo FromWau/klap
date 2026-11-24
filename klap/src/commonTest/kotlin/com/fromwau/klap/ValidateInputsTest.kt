@@ -5,38 +5,12 @@ import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /**
- * `validateInputs {}` where `GuideValidateInputsSnippetTest` does not reach: the never-throw boundary, the
- * built-ins beyond `--help`/`--version`, the input kinds a block can read, and what a refusal stops.
+ * `validateInputs {}` where `GuideValidateInputsSnippetTest` does not reach: the built-ins beyond `--help`/`--version`,
+ * the input kinds a block can read, and what a refusal stops.
  */
 class ValidateInputsTest {
-
-    @Test
-    fun `a throwing block is reported rather than thrown`() {
-        // `.validate()` is the counterpart these docs point authors at, and it reports a throwing
-        // predicate rather than letting it out; a rule moved between the two must not lose that.
-        val tree = cli("app") {
-            val name = option(long = "name").required()
-            validateInputs { error("boom") }
-            action { Ok("name=${name()}") }
-        }
-        val failure = tree.parse(listOf("--name", "x")).assertError<CliError.Failure>()
-        assertTrue("boom" in failure.detail, failure.detail)
-    }
-
-    @Test
-    fun `a block that throws an error is reported rather than thrown`() {
-        // `TODO()` throws an Error, not an Exception, and `.validate()` reports that too (todo 164).
-        val tree = cli("app") {
-            val name = option(long = "name").required()
-            validateInputs { TODO("rule not written yet") }
-            action { Ok("name=${name()}") }
-        }
-        val failure = tree.parse(listOf("--name", "x")).assertError<CliError.Failure>()
-        assertTrue("rule not written yet" in failure.detail, failure.detail)
-    }
 
     @Test
     fun `completion and docs render without consulting a refusing block`() {

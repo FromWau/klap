@@ -85,22 +85,15 @@ internal fun CliError.words(): String = when (this) {
 }
 
 /**
- * A `Failed` carries the action's own typed error, whose (clamped) exit code propagates; klap's own
- * render/encode failures always exit 1.
+ * A `Failed` carries the action's own typed error, whose (clamped) exit code propagates; a value klap cannot
+ * encode always exits 1.
  */
-internal fun renderActionError(error: ActionError, json: Boolean, terminal: Terminal): Int {
-    when (error) {
-        is ActionError.Failed -> return renderError(error.error, json, terminal)
-        ActionError.NotSerializable ->
-            terminal.err(jsonErrorEnvelope(encodeFailureJson("NotSerializable", null), 1) + "\n")
-
-        is ActionError.EncodeFailed ->
-            terminal.err(jsonErrorEnvelope(encodeFailureJson("EncodeFailed", error.message), 1) + "\n")
-
-        is ActionError.RenderFailed ->
-            terminal.err("error: ${"could not render output: ${error.message}".escapeControls()}\n")
+internal fun renderActionError(error: ActionError, json: Boolean, terminal: Terminal): Int = when (error) {
+    is ActionError.Failed -> renderError(error.error, json, terminal)
+    ActionError.NotSerializable -> {
+        terminal.err(jsonErrorEnvelope(notSerializableJson(), 1) + "\n")
+        1
     }
-    return 1
 }
 
 /**
@@ -161,8 +154,5 @@ internal fun ConversionError.words(): String = when (this) {
     ConversionError.NotAnInstant -> "not an ISO 8601 instant with an offset, such as 2026-01-31T12:00:00Z"
     ConversionError.NotAUuid -> "not a UUID (32 hex digits, dashed as 8-4-4-4-12 or not)"
     is ConversionError.NotOneOf -> "not one of ${choices.joinToString(", ")}"
-    // Kotlin/Native's toInt() throws with a null message; the fallback must not say "invalid value"
-    // again, since BadValue's rendering above already prefixes it.
-    is ConversionError.Threw -> thrown.message?.takeIf { it.isNotBlank() } ?: "conversion failed"
     is ConversionError.Domain -> detail
 }

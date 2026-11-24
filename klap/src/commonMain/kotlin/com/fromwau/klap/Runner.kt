@@ -29,9 +29,10 @@ import com.fromwau.klap.internal.spec.completeWithoutSuspending
 
 /**
  * Parses [argv], runs whatever it resolved to, writes the result to [terminal] and hands back the exit
- * code. A parse or action failure is rendered and reported as that code rather than thrown, and the process
+ * code. A parse error or a typed [CliError] from the action is rendered and reported as that code, and the process
  * is not terminated, which is what makes it the entry point to use from a test or from inside a larger
- * program.
+ * program. Code you hand klap that throws is not caught: an action, converter, check, renderer or provider that
+ * throws propagates out of this call unchanged.
  *
  * ```kotlin
  * assertEquals(0, app.run(listOf("greet", "ada"), recorder))

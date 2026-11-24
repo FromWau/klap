@@ -350,7 +350,7 @@ at most one gathering slot, and it is not `.multiple()`.
 ```kotlin
 val port    = option(short = 'p', long = "port").int().default(8080)           // Int
 val level   = option(long = "level").enum<LogLevel>()                  // LogLevel?
-val timeout = option(short = 't', long = "timeout").map { it.toInt().seconds } // Duration?
+val timeout = option(short = 't', long = "timeout").duration()                // Duration?
 val tags    = option(long = "tag").multiple(min = 1)                   // List<String>, at least one
 val region  = option(long = "region").required()                       // String, must be given
 val files   = argument("files").file().multiple(min = 1)                       // List<String>, path-completed
@@ -370,9 +370,9 @@ val files   = argument("files").file().multiple(min = 1)                       /
 | `.timeZone()`                  | argument, option                | `kotlinx.datetime.TimeZone`, from `klap-datetime`, through `TimeZone.of`: `Europe/Vienna`, `UTC`, `+02:00`. An id the time zone database lacks is refused                                                                                                                                                                                                       |
 | `.enum<E>()`                   | argument, option                | `E`, matched in exact case (`ignoreCase = true` opts out); each entry spelled as its lowercase name, or as `spelling = { }` gives it. On an option, `spellings = { it.words }` types an entry as any of several words, `--help` naming it by the first, and `abbreviates = false` takes only whole values in every mode (see [Abbreviation](#abbreviation)) |
 | `.choice("a", "b")`            | argument, option                | the raw string, restricted to the given set (matched in exact case unless `ignoreCase = true`, returns the declared spelling). A closed set of values is `.enum<E>()`; `.choice` is the escape hatch for a set known only at runtime (`.choice(*names)`) or a spelling an enum cannot carry                                                               |
-| `.map { raw -> T }`            | argument, option                | any type; a thrown exception becomes a clean parse error                                                                                                                                                                                                                                                                                                        |
+| `.map { raw -> T }`            | argument, option                | any type, for a transform that cannot refuse a value; what it throws is not caught                                                                                                                                                                                                                                                                              |
 | `.convert { raw -> Result }`   | argument, option                | any type, failing with a case of your own                                                                                                                                                                                                                                                                                                                       |
-| `.validate("msg") { it > 0 }`  | argument, option                | same type; fails with `BadValue` when the predicate is false. The predicate always runs per element, so declare it *before* `.multiple()`: a chain that puts it after fails at parse instead of validating                                                                                                                                                      |
+| `.validate("msg") { it > 0 }`  | argument, option                | same type; fails with `BadValue` when the predicate is false. The predicate runs per element, so declare it *before* `.multiple()`: a chain that puts it after is refused when the CLI is built                                                                                                                                                                 |
 | `.range(1..65535)`             | argument, option (`Comparable`) | same type, bounds-checked; shows the range in help. Sugar over `.validate()`, with the same ordering                                                                                                                                                                                                                                                            |
 | `.optional()`                  | argument                        | makes a positional nullable (options are already nullable)                                                                                                                                                                                                                                                                                                      |
 | `.default(v)`                  | argument, option                | binds `v` whenever the value would be null (absent, or a converter that resolved to `null`). Declared *before* a converter, it runs through that too, so `.default("0").int()` binds `0`; one the converter rejects fails at construction. A `.choice()` set is checked in either order, but `.validate()` / `.range()` predicates never run against a default. |
@@ -398,9 +398,9 @@ instead of transforming the value, so they are order-free: `.placeholder("SEED")
 `.long().placeholder("SEED")` declare the same input. The rest of the table reads the value or its
 cardinality, so order matters there.
 
-`.convert { }` reads the raw string and returns `Result<T, ConversionError>` yourself, when you want to
-control the error instead of letting `.map` derive one from a thrown exception. `ConversionError` is a
-sealed hierarchy of klap's own conversion failures, and `Domain` is the case you contribute to:
+`.convert { }` reads the raw string and returns `Result<T, ConversionError>` yourself, for a value that can
+be refused: the refusal is the error it returns, never a throw. `ConversionError` is a sealed hierarchy of
+klap's own conversion failures, and `Domain` is the case you contribute to:
 
 ```kotlin
 data object NotAPort : ResultError
@@ -456,9 +456,9 @@ klap's own `.duration()`, `.instant()` and `.uuid()` refuse a value with `Conver
 `NotAnInstant` and `NotAUuid`, printed as `invalid value '-1h' for --timeout: not a duration of zero or more,
 such as 90, 1h30m or PT1H30M`.
 
-`.map` is for total transforms; reach for `.convert { }` (or a thrown exception) when a value can be
-*invalid*, so the user sees a parse error instead of a silent fallback. A `.map { }` lambda that returns
-`null` for a present value is treated like absence: `.default(v)` substitutes `v` (so
+`.map` is for total transforms; reach for `.convert { }` when a value can be *invalid*, so the user sees a
+parse error instead of a silent fallback. A `.map { }` lambda that returns `null` for a present value is
+treated like absence: `.default(v)` substitutes `v` (so
 `.map { it.toIntOrNull() }.default(0)` yields `0` on bad input), and with no default the accessor simply
 reads back `null`. A converter that *errors* (e.g. `.int()` on `"abc"`) is never masked by a default; it
 still surfaces as `BadValue`.
@@ -1472,10 +1472,11 @@ action {
 }
 ```
 
-Model *expected* failures as `Err`: klap renders any returned `CliError`, but an exception thrown
-inside `action { }` is treated as a programmer error and propagates uncaught (it is not turned into an
-`error:` line). The `.map` / `.convert` converters are the deliberate exception, wrapping a thrown
-parse error into a clean `BadValue` for you.
+Model *expected* failures as `Err`: klap renders any returned `CliError`. Code you hand klap that throws
+is not caught, wherever it runs: an action, a `.map` or `.convert`, a `.validate` check, `validateInputs`,
+a `human` or `exit` renderer, a value's `toString()`, a serializer (but for a `SerializationException`), a
+`.completeWith` provider, a dash-led predicate or a projection. The throw propagates out of `run` or `parse` unchanged, with its own stack trace,
+because it is a bug in that code rather than something your user typed.
 
 The catch-all is `CliError.Failure(detail)`, which exits with `Exit.Failure` unless given another `exit`.
 Map your own failures to it at the boundary:
@@ -1708,7 +1709,9 @@ The value you return from `Ok` renders two ways, chosen by the global `--json` f
 - **With `--json`:** `kotlinx.serialization` encoding of the value. A `String` becomes a bare JSON
   string, and so does a `Styled` value, as its plain text; an `@Serializable` type becomes its object/array.
   `Unit` prints nothing here too, so a command with no output prints no JSON document and its exit code
-  says whether it succeeded.
+  says whether it succeeded. A value JSON cannot encode, such as a `Double.NaN` or a polymorphic subtype with
+  no registered serializer, exits 1 with a `NotSerializable` error; so does a serializer of yours that throws
+  `SerializationException`.
 
 ```kotlin
 @Serializable
@@ -2357,9 +2360,9 @@ extensions against it rather than implementations of it.
 
 Two costs worth knowing. Reading any one accessor resolves them all — every input of the command under the
 cursor, plus every global, is converted and validated on that keypress — so keep converters and
-`.validate { }` blocks cheap and free of side effects. And because the same seam that stops a Tab press from
-dumping a stack trace into the terminal also swallows exceptions from your own provider code, a bug in a
-provider looks exactly like a provider that had nothing to offer.
+`.validate { }` blocks cheap and free of side effects. And klap does not catch what your provider, or a
+converter it resolves, throws: the throw propagates out of the completion request. The generated scripts hide
+its stderr, so on Tab a bug there offers nothing and prints no trace; run `mytool __complete` by hand to see it.
 
 `description`, when given, is shown alongside the value by shells that support it (zsh, fish, PowerShell);
 bash shows the value alone. klap prefix-filters the offered candidates by the partial word by default,

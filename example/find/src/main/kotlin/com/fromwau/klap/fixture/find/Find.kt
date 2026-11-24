@@ -1,9 +1,13 @@
 package com.fromwau.klap.fixture.find
 
+import com.fromwau.kern.result.Err
 import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
+import com.fromwau.kern.result.ResultError
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.Builtin
 import com.fromwau.klap.CommandBuilder
+import com.fromwau.klap.ConversionError
 import com.fromwau.klap.Flag
 import com.fromwau.klap.Help
 import com.fromwau.klap.Opt
@@ -26,8 +30,8 @@ import com.fromwau.klap.projection
  * Everywhere klap's surface diverges from real find, the comment is marked `KLAP-GAP:`.
  */
 
-// find's value grammars, each read as findutils reads it while parsing the line. `.map { }` turns a thrown
-// exception into a clean BadValue, so each grammar is a plain function named at its declaration.
+// find's value grammars, each read as findutils reads it while parsing the line. Each grammar is a plain function
+// named at its `.convert { }`, refusing a value with the words find prints for it.
 //
 // The result types are public only because the inputs holder at the foot of this file names them; nothing
 // else about them is API.
@@ -91,38 +95,42 @@ private fun strtod(text: String): Double? {
     }
 }
 
-private fun findCount(raw: String): FindCount {
+/** A value find refuses while parsing the line. */
+private data object FindRefuses : ResultError
+
+private fun refused(detail: String): Result<Nothing, ConversionError> = Err(ConversionError.Domain(FindRefuses, detail))
+
+private fun findCount(raw: String): Result<FindCount, ConversionError> {
     val (comparison, rest) = comparisonOf(raw)
-    val value = strtod(rest) ?: throw IllegalArgumentException("expected [+-]N, got '$raw'")
-    return FindCount(comparison, value)
+    val value = strtod(rest) ?: return refused("expected [+-]N, got '$raw'")
+    return Ok(FindCount(comparison, value))
 }
 
-private fun findNumber(raw: String): FindNumber {
+private fun findNumber(raw: String): Result<FindNumber, ConversionError> {
     val (comparison, rest) = comparisonOf(raw)
-    val value = unsignedCount(rest) ?: throw IllegalArgumentException("expected [+-]N, got '$raw'")
-    return FindNumber(comparison, value)
+    val value = unsignedCount(rest) ?: return refused("expected [+-]N, got '$raw'")
+    return Ok(FindNumber(comparison, value))
 }
 
 private const val FIND_SIZE_UNITS = "bcwkMG"
 
-private fun findSize(raw: String): FindSize {
+private fun findSize(raw: String): Result<FindSize, ConversionError> {
     val (comparison, rest) = comparisonOf(raw)
     val unit = rest.lastOrNull()?.takeIf { it in FIND_SIZE_UNITS }
     val digits = if (unit == null) rest else rest.dropLast(1)
-    val value = unsignedCount(digits)
-        ?: throw IllegalArgumentException("expected [+-]N[$FIND_SIZE_UNITS], got '$raw'")
-    return FindSize(comparison, value, unit ?: 'b')
+    val value = unsignedCount(digits) ?: return refused("expected [+-]N[$FIND_SIZE_UNITS], got '$raw'")
+    return Ok(FindSize(comparison, value, unit ?: 'b'))
 }
 
 /** `-maxdepth 3`: ASCII digits only, no sign and no blank, up to INT_MAX. */
-private fun findDepth(raw: String): Int =
-    raw.takeIf { it.isAsciiDigits() }?.toIntOrNull()
-        ?: throw IllegalArgumentException("expected a non-negative decimal integer, got '$raw'")
+private fun findDepth(raw: String): Result<Int, ConversionError> =
+    raw.takeIf { it.isAsciiDigits() }?.toIntOrNull()?.let(::Ok)
+        ?: refused("expected a non-negative decimal integer, got '$raw'")
 
 /** `-O3`: ASCII digits only, up to 65535, the level find's own parser takes. */
-private fun findOptimisationLevel(raw: String): Int =
-    raw.takeIf { it.isAsciiDigits() }?.toIntOrNull()?.takeIf { it <= 65535 }
-        ?: throw IllegalArgumentException("expected a decimal level up to 65535, got '$raw'")
+private fun findOptimisationLevel(raw: String): Result<Int, ConversionError> =
+    raw.takeIf { it.isAsciiDigits() }?.toIntOrNull()?.takeIf { it <= 65535 }?.let(::Ok)
+        ?: refused("expected a decimal level up to 65535, got '$raw'")
 
 private const val MODE_BITS = 0b111_111_111_111
 
@@ -170,13 +178,13 @@ private fun compilesAsMode(mode: String): Boolean {
     }
 }
 
-private fun findPerm(raw: String): FindPerm {
+private fun findPerm(raw: String): Result<FindPerm, ConversionError> {
     val match = if (raw.firstOrNull() == '-' || raw.firstOrNull() == '/') raw.first() else '='
     val mode = if (match == '=') raw else raw.drop(1)
     // findutils dropped the old `-perm +MODE` and refuses it, though `+644` is a mode mode_compile takes.
     val oldPlusForm = raw.length > 1 && raw[0] == '+' && raw[1] in '0'..'7'
-    if (oldPlusForm || !compilesAsMode(mode)) throw IllegalArgumentException("invalid file mode '$raw'")
-    return FindPerm(match, mode)
+    if (oldPlusForm || !compilesAsMode(mode)) return refused("invalid file mode '$raw'")
+    return Ok(FindPerm(match, mode))
 }
 
 /** Whether `-printf` [format] ends in a `%` that starts no directive, which find refuses while parsing. */
@@ -232,8 +240,10 @@ private fun CommandBuilder.typeList(
 private val DEBUG_KEYS: List<String> = listOf("exec", "opt", "rates", "search", "stat", "time", "tree", "all", "help")
 
 /** `-D tree,search`: the keys of one list, an empty one refused as find refuses it. */
-private fun debugKeys(raw: String): List<String> =
-    raw.split(",").filter { it.isNotEmpty() }.ifEmpty { throw IllegalArgumentException("empty argument to -D") }
+private fun debugKeys(raw: String): Result<List<String>, ConversionError> {
+    val keys = raw.split(",").filter { it.isNotEmpty() }
+    return if (keys.isEmpty()) refused("empty argument to -D") else Ok(keys)
+}
 
 /** find's regular expression types, each typed as its [cli] name, in the order `find . -regextype help` lists. */
 public enum class RegexType(public val cli: String) {
@@ -312,7 +322,7 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
 
     // `-D tree,search`, its list in the next word; each -D adds its keys to the earlier ones.
     val debug = option(short = 'D', help = "print diagnostics (comma-separated)")
-        .map(::debugKeys)
+        .convert(::debugKeys)
         .multiple()
         .completeWith {
             val head = if (current.contains(',')) current.substringBeforeLast(',') + "," else ""
@@ -322,7 +332,7 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
     // `-O3`, the level glued: find refuses a bare `-O` and `-O 3` alike.
     val optimise = option(short = 'O', help = "query optimisation level")
         .gluedValue()
-        .map(::findOptimisationLevel)
+        .convert(::findOptimisationLevel)
         .multiple()
         .completeWith { (0..3).forEach { candidate("$it") } }
 
@@ -339,8 +349,8 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
     val noignoreReaddirRace: Flag
     val files0From: Opt<CliPath?>
     group("Traversal options (find's own position-independent set)") {
-        maxDepth = option(long = "maxdepth", help = "descend at most N directory levels").map(::findDepth)
-        minDepth = option(long = "mindepth", help = "do not apply any tests at levels less than N").map(::findDepth)
+        maxDepth = option(long = "maxdepth", help = "descend at most N directory levels").convert(::findDepth)
+        minDepth = option(long = "mindepth", help = "do not apply any tests at levels less than N").convert(::findDepth)
 
         // `-d` is find's synonym for `-depth`.
         depth = flag(long = listOf("depth", "d"), help = "process a directory's contents before the directory itself")
@@ -401,10 +411,10 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
     // `-size +1M` / `-size -100c` / `-size 3`. A `-`-led token binds in the space form, because klap reads a
     // dash-led word as the value a value-taking option is waiting for.
     val sizeTest = option(long = "size", help = "file uses N units of space ([+-]N[$FIND_SIZE_UNITS])")
-        .map(::findSize)
+        .convert(::findSize)
         .multiple()
 
-    fun count(long: String, help: String) = option(long = long, help = help).map(::findCount).multiple()
+    fun count(long: String, help: String) = option(long = long, help = help).convert(::findCount).multiple()
 
     val mtime = count("mtime", "data last modified [+-]N*24h ago")
     val mmin = count("mmin", "data last modified [+-]N minutes ago")
@@ -414,14 +424,14 @@ public fun findCli(): TypedCli<FindInputs> = cliOf("find") {
     val amin = count("amin", "last accessed [+-]N minutes ago")
     val used = count("used", "last accessed [+-]N days after its status last changed")
 
-    fun number(long: String, help: String) = option(long = long, help = help).map(::findNumber).multiple()
+    fun number(long: String, help: String) = option(long = long, help = help).convert(::findNumber).multiple()
 
     val linkCount = number("links", "file has [+-]N hard links")
     val inum = number("inum", "file has inode number [+-]N")
     val uid = number("uid", "file's numeric user ID is [+-]N")
     val gid = number("gid", "file's numeric group ID is [+-]N")
 
-    val permTest = option(long = "perm", help = "permission bits ([-/]MODE)").map(::findPerm).multiple()
+    val permTest = option(long = "perm", help = "permission bits ([-/]MODE)").convert(::findPerm).multiple()
 
     // `find . -newer ''` is "'': No such file or directory", refused while parsing, as every reference file is.
     fun reference(long: String, help: String) = option(long = long, help = help)

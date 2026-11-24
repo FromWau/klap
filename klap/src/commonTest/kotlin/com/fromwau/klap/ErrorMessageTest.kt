@@ -61,8 +61,6 @@ class ErrorMessageTest {
         ConversionError.NotAnInstant to "not an ISO 8601 instant with an offset, such as 2026-01-31T12:00:00Z",
         ConversionError.NotAUuid to "not a UUID (32 hex digits, dashed as 8-4-4-4-12 or not)",
         ConversionError.NotOneOf(listOf("c", "f", "k")) to "not one of c, f, k",
-        ConversionError.Threw(IllegalStateException("too big")) to "too big",
-        ConversionError.Threw(IllegalStateException()) to "conversion failed",
         ConversionError.Domain(OwnError, "must be in 1..65535") to "must be in 1..65535",
     )
 

@@ -3,7 +3,10 @@ package com.fromwau.klap.fixture.head
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.head.HeadProjectionSupport.Cell
 import com.fromwau.klap.fixture.head.HeadProjectionSupport.checkAll
+import com.fromwau.kern.result.Ok
+import com.fromwau.kern.result.Result
 import kotlin.test.Test
+import kotlin.test.assertIs
 import kotlin.test.assertEquals
 
 /*
@@ -151,6 +154,11 @@ class HeadConverterTest {
             "3lc" to Count.Bytes("3"),
             "3cl" to Count.Lines("3"),
         )
-        assertEquals(read, read.mapValues { (typed, _) -> obsoleteCount(typed) })
+        assertEquals(read.mapValues { (_, count) -> Ok(count) }, read.mapValues { (typed, _) -> obsoleteCount(typed) })
+    }
+
+    @Test
+    fun `a letter outside the obsolete count's units is refused as a returned error`() {
+        assertIs<Result.Error<*>>(obsoleteCount("3x"))
     }
 }
