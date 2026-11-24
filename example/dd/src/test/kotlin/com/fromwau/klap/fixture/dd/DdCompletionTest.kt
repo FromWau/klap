@@ -8,6 +8,7 @@ import com.fromwau.klap.fixture.dd.DdLineContext.checkContext
 import com.fromwau.klap.fixture.dd.DdLineContext.checkContextValues
 import com.fromwau.klap.fixture.dd.DdLineContext.filesOf
 import com.fromwau.klap.fixture.dd.DdLineContext.valuesAfter
+import com.fromwau.klap.fixture.value
 import kotlin.test.Test
 
 /*

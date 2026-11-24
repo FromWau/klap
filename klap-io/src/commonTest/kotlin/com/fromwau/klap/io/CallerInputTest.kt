@@ -87,7 +87,7 @@ class CallerInputTest {
             action { Ok("") }
         }
         assertEquals(
-            listOf(Suggestion("a.toml"), Suggestion("b.toml")),
+            listOf(Suggestion.Word("a.toml"), Suggestion.Word("b.toml")),
             tree.suggestionsFor("ls ", caller = Caller(scratch.toString(), emptyMap())),
         )
     }

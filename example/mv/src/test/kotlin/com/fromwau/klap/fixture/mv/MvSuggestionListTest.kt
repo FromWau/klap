@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.mv
 
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.fixture.description
 import com.fromwau.klap.fixture.mv.MvLineContext.Cell
 import com.fromwau.klap.fixture.mv.MvLineContext.FILES
 import com.fromwau.klap.fixture.mv.MvLineContext.assertCell
@@ -11,6 +12,7 @@ import com.fromwau.klap.fixture.mv.MvLineContext.at
 import com.fromwau.klap.fixture.mv.MvLineContext.checkContext
 import com.fromwau.klap.fixture.mv.MvLineContext.mvHelp
 import com.fromwau.klap.fixture.mv.MvLineContext.name
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
@@ -25,7 +27,7 @@ private val KLAP_BUILT_INS = listOf("-h", "--help-all", "--json", "--color", "--
 private fun attached(
     long: String,
     value: String,
-): Suggestion = Suggestion("$long=$value", mvHelp(long))
+): Suggestion = Suggestion.Word("$long=$value", mvHelp(long))
 
 private fun backupControls(vararg values: String): Array<Suggestion> =
     values.map { attached("--backup", it) }.toTypedArray()
@@ -43,7 +45,7 @@ private fun pool(longsOnly: Boolean): Array<Suggestion> = (INPUTS.flatMap(::spel
 private fun continuations(cluster: String): Array<Suggestion> = INPUTS
     .flatMap { it.shorts }
     .filter { it !in cluster.drop(1) }
-    .map { Suggestion(cluster + it, inputFor(it)!!.help) }
+    .map { Suggestion.Word(cluster + it, inputFor(it)!!.help) }
     .toTypedArray()
 
 /** The cell for [typed], with [rest] of its word after the cursor and [after] past it: every long of mv it starts. */
@@ -373,11 +375,12 @@ class MvSuggestionListTest {
     fun `a value after a refused option is none of klap's or the option's own`() {
         // `mv --color a b`, `mv --completion bash a b`, `mv --json a b`, `mv --docs a b`: "unrecognized option"; `mv
         // --s a b`: "option '--s' is ambiguous; possibilities: '--strip-trailing-slashes' '--suffix'".
-        val lines = listOf("mv --color |", "mv --completion |", "mv --json |", "mv --docs |", "mv --s |")
+        val lines = listOf("mv --color |", "mv --completion |", "mv --json |", "mv --docs |")
         checkCells(lines) { typed ->
             val offered = mv.suggestionsFor(typed.replace("|", ""), typed.indexOf('|'))
-            assertTrue(offered.all { it.value.startsWith(FILES.value) }, "G68 G90 `$typed`: offers $offered")
+            assertEquals(listOf(FILES), offered, "G68 G90 `$typed`: offers $offered")
         }
+        assertEquals(emptyList(), mv.suggestionsFor("mv --s "), "G90 `mv --s |`")
     }
 
     @Test

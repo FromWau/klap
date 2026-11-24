@@ -3,6 +3,7 @@ package com.fromwau.klap.fixture.chmod
 import com.fromwau.klap.Cli
 import com.fromwau.klap.fixture.checkCells
 import com.fromwau.klap.fixture.marked
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 import com.fromwau.klap.testing.suggestionsFor
@@ -50,10 +51,12 @@ internal object ChmodTab {
     ): Cell = Cell(rows, typed, offers)
 
     /** [spelled] (`--verbose`, `-v`, `--help`) as `chmod --help` describes it. */
-    fun name(spelled: String): Suggestion = Suggestion(spelled, chmodHelp(spelled))
+    fun name(spelled: String): Suggestion = Suggestion.Word(spelled, chmodHelp(spelled))
 
     /** The fixture's mode candidates that start with [typed], in its order, with no description. */
-    fun modes(typed: String = ""): List<Suggestion> = MODE_CANDIDATES.filter { it.startsWith(typed) }.map(::Suggestion)
+    fun modes(typed: String = ""): List<Suggestion> = MODE_CANDIDATES
+        .filter { it.startsWith(typed) }
+        .map { Suggestion.Word(it) }
 
     /** Every name of real chmod starting with [typed], the longs only when [typed] starts with two dashes. */
     fun names(typed: String): List<Suggestion> {
@@ -69,7 +72,7 @@ internal object ChmodTab {
     fun continuations(cluster: String): List<Suggestion> = INPUTS
         .mapNotNull { input -> input.short?.let { it to input } }
         .filter { (letter, _) -> letter !in cluster.drop(1) }
-        .map { (letter, input) -> Suggestion(cluster + letter, input.help) }
+        .map { (letter, input) -> Suggestion.Word(cluster + letter, input.help) }
 
     fun Cli.assertCell(cell: Cell) = assertTab("$cell", cell.line, cell.cursor, cell.offers)
 

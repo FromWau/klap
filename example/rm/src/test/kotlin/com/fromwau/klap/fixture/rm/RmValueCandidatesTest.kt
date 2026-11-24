@@ -5,6 +5,7 @@ import com.fromwau.klap.fixture.rm.RmLineContext.at
 import com.fromwau.klap.fixture.rm.RmLineContext.attached
 import com.fromwau.klap.fixture.rm.RmLineContext.checkContext
 import com.fromwau.klap.fixture.rm.RmLineContext.whenValues
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.suggestionsFor
 import kotlin.test.Test

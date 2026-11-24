@@ -454,7 +454,7 @@ Notes:
 - E16: `suggestionsFor` on the next line, written out literally. cp, tar, pacman, dd (`if=` then `filesAfter("if=")`).
 - E17: `render/Completion.kt` name branch `startsWith(current)` keeps the exact name; inCluster branch never returns `current`. cp, pacman, ls.
 - E18: `testing/Completion.kt` `tab` (`commonPrefixWith`). Rare; pacman `-Q` options. E4's counterpart for `tab`.
-- E19: `Runner.kt` `toCompletionLine`; `CompletionTest.kt` `complete through run emits value tab description line on stdout`; `example/parity` `wireSuggestions` (`CompletionContext.kt`) runs a line through `__complete` and decodes it; pacman's cells agree with `suggestionsFor`.
+- E19: `Runner.kt` `toCompletionLine`; `CompletionTest.kt` `complete through run emits value tab description line on stdout`.
 - E20: `ParitySuite.helpPage`; `render/Help.kt` row rendering vs `render/Completion.kt` `spec.help`. Every fixture.
 - E21: `Completion.kt` script comments; `RealShellCompletionTest.kt`. Every L3 and inside-word cell.
 - E22: splits E4 into checkable kinds; each maps to G1, G13, G21, G8, G11. Every fixture.

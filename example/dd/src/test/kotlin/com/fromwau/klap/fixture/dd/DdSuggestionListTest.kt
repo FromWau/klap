@@ -11,6 +11,8 @@ import com.fromwau.klap.fixture.dd.DdLineContext.checkContextValues
 import com.fromwau.klap.fixture.dd.DdLineContext.filesOf
 import com.fromwau.klap.fixture.dd.DdLineContext.offeredOn
 import com.fromwau.klap.fixture.dd.DdLineContext.valuesAfter
+import com.fromwau.klap.fixture.description
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.suggestionsFor
 import kotlin.test.Test
@@ -141,8 +143,8 @@ class DdSuggestionListTest {
     @Test
     fun `a finished word asked again offers itself`() = dd.checkContextValues(
         // E17: an attached value offers itself, a key word with no `=` the keys it starts.
-        at("E17", "dd conv=ucase|", listOf(Suggestion("conv=ucase"))),
-        at("E17", "dd status=none|", listOf(Suggestion("status=none"))),
+        at("E17", "dd conv=ucase|", listOf(Suggestion.Word("conv=ucase"))),
+        at("E17", "dd status=none|", listOf(Suggestion.Word("status=none"))),
         at("E17", "dd --version|", DD_OPTIONS.takeLast(1)),
         at("E17", "dd count|", keysStarting("count")),
     )

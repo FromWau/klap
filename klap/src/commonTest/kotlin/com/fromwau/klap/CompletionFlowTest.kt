@@ -60,8 +60,8 @@ class CompletionFlowTest {
         rm.assertFlow(
             "rm -r",
             listOf(
-                Suggestion("-rb", "the backend to remove through"),
-                Suggestion("-rf", "ignore nonexistent files"),
+                Suggestion.Word("-rb", "the backend to remove through"),
+                Suggestion.Word("-rf", "ignore nonexistent files"),
             ),
             taken = "rm -rb",
         )
@@ -75,15 +75,13 @@ class CompletionFlowTest {
             flag(short = 'f', long = "force", help = "ignore nonexistent files")
             action { Ok("") }
         }
-        assertEquals(Suggestion("-rf", "ignore nonexistent files"), rm.suggestionsFor("rm -r").first())
-        assertEquals("rm -rf", acceptSuggestion("rm -r", Suggestion("-rf")))
+        assertEquals(Suggestion.Word("-rf", "ignore nonexistent files"), rm.suggestionsFor("rm -r").first())
+        assertEquals("rm -rf", acceptSuggestion("rm -r", Suggestion.Word("-rf")))
     }
 
     @Test
     fun `a subcommand completes on no word at the end of one and inside one`() {
-        val all = listOf("check", "get", "completion", "docs").map { name ->
-            Suggestion(name, tool.suggestionsFor("tool $name").single().description)
-        }
+        val all = listOf("check", "get", "completion", "docs").map { tool.suggestionsFor("tool $it").single() }
         tool.assertFlow("tool ", all, "tool check")
         tool.assertFlow("tool  a.conf", all, "tool check a.conf", cursor = 5)
         tool.assertFlow("tool ch", all.take(1), "tool check")
@@ -94,17 +92,17 @@ class CompletionFlowTest {
 
     @Test
     fun `a flag completes at the end of a word and inside one but not on no word`() {
-        val raw = listOf(Suggestion("--raw", "print strings without quotes"))
+        val raw = listOf(Suggestion.Word("--raw", "print strings without quotes"))
         tool.assertFlow("tool check --ra", raw, "tool check --raw")
         tool.assertFlow("tool check --ra a.conf", raw, "tool check --raw a.conf", cursor = 15)
         tool.assertFlow("tool check --rax", raw, "tool check --rawx", cursor = 15)
         // On no word the slot is the argument's: a flag is offered once a dash is typed.
-        tool.assertFlow("tool check ", files.map { Suggestion(it) }, "tool check file1.conf")
+        tool.assertFlow("tool check ", files.map { Suggestion.Word(it) }, "tool check file1.conf")
     }
 
     @Test
     fun `an option name completes at the end of a word and inside one`() {
-        val file = listOf(Suggestion("--file", "the file to read"))
+        val file = listOf(Suggestion.Word("--file", "the file to read"))
         tool.assertFlow("tool check --fi", file, "tool check --file")
         tool.assertFlow("tool check --fi a.conf", file, "tool check --file a.conf", cursor = 15)
         tool.assertFlow("tool check --fix", file, "tool check --filex", cursor = 15)
@@ -112,7 +110,7 @@ class CompletionFlowTest {
 
     @Test
     fun `an option value in its own word completes on no word at the end of one and inside one`() {
-        val all = files.map { Suggestion(it) }
+        val all = files.map { Suggestion.Word(it) }
         tool.assertFlow("tool check --file ", all, "tool check --file file1.conf")
         tool.assertFlow("tool check --file  a.conf", all, "tool check --file file1.conf a.conf", cursor = 18)
         tool.assertFlow("tool check --file file1", all.take(1), "tool check --file file1.conf")
@@ -123,29 +121,29 @@ class CompletionFlowTest {
     @Test
     fun `an option value attached to its option completes as the whole word with the option's description`() {
         // As `cp --backup=<TAB>` lists `--backup=existing` and the rest, each described by the option.
-        val all = files.map { Suggestion("--file=$it", "the file to read") }
+        val all = files.map { Suggestion.Word("--file=$it", "the file to read") }
         tool.assertFlow("tool check --file=", all, "tool check --file=file1.conf")
         tool.assertFlow("tool check --file= a.conf", all, "tool check --file=file1.conf a.conf", cursor = 18)
         tool.assertFlow("tool check --file=file1", all.take(1), "tool check --file=file1.conf")
-        val glued = listOf(Suggestion("-ffile1.conf", "the file to read"))
+        val glued = listOf(Suggestion.Word("-ffile1.conf", "the file to read"))
         tool.assertFlow("tool check -ffile1", glued, "tool check -ffile1.conf")
-        val afterFlag = listOf(Suggestion("-rffile1.conf", "the file to read"))
+        val afterFlag = listOf(Suggestion.Word("-rffile1.conf", "the file to read"))
         tool.assertFlow("tool check -rffile1", afterFlag, "tool check -rffile1.conf")
-        val versions = listOf("1.0", "1.1").map { Suggestion("--spec=$it", "the spec version") }
+        val versions = listOf("1.0", "1.1").map { Suggestion.Word("--spec=$it", "the spec version") }
         tool.assertFlow("tool check --spec=", versions, "tool check --spec=1.0")
         tool.assertFlow("tool check --spec=1x", versions, "tool check --spec=1.0x", cursor = 19)
     }
 
     @Test
     fun `a file option leaves the path to the shell behind what is not part of it`() {
-        tool.assertFlow("tool get --file ", listOf(filesAfter()), "tool get --file $COMPLETE_FILES")
+        tool.assertFlow("tool get --file ", listOf(filesAfter()), "tool get --file ")
         assertEquals(listOf(filesAfter("--file=")), tool.suggestionsFor("tool get --file=fi"))
         assertEquals(listOf(filesAfter("-f")), tool.suggestionsFor("tool get -ffi"))
     }
 
     @Test
     fun `an argument completes on no word and at the end of one among the words after the cursor`() {
-        val all = files.map { Suggestion(it) }
+        val all = files.map { Suggestion.Word(it) }
         tool.assertFlow("tool check ", all, "tool check file1.conf")
         tool.assertFlow("tool check  file2.conf", all, "tool check file1.conf file2.conf", cursor = 11)
         tool.assertFlow("tool check file1", all.take(1), "tool check file1.conf")
@@ -171,7 +169,7 @@ class CompletionFlowTest {
     fun `the cursor right after an equals sign completes the value from there`() {
         // As `cp --backup=|n<TAB>`: klap is handed the word up to the cursor, `--spec=`, so both versions fit, and
         // what follows the cursor stays. zsh, fish and PowerShell match the whole word instead, in the shell.
-        val versions = listOf("1.0", "1.1").map { Suggestion("--spec=$it", "the spec version") }
+        val versions = listOf("1.0", "1.1").map { Suggestion.Word("--spec=$it", "the spec version") }
         assertEquals(versions, tool.suggestionsFor("tool check --spec=1.1", cursor = 18))
         assertEquals("tool check --spec=1.1.1", tool.tab("tool check --spec=1.1", cursor = 18))
     }
@@ -186,15 +184,15 @@ class CompletionFlowTest {
             action { Ok("") }
         }
         assertEquals(
-            listOf("--level=debug", "--level=info", "--level=warn", "--level=error"),
-            levels.suggestionsFor("tool --level=").map { it.value },
+            listOf("--level=debug", "--level=info", "--level=warn", "--level=error").map { Suggestion.Word(it) },
+            levels.suggestionsFor("tool --level="),
         )
-        assertEquals(listOf("file10", "file2", "notes"), levels.suggestionsFor("tool ").map { it.value })
+        assertEquals(listOf("file10", "file2", "notes").map { Suggestion.Word(it) }, levels.suggestionsFor("tool "))
     }
 
     @Test
     fun `an argument reads an input typed after the cursor`() {
-        val owner = listOf(Suggestion(".owner"))
+        val owner = listOf(Suggestion.Word(".owner"))
         tool.assertFlow("tool get  -f conf.conf", owner, "tool get .owner -f conf.conf", cursor = 9)
         tool.assertFlow("tool get .ow -f conf.conf", owner, "tool get .owner -f conf.conf", cursor = 12)
         assertEquals(emptyList(), tool.suggestionsFor("tool get .ow"))
@@ -212,7 +210,7 @@ class CompletionFlowTest {
             }
             action { Ok("") }
         }
-        assertEquals(listOf(Suggestion("ok", "two lines")), raw.suggestionsFor("tool --tag "))
+        assertEquals(listOf(Suggestion.Word("ok", "two lines")), raw.suggestionsFor("tool --tag "))
     }
 
     @Test
@@ -225,7 +223,7 @@ class CompletionFlowTest {
             action { Ok("") }
         }
         assertEquals(
-            listOf(Suggestion("--tag=red", "the tag"), Suggestion("--tag=blue", "the tag")),
+            listOf(Suggestion.Word("--tag=red", "the tag"), Suggestion.Word("--tag=blue", "the tag")),
             blank.suggestionsFor("tool --tag="),
         )
     }

@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.mv
 
 import com.fromwau.klap.Cli
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 import com.fromwau.klap.testing.suggestionsFor
@@ -39,7 +40,7 @@ internal object MvLineContext {
     ): Cell = Cell(rows, typed, offers.toList())
 
     /** [spelled] (`--verbose`, `-v`, `--help`) as `mv --help` describes it. */
-    fun name(spelled: String): Suggestion = Suggestion(spelled, mvHelp(spelled))
+    fun name(spelled: String): Suggestion = Suggestion.Word(spelled, mvHelp(spelled))
 
     /** The words `mv --help` gives [spelled], a long or a one-letter short. */
     fun mvHelp(spelled: String): String = when {

@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.ls
 
 import com.fromwau.klap.Cli
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 import com.fromwau.klap.testing.suggestionsFor
@@ -39,7 +40,7 @@ internal object LsLineContext {
     ): Cell = Cell(rows, typed, offers.toList())
 
     /** [spelled] (`--all`, `-a`, `--help`) as `ls --help` describes it. */
-    fun name(spelled: String): Suggestion = Suggestion(spelled, lsHelp(spelled))
+    fun name(spelled: String): Suggestion = Suggestion.Word(spelled, lsHelp(spelled))
 
     /** The words `ls --help` gives [spelled], a long or a one-letter short. */
     fun lsHelp(spelled: String): String = when {
@@ -57,7 +58,7 @@ internal object LsLineContext {
     ): Array<Suggestion> = (input(long).kind as Kind.Value)
         .words!!
         .filter { it.startsWith(typed) }
-        .map { Suggestion("$spelled=$it", input(long).help) }
+        .map { Suggestion.Word("$spelled=$it", input(long).help) }
         .toTypedArray()
 
     /** Every word of the value of [long] starting with [typed], in its own word: no description. */
@@ -67,7 +68,7 @@ internal object LsLineContext {
     ): Array<Suggestion> = (input(long).kind as Kind.Value)
         .words!!
         .filter { it.startsWith(typed) }
-        .map { Suggestion(it) }
+        .map { Suggestion.Word(it) }
         .toTypedArray()
 
     fun Cli.assertCell(cell: Cell) = assertTab("$cell", cell.line, cell.cursor, cell.offers)

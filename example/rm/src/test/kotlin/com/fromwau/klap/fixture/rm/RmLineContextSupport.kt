@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.rm
 
 import com.fromwau.klap.Cli
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 import com.fromwau.klap.testing.suggestionsFor
@@ -39,7 +40,7 @@ internal object RmLineContext {
     ): Cell = Cell(rows, typed, offers.toList())
 
     /** [spelled] (`--verbose`, `-v`, `--help`) as `rm --help` describes it. */
-    fun name(spelled: String): Suggestion = Suggestion(spelled, rmHelp(spelled))
+    fun name(spelled: String): Suggestion = Suggestion.Word(spelled, rmHelp(spelled))
 
     /** The words `rm --help` gives [spelled], a long or a one-letter short. */
     fun rmHelp(spelled: String): String = when {
@@ -54,7 +55,7 @@ internal object RmLineContext {
         spelled: String,
         value: String,
         long: String = spelled,
-    ): Suggestion = Suggestion("$spelled=$value", input(long).help)
+    ): Suggestion = Suggestion.Word("$spelled=$value", input(long).help)
 
     /** Every value of [WHEN_WORDS] starting with [typed], attached to [spelled] as `--interactive` is typed. */
     fun whenValues(

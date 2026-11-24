@@ -1,5 +1,6 @@
 package com.fromwau.klap.fixture.dd
 
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import kotlin.test.fail
 
@@ -199,7 +200,7 @@ internal fun symbolsAfter(
 ): List<Symbol> = symbolsOf(key).filter { key != "conv" || !refusedTogether(given.toSet() + it.name, cbs) }
 
 /** `key=` as Tab offers it on a word with no `=` yet: the key and its value's head, described by its row. */
-internal fun keySuggestion(operand: Operand): Suggestion = Suggestion(operand.head, operand.help)
+internal fun keySuggestion(operand: Operand): Suggestion = Suggestion.Word(operand.head, operand.help)
 
 /** Every key dd takes, as Tab should offer it on an empty operand word, in `dd --help` order. */
 internal val KEYS: List<Suggestion> = OPERANDS.map(::keySuggestion)
@@ -212,7 +213,7 @@ internal fun keysStarting(typed: String): List<Suggestion> = KEYS.filter { it.va
 
 /** `--help` and `--version` as Tab should offer them, in `dd --help` words. */
 internal val DD_OPTIONS: List<Suggestion> =
-    listOf(Suggestion("--help", HELP_HELP), Suggestion("--version", VERSION_HELP))
+    listOf(Suggestion.Word("--help", HELP_HELP), Suggestion.Word("--version", VERSION_HELP))
 
 /** klap's built-in long names, which real dd refuses (`dd --json if=in`: "unrecognized option '--json'"). */
 internal val KLAP_ONLY_LONGS: List<String> = listOf("--json", "--color", "--color=", "--completion", "--docs")

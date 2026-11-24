@@ -6,6 +6,7 @@ import com.fromwau.klap.fixture.ls.LsLineContext.FILES
 import com.fromwau.klap.fixture.ls.LsLineContext.assertTab
 import com.fromwau.klap.fixture.ls.LsLineContext.assertValues
 import com.fromwau.klap.fixture.marked
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 
 /*
@@ -20,8 +21,8 @@ import com.fromwau.klap.testing.Suggestion
 internal val POOL: List<Suggestion> by lazy {
     ALL_INPUTS.flatMap { input ->
         (listOfNotNull(input.long) + input.attachedForm() + input.shorts.map { "-$it" })
-            .map { Suggestion(it, input.help) }
-    } + Suggestion("--help", HELP_HELP) + Suggestion("--version", VERSION_HELP)
+            .map { Suggestion.Word(it, input.help) }
+    } + Suggestion.Word("--help", HELP_HELP) + Suggestion.Word("--version", VERSION_HELP)
 }
 
 /** What a run of words gives: whether options have ended, a value is due, or the last word is an ambiguous long. */
@@ -101,7 +102,7 @@ private fun clusterOffers(current: String): List<Suggestion> {
     return ALL_INPUTS
         .flatMap { input -> input.shorts.map { it to input } }
         .filter { (letter, _) -> letter !in letters }
-        .map { (letter, input) -> Suggestion(current + letter, input.help) }
+        .map { (letter, input) -> Suggestion.Word(current + letter, input.help) }
 }
 
 /** The values of [input] starting with [partial]: bare in their own word, after [head] with the option's help. */
@@ -113,7 +114,7 @@ private fun valueOffers(
     val words = (input.kind as Kind.Value).words ?: return emptyList()
     return words
         .filter { it.startsWith(partial) }
-        .map { word -> if (head == null) Suggestion(word) else Suggestion(head + word, input.help) }
+        .map { word -> if (head == null) Suggestion.Word(word) else Suggestion.Word(head + word, input.help) }
 }
 
 /** The words of [line] before the word under [cursor], and that word as far as typed. */

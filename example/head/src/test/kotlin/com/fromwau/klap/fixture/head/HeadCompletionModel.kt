@@ -2,10 +2,12 @@ package com.fromwau.klap.fixture.head
 
 import com.fromwau.klap.Cli
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.fixture.description
 import com.fromwau.klap.fixture.head.HeadLineContext.FILES
 import com.fromwau.klap.fixture.head.HeadLineContext.assertTab
 import com.fromwau.klap.fixture.head.HeadLineContext.assertValues
 import com.fromwau.klap.fixture.marked
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 
 /*
@@ -20,8 +22,8 @@ import com.fromwau.klap.testing.Suggestion
 /** Every name head documents after a dash, in head's words, in `head --help` order. */
 internal val POOL: List<Suggestion> by lazy {
     INPUTS.flatMap { input ->
-        (input.longs + "-${input.short}").map { Suggestion(it, input.help) }
-    } + Suggestion("--help", HELP_HELP) + Suggestion("--version", VERSION_HELP)
+        (input.longs + "-${input.short}").map { Suggestion.Word(it, input.help) }
+    } + Suggestion.Word("--help", HELP_HELP) + Suggestion.Word("--version", VERSION_HELP)
 }
 
 /** What a run of words gives: whether options have ended, a NUM is due, or the last word is an ambiguous long. */
@@ -93,7 +95,7 @@ private fun clusterOffers(current: String): List<Suggestion> {
     if (known.any { it == null }) return emptyList()
     if (valueAt in 0 until letters.lastIndex) return emptyList()
     if (valueAt >= 0) return if (letters.length == 1) POOL.filter { it.value == current } else emptyList()
-    return INPUTS.filter { it.short !in letters }.map { Suggestion(current + it.short, it.help) }
+    return INPUTS.filter { it.short !in letters }.map { Suggestion.Word(current + it.short, it.help) }
 }
 
 /** The words of [line] before the word under [cursor], and that word as far as typed. */

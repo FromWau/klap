@@ -6,6 +6,7 @@ import com.fromwau.klap.fixture.git.GitTab.checkTabs
 import com.fromwau.klap.fixture.git.GitTab.files
 import com.fromwau.klap.fixture.git.GitTab.offersAll
 import com.fromwau.klap.fixture.git.GitTab.offersNone
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import kotlin.test.Test
 
@@ -110,12 +111,12 @@ class GitLineContextTest {
         // S42: `git -P status` runs while `git -pP status` and `git -PC . status` are "unknown option", so the root
         // offers the typed short alone (todo 177); `git status -sb` runs and `git status -sh` prints the usage, while
         // `git status -P` is "unknown switch `P'".
-        at("S42", "git -P|", Suggestion("-P", "Do not pipe Git output into a pager")),
+        at("S42", "git -P|", Suggestion.Word("-P", "Do not pipe Git output into a pager")),
         at(
             "S42",
             "git status -s|",
-            Suggestion("-sb", "show branch information"),
-            Suggestion("-sh", HELP_WORDS),
+            Suggestion.Word("-sb", "show branch information"),
+            Suggestion.Word("-sh", HELP_WORDS),
         ),
     )
 }

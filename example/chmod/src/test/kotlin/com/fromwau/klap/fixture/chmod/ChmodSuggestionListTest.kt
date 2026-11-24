@@ -9,6 +9,8 @@ import com.fromwau.klap.fixture.chmod.ChmodTab.checkTab
 import com.fromwau.klap.fixture.chmod.ChmodTab.modes
 import com.fromwau.klap.fixture.chmod.ChmodTab.name
 import com.fromwau.klap.fixture.chmod.ChmodTab.names
+import com.fromwau.klap.fixture.description
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter

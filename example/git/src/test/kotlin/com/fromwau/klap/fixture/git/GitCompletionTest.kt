@@ -51,8 +51,8 @@ class GitCompletionTest {
     @Test
     fun `an abbreviation unique in its own command completes and takes its value`() = git.checkTabs(
         // K35: `git remote add --ma main o8 u8` ran; `--f` is unique among add's longs (owner decision K35).
-        at("K35", "git remote add --ma|", Suggestion("--master", "master branch")),
-        at("K35", "git remote add --f|", Suggestion("--fetch", "fetch the remote branches")),
+        at("K35", "git remote add --ma|", Suggestion.Word("--master", "master branch")),
+        at("K35", "git remote add --f|", Suggestion.Word("--fetch", "fetch the remote branches")),
         at("K35 no word", "git remote add --ma |", NOTHING),
         at("K35 words after", "git remote add --ma | origin", NOTHING),
     )

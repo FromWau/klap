@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.find
 
 import com.fromwau.klap.Cli
 import com.fromwau.klap.fixture.marked
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 import com.fromwau.klap.testing.suggestionsFor
@@ -76,7 +77,7 @@ internal object FindCompletionSupport {
     )
 
     /** `-O` and its level glued: the four levels `man find` documents, described by the option's help. */
-    val LEVELS: List<Suggestion> = (0..3).map { Suggestion("-O$it", OPTIMISE_HELP) }
+    val LEVELS: List<Suggestion> = (0..3).map { Suggestion.Word("-O$it", OPTIMISE_HELP) }
 
     /** `-newerXY`'s forms this system's find runs: X of a, c and m, Y of a, c, m and t (`t` a date). */
     private val NEWER_TIMES: List<String> = "acm".flatMap { x -> "acmt".map { y -> "$x$y" } }
@@ -249,12 +250,12 @@ internal object FindCompletionSupport {
 
     private fun pool(phase: Phase, operands: Boolean): List<Suggestion> = buildList {
         if (phase == Phase.OPTIONS) {
-            SHORTS.forEach { add(Suggestion(it.name, it.help)) }
+            SHORTS.forEach { add(Suggestion.Word(it.name, it.help)) }
             addAll(LEVELS)
         }
         LONGS
             .filterNot { operands && it.name == "--files0-from" }
-            .forEach { add(Suggestion(it.name, it.help)) }
+            .forEach { add(Suggestion.Word(it.name, it.help)) }
     }
 
     /** What real find would accept for the word [current] (as far as typed) after [head], with [after] past it. */
@@ -294,7 +295,7 @@ internal object FindCompletionSupport {
             val named = done.split(',').filter { it.isNotEmpty() }
             value.values
                 .filter { it.startsWith(typed) && !(value.unique && it in named) }
-                .map { if (head == null) Suggestion(done + it) else Suggestion(head + done + it, input.help) }
+                .map { if (head == null) Suggestion.Word(done + it) else Suggestion.Word(head + done + it, input.help) }
                 .toSet()
         }
         else -> emptySet()

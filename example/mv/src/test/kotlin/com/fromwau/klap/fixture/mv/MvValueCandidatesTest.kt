@@ -5,6 +5,7 @@ import com.fromwau.klap.fixture.checkCells
 import com.fromwau.klap.fixture.mv.MvLineContext.FILES
 import com.fromwau.klap.fixture.mv.MvLineContext.at
 import com.fromwau.klap.fixture.mv.MvLineContext.checkContext
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 import com.fromwau.klap.testing.suggestionsFor
@@ -35,7 +36,7 @@ private fun attached(
     spelled: String,
     value: String,
     long: String = spelled,
-): Suggestion = Suggestion("$spelled=$value", input(long).help)
+): Suggestion = Suggestion.Word("$spelled=$value", input(long).help)
 
 /** [values] attached to [spelled], each described by mv's help for [long]. */
 private fun values(
@@ -227,9 +228,9 @@ class MvValueCandidatesTest {
     fun `a value taking short with nothing glued is offered as its own name`() = mv.checkContext(
         // `mv -S` and `mv -t`: "option requires an argument", so `-S` is a whole word whose value is the next one
         // (V99 settled: a name, as decision K10 has it).
-        at("V99 K6", "mv -S|", Suggestion("-S", input("--suffix").help)),
-        at("V99 K6 L2", "mv -S| .b a b", Suggestion("-S", input("--suffix").help)),
-        at("V99 K6", "mv -t|", Suggestion("-t", input("--target-directory").help)),
+        at("V99 K6", "mv -S|", Suggestion.Word("-S", input("--suffix").help)),
+        at("V99 K6 L2", "mv -S| .b a b", Suggestion.Word("-S", input("--suffix").help)),
+        at("V99 K6", "mv -t|", Suggestion.Word("-t", input("--target-directory").help)),
     )
 
     @Test

@@ -1,5 +1,6 @@
 package com.fromwau.klap.fixture.git
 
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.testing.Suggestion
 
@@ -18,26 +19,26 @@ internal const val HELP_WORDS: String = "display this help and exit"
 private fun described(
     help: String,
     vararg spellings: String,
-): List<Suggestion> = spellings.map { Suggestion(it, help) }
+): List<Suggestion> = spellings.map { Suggestion.Word(it, help) }
 
 /** `-h` and `--help`, which every command of real git takes. */
 internal val HELP_NAMES: List<Suggestion> = described(HELP_WORDS, "--help", "-h")
 
 /** The commands git lists in `git help -a` that the fixture declares, `stage` described as `add` is. */
 internal val COMMANDS: List<Suggestion> = listOf(
-    Suggestion("status", "Show the working tree status"),
-    Suggestion("add", "Add file contents to the index"),
-    Suggestion("stage", "Add file contents to the index"),
-    Suggestion("commit", "Record changes to the repository"),
-    Suggestion("log", "Show commit logs"),
-    Suggestion("remote", "Manage set of tracked repositories"),
+    Suggestion.Word("status", "Show the working tree status"),
+    Suggestion.Word("add", "Add file contents to the index"),
+    Suggestion.Word("stage", "Add file contents to the index"),
+    Suggestion.Word("commit", "Record changes to the repository"),
+    Suggestion.Word("log", "Show commit logs"),
+    Suggestion.Word("remote", "Manage set of tracked repositories"),
 )
 
 /** The children of `git remote` the fixture declares, `rm` described as `remove` is. */
 internal val REMOTE_CHILDREN: List<Suggestion> = listOf(
-    Suggestion("add", "Add a remote named <name> for the repository at <URL>"),
-    Suggestion("remove", "Remove the remote named <name>"),
-    Suggestion("rm", "Remove the remote named <name>"),
+    Suggestion.Word("add", "Add a remote named <name> for the repository at <URL>"),
+    Suggestion.Word("remove", "Remove the remote named <name>"),
+    Suggestion.Word("rm", "Remove the remote named <name>"),
 )
 
 /** [names] whose value starts with [typed]. */
@@ -45,16 +46,16 @@ internal fun List<Suggestion>.startingWith(typed: String): List<Suggestion> = fi
 
 /** The root's longs the fixture declares, in `man git`'s words. */
 internal val ROOT_LONGS: List<Suggestion> = listOf(
-    Suggestion("--paginate", "Pipe all output into less (or if set, \$PAGER) if standard output is a terminal"),
-    Suggestion("--no-pager", "Do not pipe Git output into a pager"),
-    Suggestion("--git-dir", "Set the path to the repository (\".git\" directory)"),
-    Suggestion("--work-tree", "Set the path to the working tree"),
-    Suggestion("--namespace", "Set the Git namespace"),
-    Suggestion("--bare", "Treat the repository as a bare repository"),
-    Suggestion("--exec-path", "Path to wherever your core Git programs are installed"),
-    Suggestion("--exec-path=", "Path to wherever your core Git programs are installed"),
-    Suggestion("--no-replace-objects", "Do not use replacement refs to replace Git objects"),
-    Suggestion("--no-optional-locks", "Do not perform optional operations that require locks"),
+    Suggestion.Word("--paginate", "Pipe all output into less (or if set, \$PAGER) if standard output is a terminal"),
+    Suggestion.Word("--no-pager", "Do not pipe Git output into a pager"),
+    Suggestion.Word("--git-dir", "Set the path to the repository (\".git\" directory)"),
+    Suggestion.Word("--work-tree", "Set the path to the working tree"),
+    Suggestion.Word("--namespace", "Set the Git namespace"),
+    Suggestion.Word("--bare", "Treat the repository as a bare repository"),
+    Suggestion.Word("--exec-path", "Path to wherever your core Git programs are installed"),
+    Suggestion.Word("--exec-path=", "Path to wherever your core Git programs are installed"),
+    Suggestion.Word("--no-replace-objects", "Do not use replacement refs to replace Git objects"),
+    Suggestion.Word("--no-optional-locks", "Do not perform optional operations that require locks"),
 )
 
 /** `git status`'s names the fixture declares, in `git status -h`'s words. */

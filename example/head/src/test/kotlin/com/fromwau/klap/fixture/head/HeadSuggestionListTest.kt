@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.head
 
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.fixture.description
 import com.fromwau.klap.fixture.head.HeadLineContext.FILES
 import com.fromwau.klap.fixture.head.HeadLineContext.assertOffersAll
 import com.fromwau.klap.fixture.head.HeadLineContext.assertOffersNone
@@ -9,6 +10,7 @@ import com.fromwau.klap.fixture.head.HeadLineContext.at
 import com.fromwau.klap.fixture.head.HeadLineContext.checkContext
 import com.fromwau.klap.fixture.head.HeadLineContext.checkContextValues
 import com.fromwau.klap.fixture.head.HeadLineContext.name
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.suggestionsFor
 import kotlin.test.Test
 import kotlin.test.assertEquals

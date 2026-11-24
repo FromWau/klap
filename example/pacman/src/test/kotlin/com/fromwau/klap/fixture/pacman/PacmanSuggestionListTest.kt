@@ -1,6 +1,8 @@
 package com.fromwau.klap.fixture.pacman
 
 import com.fromwau.klap.fixture.ParitySuite
+import com.fromwau.klap.fixture.description
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.acceptSuggestion
 import com.fromwau.klap.testing.filesAfter
@@ -106,7 +108,7 @@ class PacmanSuggestionListTest {
         val named = pacman.suggestionsFor("pacman -Q --colo").single()
         val line = acceptSuggestion("pacman -Q --colo", named) + " "
         val values = pacman.suggestionsFor(line)
-        assertEquals(listOf("always", "never", "auto").map { Suggestion(it) }, values, "E16 `$line|`")
+        assertEquals(listOf("always", "never", "auto").map { Suggestion.Word(it) }, values, "E16 `$line|`")
         val chosen = acceptSuggestion(line, values[1])
         parity.binds(
             *chosen.split(' ').drop(1).toTypedArray(),
@@ -151,10 +153,10 @@ class PacmanSuggestionListTest {
     fun `help and version are described in pacman's own words`() = pacman.checkContext(
         // `man pacman`: "-V, --version  Display version and exit." and "-h, --help  Display syntax for the given
         // operation." The fixture words -V the same way.
-        at("G45 G6b", "pacman --vers|", Suggestion("--version", VERSION_SHORT_HELP)),
-        at("G45 G6b", "pacman -Q --vers|", Suggestion("--version", VERSION_SHORT_HELP)),
-        at("G45 G6b", "pacman --hel|", Suggestion("--help", HELP_TEXT)),
-        at("G45 G6b", "pacman -Q --hel|", Suggestion("--help", HELP_TEXT)),
+        at("G45 G6b", "pacman --vers|", Suggestion.Word("--version", VERSION_SHORT_HELP)),
+        at("G45 G6b", "pacman -Q --vers|", Suggestion.Word("--version", VERSION_SHORT_HELP)),
+        at("G45 G6b", "pacman --hel|", Suggestion.Word("--help", HELP_TEXT)),
+        at("G45 G6b", "pacman -Q --hel|", Suggestion.Word("--help", HELP_TEXT)),
     )
 
     @Test

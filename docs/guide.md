@@ -2615,9 +2615,10 @@ Use `run(argv, terminal)` instead when what you want to pin is the *output* — 
 code, or a `--json` envelope. `inputs` is for binding, `run` is for rendering.
 
 To pin what Tab offers, `com.fromwau.klap.testing` runs completion the way every generated script asks for
-it, with no shell involved. `suggestionsFor(line, cursor)` returns each `Suggestion` with its description,
-`acceptSuggestion` gives the line once one is taken, and `tab` the line after one Tab press, which takes the
-one suggestion or puts in what several share:
+it, with no shell involved. `suggestionsFor(line, cursor)` returns a `Suggestion` for each thing offered: a
+`Suggestion.Word` with its value and description, or `Suggestion.Files(head)` where the shell completes a path
+itself. `acceptSuggestion` gives the line once one is taken, and `tab` the line after one Tab press, which takes
+the one suggestion or puts in what several share:
 
 ```kotlin
 val rm = cli("rm") {
@@ -2626,14 +2627,16 @@ val rm = cli("rm") {
     action { Ok("") }
 }
 
-assertEquals(Suggestion("-rf", "ignore nonexistent files"), rm.suggestionsFor("rm -r").first())
-assertEquals("rm -rf", acceptSuggestion("rm -r", Suggestion("-rf")))
+assertEquals(Suggestion.Word("-rf", "ignore nonexistent files"), rm.suggestionsFor("rm -r").first())
+assertEquals("rm -rf", acceptSuggestion("rm -r", Suggestion.Word("-rf")))
 ```
 
 The cursor is at the end of the line unless given; one inside a word hands klap that word as far as it is
 typed, and the words after it as well. How a shell quotes the line, and what it keeps of a word after the
-cursor, is that shell's own. A slot that takes a path suggests `filesAfter(head)`, which the shell turns into
-its own file completion of what follows `head`.
+cursor, is that shell's own. A slot that takes a path suggests `Suggestion.Files(head)` alone, and the shell
+completes the path after `head`: `--out=` for `--out=<TAB>`, `-O` for a path glued to `-O`, or `""` when the
+whole word is the path. Taking it, or pressing Tab, leaves the line as it is. `filesAfter(head)` builds the
+same value.
 
 A `cli { }` tree is immutable after construction: each `parse` / `run` / `runSuspending` / `runAction` /
 `runActionSuspending` records its resolved values in a per-call snapshot handed to that call's `action { }`

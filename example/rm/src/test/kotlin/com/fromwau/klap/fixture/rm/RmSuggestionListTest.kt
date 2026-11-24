@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.rm
 
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.fixture.description
 import com.fromwau.klap.fixture.rm.RmLineContext.Cell
 import com.fromwau.klap.fixture.rm.RmLineContext.FILES
 import com.fromwau.klap.fixture.rm.RmLineContext.assertCell
@@ -12,6 +13,7 @@ import com.fromwau.klap.fixture.rm.RmLineContext.attached
 import com.fromwau.klap.fixture.rm.RmLineContext.checkContext
 import com.fromwau.klap.fixture.rm.RmLineContext.name
 import com.fromwau.klap.fixture.rm.RmLineContext.whenValues
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.suggestionsFor
@@ -43,7 +45,7 @@ private fun pool(longsOnly: Boolean): Array<Suggestion> = (INPUTS.flatMap(::spel
 private fun continuations(cluster: String): Array<Suggestion> = INPUTS
     .flatMap { it.shorts }
     .filter { it !in cluster.drop(1) }
-    .map { Suggestion(cluster + it, inputFor(it)!!.help) }
+    .map { Suggestion.Word(cluster + it, inputFor(it)!!.help) }
     .toTypedArray()
 
 /** The cell for [typed], with [rest] of its word after the cursor and [after] past it: every long of rm it starts. */
@@ -339,11 +341,12 @@ class RmSuggestionListTest {
     fun `a value after a refused option is none of klap's or the option's own`() {
         // G68, G90: `rm --color a`, `rm --completion bash a`, `rm --json a`, `rm --docs a`: "unrecognized option"; `rm
         // --v a`: "option '--v' is ambiguous".
-        val lines = listOf("rm --color |", "rm --completion |", "rm --json |", "rm --docs |", "rm --v |")
+        val lines = listOf("rm --color |", "rm --completion |", "rm --json |", "rm --docs |")
         checkCells(lines) { typed ->
             val offered = rm.suggestionsFor(typed.replace("|", ""), typed.indexOf('|'))
-            assertTrue(offered.all { it == FILES }, "G68 G90 `$typed`: offers $offered")
+            assertEquals(listOf(FILES), offered, "G68 G90 `$typed`: offers $offered")
         }
+        assertEquals(emptyList(), rm.suggestionsFor("rm --v "), "G90 `rm --v |`")
     }
 
     @Test

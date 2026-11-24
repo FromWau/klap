@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.head
 
 import com.fromwau.klap.Cli
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 import com.fromwau.klap.testing.suggestionsFor
@@ -41,7 +42,7 @@ internal object HeadLineContext {
     ): Cell = Cell(rows, typed, offers.toList())
 
     /** [spelled] (`--lines`, `-n`, `--help`) as `head --help` describes it. */
-    fun name(spelled: String): Suggestion = Suggestion(spelled, headHelp(spelled))
+    fun name(spelled: String): Suggestion = Suggestion.Word(spelled, headHelp(spelled))
 
     /** The words `head --help` gives [spelled], a long or a one-letter short. */
     fun headHelp(spelled: String): String = when (spelled) {

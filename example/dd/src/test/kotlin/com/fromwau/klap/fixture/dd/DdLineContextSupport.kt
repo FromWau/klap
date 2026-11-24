@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.dd
 
 import com.fromwau.klap.Cli
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 import com.fromwau.klap.testing.suggestionsFor
@@ -48,7 +49,7 @@ internal object DdLineContext {
     fun valuesAfter(
         prefix: String,
         symbols: List<Symbol>,
-    ): List<Suggestion> = symbols.map { Suggestion(prefix + it.name, it.help) }
+    ): List<Suggestion> = symbols.map { Suggestion.Word(prefix + it.name, it.help) }
 
     fun Cli.assertCell(cell: Cell) = assertTab("$cell", cell.line, cell.cursor, cell.offers)
 

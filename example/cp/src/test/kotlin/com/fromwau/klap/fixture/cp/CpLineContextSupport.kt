@@ -2,6 +2,7 @@ package com.fromwau.klap.fixture.cp
 
 import com.fromwau.klap.Cli
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 import com.fromwau.klap.testing.suggestionsFor
@@ -39,7 +40,7 @@ internal object CpLineContext {
     ): Cell = Cell(rows, typed, offers.toList())
 
     /** [spelled] (`--verbose`, `-v`, `--help`) as `cp --help` describes it. */
-    fun name(spelled: String): Suggestion = Suggestion(spelled, cpHelp(spelled))
+    fun name(spelled: String): Suggestion = Suggestion.Word(spelled, cpHelp(spelled))
 
     /** The words `cp --help` gives [spelled], a long or a one-letter short. */
     fun cpHelp(spelled: String): String = when {

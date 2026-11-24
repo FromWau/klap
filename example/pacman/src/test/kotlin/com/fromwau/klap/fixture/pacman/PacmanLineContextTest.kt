@@ -85,7 +85,7 @@ class PacmanLineContextTest {
     @Test
     fun `a counted letter given in an earlier word is offered again`() {
         // `pacman -Q --check --check pacman` is -Qkk.
-        pacman.assertOffers("S17", "pacman -Qk -|", Suggestion("-k", Op.QUERY.entryFor('k')!!.help))
+        pacman.assertOffers("S17", "pacman -Qk -|", Suggestion.Word("-k", Op.QUERY.entryFor('k')!!.help))
     }
 
     @Test

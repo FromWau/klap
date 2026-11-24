@@ -341,8 +341,8 @@ class ChmodCompletionTest {
         // referent"; `chmod -Rh u+x d` exits 0.
         listOf(
             "chmod -|" to name("-h"),
-            "chmod -R|" to Suggestion("-Rh", chmodHelp("-h")),
-            "chmod -cf|" to Suggestion("-cfh", chmodHelp("-h")),
+            "chmod -R|" to Suggestion.Word("-Rh", chmodHelp("-h")),
+            "chmod -cf|" to Suggestion.Word("-cfh", chmodHelp("-h")),
         ),
     ) { (typed, entry) -> chmod.assertOffersAll("K4c K13b", typed, listOf(entry)) }
 

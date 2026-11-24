@@ -1,6 +1,7 @@
 package com.fromwau.klap.fixture.curl
 
 import com.fromwau.klap.fixture.ParitySuite
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.suggestionsFor
@@ -100,7 +101,7 @@ class CurlParityTest {
     @Test
     fun `data is described in curl's words`() = assertEquals(
         // curl 8.23.0's `curl --help all`: " -d, --data <data>                 Post data".
-        listOf(Suggestion("--data", "Post data")),
+        listOf(Suggestion.Word("--data", "Post data")),
         curlCli().cli.suggestionsFor("curl --data").filter { it.value == "--data" },
     )
 

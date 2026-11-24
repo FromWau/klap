@@ -2,10 +2,12 @@ package com.fromwau.klap.fixture.mv
 
 import com.fromwau.klap.Cli
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.fixture.description
 import com.fromwau.klap.fixture.marked
 import com.fromwau.klap.fixture.mv.MvLineContext.FILES
 import com.fromwau.klap.fixture.mv.MvLineContext.assertTab
 import com.fromwau.klap.fixture.mv.MvLineContext.assertValues
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 
@@ -81,12 +83,12 @@ internal fun Input.attachedForm(): List<String> =
 
 private fun pool(refused: Set<Input>): List<Suggestion> = buildList {
     for (input in INPUTS - refused) {
-        input.long?.let { add(Suggestion(it, input.help)) }
-        input.attachedForm().forEach { add(Suggestion(it, input.help)) }
-        input.shorts.forEach { add(Suggestion("-$it", input.help)) }
+        input.long?.let { add(Suggestion.Word(it, input.help)) }
+        input.attachedForm().forEach { add(Suggestion.Word(it, input.help)) }
+        input.shorts.forEach { add(Suggestion.Word("-$it", input.help)) }
     }
-    add(Suggestion("--help", HELP_HELP))
-    add(Suggestion("--version", VERSION_HELP))
+    add(Suggestion.Word("--help", HELP_HELP))
+    add(Suggestion.Word("--version", VERSION_HELP))
 }
 
 /** What real mv would accept for the word [current] (as far as typed) after [head], with [after] past the cursor. */
@@ -138,7 +140,7 @@ private fun clusterOffers(
     return (INPUTS - refused)
         .flatMap { input -> input.shorts.map { it to input } }
         .filter { (letter, _) -> letter !in letters }
-        .map { (letter, input) -> Suggestion(current + letter, input.help) }
+        .map { (letter, input) -> Suggestion.Word(current + letter, input.help) }
         .toSet()
 }
 
@@ -152,7 +154,7 @@ private fun valueOffers(
     val choices = kind.choices ?: return emptySet()
     return choices
         .filter { it.startsWith(partial) }
-        .map { value -> if (head == null) Suggestion(value) else Suggestion(head + value, input.help) }
+        .map { value -> if (head == null) Suggestion.Word(value) else Suggestion.Word(head + value, input.help) }
         .toSet()
 }
 

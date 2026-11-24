@@ -1,6 +1,8 @@
 package com.fromwau.klap.fixture.pacman
 
 import com.fromwau.klap.Cli
+import com.fromwau.klap.fixture.description
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 import com.fromwau.klap.testing.suggestionsFor
@@ -68,7 +70,7 @@ internal fun pacmanOffers(
         return pool
             .filter { it.value.length == 2 && !it.value.startsWith("--") }
             .filter { suggestion -> again(op, suggestion.value[1], typed) }
-            .map { Suggestion(current + it.value[1], it.description) }
+            .map { Suggestion.Word(current + it.value[1], it.description) }
             .toSet()
     }
     return pool.filter { it.value.startsWith(current) }.toSet()
@@ -138,7 +140,7 @@ private fun valueSuggestions(
     val help = op?.entryFor(input.long)?.help ?: unscopedHelp(input.long)
     return choices
         .filter { it.startsWith(partial) }
-        .map { value -> if (head == null) Suggestion(value) else Suggestion(head + value, help) }
+        .map { value -> if (head == null) Suggestion.Word(value) else Suggestion.Word(head + value, help) }
         .toSet()
 }
 
@@ -149,25 +151,25 @@ private fun attachedFormOf(long: String): String? =
 private fun pool(op: Op?): List<Suggestion> = buildList {
     if (op != null) {
         for (entry in op.page) {
-            add(Suggestion(entry.long, entry.help))
-            attachedFormOf(entry.long)?.let { add(Suggestion(it, entry.help)) }
-            entry.short?.let { add(Suggestion("-$it", entry.help)) }
+            add(Suggestion.Word(entry.long, entry.help))
+            attachedFormOf(entry.long)?.let { add(Suggestion.Word(it, entry.help)) }
+            entry.short?.let { add(Suggestion.Word("-$it", entry.help)) }
         }
     } else {
         for (input in INPUTS) {
-            add(Suggestion(input.long, unscopedHelp(input.long)))
-            attachedFormOf(input.long)?.let { add(Suggestion(it, unscopedHelp(input.long))) }
+            add(Suggestion.Word(input.long, unscopedHelp(input.long)))
+            attachedFormOf(input.long)?.let { add(Suggestion.Word(it, unscopedHelp(input.long))) }
         }
-        for (letter in PAGE_LETTERS) add(Suggestion("-$letter", unscopedHelp(letter)))
+        for (letter in PAGE_LETTERS) add(Suggestion.Word("-$letter", unscopedHelp(letter)))
         for (each in Op.entries) {
-            add(Suggestion(each.long, each.help))
-            add(Suggestion("-${each.short}", each.help))
+            add(Suggestion.Word(each.long, each.help))
+            add(Suggestion.Word("-${each.short}", each.help))
         }
     }
-    add(Suggestion("-V", VERSION_SHORT_HELP))
-    add(Suggestion("-h", HELP_TEXT))
-    add(Suggestion("--help", HELP_TEXT))
-    add(Suggestion("--version", VERSION_TEXT))
+    add(Suggestion.Word("-V", VERSION_SHORT_HELP))
+    add(Suggestion.Word("-h", HELP_TEXT))
+    add(Suggestion.Word("--help", HELP_TEXT))
+    add(Suggestion.Word("--version", VERSION_TEXT))
 }
 
 /**
@@ -409,19 +411,19 @@ internal fun at(
 ): ContextCell = ContextCell(rows, typed, offers.toList())
 
 /** [long] as `pacman -Q --help` words it. */
-internal fun onQuery(long: String): Suggestion = Suggestion(long, Op.QUERY.entryFor(long)!!.help)
+internal fun onQuery(long: String): Suggestion = Suggestion.Word(long, Op.QUERY.entryFor(long)!!.help)
 
 /** [long] on a line with no operation, in the fixture's words. */
 internal fun plain(long: String): Suggestion {
     val op = Op.entries.firstOrNull { it.long == long }
-    return if (op != null) Suggestion(op.long, op.help) else Suggestion(long, unscopedHelp(long))
+    return if (op != null) Suggestion.Word(op.long, op.help) else Suggestion.Word(long, unscopedHelp(long))
 }
 
 /** [value] attached to [option], described by the option's help. */
 internal fun attached(
     option: String,
     value: String,
-): Suggestion = Suggestion("$option=$value", unscopedHelp(option))
+): Suggestion = Suggestion.Word("$option=$value", unscopedHelp(option))
 
 /** Tab on [cell] offers exactly its set (E1 E5 E6) once each (G3). */
 internal fun Cli.assertContext(cell: ContextCell) {
@@ -478,7 +480,7 @@ internal fun slot(
 internal fun name(
     long: String,
     op: Op? = null,
-): Suggestion = Suggestion(long, op?.entryFor(long)?.help ?: unscopedHelp(long))
+): Suggestion = Suggestion.Word(long, op?.entryFor(long)?.help ?: unscopedHelp(long))
 
 /**
  * What pacman accepts after [cluster] when its last letter takes no part in the reading, as `-h` does: [cluster]
@@ -489,5 +491,5 @@ internal fun continuations(
     op: Op?,
 ): Set<Suggestion> = pacmanOffers(listOfNotNull(op?.let { "-${it.short}" }), "-", emptyList())
     .filter { it.value.length == 2 && it.value[1] != '-' && it.value[1] !in cluster.drop(1) }
-    .map { Suggestion(cluster + it.value[1], it.description) }
+    .map { Suggestion.Word(cluster + it.value[1], it.description) }
     .toSet()

@@ -6,6 +6,7 @@ import com.fromwau.klap.fixture.find.FindCompletionSupport.CompletionCell
 import com.fromwau.klap.fixture.find.FindCompletionSupport.PREDICATES
 import com.fromwau.klap.fixture.find.FindCompletionSupport.assertFind
 import com.fromwau.klap.fixture.marked
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.suggestionsFor
 import kotlin.test.assertTrue
@@ -51,7 +52,7 @@ internal object FindLineContext {
     ): Cell = Cell(rows, typed, offers.toList())
 
     /** The predicate [spelled] (`--maxdepth`) with its help. */
-    fun name(spelled: String): Suggestion = Suggestion(spelled, PREDICATES.single { it.name == spelled }.help)
+    fun name(spelled: String): Suggestion = Suggestion.Word(spelled, PREDICATES.single { it.name == spelled }.help)
 
     /** Every `--print` family name `--pr` completes to. */
     val PR: Array<Suggestion> = arrayOf(name("--print"), name("--print0"), name("--printf"), name("--prune"))

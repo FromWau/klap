@@ -5,6 +5,7 @@ import com.fromwau.klap.fixture.checkCells
 import com.fromwau.klap.fixture.marked
 import com.fromwau.klap.fixture.rm.RmLineContext.assertTab
 import com.fromwau.klap.fixture.rm.RmLineContext.assertValues
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 
@@ -25,7 +26,7 @@ private val FILES_OFFER = Offer(filesAfter(), worded = false)
 
 private fun Input.worded(spelled: String): Boolean = name in WORDED_INPUTS || spelled == "-R"
 
-private fun Input.offer(spelled: String): Offer = Offer(Suggestion(spelled, help), worded(spelled))
+private fun Input.offer(spelled: String): Offer = Offer(Suggestion.Word(spelled, help), worded(spelled))
 
 /** `--interactive=` beside `--interactive`: rm's values go only attached, so Tab offers that form with no space. */
 internal fun Input.attachedForm(): List<String> = listOfNotNull(long?.takeIf { kind is Kind.Value }?.let { "$it=" })
@@ -35,8 +36,8 @@ private val POOL: List<Offer> by lazy {
     INPUTS.flatMap { input ->
         (listOfNotNull(input.long) + input.attachedForm() + input.shorts.map { "-$it" }).map(input::offer)
     } +
-        Offer(Suggestion("--help", HELP_HELP), worded = true) +
-        Offer(Suggestion("--version", VERSION_HELP), worded = true)
+        Offer(Suggestion.Word("--help", HELP_HELP), worded = true) +
+        Offer(Suggestion.Word("--version", VERSION_HELP), worded = true)
 }
 
 /** Whether getopt has read every option of [words] and the next word is an operand whatever it spells. */
@@ -58,7 +59,7 @@ private fun rmOffers(
         val head = current.take(eq + 1)
         return kind.words
             .filter { it.startsWith(current.drop(eq + 1)) }
-            .map { Offer(Suggestion(head + it, input.help), input.worded(input.long!!)) }
+            .map { Offer(Suggestion.Word(head + it, input.help), input.worded(input.long!!)) }
     }
     if (!current.startsWith("--") && current.length > 1) return clusterOffers(current)
     return POOL.filter { it.suggestion.value.startsWith(current) }
@@ -71,7 +72,7 @@ private fun clusterOffers(cluster: String): List<Offer> {
     return INPUTS
         .flatMap { input -> input.shorts.map { it to input } }
         .filter { (letter, _) -> letter !in letters }
-        .map { (letter, input) -> Offer(Suggestion(cluster + letter, input.help), input.worded("-$letter")) }
+        .map { (letter, input) -> Offer(Suggestion.Word(cluster + letter, input.help), input.worded("-$letter")) }
 }
 
 /** The words of [line] before the word under [cursor], the word as far as typed, and its start. */

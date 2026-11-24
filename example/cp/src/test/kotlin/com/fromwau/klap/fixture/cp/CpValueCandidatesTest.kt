@@ -5,6 +5,7 @@ import com.fromwau.klap.fixture.checkCells
 import com.fromwau.klap.fixture.cp.CpLineContext.FILES
 import com.fromwau.klap.fixture.cp.CpLineContext.at
 import com.fromwau.klap.fixture.cp.CpLineContext.checkContext
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 import com.fromwau.klap.testing.suggestionsFor
@@ -35,10 +36,10 @@ private fun attached(
     spelled: String,
     value: String,
     long: String = spelled,
-): Suggestion = Suggestion("$spelled=$value", input(long).help)
+): Suggestion = Suggestion.Word("$spelled=$value", input(long).help)
 
 /** A value in its own word: a choice carries no description there (G7). */
-private fun spaced(vararg values: String): Array<Suggestion> = values.map { Suggestion(it) }.toTypedArray()
+private fun spaced(vararg values: String): Array<Suggestion> = values.map { Suggestion.Word(it) }.toTypedArray()
 
 private fun Cli.checkGenerated(cells: List<CompletionCell>) = checkCells(cells) { assertCp(it) }
 
@@ -266,9 +267,9 @@ class CpValueCandidatesTest {
     fun `a value taking short with nothing glued is offered as its own name`() = cp.checkContext(
         // `cp -S` and `cp -t`: "option requires an argument", so `-S` is a whole word whose value is the next one
         // (V99 settled: a name, as decision K10 has it).
-        at("V99 K6", "cp -S|", Suggestion("-S", input("--suffix").help)),
-        at("V99 K6 L2", "cp -S| .b a b", Suggestion("-S", input("--suffix").help)),
-        at("V99 K6", "cp -t|", Suggestion("-t", input("--target-directory").help)),
+        at("V99 K6", "cp -S|", Suggestion.Word("-S", input("--suffix").help)),
+        at("V99 K6 L2", "cp -S| .b a b", Suggestion.Word("-S", input("--suffix").help)),
+        at("V99 K6", "cp -t|", Suggestion.Word("-t", input("--target-directory").help)),
     )
 }
 

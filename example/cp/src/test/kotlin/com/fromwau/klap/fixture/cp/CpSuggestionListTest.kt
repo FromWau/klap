@@ -10,6 +10,8 @@ import com.fromwau.klap.fixture.cp.CpLineContext.at
 import com.fromwau.klap.fixture.cp.CpLineContext.checkContext
 import com.fromwau.klap.fixture.cp.CpLineContext.cpHelp
 import com.fromwau.klap.fixture.cp.CpLineContext.name
+import com.fromwau.klap.fixture.description
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.acceptSuggestion
 import com.fromwau.klap.testing.filesAfter
@@ -170,9 +172,15 @@ class CpSuggestionListTest {
     @Test
     fun `a spaced choice value carries no description`() = cp.checkContext(
         // `cp --sparse never a b` exits 0. The attached form is described by the option's help (G41, disputed).
-        at("G41 G7", "cp --sparse |", Suggestion("auto"), Suggestion("always"), Suggestion("never")),
-        at("G41 G7 G14", "cp --sparse al|", Suggestion("always")),
-        at("G41 G7 E21", "cp --sparse | a b", Suggestion("auto"), Suggestion("always"), Suggestion("never")),
+        at("G41 G7", "cp --sparse |", Suggestion.Word("auto"), Suggestion.Word("always"), Suggestion.Word("never")),
+        at("G41 G7 G14", "cp --sparse al|", Suggestion.Word("always")),
+        at(
+            "G41 G7 E21",
+            "cp --sparse | a b",
+            Suggestion.Word("auto"),
+            Suggestion.Word("always"),
+            Suggestion.Word("never"),
+        ),
     )
 
     @Test
@@ -296,7 +304,7 @@ class CpSuggestionListTest {
         val named = cp.suggestionsFor("cp --spars").single()
         val line = acceptSuggestion("cp --spars", named) + " "
         val values = cp.suggestionsFor(line)
-        assertEquals(listOf("auto", "always", "never").map { Suggestion(it) }, values, "E16 `$line|`")
+        assertEquals(listOf("auto", "always", "never").map { Suggestion.Word(it) }, values, "E16 `$line|`")
         val chosen = acceptSuggestion(line, values[2]) + " a b"
         parity.binds(
             *chosen.split(' ').drop(1).toTypedArray(),
@@ -378,11 +386,12 @@ class CpSuggestionListTest {
     fun `a value after a refused option is none of klap's or the option's own`() {
         // `cp --color a b`, `cp --completion bash a b`, `cp --json a b`: "unrecognized option"; `cp --re a b`: "option
         // '--re' is ambiguous; possibilities: '--recursive' '--remove-destination' '--reflink'".
-        val lines = listOf("cp --color |", "cp --completion |", "cp --json |", "cp --docs |", "cp --re |")
+        val lines = listOf("cp --color |", "cp --completion |", "cp --json |", "cp --docs |")
         checkCells(lines) { typed ->
             val offered = cp.suggestionsFor(typed.replace("|", ""), typed.indexOf('|'))
-            assertTrue(offered.all { it.value.startsWith(FILES.value) }, "G68 G90 `$typed`: offers $offered")
+            assertEquals(listOf(FILES), offered, "G68 G90 `$typed`: offers $offered")
         }
+        assertEquals(emptyList(), cp.suggestionsFor("cp --re "), "G90 `cp --re |`")
     }
 }
 
@@ -392,7 +401,7 @@ private val KLAP_BUILT_INS = listOf("-h", "--help-all", "--json", "--color", "--
 private fun attached(
     long: String,
     value: String,
-): Suggestion = Suggestion("$long=$value", cpHelp(long))
+): Suggestion = Suggestion.Word("$long=$value", cpHelp(long))
 
 private fun backupControls(vararg values: String): Array<Suggestion> =
     values.map { attached("--backup", it) }.toTypedArray()
@@ -410,7 +419,7 @@ private fun pool(longsOnly: Boolean): Array<Suggestion> = (INPUTS.flatMap(::spel
 private fun continuations(cluster: String): Array<Suggestion> = INPUTS
     .flatMap { it.shorts }
     .filter { it !in cluster.drop(1) }
-    .map { Suggestion(cluster + it, inputFor(it)!!.help) }
+    .map { Suggestion.Word(cluster + it, inputFor(it)!!.help) }
     .toTypedArray()
 
 /** The cell for [typed], with [rest] of its word after the cursor and [after] past it: every long of cp it starts. */

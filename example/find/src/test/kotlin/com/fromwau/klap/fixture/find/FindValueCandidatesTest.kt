@@ -107,7 +107,7 @@ private fun offers(
     Source.Text -> emptyList()
     is Source.Choice -> source.values
         .filter { it.startsWith(typed) }
-        .map { Suggestion(head + it, source.help.takeIf { head.isNotEmpty() }) }
+        .map { Suggestion.Word(head + it, source.help.takeIf { head.isNotEmpty() }) }
 }
 
 /** The cells of [slot] in every form and cursor column, with [partial] typed where a value is. */
@@ -153,13 +153,13 @@ private fun Cli.checkValues(vararg cells: ValueCell) = checkValues(cells.toList(
 
 private fun Cli.checkValues(cells: List<ValueCell>) = checkCells(cells) { assertValues(it) }
 
-private fun spaced(vararg values: String): Array<Suggestion> = values.map { Suggestion(it) }.toTypedArray()
+private fun spaced(vararg values: String): Array<Suggestion> = values.map { Suggestion.Word(it) }.toTypedArray()
 
 private fun attached(
     head: String,
     help: String,
     vararg values: String,
-): Array<Suggestion> = values.map { Suggestion(head + it, help) }.toTypedArray()
+): Array<Suggestion> = values.map { Suggestion.Word(head + it, help) }.toTypedArray()
 
 /**
  * Where the candidates for a find value come from (V of the testing matrix): the shell's file completion for
@@ -273,8 +273,8 @@ class FindValueCandidatesTest {
     fun `-D takes its value from the next word and offers itself as a name`() = find.checkValues(
         // `find -D tree .` runs, while `find -Dtree .` is "unknown predicate `-Dtree'": -D never takes a glued value
         // (V99 settled for find: `-D` is a whole word whose value is the next one).
-        at("V99 K6", "find -D|", Suggestion("-D", "print diagnostics (comma-separated)")),
-        at("V99 K6 L2", "find -D| tree .", Suggestion("-D", "print diagnostics (comma-separated)")),
+        at("V99 K6", "find -D|", Suggestion.Word("-D", "print diagnostics (comma-separated)")),
+        at("V99 K6 L2", "find -D| tree .", Suggestion.Word("-D", "print diagnostics (comma-separated)")),
         at("V3d V1a", "find -Dt|", *NOTHING),
         at("V3d V1a", "find -Dtree|", *NOTHING),
     )

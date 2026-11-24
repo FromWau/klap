@@ -1,5 +1,6 @@
 package com.fromwau.klap.fixture.pacman
 
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.suggestionsFor
 import kotlin.test.Test
@@ -222,7 +223,7 @@ class PacmanCompletionTest {
         slot(
             "K42",
             "pacman --arch -Q --sy|",
-            expected = setOf(Suggestion("--sync", Op.SYNC.help), name("--sysroot"), name("--sysupgrade")),
+            expected = setOf(Suggestion.Word("--sync", Op.SYNC.help), name("--sysroot"), name("--sysupgrade")),
         ),
         slot("K42", "pacman -Q --arch -Q | pkg"),
         slot("K42", "pacman -Q --arch --help |"),
@@ -382,7 +383,7 @@ class PacmanCompletionTest {
         val cells = Op.entries.flatMap { op -> op.page.filter { op.counts(it) }.map { op to it } }
         checkCells(cells) { (op, entry) ->
             val cluster = "pacman -${op.short}${entry.short}"
-            val again = Suggestion("${cluster.drop(7)}${entry.short}", entry.help)
+            val again = Suggestion.Word("${cluster.drop(7)}${entry.short}", entry.help)
             val offered = pacman.suggestionsFor(cluster)
             assertTrue(again in offered, "${marked(cluster, cluster.length)} must offer $again: $offered")
         }

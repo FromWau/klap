@@ -12,6 +12,7 @@ import com.fromwau.klap.fixture.find.FindCompletionSupport.SHORTS
 import com.fromwau.klap.fixture.find.FindCompletionSupport.Value
 import com.fromwau.klap.fixture.find.FindCompletionSupport.assertFind
 import com.fromwau.klap.fixture.find.FindCompletionSupport.slot
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.filesAfter
 import com.fromwau.klap.testing.suggestionsFor

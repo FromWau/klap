@@ -3,6 +3,7 @@ package com.fromwau.klap.fixture.find
 import com.fromwau.klap.Cli
 import com.fromwau.klap.fixture.ParitySuite
 import com.fromwau.klap.fixture.checkCells
+import com.fromwau.klap.fixture.description
 import com.fromwau.klap.fixture.find.FindCompletionSupport.FILES
 import com.fromwau.klap.fixture.find.FindCompletionSupport.Input
 import com.fromwau.klap.fixture.find.FindCompletionSupport.KLAP_LONGS
@@ -12,6 +13,7 @@ import com.fromwau.klap.fixture.find.FindCompletionSupport.PREDICATES
 import com.fromwau.klap.fixture.find.FindCompletionSupport.REGEX_TYPES
 import com.fromwau.klap.fixture.find.FindCompletionSupport.SHORTS
 import com.fromwau.klap.fixture.find.FindLineContext.assertOffersNone
+import com.fromwau.klap.fixture.value
 import com.fromwau.klap.io.CliPath
 import com.fromwau.klap.testing.Suggestion
 import com.fromwau.klap.testing.acceptSuggestion
@@ -92,9 +94,9 @@ class FindSuggestionListTest {
     @Test
     fun `a spaced regex type carries no description`() = find.checkLists(
         // `find . -regextype findutils-default` walks. The attached form is described by the option's help (G41).
-        at("G41 G7", "find --regextype f|", Suggestion("findutils-default")),
-        at("G41 G7 G2", "find --regextype posix-e|", Suggestion("posix-egrep"), Suggestion("posix-extended")),
-        at("G41 G7 E21", "find --regextype f| .", Suggestion("findutils-default")),
+        at("G41 G7", "find --regextype f|", Suggestion.Word("findutils-default")),
+        at("G41 G7 G2", "find --regextype posix-e|", Suggestion.Word("posix-egrep"), Suggestion.Word("posix-extended")),
+        at("G41 G7 E21", "find --regextype f| .", Suggestion.Word("findutils-default")),
     )
 
     @Test
@@ -152,7 +154,7 @@ class FindSuggestionListTest {
     fun `an ambiguous long leaves nothing but the file completion`() {
         // `find . -re x`: "unknown predicate `-re'"; find matches every predicate whole.
         val offered = find.suggestionsFor("find --re ")
-        assertTrue(offered.all { it.value.startsWith(FILES.value) }, "G90 `find --re |`: offers $offered")
+        assertEquals(listOf(FILES), offered, "G90 `find --re |`: offers $offered")
     }
 
     @Test
@@ -351,7 +353,7 @@ class FindSuggestionListTest {
         // ‘gnu-awk’, ‘grep’, ‘posix-awk’, ‘posix-basic’, ‘posix-egrep’, ‘posix-extended’, ‘posix-minimal-basic’,
         // ‘sed’"; `find . -regextype sed` walks.
         at("G1b G2", "find --regextype=|", *regexTypes(*REGEX_TYPES.toTypedArray()), ordered = true),
-        at("G1b G2 G41", "find --regextype |", *REGEX_TYPES.map { Suggestion(it) }.toTypedArray(), ordered = true),
+        at("G1b G2 G41", "find --regextype |", *REGEX_TYPES.map { Suggestion.Word(it) }.toTypedArray(), ordered = true),
         at("G1b G14", "find --regextype=g|", *regexTypes("gnu-awk", "grep")),
         at("G1b G14", "find --regextype=posix-|", *regexTypes(*POSIX_REGEX_TYPES)),
         at("G1b E17", "find --regextype=sed|", *regexTypes("sed")),
@@ -361,7 +363,7 @@ class FindSuggestionListTest {
     fun `an abbreviated long is an unknown option`() {
         // `find . -regext posix-egrep` and `find . -maxdep 1`: "unknown predicate".
         val spaced = find.suggestionsFor("find --regext ")
-        assertTrue(spaced.all { it.value.startsWith(FILES.value) }, "G90 `find --regext |`: offers $spaced")
+        assertEquals(listOf(FILES), spaced, "G90 `find --regext |`: offers $spaced")
         find.checkLists(at("G90 G1a", "find --regext=|"))
     }
 
@@ -369,7 +371,7 @@ class FindSuggestionListTest {
     fun `a value after a built-in find lacks is none of klap's`() {
         // `find --color always .`: "unknown predicate `--color'".
         val spaced = find.suggestionsFor("find --color ")
-        assertTrue(spaced.all { it.value.startsWith(FILES.value) }, "G68 `find --color |`: offers $spaced")
+        assertEquals(listOf(FILES), spaced, "G68 `find --color |`: offers $spaced")
         find.checkLists(at("G68", "find --color=|"))
     }
 
@@ -427,10 +429,10 @@ private fun at(
 /** The words for [name]: the fixture's help for a long or short find has, find's own for its built-ins. */
 private fun helpOf(name: String): String? = (SHORTS + LONGS).firstOrNull { it.name == name }?.help
 
-private fun named(name: String): Suggestion = Suggestion(name, helpOf(name))
+private fun named(name: String): Suggestion = Suggestion.Word(name, helpOf(name))
 
 private fun regexTypes(vararg values: String): Array<Suggestion> =
-    values.map { Suggestion("--regextype=$it", helpOf("--regextype")) }.toTypedArray()
+    values.map { Suggestion.Word("--regextype=$it", helpOf("--regextype")) }.toTypedArray()
 
 /** Every name find accepts after a dash: the shorts, `-O` with its levels glued (`find -O .` is refused), the longs. */
 private fun pool(longsOnly: Boolean): Array<Suggestion> {
