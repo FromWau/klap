@@ -19,7 +19,8 @@ import com.fromwau.klap.testing.Suggestion
 /** Every name ls accepts after a dash, in ls's words, in `ls --help` order. */
 internal val POOL: List<Suggestion> by lazy {
     ALL_INPUTS.flatMap { input ->
-        (listOfNotNull(input.long) + input.shorts.map { "-$it" }).map { Suggestion(it, input.help) }
+        (listOfNotNull(input.long) + input.attachedForm() + input.shorts.map { "-$it" })
+            .map { Suggestion(it, input.help) }
     } + Suggestion("--help", HELP_HELP) + Suggestion("--version", VERSION_HELP)
 }
 
@@ -29,6 +30,10 @@ private data class Scan(
     val pending: Input?,
     val ambiguous: Boolean,
 )
+
+/** `--color=` beside `--color`: an optional value goes only attached, so Tab offers that form with no space. */
+internal fun Input.attachedForm(): List<String> =
+    listOfNotNull(long?.takeIf { (kind as? Kind.Value)?.optional == true }?.let { "$it=" })
 
 private fun Input.takesRequiredValue(): Boolean = (kind as? Kind.Value)?.optional == false
 

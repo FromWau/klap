@@ -142,14 +142,22 @@ private fun valueSuggestions(
         .toSet()
 }
 
+/** `--debug=` beside `--debug`: an optional value goes only attached, so Tab offers that form with no space. */
+private fun attachedFormOf(long: String): String? =
+    INPUTS.firstOrNull { it.long == long && (it.kind as? Kind.Value)?.bare != null }?.let { "$long=" }
+
 private fun pool(op: Op?): List<Suggestion> = buildList {
     if (op != null) {
         for (entry in op.page) {
             add(Suggestion(entry.long, entry.help))
+            attachedFormOf(entry.long)?.let { add(Suggestion(it, entry.help)) }
             entry.short?.let { add(Suggestion("-$it", entry.help)) }
         }
     } else {
-        for (input in INPUTS) add(Suggestion(input.long, unscopedHelp(input.long)))
+        for (input in INPUTS) {
+            add(Suggestion(input.long, unscopedHelp(input.long)))
+            attachedFormOf(input.long)?.let { add(Suggestion(it, unscopedHelp(input.long))) }
+        }
         for (letter in PAGE_LETTERS) add(Suggestion("-$letter", unscopedHelp(letter)))
         for (each in Op.entries) {
             add(Suggestion(each.long, each.help))

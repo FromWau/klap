@@ -155,9 +155,20 @@ public class CompletionScope internal constructor(
  */
 internal const val COMPLETE_FILES = " klap:files:"
 
+/**
+ * Marks a `__complete` line whose value is an option name a value attaches to (`--color=`, a glued `-O`), so a value
+ * can follow it with no space between. Every generated script strips it. bash drops the space only when every line
+ * of the reply is marked, so a mixed `--color`/`--color=` reply keeps it even under menu-complete; zsh drops it per
+ * marked line; fish ignores the mark and drops it after any value ending in `=`, so an unmarked `KEY=` gets none
+ * there too and a glued `-O` gets one; PowerShell is not verified. The leading space keeps the mark from colliding
+ * with a real candidate, as [COMPLETE_FILES] does.
+ */
+internal const val ATTACHED_NAME = " klap:attached:"
+
 // Every shell delegates the whole decision to `program __complete --cursor <k> -- <words>` and prints the
 // returned lines LITERALLY (never re-eval'd, so a candidate like `$(...)` or a backtick can't execute on
-// Tab). A lone COMPLETE_FILES line maps to that shell's native file completion; the rest go out verbatim.
+// Tab). A lone COMPLETE_FILES line maps to that shell's native file completion; the rest go out
+// verbatim, an ATTACHED_NAME mark stripped.
 // Its stderr is dropped, so a provider's stack trace never lands on the prompt; run `__complete` by hand to see it.
 /**
  * The Tab completion script for [shell], which asks this CLI for its candidates through the hidden `__complete`
@@ -269,9 +280,27 @@ private fun Cli.renderBash(): String = $$"""
         local keep=""
         [ "$pathCur" = "$typedCur" ] || keep="$nonPath"
         mapfile -t COMPREPLY < <(compgen -f -- "$pathCur")
-        COMPREPLY=("${COMPREPLY[@]/#/$keep}")
-        # -o filenames marks these as paths: a directory match gets a trailing `/` to descend, not compgen's plain trailing space.
-        compopt -o filenames 2>/dev/null
+        if [ -z "$keep" ]; then
+          # -o filenames marks these as paths: a directory match gets a trailing `/` to descend, not compgen's plain trailing space.
+          compopt -o filenames 2>/dev/null
+          return
+        fi
+        # readline would stat a match with its head (`-Osrc`) as a path, so each match is ended here instead.
+        local match tilde end
+        local -a matches=("${COMPREPLY[@]}")
+        COMPREPLY=()
+        for match in "${matches[@]}"; do
+          # compgen leaves a leading `~` or `~user` unexpanded: `[ -d ]` would test it literally and `%q` escape it,
+          # so compgen -d judges the directory and that prefix stays unquoted.
+          tilde=""
+          [[ "$match" == "~"* ]] && tilde="${match%%/*}"
+          end=" "
+          [[ $'\n'"$(compgen -d -- "$match")"$'\n' == *$'\n'"$match"$'\n'* ]] && end="/"
+          match="${match:${#tilde}}"
+          [ -n "$match" ] && printf -v match '%q' "$match"
+          COMPREPLY+=("$keep$tilde$match$end")
+        done
+        compopt -o nospace 2>/dev/null
         return
       fi
       COMPREPLY=()
@@ -284,8 +313,13 @@ private fun Cli.renderBash(): String = $$"""
       local unquoted="${__klap_words[0]-}"
       local kept=""
       (( ${#unquoted} < ${#fullCur} )) && kept="${fullCur:0:${#fullCur}-${#unquoted}}"
-      local candidate
+      local candidate attachedOnly=1
       for candidate in "${lines[@]}"; do
+        if [[ "$candidate" == "$$ATTACHED_NAME"* ]]; then
+          candidate="${candidate#"$$ATTACHED_NAME"}"
+        else
+          attachedOnly=0
+        fi
         [[ "$candidate" == "$kept"* ]] && candidate="${candidate:${#kept}}"
         if [[ -z "$quote" ]]; then
           # Escaped as bash reads the line back, so a space or `$` reaches the run as offered.
@@ -305,6 +339,9 @@ private fun Cli.renderBash(): String = $$"""
           COMPREPLY+=("\"${candidate//!/\"\\!\"}\"")
         fi
       done
+      # A value goes on after an attached option name (`--color=`). nospace holds for the whole reply, so it is set
+      # only when every reply is one.
+      (( attachedOnly && ${#COMPREPLY[@]} )) && compopt -o nospace 2>/dev/null
     }
     complete -F _$$name $$name
     """.trimIndent()
@@ -332,9 +369,17 @@ private fun Cli.renderZsh(): String = $$"""
       fi
       # Split each `value\tdescription` line: $values are matched/inserted, $descriptions are shown beside
       # them via `compadd -d` as "value  -- description" (a description-less line shows the bare value).
-      local -a values descriptions
-      local line
+      local -a values descriptions attached attachedValues attachedDescriptions
+      local line n
+      # zsh goes on to its next completer unless this returns 0, so it does once a compadd added a match.
+      local added=1
       for line in "${lines[@]}"; do
+        if [[ "$line" == "$$ATTACHED_NAME"* ]]; then
+          line=${line#"$$ATTACHED_NAME"}
+          attached+=(1)
+        else
+          attached+=(0)
+        fi
         values+=("${line%%$'\t'*}")
         if [[ "$line" == *$'\t'* ]]; then
           descriptions+=("${line%%$'\t'*}  -- ${line#*$'\t'}")
@@ -347,12 +392,11 @@ private fun Cli.renderZsh(): String = $$"""
         # quote a backslash that needs none. So only a value that extends the typed word goes in, quoted as it
         # is typed there: a backslash doubled only where it would escape what follows, and a `!` escaped from
         # history expansion.
-        local value char typedValue i n
+        local value char typedValue i
         local -a typedValues typedDescriptions
         for (( n = 1; n <= ${#values}; n++ )); do
           value=${values[n]}
           [[ "$value" == "$typedCurrent"* ]] || continue
-          typedDescriptions+=("${descriptions[n]}")
           typedValue=""
           for (( i = 1; i <= ${#value}; i++ )); do
             char=${value[i]}
@@ -364,12 +408,30 @@ private fun Cli.renderZsh(): String = $$"""
               typedValue+=$char
             fi
           done
-          typedValues+=("$typedValue")
+          if (( attached[n] )); then
+            attachedValues+=("$typedValue")
+            attachedDescriptions+=("${descriptions[n]}")
+          else
+            typedValues+=("$typedValue")
+            typedDescriptions+=("${descriptions[n]}")
+          fi
         done
-        compadd -U -Q -d typedDescriptions -- "${typedValues[@]}"
-        return
+        compadd -U -Q -d typedDescriptions -- "${typedValues[@]}" && added=0
+        (( ${#attachedValues} )) && compadd -U -Q -S '' -d attachedDescriptions -- "${attachedValues[@]}" && added=0
+        return $added
       fi
-      compadd -d descriptions -- "${values[@]}"
+      # A value goes on after an attached option name (`--color=`), so zsh adds no space behind it.
+      for (( n = ${#values}; n > 0; n-- )); do
+        if (( attached[n] )); then
+          attachedValues=("${values[n]}" "${attachedValues[@]}")
+          attachedDescriptions=("${descriptions[n]}" "${attachedDescriptions[@]}")
+          values[n]=()
+          descriptions[n]=()
+        fi
+      done
+      compadd -d descriptions -- "${values[@]}" && added=0
+      (( ${#attachedValues} )) && compadd -S '' -d attachedDescriptions -- "${attachedValues[@]}" && added=0
+      return $added
     }
     # Autoloaded from $fpath this file is the function's body; sourced, it registers the function instead.
     if [[ $zsh_eval_context[-1] == (shfunc|loadautofunc) ]]; then
@@ -403,7 +465,7 @@ private fun Cli.renderFish(): String = $$"""
         # fish replaces; fish reads that tab form natively. printf, not echo: fish's echo treats a leading
         # -e/-n/-s as its own flag and would swallow a candidate that looks like one.
         for line in $response
-            printf '%s\n' "$line"
+            printf '%s\n' (string replace -r -- '^$$ATTACHED_NAME' '' "$line")
         end
     end
     complete -c $$name -f -a '(__$${name}_klap_complete)'
@@ -487,7 +549,7 @@ private fun Cli.renderPowershell(): String = $$"""
         $lines | ForEach-Object {
             # Split `value\tdescription` on the FIRST tab: the value is inserted and listed, the description
             # becomes the tooltip (a description-less line tooltips the value, unchanged from before).
-            $value, $tip = $_ -split "`t", 2
+            $value, $tip = ($_ -replace '^$$ATTACHED_NAME', '') -split "`t", 2
             if (-not $tip) { $tip = $value }
             # The value is the whole word under the cursor, which PowerShell replaces. One PowerShell would split
             # or expand goes in single quotes, as one typed without a quote would. A typographic quote reads as

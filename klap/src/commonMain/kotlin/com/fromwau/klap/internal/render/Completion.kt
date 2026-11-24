@@ -69,8 +69,15 @@ import com.fromwau.klap.routesTransparently
  * A single completion candidate: [value] is the text offered on the wire (and to the shell, which is what
  * gets inserted and what prefix-filtering matches); [description], when present, is display-only text a
  * shell can show alongside it (e.g. from a `.completeWith { candidate(value, description) }` provider).
+ * [attachedName] marks an option name a value is attached to (`--name=`, a glued `-O`): bash leaves no space after
+ * it only when every candidate in the reply is marked, zsh per marked candidate, and fish ignores the mark and leaves
+ * none after any candidate ending in `=`; PowerShell is not verified.
  */
-internal data class Candidate(val value: String, val description: String? = null)
+internal data class Candidate(
+    val value: String,
+    val description: String? = null,
+    val attachedName: Boolean = false,
+)
 
 /**
  * This candidate as a shell receives it, or null when it cannot reach one. A value carrying a tab, newline or
@@ -85,7 +92,7 @@ internal fun Candidate.forShell(): Candidate? {
         ?.replace('\n', ' ')
         ?.replace('\r', ' ')
         ?.trim()
-    return Candidate(value, cleaned?.takeIf { it.isNotEmpty() })
+    return copy(description = cleaned?.takeIf { it.isNotEmpty() })
 }
 
 /**
@@ -345,9 +352,10 @@ private class TabLine(
         } ?: return null
         if (attachedOption in cli.refusedBy(cmd, rawHead + after)) return emptyList()
         val values = attachedOption.candidatesFor(partial, typed, valuesFor(attachedOption, partial), caller)
-        // A bare optional-value short with nothing to glue on is completed by its name below.
+        // A bare optional-value short with nothing to glue on is completed by its name below; a glued path is not.
         val bareShort = partial.isEmpty() && !current.startsWith("--")
-        if (bareShort && !values.isGluable()) return null
+        val gluedPath = attachedOption.gluedValue && values.isNativeFileRequest()
+        if (bareShort && !values.isGluable() && !gluedPath) return null
         return values.asWholeWord(current.dropLast(partial.length), attachedOption.help)
     }
 
@@ -362,8 +370,9 @@ private class TabLine(
     /**
      * A flag-shaped partial word (`-`, `--`, `-v`, `--verb`): offer this command's option/flag names plus
      * the globals and built-ins, so flag names complete like git/kubectl. Past the operand that ends the options
-     * only the globals and klap's own are offered. Each candidate carries the spec's own `help` as its
-     * description (blank -> bare value, per Candidate).
+     * only the globals and klap's own are offered. A long with an optional value is offered beside its `=` form,
+     * and a `.gluedValue()` long only as it.
+     * Each candidate carries the spec's own `help` as its description (blank -> bare value, per Candidate).
      */
     fun nameCandidates(): List<Candidate>? {
         if (!current.startsWith("-") || !readsAsName(analysed)) return null
@@ -388,7 +397,7 @@ private class TabLine(
         (ownSpecs + cli.globalSpecs).filterNot { it.hidden || it in refused.repeats }.forEach { spec ->
             val help = spec.help.takeIf { it.isNotBlank() }
             if (spec !in excluded) {
-                spec.longs.forEach { long -> names += Candidate("--$long", help) }
+                names += longNames(spec, help)
                 names += shortNames(spec, help)
             }
             if (spec is FlagSpec && spec.negatable) {
@@ -400,16 +409,32 @@ private class TabLine(
         return names
     }
 
-    // An optional-value short takes its value only glued (`-O3`), so one with candidates is offered as them.
+    private fun longNames(
+        spec: NamedSpec,
+        help: String?,
+    ): List<Candidate> = spec.longs.flatMap { long ->
+        val option = spec as? OptionSpec
+        withAttachedForm(
+            "--$long",
+            help,
+            valueAttachedOnly = option?.valueAttachedOnly == true,
+            bareAccepted = option?.gluedValue != true,
+        )
+    }
+
+    // A short whose value is taken only glued (`-O3`) is offered as its candidates, when it has any; a `.gluedValue()`
+    // short without them is an attached name, since the parser refuses it bare.
     private fun shortNames(
         spec: NamedSpec,
         help: String?,
     ): List<Candidate> = spec.shorts.flatMap { short ->
-        val glued = (spec as? OptionSpec)
+        val option = spec as? OptionSpec
+        val glued = option
             ?.takeIf { it.valueAttachedOnly }
             ?.let { it.candidatesFor("", typed, valuesFor(it, ""), caller) }
             ?.takeIf { it.isGluable() }
-        glued?.asWholeWord("-$short", spec.help) ?: listOf(Candidate("-$short", help))
+        glued?.asWholeWord("-$short", spec.help)
+            ?: listOf(Candidate("-$short", help, attachedName = option?.gluedValue == true))
     }
 
     /**
@@ -426,7 +451,7 @@ private class TabLine(
         }
         pendingCommands.flatMap { it.options + it.flags }.filterNot { it.hidden }.forEach { spec ->
             val help = spec.help.takeIf { it.isNotBlank() }
-            spec.longs.forEach { long -> names += Candidate("--$long", help) }
+            names += longNames(spec, help)
             names += shortNames(spec, help)
         }
         return names
@@ -439,7 +464,9 @@ private class TabLine(
      */
     private fun builtinNames(): List<Candidate> =
         cmd.builtinOptions(cli.version != null, cli.metaOptions, cli.builtins).flatMap { builtin ->
-            builtin.names.map { Candidate(it, builtin.help) }
+            builtin.names.flatMap {
+                withAttachedForm(it, builtin.help, valueAttachedOnly = builtin.bare != null, bareAccepted = true)
+            }
         }
 
     /**
@@ -475,7 +502,7 @@ private class TabLine(
         return continuations
             .filterNot { it.value.startsWith("--") }
             .filterNot { it.value[1] in typedShorts && it.value[1] !in counted }
-            .map { Candidate(current + it.value.drop(1), it.description) }
+            .map { it.copy(value = current + it.value.drop(1)) }
             .distinctBy { it.value }
     }
 
@@ -514,6 +541,21 @@ private class TabLine(
         }
         return subcommands + positionalCandidates
     }
+}
+
+/**
+ * The long [name] as Tab offers it. A value taken only attached goes after `--name=`, so that form is offered, with
+ * no space after it, and the bare [name] beside it only when [bareAccepted].
+ */
+private fun withAttachedForm(
+    name: String,
+    help: String?,
+    valueAttachedOnly: Boolean,
+    bareAccepted: Boolean,
+): List<Candidate> {
+    if (!valueAttachedOnly || !name.startsWith("--")) return listOf(Candidate(name, help))
+    val attached = Candidate("$name=", help, attachedName = true)
+    return if (bareAccepted) listOf(Candidate(name, help), attached) else listOf(attached)
 }
 
 /**

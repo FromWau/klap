@@ -52,6 +52,7 @@ internal val ROOT_LONGS: List<Suggestion> = listOf(
     Suggestion("--namespace", "Set the Git namespace"),
     Suggestion("--bare", "Treat the repository as a bare repository"),
     Suggestion("--exec-path", "Path to wherever your core Git programs are installed"),
+    Suggestion("--exec-path=", "Path to wherever your core Git programs are installed"),
     Suggestion("--no-replace-objects", "Do not use replacement refs to replace Git objects"),
     Suggestion("--no-optional-locks", "Do not perform optional operations that require locks"),
 )

@@ -982,8 +982,10 @@ public abstract class ConverterScope internal constructor() {
      * must be immediately followed by a decimal integer"). Reach for it only to match such a tool. The type stays
      * the plain value, so converters, `.multiple()` and `.completeWith { }` chain before or after it, a glued value
      * may end a short cluster as a required value does, and [ShortOptions.Alone] lets it stay glued. Completion
-     * offers its candidates glued (`-O0`) and nothing after a bare `-O`, and help shows it as `-OLEVEL`, or
-     * `-O, --optimise=LEVEL` when it has a long name. It cannot be combined with `.optionalValue()`.
+     * offers its candidates glued (`-O0`) and nothing after a bare `-O`, and offers the long only as `--optimise=`,
+     * with no space after it. A short without candidates is offered as `-O`, with no space after it in bash and zsh;
+     * fish adds one. Help shows it as `-OLEVEL`, or `-O, --optimise=LEVEL` when it has a long name. It
+     * cannot be combined with `.optionalValue()`.
      */
     public fun <T> Opt<T>.gluedValue(): Opt<T> {
         spec.requireNotGluedAndOptional(spec.valueOptional)

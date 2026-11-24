@@ -75,9 +75,14 @@ private fun refused(given: List<Input>): Set<Input> = buildSet {
     if (NO_TARGET in given) add(TARGET)
 }
 
+/** `--backup=` beside `--backup`: an optional value goes only attached, so Tab offers that form with no space. */
+internal fun Input.attachedForm(): List<String> =
+    listOfNotNull(long?.takeIf { (kind as? Kind.Value)?.optional == true }?.let { "$it=" })
+
 private fun pool(refused: Set<Input>): List<Suggestion> = buildList {
     for (input in INPUTS - refused) {
         input.long?.let { add(Suggestion(it, input.help)) }
+        input.attachedForm().forEach { add(Suggestion(it, input.help)) }
         input.shorts.forEach { add(Suggestion("-$it", input.help)) }
     }
     add(Suggestion("--help", HELP_HELP))

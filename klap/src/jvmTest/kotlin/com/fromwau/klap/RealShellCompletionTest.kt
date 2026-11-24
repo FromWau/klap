@@ -1,6 +1,7 @@
 package com.fromwau.klap
 
 import com.fromwau.kern.result.Ok
+import com.fromwau.kern.terminal.test.RecordingTerminal
 import java.io.File
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
@@ -30,6 +31,8 @@ class RealShellCompletionTest {
     private val log = File(dir, "calls")
     private val reply = File(dir, "reply")
     private val errors = File(dir, "stderr")
+    private val compopts = File(dir, "set-options")
+    private val status = File(dir, "status")
 
     init {
         // Each call is one line of its arguments, separated by the unit separator so an empty one shows.
@@ -56,8 +59,16 @@ class RealShellCompletionTest {
         dir.deleteRecursively()
     }
 
-    /** What one completion did: the arguments `tool` was called with, and the candidates the shell offered. */
-    private data class Completed(val call: List<String>, val candidates: List<String>)
+    /**
+     * What one completion did: the arguments `tool` was called with, the candidates the shell offered, and each
+     * `compopt` call bash made, and the status zsh's completion function returned (null for the other shells).
+     */
+    private data class Completed(
+        val call: List<String>,
+        val candidates: List<String>,
+        val compopts: List<String>,
+        val status: Int?,
+    )
 
     /**
      * Completes [line] with the cursor at [cursor] (its end by default), [answer] being what `tool` prints and
@@ -71,9 +82,12 @@ class RealShellCompletionTest {
         stderr: String = "",
         argumentPassing: String? = null,
         program: Cli = tool,
+        environment: Map<String, String> = emptyMap(),
     ): Completed {
         val executable = shell.executable
         log.writeText("")
+        compopts.writeText("")
+        status.writeText("")
         reply.writeText(answer)
         // fish autoloads only `<command>.fish` from its complete path, and pwsh dot-sources only a `.ps1`.
         val script = File(dir, if (shell == CompletionShell.POWERSHELL) "tool.ps1" else "tool.$executable")
@@ -87,7 +101,10 @@ class RealShellCompletionTest {
                 environment()["TOOL_LOG"] = log.path
                 environment()["TOOL_REPLY"] = reply.path
                 environment()["TOOL_STDERR"] = stderr
+                environment()["COMPOPT_LOG"] = compopts.path
+                environment()["STATUS_LOG"] = status.path
                 environment().putAll(extraEnv)
+                environment().putAll(environment)
             }
             .start()
         val out = process.inputStream.bufferedReader().readText()
@@ -97,7 +114,12 @@ class RealShellCompletionTest {
         val calls = log.readLines().filter { it.isNotEmpty() }
         assertEquals(1, calls.size, "$executable called tool ${calls.size} times: $calls")
         val call = calls.single().removeSuffix("\u001f").split('\u001f')
-        return Completed(call, out.lines().filter { it.isNotEmpty() })
+        return Completed(
+            call,
+            out.lines().filter { it.isNotEmpty() },
+            compopts.readLines(),
+            status.readText().trim().toIntOrNull(),
+        )
     }
 
     private fun driver(
@@ -111,10 +133,12 @@ class RealShellCompletionTest {
         return when (shell) {
             // The script reads only the program and the word under the cursor from COMP_WORDS, raw and quoted as
             // bash leaves it, whole past the cursor and split after a COMP_WORDBREAKS `=` or `:`, and rebuilds
-            // everything else from COMP_LINE and COMP_POINT.
+            // everything else from COMP_LINE and COMP_POINT. compopt works only inside a completion bash runs, so
+            // its calls are recorded instead.
             CompletionShell.BASH -> listOf(
                 "bash", "--norc", "--noprofile", "-c",
                 $$"""
+                compopt() { printf '%s\n' "$*" >> "$COMPOPT_LOG"; }
                 source "$1"
                 COMP_LINE="$LINE"; COMP_POINT=$POINT
                 COMP_WORDS=("${LINE%% *}" "$CUR"); COMP_CWORD=1
@@ -125,7 +149,8 @@ class RealShellCompletionTest {
             ) to env + ("CUR" to bashCurrentWord(line, cursor))
             // Without a terminal zsh has no completion system, so its three builtins the script calls are
             // stood in for: compadd prints each value it inserts, a tab and its display text where that differs,
-            // and any other flag first; compset prints its call.
+            // and any other flag first, returning 0 only when it was given a value, as compadd does when it adds a
+            // match; compset prints its call.
             CompletionShell.ZSH -> {
                 val tokens = rawWordRanges(line)
                 val touched = tokens.indexOfFirst { cursor in it.first..it.last + 1 }
@@ -161,7 +186,13 @@ class RealShellCompletionTest {
                     compadd() {
                       local -a shown flags
                       while [[ $1 == -* && $1 != -- ]]; do
-                        if [[ $1 == -d ]]; then shown=("${(@P)2}"); shift 2; else flags+=("$1"); shift; fi
+                        if [[ $1 == -d ]]; then
+                          shown=("${(@P)2}"); shift 2
+                        elif [[ $1 == -S ]]; then
+                          flags+=("$1" "${(qq)2}"); shift 2
+                        else
+                          flags+=("$1"); shift
+                        fi
                       done
                       (( $#flags )) && print -r -- "compadd $flags"
                       [[ $1 == -- ]] && shift
@@ -173,10 +204,12 @@ class RealShellCompletionTest {
                           print -r -- "${@[i]}"
                         fi
                       done
+                      (( $# ))
                     }
                     compdef() { :; }
                     source "$1"
                     _tool
+                    print -r -- $? > $STATUS_LOG
                     """.trimIndent(),
                     "zsh", script.path,
                 ) to env + mapOf(
@@ -560,6 +593,154 @@ class RealShellCompletionTest {
     }
 
     // --- what each shell offers from the answer ---
+
+    @Test
+    fun `bash leaves no space after an attached option name`() {
+        for (shell in installed(listOf(CompletionShell.BASH))) {
+            val completed = complete(shell, "tool --color", answer = "$ATTACHED_NAME--color=\tcolor\n")
+            assertEquals(listOf("--color="), completed.candidates)
+            assertEquals(listOf("-o nospace"), completed.compopts)
+        }
+    }
+
+    @Test
+    fun `bash keeps the space after a value ending in an equals sign`() {
+        for (shell in installed(listOf(CompletionShell.BASH))) {
+            val completed = complete(shell, "tool get ", answer = "dGVzdA==\nKEY=\n")
+            assertEquals(listOf("dGVzdA==", "KEY="), completed.candidates)
+            assertEquals(emptyList(), completed.compopts)
+        }
+    }
+
+    @Test
+    fun `bash keeps the space for a reply holding more than attached option names`() {
+        for (shell in installed(listOf(CompletionShell.BASH))) {
+            val completed = complete(shell, "tool --col", answer = "--color\tcolor\n$ATTACHED_NAME--color=\tcolor\n")
+            assertEquals(listOf("--color", "--color="), completed.candidates)
+            assertEquals(emptyList(), completed.compopts)
+        }
+    }
+
+    @Test
+    fun `zsh leaves no space after an attached option name and keeps it after a value ending in an equals sign`() {
+        for (shell in installed(listOf(CompletionShell.ZSH))) {
+            val answer = "KEY=\tkey\n$ATTACHED_NAME--color=\tcolor\n"
+            val offered = complete(shell, "tool ", answer = answer).candidates
+            assertEquals(listOf("KEY=", "compadd -S ''", "--color="), offered.map { it.substringBefore('\t') })
+            val quoted = complete(shell, "tool \"", answer = "KEY=\n$ATTACHED_NAME--color=\n").candidates
+            assertEquals(listOf("compadd -U -Q", "KEY=", "compadd -U -Q -S ''", "--color="), quoted)
+        }
+    }
+
+    @Test
+    fun `bash and zsh leave no space after a glued short without candidates`() {
+        val glued = cli("tool") {
+            option(short = 'O', help = "level").gluedValue()
+            action { Ok("") }
+        }
+        val terminal = RecordingTerminal()
+        glued.run(arrayOf("__complete", "--cursor", "0", "--", "-O"), terminal)
+        for (shell in installed(listOf(CompletionShell.BASH))) {
+            val completed = complete(shell, "tool -O", answer = terminal.out, program = glued)
+            assertEquals(listOf("-O"), completed.candidates)
+            assertEquals(listOf("-o nospace"), completed.compopts)
+        }
+        for (shell in installed(listOf(CompletionShell.ZSH))) {
+            val offered = complete(shell, "tool -O", answer = terminal.out, program = glued).candidates
+            assertEquals(listOf("compadd -S ''", "-O"), offered.map { it.substringBefore('\t') })
+        }
+    }
+
+    @Test
+    fun `zsh reports matches added whether or not a candidate is an attached option name`() {
+        val answers = listOf(
+            "KEY=\tkey\n",
+            "$ATTACHED_NAME--color=\tcolor\n",
+            "KEY=\tkey\n$ATTACHED_NAME--color=\tcolor\n",
+        )
+        for (shell in installed(listOf(CompletionShell.ZSH))) {
+            for (answer in answers) {
+                assertEquals(0, complete(shell, "tool ", answer = answer).status, "unquoted: $answer")
+                assertEquals(0, complete(shell, "tool \"", answer = answer).status, "quoted: $answer")
+            }
+        }
+    }
+
+    @Test
+    fun `bash and zsh leave no space after a cluster continuing into a glued short`() {
+        val glued = cli("tool") {
+            flag(short = 'v', help = "be loud")
+            option(short = 'O', help = "level").gluedValue()
+            action { Ok("") }
+        }
+        val terminal = RecordingTerminal()
+        glued.run(arrayOf("__complete", "--cursor", "0", "--", "-v"), terminal)
+        for (shell in installed(listOf(CompletionShell.BASH))) {
+            val completed = complete(shell, "tool -v", answer = terminal.out, program = glued)
+            assertEquals(listOf("-vO"), completed.candidates)
+            assertEquals(listOf("-o nospace"), completed.compopts)
+        }
+        for (shell in installed(listOf(CompletionShell.ZSH))) {
+            val offered = complete(shell, "tool -v", answer = terminal.out, program = glued).candidates
+            assertEquals(listOf("compadd -S ''", "-vO"), offered.map { it.substringBefore('\t') })
+        }
+    }
+
+    @Test
+    fun `bash and zsh complete a path glued to a short whose value is a path`() {
+        val glued = cli("tool") {
+            option(short = 'O', help = "output").gluedValue().file()
+            action { Ok("") }
+        }
+        File(dir, "src").mkdirs()
+        val terminal = RecordingTerminal()
+        glued.run(arrayOf("__complete", "--cursor", "0", "--", "-O"), terminal)
+        for (shell in installed(listOf(CompletionShell.BASH))) {
+            val completed = complete(shell, "tool -O", answer = terminal.out, program = glued)
+            // readline would stat `-Osrc` as a whole, so the script ends each match itself: `/` or a space.
+            assertTrue("-Osrc/" in completed.candidates, "${completed.candidates}")
+            assertTrue("-Oconf.conf " in completed.candidates, "${completed.candidates}")
+            assertTrue(completed.candidates.all { it.startsWith("-O") }, "${completed.candidates}")
+            assertEquals(listOf("-o nospace"), completed.compopts)
+        }
+        for (shell in installed(listOf(CompletionShell.ZSH))) {
+            val offered = complete(shell, "tool -O", answer = terminal.out, program = glued).candidates
+            assertEquals(listOf("compset -p 2", "FILES"), offered)
+        }
+    }
+
+    @Test
+    fun `bash ends a glued path under a leading tilde by what it names in HOME`() {
+        val glued = cli("tool") {
+            option(short = 'O', help = "output").gluedValue().file()
+            action { Ok("") }
+        }
+        val home = File(dir, "home")
+        File(home, "dir").mkdirs()
+        File(home, "file").writeText("")
+        val terminal = RecordingTerminal()
+        glued.run(arrayOf("__complete", "--cursor", "0", "--", "-O"), terminal)
+        for (shell in installed(listOf(CompletionShell.BASH))) {
+            val completed = complete(
+                shell,
+                "tool -O~/",
+                answer = terminal.out,
+                program = glued,
+                environment = mapOf("HOME" to home.path),
+            )
+            assertEquals(listOf("-O~/dir/", "-O~/file "), completed.candidates.sorted())
+            assertEquals(listOf("-o nospace"), completed.compopts)
+        }
+    }
+
+    @Test
+    fun `fish and powershell offer an attached option name without its mark`() {
+        for (shell in installed(listOf(CompletionShell.FISH, CompletionShell.POWERSHELL))) {
+            val answer = "--color\tcolor\n$ATTACHED_NAME--color=\tcolor\n"
+            val offered = complete(shell, "tool --col", answer = answer).candidates
+            assertEquals(listOf("--color", "--color="), offered.map { it.substringBefore('\t') }, "$shell")
+        }
+    }
 
     @Test
     fun `every shell offers the candidates tool answers with`() {

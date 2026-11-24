@@ -28,9 +28,10 @@ import kotlin.test.assertTrue
  * the live shell tests.
  */
 
-private val KLAP_BUILT_INS = listOf("-h", "--help-all", "--json", "--color", "--completion", "--docs")
+private val KLAP_BUILT_INS = listOf("-h", "--help-all", "--json", "--color", "--color=", "--completion", "--docs")
 
-private fun spellings(input: Input): List<String> = listOfNotNull(input.long) + input.shorts.map { "-$it" }
+private fun spellings(input: Input): List<String> =
+    listOfNotNull(input.long) + input.attachedForm() + input.shorts.map { "-$it" }
 
 /** Every name rm accepts after a dash, in rm's words: each input's long and shorts, then `--help` and `--version`. */
 private fun pool(longsOnly: Boolean): Array<Suggestion> = (INPUTS.flatMap(::spellings) + "--help" + "--version")
@@ -51,7 +52,10 @@ private fun nameCell(
     rest: String = "",
     after: String = "",
 ): Cell {
-    val offers = RM_LONGS.filter { it.startsWith(typed) }.map(::name)
+    val offers = RM_LONGS
+        .flatMap { listOf(it) + inputOfLong(it)?.attachedForm().orEmpty() }
+        .filter { it.startsWith(typed) }
+        .map(::name)
     val rows = "G1a G6a G14 E1 E5 E6" + if (after.isEmpty()) "" else " E21"
     return Cell(rows, "rm $typed|$rest$after", offers)
 }
@@ -128,10 +132,11 @@ class RmSuggestionListTest {
     )
 
     @Test
-    fun `an optional-value long is offered once and bare`() {
-        // G30: `rm --help`: `--preserve-root[=all]`; Tab offers the name, the values only after the `=`.
-        rm.assertValues("G30", "rm --preserve-r", "rm --preserve-r".length, listOf(name("--preserve-root")))
-        rm.assertOffersNone("G30", "rm --interactiv|", listOf("--interactive=", "--interactive "))
+    fun `an optional-value long is offered beside its attached form`() {
+        // G30: `rm --help`: `--preserve-root[=all]`; the values follow the `=`, which an optional value needs.
+        val offers = listOf(name("--preserve-root"), name("--preserve-root="))
+        rm.assertValues("G30", "rm --preserve-r", "rm --preserve-r".length, offers)
+        rm.assertOffersNone("G30", "rm --interactiv|", listOf("--interactive "))
     }
 
     @Test
@@ -393,8 +398,8 @@ class RmSuggestionListTest {
     fun `a name rm does not have is not offered for --interactive`() {
         // G1a, G101: `rm --interactive-once a`: "unrecognized option"; `rm --i a` and `rm --inter a` prompt.
         rm.checkContext(
-            at("G1a G30", "rm --interac|", name("--interactive")),
-            at("G1a", "rm --i|", name("--interactive")),
+            at("G1a G30", "rm --interac|", name("--interactive"), name("--interactive=")),
+            at("G1a", "rm --i|", name("--interactive"), name("--interactive=")),
             at("G1a", "rm --interactive-|"),
         )
     }

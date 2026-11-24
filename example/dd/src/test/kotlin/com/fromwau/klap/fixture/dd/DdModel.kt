@@ -215,7 +215,7 @@ internal val DD_OPTIONS: List<Suggestion> =
     listOf(Suggestion("--help", HELP_HELP), Suggestion("--version", VERSION_HELP))
 
 /** klap's built-in long names, which real dd refuses (`dd --json if=in`: "unrecognized option '--json'"). */
-internal val KLAP_ONLY_LONGS: List<String> = listOf("--json", "--color", "--completion", "--docs")
+internal val KLAP_ONLY_LONGS: List<String> = listOf("--json", "--color", "--color=", "--completion", "--docs")
 
 /**
  * What dd reads each number the cells type as, by `dd --help`: "c=1, w=2, b=512, kB=1000, K=1024, MB=1000*1000,

@@ -4,6 +4,8 @@ import com.fromwau.kern.result.Ok
 import com.fromwau.kern.result.assertError
 import com.fromwau.kern.result.assertSuccess
 import com.fromwau.kern.terminal.test.RecordingTerminal
+import com.fromwau.klap.internal.render.Candidate
+import com.fromwau.klap.internal.render.completeCandidates
 import com.fromwau.klap.internal.render.helpText
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -173,6 +175,84 @@ class GluedValueTest {
     @Test
     fun `a cluster ending in the short offers its candidates glued`() {
         assertEquals((0..3).map { "-vO$it" }, cc().offered("-vO"))
+    }
+
+    @Test
+    fun `a long name being typed offers only its attached form`() {
+        val offered = cc().cli.completeCandidates(listOf("--opt"))
+        assertEquals(listOf(Candidate("--optimise=", "optimisation level", attachedName = true)), offered)
+    }
+
+    @Test
+    fun `a long without a short offers only its attached form`() {
+        val tree = cli("cc") {
+            option(long = "level").gluedValue()
+            action { Ok("") }
+        }
+        assertEquals(listOf(Candidate("--level=", attachedName = true)), tree.completeCandidates(listOf("--lev")))
+    }
+
+    @Test
+    fun `a short without candidates is offered as an attached name`() {
+        val tree = cli("cc") {
+            option(short = 'O', help = "level").gluedValue()
+            action { Ok("") }
+        }
+        assertEquals(listOf(Candidate("-O", "level", attachedName = true)), tree.completeCandidates(listOf("-O")))
+    }
+
+    @Test
+    fun `complete marks a short without candidates as an attached name`() {
+        val terminal = RecordingTerminal()
+        val tree = cli("cc") {
+            option(short = 'O', help = "level").gluedValue()
+            action { Ok("") }
+        }
+        tree.run(arrayOf("__complete", "--cursor", "0", "--", "-O"), terminal)
+        assertEquals("$ATTACHED_NAME-O\tlevel", terminal.out.trimEnd())
+    }
+
+    @Test
+    fun `a cluster continuing into a short without candidates offers it as an attached name`() {
+        val tree = cli("cc") {
+            flag(short = 'v', help = "be loud")
+            option(short = 'O', help = "level").gluedValue()
+            action { Ok("") }
+        }
+        val offered = tree.completeCandidates(listOf("-v"))
+        assertTrue(Candidate("-vO", "level", attachedName = true) in offered, "$offered")
+    }
+
+    @Test
+    fun `complete marks a cluster continuing into a short without candidates as an attached name`() {
+        val terminal = RecordingTerminal()
+        val tree = cli("cc") {
+            flag(short = 'v', help = "be loud")
+            option(short = 'O', help = "level").gluedValue()
+            action { Ok("") }
+        }
+        tree.run(arrayOf("__complete", "--cursor", "0", "--", "-v"), terminal)
+        assertTrue("$ATTACHED_NAME-vO\tlevel" in terminal.out.lines(), terminal.out)
+    }
+
+    @Test
+    fun `a short whose value is a path completes the path glued to it`() {
+        val tree = cli("cc") {
+            option(short = 'O', help = "output").gluedValue().file()
+            action { Ok("") }
+        }
+        assertEquals(listOf(Candidate("${COMPLETE_FILES}-O")), tree.completeCandidates(listOf("-O")))
+    }
+
+    @Test
+    fun `complete answers a short whose value is a path with the file directive headed by it`() {
+        val terminal = RecordingTerminal()
+        val tree = cli("cc") {
+            option(short = 'O', help = "output").gluedValue().file()
+            action { Ok("") }
+        }
+        tree.run(arrayOf("__complete", "--cursor", "0", "--", "-O"), terminal)
+        assertEquals("${COMPLETE_FILES}-O", terminal.out.trimEnd())
     }
 
     @Test

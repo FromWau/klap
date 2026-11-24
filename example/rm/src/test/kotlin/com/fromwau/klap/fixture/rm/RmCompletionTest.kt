@@ -105,7 +105,7 @@ class RmCompletionTest {
 
     @Test
     fun `a long option's name completes from the cursor wherever it stands in the word`() = rm.checkSlotValues(
-        // K5: `--interactive[=WHEN]` and `--preserve-root[=all]` are offered bare, their values only after the `=`.
+        // K5: `--interactive[=WHEN]` and `--preserve-root[=all]` are offered beside their `=` forms, the values after.
         slot("K5 start", "rm |--preserve-root"),
         slot("K5", "rm --preserve-r|"),
         slot("K5 inside", "rm --pre|serve"),
@@ -331,8 +331,8 @@ class RmCompletionTest {
                 slot("K15a", "rm --c|") +
                 slot("K15a", "rm --co|"),
         )
-        rm.assertOffersNone("K2 K13e K13f K13g", "rm --|", KLAP_ONLY_LONGS)
-        rm.assertOffersNone("K3 K13e K13f K13g", "rm -|", KLAP_ONLY_LONGS)
+        rm.assertOffersNone("K2 K13e K13f K13g", "rm --|", KLAP_ONLY_LONGS + "--color=")
+        rm.assertOffersNone("K3 K13e K13f K13g", "rm -|", KLAP_ONLY_LONGS + "--color=")
     }
 
     @Test

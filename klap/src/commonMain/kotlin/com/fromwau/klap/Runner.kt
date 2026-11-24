@@ -333,5 +333,7 @@ public fun Cli.main(argv: Array<String>) {
  * Encode this candidate as one `__complete` wire line, the value then a tab and its description when it has one,
  * or null to drop it; [forShell] decides what survives.
  */
-internal fun Candidate.toCompletionLine(): String? =
-    forShell()?.let { shell -> shell.description?.let { "${shell.value}\t$it" } ?: shell.value }
+internal fun Candidate.toCompletionLine(): String? = forShell()?.let { shell ->
+    val value = if (shell.attachedName) ATTACHED_NAME + shell.value else shell.value
+    shell.description?.let { "$value\t$it" } ?: value
+}

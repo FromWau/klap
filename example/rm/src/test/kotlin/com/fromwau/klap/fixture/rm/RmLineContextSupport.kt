@@ -45,7 +45,7 @@ internal object RmLineContext {
     fun rmHelp(spelled: String): String = when {
         spelled == "--help" -> HELP_HELP
         spelled == "--version" -> VERSION_HELP
-        spelled.startsWith("--") -> input(spelled).help
+        spelled.startsWith("--") -> input(spelled.removeSuffix("=")).help
         else -> inputFor(spelled[1])!!.help
     }
 

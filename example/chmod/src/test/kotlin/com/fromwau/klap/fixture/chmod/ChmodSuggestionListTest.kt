@@ -190,7 +190,7 @@ class ChmodSuggestionListTest {
         // --docs are not chmod's.
         val names = chmod.suggestionsFor("chmod -").map { it.value }
         assertEquals(listOf("--help", "--version"), names.takeLast(2), "G18 `chmod -|`: the built-ins come last")
-        assertTrue(names.none { it in LONGS_CHMOD_LACKS }, "G11 `chmod -|`: $names")
+        assertTrue(names.none { it in LONGS_CHMOD_LACKS + "--color=" }, "G11 `chmod -|`: $names")
     }
 
     @Test

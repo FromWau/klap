@@ -8,7 +8,8 @@ import com.fromwau.klap.internal.render.forShell
 
 /**
  * One thing Tab offers for a line: [value] is the word that replaces the one under the cursor, and
- * [description] what the shell shows beside it, when it shows one.
+ * [description] what the shell shows beside it, when it shows one. Whether the shell adds a space after [value] is
+ * not reported.
  */
 public data class Suggestion(
     val value: String,

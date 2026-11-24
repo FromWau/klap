@@ -646,7 +646,7 @@ class ConstraintCompletionTest {
     }
 
     @Test
-    fun `a command with no constraints offers exactly what it did before`() {
+    fun `a command with no constraints offers every name`() {
         val tree = cli("app") {
             command("go") {
                 flag(short = 'a', long = "alpha")
@@ -654,7 +654,7 @@ class ConstraintCompletionTest {
                 action { Ok("") }
             }
         }
-        val expected = listOf("--alpha", "-a", "--beta", "-b", "--help", "--json", "--color")
+        val expected = listOf("--alpha", "-a", "--beta", "-b", "--help", "--json", "--color", "--color=")
         assertEquals(expected, tree.offered("go", "-"))
         assertEquals(expected, tree.offered("go", "-a", "-"))
     }

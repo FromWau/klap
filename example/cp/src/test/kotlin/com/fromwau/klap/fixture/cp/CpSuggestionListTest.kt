@@ -72,11 +72,11 @@ class CpSuggestionListTest {
     )
 
     @Test
-    fun `a value-taking long is offered bare and described by its own help`() = cp.checkContext(
+    fun `a value-taking long is described by its help and an optional one offers its attached form`() = cp.checkContext(
         // `cp --help`: `--suffix=SUFFIX` and `--backup[=CONTROL]`; fish's own cp completion shows `--sparse` bare too.
         // The fixture declares --backup, -b and --suffix in `group("Backup")`.
         at("G29 G48", "cp --suf|", name("--suffix")),
-        at("G30 G48", "cp --backu|", name("--backup")),
+        at("G30 G48", "cp --backu|", name("--backup"), name("--backup=")),
         at("G29 E21", "cp --suf| .bak a b", name("--suffix")),
     )
 
@@ -386,7 +386,7 @@ class CpSuggestionListTest {
     }
 }
 
-private val KLAP_BUILT_INS = listOf("-h", "--help-all", "--json", "--color", "--completion", "--docs")
+private val KLAP_BUILT_INS = listOf("-h", "--help-all", "--json", "--color", "--color=", "--completion", "--docs")
 
 /** [value] attached to [long], described by cp's help for [long]. */
 private fun attached(
@@ -397,7 +397,8 @@ private fun attached(
 private fun backupControls(vararg values: String): Array<Suggestion> =
     values.map { attached("--backup", it) }.toTypedArray()
 
-private fun spellings(input: Input): List<String> = listOfNotNull(input.long) + input.shorts.map { "-$it" }
+private fun spellings(input: Input): List<String> =
+    listOfNotNull(input.long) + input.attachedForm() + input.shorts.map { "-$it" }
 
 /** Every name cp accepts after a dash, in cp's words: each input's long and shorts, then `--help` and `--version`. */
 private fun pool(longsOnly: Boolean): Array<Suggestion> = (INPUTS.flatMap(::spellings) + "--help" + "--version")
@@ -418,7 +419,10 @@ private fun nameCell(
     rest: String = "",
     after: String = "",
 ): Cell {
-    val offers = CP_LONGS.filter { it.startsWith(typed) }.map(::name)
+    val offers = CP_LONGS
+        .flatMap { listOf(it) + inputOfLong(it)?.attachedForm().orEmpty() }
+        .filter { it.startsWith(typed) }
+        .map(::name)
     val rows = "G1a G6a G14 E1 E5 E6" + if (after.isEmpty()) "" else " E21"
     return Cell(rows, "cp $typed|$rest$after", offers)
 }

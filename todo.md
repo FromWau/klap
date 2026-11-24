@@ -630,6 +630,92 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
   **Owner, 2026-11-20: A.** Renamed `resolvedFor(caller)`.
   **Built on branch `command-spec`, ticked 2026-11-20:** renamed in klap-io, no alias; `CallerInputTest` pins it.
 
+- [x] **196. An option with an optional value offers its `=` form while its name is completed** (2026-11-24, from
+  klafter `--color <Tab>`). **Owner, F-color A:** where the option word is completed (`--col<Tab>`, `--color<Tab>`),
+  klap offers `--color` and also `--color=` with no trailing space, as fish and bash-completion do for
+  `ls --color`; `--color=<Tab>` offers the values; after `--color ` (a space) klap keeps offering what the parser
+  expects there, since getopt_long takes an optional value only attached (checked with glibc: `--color always`
+  leaves `always` an operand). For every optional-value option, not only `--color`.
+  **Built on branch `feat/optional-value-equals-candidate`, ticked 2026-11-24:** every long whose value is optional
+  (a `.optionalValue()` option, global or in a subcommand, and the built-in `--color`) is offered with its `=` form,
+  described by its help; a short stays as before (its candidates glued, else the bare short, since `-c=x` gives
+  `=x`). bash sets `compopt -o nospace` and zsh adds it with `-S ''`. fish leaves no space after `--color=` by its
+  own rule for a trailing `=` (seen once in an interactive fish 4.9.3 over a pseudo-terminal; no test checks it, since
+  `complete -C` shows no spacing); PowerShell is not verified interactively. `OptionalValueCompletionTest` (`a long
+  name being typed offers its attached form beside it`, `the attached form carries the option's help`, `the built-in
+  color offers its attached form beside its name`, `an optional-value option of a subcommand offers its attached
+  form`, `an optional-value global offers its attached form below the root`, `a flag offers no attached form`, `an
+  option whose value is required offers no attached form`) and `RealShellCompletionTest` (its tests are named in the
+  review round below).
+  **Owner 2026-11-24, F196a A:** a `.gluedValue()` long offers only its attached form `--name=` (no space), never the
+  bare `--name`, which the parser refuses; `--name=<Tab>` offers its values.
+  **Review round, 2026-11-24:** (1) the scripts gave no space to any candidate ending in `=`, a `.completeWith`
+  value such as `dGVzdA==` or `KEY=` too. klap now marks the attached option name on the wire (` klap:attached:`
+  before the value, `ATTACHED_NAME`); every script strips the mark, and only bash and zsh act on it. (2) bash's
+  `compopt -o nospace` covers the whole reply, so it is set only when every candidate is marked. (3) F196a built: a
+  `.gluedValue()` long is offered only as `--name=`; longs and shorts both follow `valueAttachedOnly`. (4) the
+  help-parity test maps only the `=` forms help shows (`--name[=` or `--name=`) to their bare name, so a wrong
+  `--json=` fails it. (5) the fish and PowerShell claim above is reworded to what was checked. (6) the bash
+  `compopt` log moved out of `PATH`. Tests: `an attached option name goes on the wire behind its mark`, `a value
+  ending in an equals sign goes on the wire unmarked`, `a value ending in an equals sign is no attached name`,
+  `GluedValueTest` `a long name being typed offers only its attached form` and `a long without a short offers only
+  its attached form`, `RealShellCompletionTest` `bash leaves no space after an attached option name`, `bash keeps the
+  space after a value ending in an equals sign`, `bash keeps the space for a reply holding more than attached option
+  names`, `zsh leaves no space after an attached option name and keeps it after a value ending in an equals sign`,
+  `fish and powershell offer an attached option name without its mark`.
+  **Owner 2026-11-24, F196b B:** the `__complete` answer always carries the attached-name mark; a completion script
+  must be regenerated with its binary (packaging does, e.g. klafter's PKGBUILD). A script saved from an older klap
+  and kept across a binary upgrade is the user's to regenerate; the guide says so.
+  **Second review round, 2026-11-24:** (1) a `.gluedValue()` short without candidates was offered as a bare `-O`
+  with a space after it, which the parser refuses; it is now marked as an attached name, as the long is
+  (`GluedValueTest` `a short without candidates is offered as an attached name`, `complete marks a short without
+  candidates as an attached name`; `RealShellCompletionTest` `bash and zsh leave no space after a glued short without
+  candidates`, fed the real `__complete` answer). (2) the help-parity test (`a subcommand offers the built-ins its help
+  page lists`) took any `=` form whose bare name help shows as `--name=VALUE`, and `.distinct()` hid duplicates, so a
+  wrong `--completion=` passed; it now drops only the `=` forms help shows as `--name[=`, maps the glued ones it
+  declares, and compares without `.distinct()` (a planted `--completion=` fails it). (3) the `Candidate` and
+  `ATTACHED_NAME` KDocs and the guide say per shell: bash drops the space only when every candidate is marked, zsh per
+  marked candidate, fish after any completion ending in `=` (an unmarked `KEY=` got no space in fish 4.9.3 over a
+  pseudo-terminal, a `KEYS` control did), PowerShell not verified. (4) F196b is in the guide's completion section.
+  (5) `Suggestion`'s KDoc says whether a shell adds a space after a value is not reported.
+  **Third review round, 2026-11-24:** (1) zsh's function returned the status of its last statement, the attached
+  `compadd`'s guard, so a reply without a marked candidate returned 1 and zsh went on to its next completer (a
+  `matcher-list` or `_approximate` called `__complete` again). It now returns 0 once a `compadd` added a match and 1
+  otherwise, the convention `compadd`'s own status follows (`man zshcompwid`), in the quoted branch too
+  (`GeneratedShellScriptTest` `zsh returns zero exactly when one of its compadd calls added a match`,
+  `RealShellCompletionTest` `zsh reports matches added whether or not a candidate is an attached option name`, whose
+  stand-in `compadd` returns 0 only when given a value). (2) a cluster continuing into a `.gluedValue()` short without
+  candidates (`-v<Tab>` offering `-vO`) lost the attached-name mark; it is kept (`GluedValueTest` `a cluster
+  continuing into a short without candidates offers it as an attached name`, `complete marks a cluster continuing
+  into a short without candidates as an attached name`; `RealShellCompletionTest` `bash and zsh leave no space after a
+  cluster continuing into a glued short`). (3) the git example's model lists `--exec-path=` and the built-ins below the
+  root list `--color=`, so S37 and G38 catch a leaked `=` form (seen with one planted); `GitSuggestionListTest` `a
+  root long whose value is optional is offered beside its attached form` (G30). `-S`/`--gpg-sign` has no names model
+  to update; find's glued `-O` has candidates and is modelled as them. (4) a `.gluedValue()` short whose value is a
+  path offered `-O` again instead of paths; `-O<Tab>` now answers the file directive headed by `-O`
+  (`GluedValueTest` `a short whose value is a path completes the path glued to it`, `complete answers a short whose
+  value is a path with the file directive headed by it`; `RealShellCompletionTest` `bash and zsh complete a path
+  glued to a short whose value is a path`). Not changed: an empty `__complete` answer reaches zsh as one empty line,
+  which the script hands `compadd` as an empty value.
+  **Fourth review round, 2026-11-24:** (1) bash completed a path glued to a short (`-O<Tab>` on a `.gluedValue()
+  .file()` short) under `compopt -o filenames`, so readline stat'ed `-Osrc` as a whole and gave a directory `src` a
+  space instead of `/` (seen in an interactive bash 5.3 over a pseudo-terminal). With a head glued on, the script now
+  ends each match itself, `/` for a directory and a space for a file, under `compopt -o nospace`
+  (`RealShellCompletionTest` `bash and zsh complete a path glued to a short whose value is a path`, now with a
+  directory and a file). `--out=<Tab>` was not affected: `=` splits the word, so no head is glued on; zsh gave
+  `-Osrc/` already. (2) fish 4.9.3 offers a completion script no per-candidate way to leave out the space: only its
+  own rule for a candidate ending in `/ = @ : . , -` (`resolve_auto_space` in `src/complete.rs`), so a glued `-O` or
+  `-vO` gets one. The guide, `gluedValue()` and `ATTACHED_NAME` say only bash and zsh leave no space there. (3) the
+  never-offered built-in lists of cp, rm, mv, find, dd, head and chmod name `--color=` beside `--color` (a planted
+  `--color=` leak fails cp's `a built in cp does not have is not offered`).
+  **Fifth review round, 2026-11-24:** (1) bash's glued path under a leading `~` (`-O~/<Tab>`): `compgen -f` leaves
+  the `~` unexpanded, so `[ -d ]` tested it literally (a directory got a space) and `%q` escaped it to `\~`. A
+  directory is now judged by `compgen -d`, which expands `~` and `~user` alike, and a leading `~` or `~user` stays
+  unquoted (`RealShellCompletionTest` `bash ends a glued path under a leading tilde by what it names in HOME`, seen
+  failing with `-O\~/dir ` and `-O\~/file `). A bare `~user` is not returned by `compgen -f`, so it never reaches
+  there. dd's `if=~/` with `=` out of COMP_WORDBREAKS is not tested: the harness splits at `=` always. The plain
+  path keeps `-o filenames`. (2) the guide's debugging note says an attached option name of either shape (`--color=`,
+  `-O`, `-vO`) carries the mark.
 - [ ] **195. Drop the `mavenLocal()` block once kern 0.6.5 is released** (from 135, 2026-11-23): `settings.gradle.kts`
   reads kern from Maven local until then; after the release, delete the block and build again. Build.
 - [x] **193. klap catches what consumer code throws in renderers, converters and validation (2026-11-20, from

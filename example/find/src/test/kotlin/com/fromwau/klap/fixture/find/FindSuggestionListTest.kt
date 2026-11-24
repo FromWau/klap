@@ -392,7 +392,7 @@ private val DECLARED: List<Input> = listOf(
     "--prune", "--quit",
 ).map { long -> PREDICATES.single { it.name == long } }
 
-private val KLAP_BUILT_INS = listOf("-h") + KLAP_LONGS
+private val KLAP_BUILT_INS = listOf("-h") + KLAP_LONGS + "--color="
 
 private val POSIX_REGEX_TYPES = REGEX_TYPES.filter { it.startsWith("posix-") }.toTypedArray()
 

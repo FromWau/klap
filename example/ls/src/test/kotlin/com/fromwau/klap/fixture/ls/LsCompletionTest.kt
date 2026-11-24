@@ -127,7 +127,7 @@ class LsCompletionTest {
 
     @Test
     fun `a long option's name completes from the cursor wherever it stands in the word`() = ls.checkSlotValues(
-        // K5: `--format=WORD`, `--sort=WORD`, `--width=COLS` and `--color[=WHEN]` are offered bare.
+        // K5: `--format=WORD`, `--sort=WORD` and `--width=COLS` are offered bare, `--color[=WHEN]` beside `--color=`.
         slot("K5", "ls --form|"),
         slot("K5 inside", "ls --fo|rm"),
         slot("K5 start", "ls |--format"),

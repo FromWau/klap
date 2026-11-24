@@ -132,8 +132,8 @@ Notes:
 | ID | Property | What a cell checks | Example |
 |---|---|---|---|
 | G28 | an input with several longs | every long is its own entry, each with the same description | an option declared `option(long = listOf("dereference", "deref"), ...)` lists both |
-| G29 | a value-taking long is offered bare | `--backup`, never `--backup=` or `--backup ` with a no-space marker; the real tool's own shell completion may offer `--backup=`, a presentation difference noted, not asserted | `cp --backu‸` offers `--backup` |
-| G30 | an optional-value long | offered once, bare, never also as `--color=`; its values only after the `=` (K11) | `ls --col‸` offers `--color` |
+| G29 | a long whose value is required is offered bare | `--suffix`, never `--suffix=` or `--suffix ` with a no-space marker; the real tool's own shell completion may offer `--suffix=`, a presentation difference noted, not asserted | `cp --suf‸` offers `--suffix` |
+| G30 | an optional-value long | offered as `--color` and beside it `--color=`, with no space after the `=` form; its values only after the `=` (K11) | `ls --col‸` offers `--color` and `--color=` |
 | G31 | a digit short (`numberOption`) | never a name entry: `head -‸` offers no `-NUM` placeholder, and a cluster continuation never offers a digit | `head -‸` |
 | G32 | a short spelled only in a cluster | a short is offered both as `-x` on `-‸` and as a continuation, with the same description | `pacman -‸` and `pacman -Q‸` both carry `-i`'s help |
 

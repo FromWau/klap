@@ -125,6 +125,17 @@ class CompletionTest {
     }
 
     @Test
+    fun `an attached option name goes on the wire behind its mark`() {
+        val line = Candidate("--color=", "when to color", attachedName = true).toCompletionLine()
+        assertEquals("$ATTACHED_NAME--color=\twhen to color", line)
+    }
+
+    @Test
+    fun `a value ending in an equals sign goes on the wire unmarked`() {
+        assertEquals("dGVzdA==", Candidate("dGVzdA==").toCompletionLine())
+    }
+
+    @Test
     fun `shell of matches in exact case as every choice does`() {
         assertEquals(CompletionShell.FISH, CompletionShell.fromOrNull("fish"))
         assertNull(CompletionShell.fromOrNull("Fish"))
@@ -159,6 +170,15 @@ class GeneratedShellScriptTest {
         assertTrue("compdef _todo todo" in script, script)
         assertTrue("__complete" in script, script)
         assertTrue($$"compadd -d descriptions -- \"${values[@]}\"" in script, script)
+    }
+
+    @Test
+    fun `zsh returns zero exactly when one of its compadd calls added a match`() {
+        val script = sampleTree().renderCompletion(CompletionShell.ZSH)
+        val compadds = script.lines().filter { "compadd " in it && !it.trim().startsWith("#") }
+        assertEquals(4, compadds.size, script)
+        assertEquals(emptyList(), compadds.filterNot { it.endsWith("&& added=0") })
+        assertEquals(2, script.lines().count { it.trim() == $$"return $added" }, script)
     }
 
     @Test
@@ -247,7 +267,7 @@ class GeneratedShellScriptTest {
         // the description off.
         val script = sampleTree().renderCompletion(CompletionShell.FISH)
         assertTrue($$"for line in $response" in script, script)
-        assertTrue($$"printf '%s\\n' \"$line\"" in script, script)
+        assertTrue($$"printf '%s\\n' (string replace -r -- '^$$ATTACHED_NAME' '' \"$line\")" in script, script)
     }
 
     @Test
@@ -256,7 +276,7 @@ class GeneratedShellScriptTest {
         // again when the word under the cursor was), the description becomes the tooltip; a description-less
         // line tooltips the value.
         val script = sampleTree().renderCompletion(CompletionShell.POWERSHELL)
-        assertTrue($$"$value, $tip = $_ -split \"`t\", 2" in script, script)
+        assertTrue($$"$value, $tip = ($_ -replace '^$$ATTACHED_NAME', '') -split \"`t\", 2" in script, script)
         assertTrue(
             $$"[System.Management.Automation.CompletionResult]::new($text, $value, 'ParameterValue', $tip)" in script,
             script,
@@ -597,6 +617,7 @@ class FlagNameCandidateTest {
         val tree = cli("app") {
             version = Version.Of("1.0")
             builtins { help = Help.ByTree() }
+            globalOption(long = "level", help = "level").gluedValue()
             action { Ok("") }
             command("sub") {
                 command("leaf") { action { Ok("") } }
@@ -604,11 +625,18 @@ class FlagNameCandidateTest {
         }
         val term = RecordingTerminal()
         tree.run(arrayOf("sub", "--help"), term)
+        val globals = term.out.substringAfter("Global options:")
         val listed = Regex("""(?<![\w-])--?[\w-]+""")
-            .findAll(term.out.substringAfter("Global options:"))
+            .findAll(globals)
             .map { it.value }
             .toList()
-        assertEquals(listed, tree.completeCandidates(listOf("sub", "-")).map { it.value })
+        val glued = setOf("--level=")
+        // An optional value's attached form stands beside its bare name, which help lists as `--name[=WHEN]`.
+        val names = tree.completeCandidates(listOf("sub", "-"))
+            .map { it.value }
+            .filterNot { it.endsWith("=") && "${it.removeSuffix("=")}[=" in globals }
+            .map { if (it in glued) it.removeSuffix("=") else it }
+        assertEquals(listed, names)
     }
 
     @Test
@@ -1746,6 +1774,76 @@ class OptionalValueCompletionTest {
     }
 
     @Test
+    fun `a long name being typed offers its attached form beside it`() {
+        val offered = tree().completeCandidates(listOf("--col"))
+        assertEquals(listOf(Candidate("--color"), Candidate("--color=", attachedName = true)), offered)
+    }
+
+    @Test
+    fun `the attached form carries the option's help`() {
+        val described = cli("cp") {
+            option(long = "backup", help = "make a backup").optionalValue()
+            action { Ok("") }
+        }
+        val offered = described.completeCandidates(listOf("--backup"))
+        val attached = Candidate("--backup=", "make a backup", attachedName = true)
+        assertEquals(listOf(Candidate("--backup", "make a backup"), attached), offered)
+    }
+
+    @Test
+    fun `the built-in color offers its attached form beside its name`() {
+        val app = cli("app") { action { Ok("") } }
+        assertEquals(listOf("--color", "--color="), app.candidateValuesFor("--col"))
+    }
+
+    @Test
+    fun `an optional-value option of a subcommand offers its attached form`() {
+        val app = cli("app") {
+            command("cp") {
+                option(long = "backup").optionalValue()
+                action { Ok("") }
+            }
+        }
+        assertEquals(listOf("--backup", "--backup="), app.candidateValuesFor("cp", "--back"))
+    }
+
+    @Test
+    fun `an optional-value global offers its attached form below the root`() {
+        val app = cli("app") {
+            globalOption(long = "trace").optionalValue()
+            command("run") { action { Ok("") } }
+        }
+        assertEquals(listOf("--trace", "--trace="), app.candidateValuesFor("run", "--tr"))
+    }
+
+    @Test
+    fun `a flag offers no attached form`() {
+        val app = cli("app") {
+            flag(long = "verbose")
+            action { Ok("") }
+        }
+        assertEquals(listOf("--verbose"), app.candidateValuesFor("--verb"))
+    }
+
+    @Test
+    fun `an option whose value is required offers no attached form`() {
+        val ordinary = cli("app") {
+            option(long = "fmt").choice("json", "text")
+            action { Ok("") }
+        }
+        assertEquals(listOf("--fmt"), ordinary.candidateValuesFor("--fm"))
+    }
+
+    @Test
+    fun `a value ending in an equals sign is no attached name`() {
+        val app = cli("env") {
+            argument("assignment").completeWith { candidates(listOf("KEY=", "dGVzdA==")) }
+            action { Ok("") }
+        }
+        assertEquals(listOf(Candidate("KEY="), Candidate("dGVzdA==")), app.completeCandidates(listOf("")))
+    }
+
+    @Test
     fun `an ordinary options next word still completes its value`() {
         val ordinary = cli("app") {
             option(long = "fmt").choice("json", "text")
@@ -1806,7 +1904,7 @@ class GluedOptionalValueCompletionTest {
 
     @Test
     fun `the long form keeps its attached form`() {
-        assertEquals(listOf("--optimise"), tree().candidateValuesFor("--opt"))
+        assertEquals(listOf("--optimise", "--optimise="), tree().candidateValuesFor("--opt"))
         assertEquals(listOf("--optimise=2"), tree().candidateValuesFor("--optimise=2"))
         assertEquals(listOf("$COMPLETE_FILES--output="), tree().candidateValuesFor("--output="))
     }

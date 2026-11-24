@@ -27,10 +27,14 @@ private fun Input.worded(spelled: String): Boolean = name in WORDED_INPUTS || sp
 
 private fun Input.offer(spelled: String): Offer = Offer(Suggestion(spelled, help), worded(spelled))
 
+/** `--interactive=` beside `--interactive`: rm's values go only attached, so Tab offers that form with no space. */
+internal fun Input.attachedForm(): List<String> = listOfNotNull(long?.takeIf { kind is Kind.Value }?.let { "$it=" })
+
 /** Every name rm accepts after a dash, in rm's words, in `rm --help` order. */
 private val POOL: List<Offer> by lazy {
-    INPUTS.flatMap { input -> listOfNotNull(input.long) + input.shorts.map { "-$it" } }
-        .map { spelled -> (inputOfLong(spelled) ?: inputFor(spelled[1])!!).offer(spelled) } +
+    INPUTS.flatMap { input ->
+        (listOfNotNull(input.long) + input.attachedForm() + input.shorts.map { "-$it" }).map(input::offer)
+    } +
         Offer(Suggestion("--help", HELP_HELP), worded = true) +
         Offer(Suggestion("--version", VERSION_HELP), worded = true)
 }

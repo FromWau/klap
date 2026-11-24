@@ -19,7 +19,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-private val KLAP_BUILT_INS = listOf("-h", "--help-all", "--json", "--color", "--completion", "--docs")
+private val KLAP_BUILT_INS = listOf("-h", "--help-all", "--json", "--color", "--color=", "--completion", "--docs")
 
 /** [value] attached to [long], described by mv's help for [long]. */
 private fun attached(
@@ -30,7 +30,8 @@ private fun attached(
 private fun backupControls(vararg values: String): Array<Suggestion> =
     values.map { attached("--backup", it) }.toTypedArray()
 
-private fun spellings(input: Input): List<String> = listOfNotNull(input.long) + input.shorts.map { "-$it" }
+private fun spellings(input: Input): List<String> =
+    listOfNotNull(input.long) + input.attachedForm() + input.shorts.map { "-$it" }
 
 /** Every name mv accepts after a dash, in mv's words: each input's long and shorts, then `--help` and `--version`. */
 private fun pool(longsOnly: Boolean): Array<Suggestion> = (INPUTS.flatMap(::spellings) + "--help" + "--version")
@@ -51,7 +52,10 @@ private fun nameCell(
     rest: String = "",
     after: String = "",
 ): Cell {
-    val offers = MV_LONGS.filter { it.startsWith(typed) }.map(::name)
+    val offers = MV_LONGS
+        .flatMap { listOf(it) + inputOfLong(it)?.attachedForm().orEmpty() }
+        .filter { it.startsWith(typed) }
+        .map(::name)
     val rows = "G1a G6a G14 E1 E5 E6" + if (after.isEmpty()) "" else " E21"
     return Cell(rows, "mv $typed|$rest$after", offers)
 }
@@ -124,11 +128,11 @@ class MvSuggestionListTest {
     )
 
     @Test
-    fun `a value-taking long is offered bare and described by its own help`() = mv.checkContext(
+    fun `a value-taking long is described by its help and an optional one offers its attached form`() = mv.checkContext(
         // `mv --help`: `--suffix=SUFFIX`, `--target-directory=DIRECTORY` and `--backup[=CONTROL]`.
         at("G29", "mv --suf|", name("--suffix")),
         at("G29", "mv --targ|", name("--target-directory")),
-        at("G30", "mv --backu|", name("--backup")),
+        at("G30", "mv --backu|", name("--backup"), name("--backup=")),
         at("G29 E21", "mv --suf| .bak a b", name("--suffix")),
     )
 

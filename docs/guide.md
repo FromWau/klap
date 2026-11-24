@@ -665,7 +665,10 @@ line order: `--debug=2 --debug` binds `["2", "1"]`, for an action that reduces t
 Tab completion matches the parser: the word after a bare occurrence completes as an operand, not as this
 option's value. A short's value can only be glued, so a short with candidates is offered with each of them
 glued on: `-<TAB>` and `-O<TAB>` offer `-O0 -O1 -O2 -O3`, described by the option's help, where a short
-without candidates is offered as `-O`. A long keeps its `--opt=` form.
+without candidates is offered as `-O`. A long being typed is offered with its `=` form beside it, as fish and
+bash-completion offer `ls --color`: `--col<TAB>` offers `--color` and `--color=`, both described by the
+option's help, and `--color=` is marked so the shell can leave no space after it (see
+[Shell completion](#shell-completion) for which shells do).
 
 **A bare form that names no value** takes `.optionalValue()` with no argument. `cp --backup[=CONTROL]` is the
 shape: a bare `--backup` means "the control from `VERSION_CONTROL`, else `existing`", which no value spells,
@@ -707,7 +710,10 @@ glued to the short or attached to the long with `=` (`--optimise=3`), and the op
 `.completeWith { }` chain as on any option. A glued value may end a short cluster (`-vO3`) as a required value
 does, and under [`ShortOptions.Alone`](#short-options) the short keeps its value glued. Help shows `-OLEVEL`,
 or `-O, --optimise=LEVEL` with a long name. Completion offers the candidates glued, as for an optional value
-(`-O<TAB>` offers `-O0 -O1 -O2 -O3`), and nothing after a bare `-O`, since the line is refused there. It cannot
+(`-O<TAB>` offers `-O0 -O1 -O2 -O3`), and nothing after a bare `-O`, since the line is refused there. A short
+without candidates is offered as `-O`, marked like `--optimise=`; bash and zsh leave no space after it, fish adds
+one. The
+long is offered only as `--optimise=`, and `--optimise=<TAB>` offers its values. It cannot
 be combined with `.optionalValue()`.
 
 ## Flags: boolean, counted, negatable
@@ -2234,6 +2240,10 @@ myapp completion powershell | Out-String | Invoke-Expression  # $PROFILE
 
 The zsh script also works saved as `_myapp` in a directory on `$fpath`, the way packages install it.
 
+Regenerate a saved script whenever you upgrade the binary: the script and the binary's answer to it belong to the
+same version, so a script from an older release can misread a newer binary's candidates. The `source <(...)`
+lines above regenerate it on every shell start.
+
 `pwsh` is accepted as a silent alias for `powershell` in both forms (`completion pwsh` /
 `--completion pwsh`), though only `powershell` is listed among `--help`'s choices.
 
@@ -2252,6 +2262,17 @@ for free. Tab offers what the parse would read at the cursor:
   [`optionsEndAtFirstOperand`](#optionsendatfirstoperand-the-one-switch-that-runs-the-other-way)) the word is an
   operand: `ssh web1 ls -<TAB>` offers the operand's values and only the names the parse still reads there, the
   globals and klap's own.
+- **An option whose value is optional** is offered with its `=` form too (`--color` and `--color=`), with no
+  space after the `=` form, since getopt takes such a value only attached: after `--color ` the word is an
+  operand. This holds for the built-in `--color` and for every option declared with `.optionalValue()`. A
+  `.gluedValue()` long is offered only as its `=` form, and a `.gluedValue()` short without candidates as a
+  bare `-O` with no space after it in bash and zsh, since the parser refuses either name followed by a space.
+
+Such an attached name is marked in the reply, and each shell treats the mark its own way. bash drops the space
+only when every candidate in the reply is an attached name, so with `menu-complete` a reply mixing `--color` and
+`--color=` still gets one. zsh drops it for each marked candidate. fish ignores the mark and drops the space after
+any completion ending in `=`, so a value such as `KEY=` gets none in fish either, while a glued `-O` or `-vO`
+gets one, since fish offers a completion script no way to leave it out. PowerShell is not verified.
 
 For values known only at runtime, `.completeWith` supplies candidates through a hidden `__complete` subcommand
 (present on both shapes while `completion` is on) that the script calls:
@@ -2378,8 +2399,8 @@ the `--` separator (otherwise a completion word like `--flag` is parsed as an op
 `--cursor`, the last word is the one under the cursor. One quirk when debugging by hand: where the slot takes
 a path (a `.file()` input, or a provider that called `completeFiles()`), `__complete` prints an internal
 one-line directive rather than real paths, which the generated shell script turns into that shell's native
-file completion. Its exact spelling is klap's to change and is not part of the public surface;
-`completeFiles()` is.
+file completion. An option name offered attached to its value (`--color=`, or a glued short such as `-O` or `-vO`)
+carries an internal mark in front, which the script strips. Their exact spelling is klap's to change and is not part of the public surface; `completeFiles()` is.
 
 `builtins { completion = Builtin.Off }` removes `__complete` along with the `completion` built-in, so a generated
 script, also one from `Cli.renderCompletion`, has nothing to call: its `__complete` line reaches your tool as ordinary

@@ -61,10 +61,14 @@ class LsSuggestionListTest {
     )
 
     @Test
-    fun `an optional-value long is offered once and bare`() {
-        // G29, G30: `ls --help`: `--color[=WHEN]`, `--format=WORD`; Tab offers the name, the values only after the `=`.
-        ls.checkContextValues(at("G30", "ls --col|", name("--color")), at("G29", "ls --form|", name("--format")))
-        ls.assertOffersNone("G30", "ls --colo|", listOf("--color=", "--color "))
+    fun `an optional-value long is offered beside its attached form`() {
+        // G29, G30: `ls --help`: `--color[=WHEN]`, `--format=WORD`; the values follow the `=`, which an optional value
+        // needs (`fish -c 'complete -C "ls --color"'` offers `--color` and `--color=`).
+        ls.checkContextValues(
+            at("G30", "ls --col|", name("--color"), name("--color=")),
+            at("G29", "ls --form|", name("--format")),
+        )
+        ls.assertOffersNone("G30", "ls --colo|", listOf("--color "))
         ls.assertOffersNone("G29", "ls --form|", listOf("--format=", "--format "))
     }
 

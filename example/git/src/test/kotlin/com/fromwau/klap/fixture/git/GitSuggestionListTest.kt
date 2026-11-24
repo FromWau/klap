@@ -33,6 +33,12 @@ class GitSuggestionListTest {
     )
 
     @Test
+    fun `a root long whose value is optional is offered beside its attached form`() = git.checkTabs(
+        // G30: `git --exec-path` prints the path and `git --exec-path=/opt status` takes one, never as the next word.
+        at("G30", "git --exec|", ROOT_LONGS.startingWith("--exec")),
+    )
+
+    @Test
     fun `a leaf offers none of the root's options`() =
         // G38: `git remote add o u --bare` and `git remote add -C . o u` are "unknown option" and "unknown switch".
         git.offersNone("G38", "git remote add --|", ROOT_OPTION_NAMES)

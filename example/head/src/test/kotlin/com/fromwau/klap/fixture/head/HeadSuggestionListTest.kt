@@ -276,7 +276,7 @@ class HeadSuggestionListTest {
     @Test
     fun `a built-in head does not have is not offered`() {
         head.checkContext(at("G11 G67", "head --js|"), at("G11 G67", "head --comp|"), at("G11 G67", "head --do|"))
-        head.assertOffersNone("G11 G67 E22", "head -|", KLAP_ONLY_LONGS)
+        head.assertOffersNone("G11 G67 E22", "head -|", KLAP_ONLY_LONGS + "--color=")
     }
 
     // G18: `head --help` lists --help and --version after every other name.

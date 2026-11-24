@@ -468,7 +468,7 @@ class DashLedOperandTest {
         }
         assertEquals(listOf("-5"), tree.offered("-5"))
         assertEquals(
-            listOf("--verbose", "-v", "--help", "--json", "--color", "--completion", "--docs", "-5", "-9"),
+            listOf("--verbose", "-v", "--help", "--json", "--color", "--color=", "--completion", "--docs", "-5", "-9"),
             tree.offered("-"),
         )
     }

@@ -85,4 +85,4 @@ internal val ROOT_OPTION_NAMES: List<String> =
     listOf("-C", "--directory", "-c", "--config", "-P") + ROOT_LONGS.map { it.value }
 
 /** klap's built-ins real git refuses after a subcommand: `git status --json` and the rest are "unknown option". */
-internal val BUILTINS_GIT_REFUSES_BELOW_ROOT: List<String> = listOf("--json", "--color", "--version")
+internal val BUILTINS_GIT_REFUSES_BELOW_ROOT: List<String> = listOf("--json", "--color", "--color=", "--version")
