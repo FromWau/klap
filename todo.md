@@ -732,9 +732,6 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
   Catch every `Throwable` except `Error`, everywhere (today converters and validation catch `Throwable`, renderers
   `Exception`): `Exception` and a custom `Throwable` are caught, while an `Error` such as `OutOfMemoryError` and a
   coroutine's `CancellationException` propagate. Not built yet.
-
-## Owner calls
-
   **Owner 2026-11-23, F193e A: reversed.** A user's throwing code is the user's bug: klap catches nothing it did not
   throw. Every block a user hands klap (action, converters, `.validate`, `validateInputs`, renderers, completion
   providers, help defaults, predicates, projections) lets a throw propagate unchanged; klap's typed errors stay for
@@ -771,6 +768,40 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
   (`RealShellCompletionTest`, run in bash, zsh, fish and pwsh). `example/head`'s `obsoleteCount` returns a `Domain`
   error through `.convert` instead of throwing. Docs: the `.map` examples cannot throw (`.duration()` in the guide),
   the guide's provider paragraph, `completionValues` "never returns an error".
+
+## Owner calls
+
+- [x] **197. The testing API reports the file directive as a `Suggestion`.** Reproduced 2026-11-24 with a probe
+  test on `dev` (`a3133b3`): `suggestionsFor("c --out=")` on an `.file()` option gives
+  `[Suggestion(value=" klap:files:--out=")]`, and `suggestionsFor("c ")` on a provider calling `completeFiles()` gives
+  `[Suggestion(value=" klap:files:")]`, so a library user's test sees `COMPLETE_FILES` as a candidate value. The find
+  target `the raw expression after -- completes find's own predicates` shows `[ klap:files:]` for this reason. Since
+  `ca1bb61` (2026-10-10), which built `suggestionsFor` as `forShell()` mapped straight to `Suggestion` and added the
+  public `filesAfter(head)` to build the same directive for assertions; `tab` tests the value for the directive. The
+  `ATTACHED_NAME` mark does not leak: it is added only by `toCompletionLine`, and `-l`, `-vl`, `--level=` on a
+  `.gluedValue()` option give clean values (the attached flag itself is not reported, as `Suggestion`'s KDoc says).
+  Nothing built: the shape is an API choice, and about 40 example rows (cp, chmod, dd) assert `filesAfter(...)`.
+  Options: (A) `suggestionsFor` returns a small type, e.g. `Suggestions(values: List<Suggestion>, filesAfter:
+  String?)`, the head being `--out=` or `-O`, null when files are not offered; (B) `Suggestion` becomes a sealed type
+  with `Word(value, description)` and `Files(head)`, keeping one list; (C) keep `List<Suggestion>` and add a separate
+  `Cli.filesOfferedFor(line, cursor): String?`, dropping the directive from the list. Recommended: B, as `filesAfter`
+  becomes the `Files` constructor and the example rows change only their import; the directive constant stays internal.
+  **Owner 2026-11-24, F197 B:** `Suggestion` becomes a sealed interface: `Word(value, description)` and
+  `Files(head)` (files offered after `head`, e.g. `--out=`, `-O` or ""). `filesAfter(head)` returns `Files(head)`;
+  the protocol constants stay internal and no directive text reaches a `Suggestion`.
+  **Built (branch `fix/testing-api-protocol-leak`).** `Suggestion` is a sealed interface of `Word(value,
+  description = null)` and `Files(head = "")`; `suggestionsFor` maps the directive to `Files`, `filesAfter(head)`
+  returns `Files(head)`, `acceptSuggestion` and `tab` leave the line as it is for `Files`, and `tab` no longer reads
+  `COMPLETE_FILES`. `SuggestionFilesTest` (`no suggestion carries the shell protocol text`, `a file option offers
+  files after its attached name`, `... after its glued short`, `... for its own word`, `a provider calling
+  completeFiles offers files for the whole word`) seen failing first with the directive as the value, and again with
+  only the mapping removed. Example tests keep their rows: the parity module's `Suggestion.value` and
+  `.description` read a `Word`'s fields and show `Files` as its head, a tab, then `<files>`. The find target now
+  fails with `expected: <[-name]> but was: <[<files>]>`. klap `build` green.
+  **Owner 2026-11-24, F197a A:** after an ambiguous long abbreviation and a space (`cp --re `, `mv --s `,
+  `rm --v `) Tab offers nothing, as GNU getopt_long refuses the word (checked with util-linux `getopt -l
+  recursive,reflink::,remove-destination -- --re a b`: "option '--re' is ambiguous"); pinned by the cp, mv and
+  rm empty-answer checks.
 - [x] **185. `Ok(Unit)` printed `kotlin.Unit`, and `{}` under `--json` (2026-11-12, branch `unit-prints-nothing`).**
   dec4c4a made a plain run print nothing for `Unit`; under `--json` it still printed `{}`, kotlinx.serialization's
   encoding of `Unit`, which klap never chose. **Owner 2026-11-12: A**, `Unit` prints nothing under `--json` either:
