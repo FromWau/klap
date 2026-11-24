@@ -81,6 +81,9 @@ internal class ArgvScan(
     /** Where the first token naming [long] stands, bare or with `=value`. */
     fun firstSpelling(long: String): Int? = open.firstOrNull { matched(it) == long }
 
+    /** Where each token naming [long] stands, bare or with `=value`. */
+    fun spellings(long: String): List<Int> = open.filter { matched(it) == long }
+
     /** Where the last token naming [long] stands, bare or with `=value`. */
     fun lastSpelling(long: String): Int? = open.lastOrNull { matched(it) == long }
 
@@ -95,7 +98,7 @@ internal class ArgvScan(
      */
     fun value(long: String): Result<String?, CliError> {
         val at = lastSpelling(long) ?: return Result.Success(null)
-        val value = attached(at) ?: tokens.getOrNull(at + 1)
+        val value = valueIndex(at)?.let { if (it == at) attached(at) else tokens[it] }
         // [long] is the bare pool key; an error names an option the way every declared one is named, dashed.
         return value?.let { Result.Success(it) } ?: Result.Error(CliError.MissingOptionValue("--$long"))
     }
@@ -114,15 +117,17 @@ internal class ArgvScan(
      * This view with every `--<long>`/`--<long>=value` occurrence removed, along with its value token in the
      * space form, whatever that token is spelled: [value]'s reading of a required-value meta-option.
      */
-    fun stripValued(long: String): ArgvScan {
-        val dropped = mutableSetOf<Int>()
-        for (i in open) {
-            if (matched(i) != long) continue
-            dropped += i
-            if ('=' !in tokens[i] && i + 1 < tokens.size) dropped += i + 1
-        }
-        return keeping(dropped)
-    }
+    fun stripValued(long: String): ArgvScan =
+        keeping(valuedSpellings(long).flatMapTo(mutableSetOf()) { (at, value) -> listOf(at, value) })
+
+    /**
+     * Each occurrence of the required-value meta-option [long], paired with where [value] reads its value: the
+     * occurrence itself when the value is attached, the token after it otherwise. One that nothing follows is left out.
+     */
+    fun valuedSpellings(long: String): List<Pair<Int, Int>> =
+        open.filter { matched(it) == long }.mapNotNull { at -> valueIndex(at)?.let { at to it } }
+
+    private fun valueIndex(at: Int): Int? = if ('=' in tokens[at]) at else (at + 1).takeIf { it < tokens.size }
 
     private fun keeping(dropped: Set<Int>): ArgvScan {
         val kept = tokens.indices.filterNot { it in dropped }

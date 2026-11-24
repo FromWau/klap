@@ -323,18 +323,11 @@ private fun Cli.readBuiltins(typed: List<String>): BuiltinLine {
     val json = builtins.json && scan.names("json")
     val inlineValueRefusal = builtinInlineValueRefusal(scan)
 
-    // --json is position-independent and removed before the subcommand walk; strip it once up front so the
-    // meta-option scans see the same token list the walk does, and a --json sitting in a completion/docs
-    // value slot never mis-parses as that option's value. Declined, the token is left in place so it
-    // reaches the app's own --json (or fails as unknown), rather than being silently swallowed.
-    val withoutJson = if (builtins.json) scan.strip("json") else scan
-
-    // --color is a position-independent modifier with an optional value: unlike completion/docs below (gated
-    // behind metaOptions), it is validated for EVERY tree, then stripped before the walk, so
-    // `--color=never build` still resolves `build`. Unlike version/completion/docs it never short-circuits to
-    // an Invocation; `run()` reads it back post-parse and forces the terminal's colour for always or never.
-    val colorRefusal = if (builtins.color) colorRefusal(withoutJson) else null
-    val withoutColor = if (builtins.color) withoutJson.stripSpellings("color") else withoutJson
+    // --color is validated for EVERY tree, unlike completion/docs (gated behind metaOptions). Unlike
+    // version/completion/docs it never short-circuits to an Invocation; `run()` reads it back post-parse and
+    // forces the terminal's colour for always or never.
+    val colorRefusal = if (builtins.color) colorRefusal(withoutJson(scan)) else null
+    val withoutColor = withoutJsonAndColor(scan)
 
     val versionAt = versionRequestAt(scan, rootReading)
     // Answered after the walk, which tells whether a bad option or value stands ahead of it.
@@ -351,6 +344,20 @@ private fun Cli.readBuiltins(typed: List<String>): BuiltinLine {
         listOfNotNull(inlineValueRefusal, colorRefusal).minByOrNull { it.at },
     )
 }
+
+/**
+ * [scan] without the built-in `--json`. Declined, the token is left in place so it reaches the app's own `--json`
+ * (or fails as unknown), rather than being silently swallowed.
+ */
+private fun Cli.withoutJson(scan: ArgvScan): ArgvScan = if (builtins.json) scan.strip("json") else scan
+
+/**
+ * [scan] without the position-independent `--json` and `--color`, as every walk of the line reads it: `--json`
+ * goes first, so one in a completion/docs value slot is never read as that value, and `--color=never build` still
+ * resolves `build`.
+ */
+internal fun Cli.withoutJsonAndColor(scan: ArgvScan): ArgvScan =
+    withoutJson(scan).let { if (builtins.color) it.stripSpellings("color") else it }
 
 /**
  * The line's first `--version` or version short, or null when this tree has no version.
@@ -375,8 +382,32 @@ private fun Cli.helpRequestAt(scan: ArgvScan, rootReading: GlobalAccumulator): I
     scan.firstOpenIndexed { i, token -> namesHelpShort(token, rootReading, firstWord = i == 0) },
 ).minOrNull()
 
+/** The value of `--completion` or `--docs` on a line: the option's [long] and whether it is [attached] to it. */
+internal class MetaOptionValue(val long: String, val attached: Boolean)
+
+/** Each index of [argv] holding a `--completion` or `--docs` value, as the parse reads the line. */
+internal fun Cli.metaOptionValues(argv: List<String>): Map<Int, MetaOptionValue> {
+    val line = readBuiltins(argv)
+    val scan = line.withoutColor
+    return builtinLongTable()
+        .filter { it.takesNextWord }
+        .flatMap { meta ->
+            scan.valuedSpellings(meta.name).mapNotNull { (at, value) ->
+                val origin = line.hoisted.origins[scan.positions[value]]
+                origin?.let { it to MetaOptionValue(meta.name, attached = at == value) }
+            }
+        }
+        .toMap()
+}
+
+/** Each index of [argv] the parse reads as a `--color` spelling. */
+internal fun Cli.colorSpellings(argv: List<String>): Set<Int> {
+    val line = readBuiltins(argv)
+    return line.scan.spellings("color").mapNotNullTo(mutableSetOf()) { line.hoisted.origins[line.scan.positions[it]] }
+}
+
 /** [withoutColor] without the meta-options this root offers. A `prio` command runs ahead of them. */
-private fun Cli.withoutMetaOptions(withoutColor: ArgvScan): ArgvScan = if (metaOptions) {
+internal fun Cli.withoutMetaOptions(withoutColor: ArgvScan): ArgvScan = if (metaOptions) {
     withoutColor
         .let { if (builtins.completion) it.stripValued("completion") else it }
         .let { if (builtins.docs) it.stripValued("docs") else it }

@@ -9,6 +9,10 @@ import com.fromwau.klap.CompletionScope
 import com.fromwau.klap.Abbreviation
 import com.fromwau.klap.ShortOptions
 import com.fromwau.klap.SubcommandMatch
+import com.fromwau.klap.colorSpellings
+import com.fromwau.klap.metaOptionValues
+import com.fromwau.klap.withoutJsonAndColor
+import com.fromwau.klap.withoutMetaOptions
 import com.fromwau.klap.internal.parse.ArgvScan
 import com.fromwau.klap.internal.parse.BoundLine
 import com.fromwau.klap.internal.parse.END_OF_OPTIONS
@@ -104,7 +108,9 @@ internal fun Cli.completeCandidates(
     caller: Caller = Caller.process(),
 ): List<Candidate> {
     val tab = tabLineAt(words, cursor, caller) ?: return emptyList()
+    if (tab.optionsEnded) return tab.wordCandidates()
     return tab.colorCandidates()
+        ?: tab.metaOptionValueCandidates()
         ?: tab.optionValueCandidates()
         ?: tab.attachedValueCandidates()
         ?: tab.dashLedOperandCandidates()
@@ -178,7 +184,7 @@ private class TabLine(
     private val prev = segment.lastOrNull()?.takeUnless { line.lastKeptPosition in scan.valueSlots }
 
     // After `--` every word is an operand, so nothing there names an option or carries an option's value.
-    private val optionsEnded = segment.endOfOptions(line.segmentPositions, scan.valueSlots) >= 0
+    val optionsEnded = segment.endOfOptions(line.segmentPositions, scan.valueSlots) >= 0
 
     // One segment walk: the flag-name branch reads which constraint members are already on the line, the
     // positional branch the positional count. Lazy for the value-completion branches, which need it only
@@ -286,19 +292,34 @@ private class TabLine(
 
     /** `--color`'s modes when the cursor is in its attached value. */
     fun colorCandidates(): List<Candidate>? {
-        if (!cli.builtins.color) return null
-        // Read with the cursor's word in place: in the value slot of the option before it, it is that value.
-        val withCursor = cli.builtinScan(cli.hoistCommands(head).tokens + current)
-        if (cursorAt in withCursor.valueSlots) return null
-        return colorValueCandidates(current, cursorAt, withCursor, cli.builtins.colorText)
+        if (!cli.builtins.color || '=' !in current) return null
+        if (rawHead.size !in cli.colorSpellings(rawHead + current + after)) return null
+        val name = current.substringBefore('=') + "="
+        return colorModeCandidates(current.removePrefix(name)).asWholeWord(name, cli.builtins.colorText)
     }
+
+    /**
+     * The values of `--completion` or `--docs` when the cursor is in one: attached (`--docs=<cur>`) or as the
+     * word after the bare option. Neither is a declared spec, so the value branches below never resolve them.
+     */
+    fun metaOptionValueCandidates(): List<Candidate>? {
+        val value = cli.metaOptionValues(rawHead + current + after)[rawHead.size] ?: return null
+        val option = cmd.builtinOptions(cli.version != null, cli.metaOptions, cli.builtins)
+            .single { it.names == listOf("--${value.long}") }
+        if (!value.attached) return option.choicesStartingWith(current)
+        val name = current.substringBefore('=') + "="
+        return option.choicesStartingWith(current.removePrefix(name)).asWholeWord(name, option.help)
+    }
+
+    private fun BuiltinOption.choicesStartingWith(prefix: String): List<Candidate> =
+        choices.orEmpty().filter { it.startsWith(prefix) }.map { Candidate(it) }
 
     /** The values of the option the word before the cursor names, when it takes the word under the cursor. */
     fun optionValueCandidates(): List<Candidate>? {
         // An option value under the cursor: `prev` names a known value-taking option (a whole `--long`/`-s`, or
         // the trailing option char of a short cluster like `-vp`), so complete only that value.
         val valueOption =
-            prev?.takeIf { !optionsEnded && it.isFlagLike() && readsAsName(it, first = segment.size == 1) }?.let {
+            prev?.takeIf { it.isFlagLike() && readsAsName(it, first = segment.size == 1) }?.let {
                 cmd.trailingValueOption(it, globalAcc, firstWord = segment.size == 1)
             }
         // A glued-only value is never the next word, and the bare occurrence before it refuses the line.
@@ -309,7 +330,7 @@ private class TabLine(
             return valueOption.candidatesFor(current, typed, valuesFor(valueOption), caller)
         }
         // getopt refuses the line at an ambiguous abbreviation, so the word after it is neither a value nor an operand.
-        val ambiguous = prev != null && !optionsEnded && cmd.resolvedLong(prev, globalAcc) is NameMatch.Ambiguous
+        val ambiguous = prev != null && cmd.resolvedLong(prev, globalAcc) is NameMatch.Ambiguous
         return emptyList<Candidate>().takeIf { ambiguous }
     }
 
@@ -318,8 +339,8 @@ private class TabLine(
      * `-opartial`). Complete the value, filtered by the partial after the `=`/short char, not the whole word.
      */
     fun attachedValueCandidates(): List<Candidate>? {
-        val (attachedOption, partial) = cmd.attachedValueOption(analysed, globalAcc, firstWord).takeUnless {
-            optionsEnded || !readsAsName(analysed)
+        val (attachedOption, partial) = cmd.attachedValueOption(analysed, globalAcc, firstWord).takeIf {
+            readsAsName(analysed)
         } ?: return null
         if (attachedOption in cli.refusedBy(cmd, rawHead + after)) return emptyList()
         val values = attachedOption.candidatesFor(partial, typed, valuesFor(attachedOption, partial), caller)
@@ -331,7 +352,7 @@ private class TabLine(
 
     /** A single-dash word no option takes but a dash-led operand does is that operand's, as the parse reads it. */
     fun dashLedOperandCandidates(): List<Candidate>? {
-        if (optionsEnded || operandEnded) return null
+        if (operandEnded) return null
         return cmd.dashLedOperandFor(analysed, globalAcc, firstWord) { positional }
             ?.takeUnless { it.hidden || it in cli.refusedBy(cmd, rawHead + after) }
             ?.let { it.candidatesFor(current, typed, valuesFor(it), caller) }
@@ -339,12 +360,12 @@ private class TabLine(
 
     /**
      * A flag-shaped partial word (`-`, `--`, `-v`, `--verb`): offer this command's option/flag names plus
-     * the globals and built-ins, so flag names complete like git/kubectl. Suppressed after `--`, and past the
-     * operand that ends the options only the globals and klap's own are offered. Each candidate carries the
-     * spec's own `help` as its description (blank -> bare value, per Candidate).
+     * the globals and built-ins, so flag names complete like git/kubectl. Past the operand that ends the options
+     * only the globals and klap's own are offered. Each candidate carries the spec's own `help` as its
+     * description (blank -> bare value, per Candidate).
      */
     fun nameCandidates(): List<Candidate>? {
-        if (!current.startsWith("-") || optionsEnded || !readsAsName(analysed)) return null
+        if (!current.startsWith("-") || !readsAsName(analysed)) return null
         // A member typed after the cursor rules the others out as one before it does, and so does a member in a
         // short cluster being continued (`-Q` in `-Q<TAB>`); a long name being typed is not on the line yet.
         val afterPositions = line.segmentPositions + ((cursorAt + 1)..cursorAt + after.size)
@@ -591,14 +612,13 @@ private class WalkedLine(
 private fun Cli.walkLine(typed: List<String>): WalkedLine {
     val line = hoistCommands(typed).tokens
     val scan = builtinScan(line)
-    // Strip the position-independent modifiers exactly as parse() does before its own walk: --json and --color,
-    // then the user's globals, so a leading or interspersed one doesn't stop the walk below (`-v issue show` resolves like `issue show`). Skipping this
-    // breaks the walk ON the modifier at token 0 and completes the ROOT instead of the typed subcommand.
-    val withoutJson = if (builtins.json) scan.strip("json") else scan
-    val withoutColor = if (builtins.color) withoutJson.stripSpellings("color") else withoutJson
+    // Strip the position-independent modifiers as parse() does before its own walk, then the user's globals, so a
+    // leading or interspersed one doesn't stop the walk below (`-v issue show` resolves like `issue show`).
+    // A meta-option and its value are no input of the command, so they hold no operand's place either.
+    val withoutMeta = withoutMetaOptions(withoutJsonAndColor(scan))
     // Its positions are read only to place `prev` in the planner, never to order one global against another:
     // the command's own sift is the only pass that records an order, so its observations win unconditionally.
-    val preStrip = globalSpecs.siftGlobals(withoutColor, shortOptions)
+    val preStrip = globalSpecs.siftGlobals(withoutMeta, shortOptions)
     val walk = walkSubcommands(preStrip.cleaned) { globalsFrom(preStrip.sift) }
     val kept = walk.kept(preStrip.cleaned.size)
     return WalkedLine(
@@ -731,28 +751,6 @@ private fun List<ArgumentSpec>.slotForOperand(
         }
         if (index < filled + take) return spec
         filled += take
-    }
-    return null
-}
-
-/**
- * `--color`'s own value candidates for the attached form under the cursor (`--color=<cur>`, which zsh and fish
- * never split), or null when the cursor is not in it. The word after a bare `--color` is no value of it, as
- * getopt_long reads an optional argument, so that word completes as whatever it is.
- *
- * Answered here because `--color` is a meta-option rather than a declared spec, so the value-option
- * branches below never resolve it. [ArgvScan.matched] at the cursor's position rather than a string
- * comparison, so an abbreviated `--col` binds here exactly when the parser would bind it.
- */
-private fun colorValueCandidates(
-    current: String,
-    cursorAt: Int,
-    scan: ArgvScan,
-    description: String,
-): List<Candidate>? {
-    val eq = current.indexOf('=')
-    if (eq >= 0 && scan.matched(current.take(eq), cursorAt) == "color") {
-        return colorModeCandidates(current.substring(eq + 1)).asWholeWord(current.take(eq + 1), description)
     }
     return null
 }

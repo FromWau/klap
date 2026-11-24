@@ -20,9 +20,15 @@ internal val Command.hoistedToken: String get() = "\u0000$name"
 
 /**
  * [argv] with its flag-spelled and `prio` commands moved, or the refusal the line earns, with what could still be
- * moved; [prio] says whether the line reaches a `prio` command.
+ * moved; [prio] says whether the line reaches a `prio` command. [origins] gives each token's index in argv, null for a
+ * [hoistedToken].
  */
-internal class Hoisted(val tokens: List<String>, val error: CliError?, val prio: Boolean)
+internal class Hoisted(
+    val tokens: List<String>,
+    val origins: List<Int?>,
+    val error: CliError?,
+    val prio: Boolean,
+)
 
 /**
  * [argv] with each flag-spelled command moved to where its parent's subcommand word would stand, so the walk
@@ -42,6 +48,7 @@ internal class Hoisted(val tokens: List<String>, val error: CliError?, val prio:
  */
 internal fun Cli.hoistCommands(argv: List<String>): Hoisted {
     val tokens = argv.toMutableList()
+    val origins = argv.indices.toMutableList<Int?>()
     var level: Command = this
     var start = 0
     var error: CliError? = null
@@ -57,8 +64,9 @@ internal fun Cli.hoistCommands(argv: List<String>): Hoisted {
             level = (parent.resolveSubcommand(tokens[word], abbreviation == Abbreviation.All) as SubcommandMatch.One)
                 .command
             if (level.prio && !scan.operandBefore) {
-                val at = frontOwnWords(parent, tokens, start, word, child = null)
+                val at = frontOwnWords(parent, tokens, origins, start, word, child = null)
                 tokens.add(at, tokens.removeAt(word))
+                origins.add(at, origins.removeAt(word))
                 word = at
             }
             prio = prio || level.prio
@@ -81,17 +89,24 @@ internal fun Cli.hoistCommands(argv: List<String>): Hoisted {
             val letter = hit.letter
             if (letter == null) {
                 tokens.removeAt(hit.token)
+                origins.removeAt(hit.token)
             } else {
                 val rest = tokens[hit.token].removeRange(letter + 1, letter + 2)
-                if (rest == "-") tokens.removeAt(hit.token) else tokens[hit.token] = rest
+                if (rest == "-") {
+                    tokens.removeAt(hit.token)
+                    origins.removeAt(hit.token)
+                } else {
+                    tokens[hit.token] = rest
+                }
             }
         }
-        val at = frontOwnWords(level, tokens, start, tokens.size, chosen)
+        val at = frontOwnWords(level, tokens, origins, start, tokens.size, chosen)
         tokens.add(at, chosen.hoistedToken)
+        origins.add(at, null)
         level = chosen
         start = at + 1
     }
-    return Hoisted(tokens, error, prio)
+    return Hoisted(tokens, origins, error, prio)
 }
 
 /**
@@ -100,10 +115,12 @@ internal fun Cli.hoistCommands(argv: List<String>): Hoisted {
  * `-Q`, `-i` where `-v` is the root's and `-i` is -Q's. A flag-spelled [child] shares its parent's line, as pacman reads
  * one getopt loop, so the words are read up to `--` and past [child]'s operands (`pm -Q x -v`); for a prio word
  * (no [child]) only up to its first operand. A word of [child]'s own stays where it stands with the value it takes.
+ * [origins] moves with [tokens].
  */
 private fun Cli.frontOwnWords(
     level: Command,
     tokens: MutableList<String>,
+    origins: MutableList<Int?>,
     start: Int,
     end: Int,
     child: Command?,
@@ -128,8 +145,13 @@ private fun Cli.frontOwnWords(
         i = child?.optionRunEnd(line, i, fresh) ?: (i + 1)
     }
     val words = own.map { line[it] }
-    own.asReversed().forEach { tokens.removeAt(it) }
+    val wordOrigins = own.map { origins[it] }
+    own.asReversed().forEach {
+        tokens.removeAt(it)
+        origins.removeAt(it)
+    }
     tokens.addAll(start, words)
+    origins.addAll(start, wordOrigins)
     return start + words.size
 }
 

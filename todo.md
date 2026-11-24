@@ -353,7 +353,7 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
   ("Unresolved reference 'threadId'"). The JVM tests ran on `/usr/lib/jvm/java-17-openjdk` (1697 in `:klap`), the
   classes are major version 61 and the module metadata says `org.gradle.jvm.version` 17. README's floor says Java
   17. `build` green, 235 tasks.
-- [ ] **135. klap's kern and Kotlin versions follow kern's.** From the notes, section 5: klap pins kern 0.5.0
+- [x] **135. klap's kern and Kotlin versions follow kern's.** From the notes, section 5: klap pins kern 0.5.0
   (`gradle/libs.versions.toml:10`) while kern is at 0.5.1, and kern's 0.6.0 (logger API, result's smart casts,
   `toResult` and combining, the two terminal fixes of `2d1a924`) is not yet in Maven Local. Kotlin is 2.4.21 in klap,
   2.4.20 in kern; the notes want kern raised to match. klap uses only `result`, `terminal`, `fuzzy` and `result-test`,
@@ -366,6 +366,12 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
   **Owner 2026-11-12: B.** klap is on kern 0.6.5 now, from Maven local: `settings.gradle.kts` lists `mavenLocal()`
   for `com.fromwau.kern` alone, ahead of the release server, `build` green. **Left:** once kern 0.6.5 is released,
   remove that `mavenLocal()` block and build again.
+  **Checked 2026-11-23:** partly done. `gradle/libs.versions.toml:10` has `kern = "0.6.5"` and Kotlin 2.4.21, but the
+  release server's `com/fromwau/kern/result/maven-metadata.xml` lists 0.6.4 as the newest and kern has no `v0.6.5`
+  tag, so the `mavenLocal()` block in `settings.gradle.kts:21-24` stays. **Left:** as above.
+  **Owner 2026-11-23: done for now** by building against kern from Maven local: klap uses kern's newest version
+  0.6.5 (kern's own `kernVersion`), published to `~/.m2` on 2026-11-23 after kern's last commit, and the same Kotlin
+  2.4.21. Removing the `mavenLocal()` block once kern 0.6.5 is released is item 195.
 - [x] **175. `didYouMean` and `editDistance` move into klap.** Owner, 2026-10-17 (kern notes, section 6, F2 A): kern's
   "two real projects" rule, and klap is fuzzy's only user. kern 0.6.0 drops the module; the source is in kern at
   `3c5b4bb` (`fuzzy/`). Both become public in `com.fromwau.klap` (the guide's "Did-you-mean, in your own messages"
@@ -624,6 +630,17 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
   **Owner, 2026-11-20: A.** Renamed `resolvedFor(caller)`.
   **Built on branch `command-spec`, ticked 2026-11-20:** renamed in klap-io, no alias; `CallerInputTest` pins it.
 
+- [ ] **195. Drop the `mavenLocal()` block once kern 0.6.5 is released** (from 135, 2026-11-23): `settings.gradle.kts`
+  reads kern from Maven local until then; after the release, delete the block and build again. Build.
+- [ ] **193. klap catches what consumer code throws in renderers, converters and validation (2026-11-20, from
+  kortex SH-20).** kortex's shell fails fast on any throw (a bug ends the daemon, systemd restarts it with the trace),
+  but klap catches consumer throws in `human`/`exit` renderers (`internal/spec/Action.kt:86,113,128`, `catch
+  Exception`), converters (`internal/parse/Bind.kt:406`, `catch Throwable`, `Error` included) and `validateInputs`
+  (`Parser.kt:755`), turning a bug in a surface's own renderer, converter or validation into an exit code and a
+  message. Action blocks are not caught. Question for the owner: should a converter's or renderer's throw be a bug
+  that propagates (a converter reports bad input by returning a typed error), with klap catching nothing it did not
+  throw; or keep catching, at least never `Error`?
+
 ## Owner calls
 
 - [x] **185. `Ok(Unit)` printed `kotlin.Unit`, and `{}` under `--json` (2026-11-12, branch `unit-prints-nothing`).**
@@ -759,6 +776,22 @@ Decided against, with the reason, so they are not proposed again.
   kern keeps `fuzzy` (item 175a).
 
 ## Done
+
+- [x] **194. Completion of `--docs`, `--completion` and `--color` values reads the parser's view of the line
+  (2026-11-23, branch `fix/meta-option-value-completion`).** A single-command CLI offered no `--docs`/`--completion`
+  value; an attached meta-option or `--color=` after `--` still completed; a meta-option and its value took an
+  operand's place; a value before a flag-spelled command was missed. **Built:** completion no longer keeps its own
+  scans but asks the parser: `Cli.metaOptionValues(argv)` and `Cli.colorSpellings(argv)` (`Parser.kt`) answer from
+  `readBuiltins` through `Hoisted.origins`; the end of options is decided once in `completeCandidates`; `walkLine`
+  drops meta-options with the parser's `withoutMetaOptions`, and strips `--json` and `--color` with the parser's
+  `withoutJsonAndColor`, one definition `readBuiltins` uses too. `MetaOptionValueCompletionTest` pins each fix
+  against what `parse()` does with the completed line; each fix's test was seen failing before it (for example
+  `expected <[--docs=markdown, --docs=man]> but was <[]>`, `expected <[]> but was <[--color=auto, --color=always,
+  --color=never]>` after `--`, `expected [a, b] but was [c, d]` for the operand place). **Checked 2026-11-23:** a
+  meta-option beside a `prio` command (attached and next-word, before and after it, single-command and dispatcher):
+  completion and parse agree everywhere, no bug; `MetaOptionWithPrioCommandCompletionTest` pins it. A dispatcher has
+  no meta-options, so `license --docs ‸` offers `license`'s operands, as after any unknown option. `WalkAgreementTest`
+  keeps its own copy of the stripping, left as is. `build` green.
 
 - [x] **187. klap's control-character escaping is internal, so a tool copies it.** Found in kotoml, owner 2026-10-28.
   klap escapes bytes 0x00 to 0x1F and 0x7F as `\xNN` in an `error:` line (`internal/render/ErrorRendering.kt`).

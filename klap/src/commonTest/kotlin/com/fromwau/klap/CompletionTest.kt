@@ -1124,6 +1124,157 @@ class BuiltinColorValueCompletionTest {
     }
 }
 
+private fun singleCommandTree(abbreviationMode: Abbreviation = Abbreviation.None): Cli = cli("app") {
+    abbreviation = abbreviationMode
+    flag("verbose")
+    action { Ok("") }
+}
+
+private fun Cli.offered(
+    vararg words: String,
+    cursor: Int = words.lastIndex,
+): List<String> = completeCandidates(words.toList(), cursor).map { it.value }
+
+private fun flagCommandTree(): Cli = cli("pac") {
+    argument("target").choice("a", "b").optional()
+    command(short = 'Q', long = "query") {
+        flag(short = 'i', long = "info")
+        action { Ok("") }
+    }
+    action { Ok("") }
+}
+
+/** `--completion` and `--docs` on a single-command CLI take a value, attached or as the next word. */
+class MetaOptionValueCompletionTest {
+    private val shells = listOf("bash", "zsh", "fish", "powershell")
+    private val formats = listOf("markdown", "man")
+
+    @Test
+    fun `an attached docs value completes to the doc formats`() {
+        assertEquals(listOf("--docs=markdown", "--docs=man"), singleCommandTree().offered("--docs="))
+    }
+
+    @Test
+    fun `a docs value as the next word completes to the doc formats`() {
+        assertEquals(formats, singleCommandTree().offered("--docs", ""))
+    }
+
+    @Test
+    fun `an attached completion value completes to the shells`() {
+        assertEquals(shells.map { "--completion=$it" }, singleCommandTree().offered("--completion="))
+    }
+
+    @Test
+    fun `a completion value as the next word completes to the shells`() {
+        assertEquals(shells, singleCommandTree().offered("--completion", ""))
+    }
+
+    @Test
+    fun `a meta option value is filtered by the prefix typed`() {
+        val tree = singleCommandTree()
+        assertEquals(listOf("--docs=markdown", "--docs=man"), tree.offered("--docs=m"))
+        assertEquals(listOf("--docs=man"), tree.offered("--docs=man"))
+        assertEquals(listOf("man"), tree.offered("--docs", "man"))
+        assertEquals(listOf("zsh"), tree.offered("--completion", "z"))
+    }
+
+    @Test
+    fun `an abbreviated meta option completes its value as the parser binds it`() {
+        val tree = singleCommandTree(Abbreviation.All)
+        assertEquals(listOf("--doc=markdown", "--doc=man"), tree.offered("--doc="))
+        assertEquals(shells, tree.offered("--compl", ""))
+    }
+
+    @Test
+    fun `an abbreviated meta option is not completed where abbreviation is off`() {
+        assertEquals(emptyList(), singleCommandTree().offered("--doc="))
+    }
+
+    @Test
+    fun `a meta option value with more words after the cursor still completes`() {
+        assertEquals(formats, singleCommandTree().offered("--docs", "", "--verbose", cursor = 1))
+    }
+
+    @Test
+    fun `the word after a docs value is not a docs value`() {
+        assertEquals(listOf("--verbose"), singleCommandTree().offered("--docs", "man", "--verb"))
+    }
+
+    @Test
+    fun `a meta option name given as the value of another option is not completed as one`() {
+        val tree = cli("app") {
+            option("name")
+            action { Ok("") }
+        }
+        assertEquals(emptyList(), tree.offered("--name", "--docs", ""))
+    }
+
+    @Test
+    fun `an attached meta option after the end of options is an operand`() {
+        assertEquals(emptyList(), singleCommandTree().offered("--", "--docs="))
+    }
+
+    @Test
+    fun `an attached color mode after the end of options is an operand`() {
+        assertEquals(emptyList(), singleCommandTree().offered("--", "--color="))
+    }
+
+    @Test
+    fun `a docs value before a flag-spelled command completes to the doc formats`() {
+        val tree = flagCommandTree()
+        assertEquals(
+            Invocation.ShowDocs(tree, DocFormat.MAN),
+            tree.parse(listOf("--docs", "man", "-Q")).assertSuccess(),
+        )
+        assertEquals(formats, tree.offered("--docs", "", "-Q", cursor = 1))
+    }
+
+    @Test
+    fun `a flag-spelled command given as the docs value offers nothing`() {
+        val tree = flagCommandTree()
+        assertIs<CliError.InvalidChoice>(tree.parse(listOf("--docs", "-Q")).assertError())
+        assertEquals(emptyList(), tree.offered("--docs", "-Q"))
+    }
+
+    @Test
+    fun `a color spelling given as the docs value before a flag-spelled command offers nothing`() {
+        val tree = flagCommandTree()
+        assertIs<CliError.InvalidChoice>(tree.parse(listOf("--docs", "--color=always", "-Q")).assertError())
+        assertEquals(emptyList(), tree.offered("--docs", "--color=a", "-Q", cursor = 1))
+    }
+
+    @Test
+    fun `a docs value after the operand that ends the options completes to the doc formats`() {
+        val tree = cli("app") {
+            argument("files").choice("a", "b").multiple(min = 0)
+            optionsEndAtFirstOperand = true
+            action { Ok("") }
+        }
+        assertEquals(
+            Invocation.ShowDocs(tree, DocFormat.MAN),
+            tree.parse(listOf("a", "--docs", "man")).assertSuccess(),
+        )
+        assertEquals(formats, tree.offered("a", "--docs", ""))
+    }
+
+    @Test
+    fun `a docs option and its value take no operand place`() {
+        val tree = cli("app") {
+            argument("x").choice("a", "b").optional()
+            argument("y").choice("c", "d").optional()
+            action { Ok("") }
+        }
+        assertEquals(listOf("a", "b"), tree.offered("--docs", "man", ""))
+    }
+
+    @Test
+    fun `a dispatcher with a docs subcommand completes its format as an operand`() {
+        val tree = cli("app") { command("build") { action { Ok("") } } }
+        assertEquals(formats, tree.offered("docs", ""))
+        assertEquals(emptyList(), tree.offered("--docs="))
+    }
+}
+
 /** `completeFiles()`: handing the word off to the shell's own file completion, and what that discards. */
 class CompleteFilesDirectiveTest {
 
@@ -1878,5 +2029,92 @@ class UnroutedSubcommandCompletionTest {
     fun `no subcommand name is offered after an option the parent does not have`() {
         git.parse(listOf("-s", "status")).assertError<CliError.UnknownOption>()
         assertEquals(emptyList(), git.offered("-s", ""))
+    }
+}
+
+private fun Cli.ranCommand(vararg words: String): String =
+    assertIs<Invocation.Execute>(parse(words.toList()).assertSuccess()).command.name
+
+/** A meta-option beside a `prio` command completes as the parse reads that line. */
+class MetaOptionWithPrioCommandCompletionTest {
+    private val singleCommand = cli("app") {
+        argument("x").choice("a", "b").optional()
+        command("license") {
+            prio = true
+            argument("kind").choice("p", "q").optional()
+            action { Ok("") }
+        }
+        action { Ok("") }
+    }
+
+    private val dispatcher = cli("app") {
+        command("build") { action { Ok("") } }
+        command("license") {
+            prio = true
+            argument("kind").choice("p", "q").optional()
+            action { Ok("") }
+        }
+    }
+
+    @Test
+    fun `a docs value after a prio command completes to the doc formats the parse takes`() {
+        assertEquals("license", singleCommand.ranCommand("license", "--docs", "man"))
+        assertEquals("license", singleCommand.ranCommand("license", "--docs=man"))
+        assertEquals(listOf("markdown", "man"), singleCommand.offered("license", "--docs", ""))
+        assertEquals(listOf("--docs=markdown", "--docs=man"), singleCommand.offered("license", "--docs="))
+    }
+
+    @Test
+    fun `a completion value before a prio command completes to the shells the parse takes`() {
+        assertEquals("license", singleCommand.ranCommand("--completion", "zsh", "license"))
+        assertEquals("license", singleCommand.ranCommand("--completion=zsh", "license"))
+        assertEquals(
+            listOf("bash", "zsh", "fish", "powershell"),
+            singleCommand.offered("--completion", "", "license", cursor = 1),
+        )
+        assertEquals(listOf("--completion=zsh"), singleCommand.offered("--completion=z", "license", cursor = 0))
+    }
+
+    @Test
+    fun `a prio command given as the docs value offers nothing`() {
+        assertIs<CliError.InvalidChoice>(singleCommand.parse(listOf("--docs", "license")).assertError())
+        assertEquals(emptyList(), singleCommand.offered("--docs", "lic"))
+    }
+
+    @Test
+    fun `a docs option and its value take no operand place of a prio command`() {
+        assertEquals("license", singleCommand.ranCommand("license", "--docs", "man", "p"))
+        assertEquals(listOf("p", "q"), singleCommand.offered("license", "--docs", "man", ""))
+        assertEquals(listOf("p", "q"), singleCommand.offered("--docs", "man", "license", ""))
+    }
+
+    @Test
+    fun `a color mode beside a prio command completes on either kind of CLI`() {
+        for (tree in listOf(singleCommand, dispatcher)) {
+            assertEquals("license", tree.ranCommand("license", "--color=never"))
+            assertEquals("license", tree.ranCommand("--color=never", "license"))
+            assertEquals(listOf("--color=auto", "--color=always", "--color=never"), tree.offered("license", "--color="))
+            assertEquals(
+                listOf("--color=auto", "--color=always", "--color=never"),
+                tree.offered("--color=", "license", cursor = 0),
+            )
+        }
+    }
+
+    @Test
+    fun `the word after a bare color beside a prio command is its operand`() {
+        for (tree in listOf(singleCommand, dispatcher)) {
+            assertEquals("license", tree.ranCommand("license", "--color", "p"))
+            assertEquals(listOf("p", "q"), tree.offered("license", "--color", ""))
+        }
+    }
+
+    @Test
+    fun `a dispatcher offers no meta option value beside a prio command`() {
+        assertIs<CliError.UnknownOption>(dispatcher.parse(listOf("license", "--docs=man")).assertError())
+        assertIs<CliError.UnknownOption>(dispatcher.parse(listOf("--completion=zsh", "license")).assertError())
+        assertEquals(emptyList(), dispatcher.offered("license", "--docs="))
+        assertEquals(emptyList(), dispatcher.offered("--completion=", "license", cursor = 0))
+        assertEquals(emptyList(), dispatcher.offered("--docs", "", "license", cursor = 1))
     }
 }
