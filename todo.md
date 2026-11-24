@@ -371,7 +371,7 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
   tag, so the `mavenLocal()` block in `settings.gradle.kts:21-24` stays. **Left:** as above.
   **Owner 2026-11-23: done for now** by building against kern from Maven local: klap uses kern's newest version
   0.6.5 (kern's own `kernVersion`), published to `~/.m2` on 2026-11-23 after kern's last commit, and the same Kotlin
-  2.4.21. Removing the `mavenLocal()` block once kern 0.6.5 is released is item 195.
+  2.4.21. Removing the `mavenLocal()` block once kern 0.7.0 is released is item 195.
 - [x] **175. `didYouMean` and `editDistance` move into klap.** Owner, 2026-10-17 (kern notes, section 6, F2 A): kern's
   "two real projects" rule, and klap is fuzzy's only user. kern 0.6.0 drops the module; the source is in kern at
   `3c5b4bb` (`fuzzy/`). Both become public in `com.fromwau.klap` (the guide's "Did-you-mean, in your own messages"
@@ -716,7 +716,7 @@ TDD pass of 2026-10-17 (169, 170, 173, 174, 176, 177): 65 tests, 63 pass, and th
   there. dd's `if=~/` with `=` out of COMP_WORDBREAKS is not tested: the harness splits at `=` always. The plain
   path keeps `-o filenames`. (2) the guide's debugging note says an attached option name of either shape (`--color=`,
   `-O`, `-vO`) carries the mark.
-- [ ] **195. Drop the `mavenLocal()` block once kern 0.6.5 is released** (from 135, 2026-11-23): `settings.gradle.kts`
+- [ ] **195. Drop the `mavenLocal()` block once kern 0.7.0 is released** (from 135, 2026-11-23): `settings.gradle.kts`
   reads kern from Maven local until then; after the release, delete the block and build again. Build.
 - [x] **193. klap catches what consumer code throws in renderers, converters and validation (2026-11-20, from
   kortex SH-20).** kortex's shell fails fast on any throw (a bug ends the daemon, systemd restarts it with the trace),
